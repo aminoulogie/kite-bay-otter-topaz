@@ -1,0 +1,308 @@
+import { useEffect, useMemo, useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { BASE_FOOD_LIBRARY, DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
+import { useSoma } from "@/lib/store";
+import type { FoodItem } from "@/lib/types";
+
+const MEALS = ["Breakfast", "Lunch", "Dinner", "Post-Workout", "Snacks"];
+
+export function NutritionView() {
+  const nutrition = useSoma((s) => s.nutrition);
+  const history = useSoma((s) => s.history);
+  const activeDate = useSoma((s) => s.activeDate);
+  const customFoods = useSoma((s) => s.customFoods);
+  const ensureDay = useSoma((s) => s.ensureDay);
+  const addFood = useSoma((s) => s.addFood);
+  const removeFood = useSoma((s) => s.removeFood);
+  const addWater = useSoma((s) => s.addWater);
+  const settings = useSoma((s) => s.settings);
+
+  const [query, setQuery] = useState("");
+  const [meal, setMeal] = useState("Breakfast");
+  const [openMeal, setOpenMeal] = useState<string>("Breakfast");
+  const [custom, setCustom] = useState({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
+
+  useEffect(() => {
+    ensureDay(activeDate);
+  }, [activeDate, ensureDay]);
+
+  const day = nutrition[activeDate] || {
+    goals: { ...DEFAULT_GOALS },
+    water: 0,
+    items: [],
+  };
+  const goals = day.goals || DEFAULT_GOALS;
+  const items = day.items || [];
+  const workout = history[activeDate];
+  const burn = workout?.caloriesBurned || 0;
+
+  const totals = items.reduce(
+    (a, i) => ({
+      cals: a.cals + (i.cals || 0),
+      p: a.p + (i.p || 0),
+      c: a.c + (i.c || 0),
+      f: a.f + (i.f || 0),
+      fiber: a.fiber + (i.fiber || 0),
+    }),
+    { cals: 0, p: 0, c: 0, f: 0, fiber: 0 },
+  );
+  const goalCals = goals.cals + burn;
+  const tdee = SomaIntelligenceEngine.computeMaintenanceCalories(nutrition);
+  const formula = SomaIntelligenceEngine.formulaMaintenance(day.bodyWeight || 78) || 2400;
+  const maintenance = tdee && tdee.ok ? tdee.maintenance : formula;
+
+  const library = useMemo(() => [...BASE_FOOD_LIBRARY, ...customFoods], [customFoods]);
+  const hits = library
+    .filter((f) => f.name.toLowerCase().includes(query.toLowerCase()))
+    .slice(0, 8);
+
+  const addFromLib = (f: { name: string; serving: number; unit: string; cals: number; p: number; c: number; f: number; fiber?: number; sodium?: number; potassium?: number; calcium?: number; iron?: number; magnesium?: number; zinc?: number }, mealName: string) => {
+    addFood({
+      name: f.name,
+      serving: f.serving,
+      unit: f.unit,
+      cals: f.cals,
+      p: f.p,
+      c: f.c,
+      f: f.f,
+      fiber: f.fiber || 0,
+      sodium: f.sodium || 0,
+      potassium: f.potassium || 0,
+      calcium: f.calcium || 0,
+      iron: f.iron || 0,
+      magnesium: f.magnesium || 0,
+      zinc: f.zinc || 0,
+      meal: mealName,
+    });
+    toast.success(`Added ${f.name}`);
+    setQuery("");
+  };
+
+  const waterPct = Math.min(100, Math.round(((day.water || 0) / (goals.water || 3500)) * 100));
+
+  return (
+    <div className="space-y-3 pb-4">
+      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
+        <div className="flex items-start justify-between">
+          <div>
+            <Badge tone="accent">Diary · {activeDate}</Badge>
+            <h1 className="mt-2 font-display text-xl font-extrabold tracking-tight">Nutrition</h1>
+            <p className="mt-1 text-xs text-muted">
+              {tdee && tdee.ok
+                ? `Measured maintenance ${maintenance} kcal (${tdee.confidence})`
+                : `Formula maintenance ${maintenance} kcal`}
+              {burn ? ` · +${burn} from training` : ""}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4">
+          <div className="mb-1 flex justify-between text-xs font-bold">
+            <span className="text-muted">Calories</span>
+            <span className="tabular">
+              {Math.round(totals.cals)} / {goalCals}
+            </span>
+          </div>
+          <Progress value={(totals.cals / goalCals) * 100} />
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-3 gap-2">
+        <Macro label="Protein" used={totals.p} goal={goals.protein} unit="g" />
+        <Macro label="Carbs" used={totals.c} goal={goals.carbs} unit="g" />
+        <Macro label="Fat" used={totals.f} goal={goals.fat} unit="g" />
+      </div>
+
+      <Card>
+        <CardTitle>
+          <span>Water</span>
+          <span className="tabular text-sm font-bold text-accent-text">
+            {day.water || 0} / {goals.water} ml
+          </span>
+        </CardTitle>
+        <Progress value={waterPct} barClassName="bg-info" />
+        <div className="mt-3 flex gap-2">
+          <Button className="flex-1" onClick={() => addWater(250)}>
+            +250 ml
+          </Button>
+          <Button className="flex-1" onClick={() => addWater(500)}>
+            +500 ml
+          </Button>
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Add food</CardTitle>
+        <div className="mb-2 flex gap-1 overflow-x-auto">
+          {MEALS.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMeal(m)}
+              className={`h-9 shrink-0 rounded-full px-3 text-xs font-bold ${
+                meal === m ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted"
+              }`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+        <Input
+          placeholder="Search chicken, rice, whey…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {query && (
+          <div className="mt-2 overflow-hidden rounded-xl border border-border">
+            {hits.map((f) => (
+              <button
+                key={f.name}
+                type="button"
+                onClick={() => addFromLib(f, meal)}
+                className="flex w-full items-center justify-between border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-2"
+              >
+                <span className="text-sm font-bold">{f.name}</span>
+                <span className="text-xs text-muted">
+                  {f.cals} kcal · {f.p}p
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs font-bold text-muted">Quick custom item</summary>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <Input
+              placeholder="Name"
+              value={custom.name}
+              onChange={(e) => setCustom({ ...custom, name: e.target.value })}
+            />
+            <Input
+              type="number"
+              placeholder="kcal"
+              value={custom.cals || ""}
+              onChange={(e) => setCustom({ ...custom, cals: Number(e.target.value) })}
+            />
+            <Input
+              type="number"
+              placeholder="P"
+              value={custom.p || ""}
+              onChange={(e) => setCustom({ ...custom, p: Number(e.target.value) })}
+            />
+            <Input
+              type="number"
+              placeholder="C"
+              value={custom.c || ""}
+              onChange={(e) => setCustom({ ...custom, c: Number(e.target.value) })}
+            />
+            <Input
+              type="number"
+              placeholder="F"
+              value={custom.f || ""}
+              onChange={(e) => setCustom({ ...custom, f: Number(e.target.value) })}
+            />
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (!custom.name) return;
+                addFood({
+                  name: custom.name,
+                  serving: custom.serving,
+                  unit: "g",
+                  cals: custom.cals,
+                  p: custom.p,
+                  c: custom.c,
+                  f: custom.f,
+                  fiber: 0,
+                  sodium: 0,
+                  potassium: 0,
+                  calcium: 0,
+                  iron: 0,
+                  magnesium: 0,
+                  zinc: 0,
+                  meal,
+                });
+                setCustom({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
+              }}
+            >
+              <Plus className="size-4" /> Add
+            </Button>
+          </div>
+        </details>
+      </Card>
+
+      {MEALS.map((m) => {
+        const group = items
+          .map((it, idx) => ({ it, idx }))
+          .filter(({ it }) => (it.meal || "Snacks") === m);
+        const cals = group.reduce((a, g) => a + g.it.cals, 0);
+        const p = group.reduce((a, g) => a + g.it.p, 0);
+        const open = openMeal === m;
+        return (
+          <Card key={m}>
+            <button
+              type="button"
+              className="flex w-full items-center justify-between"
+              onClick={() => setOpenMeal(open ? "" : m)}
+            >
+              <span className="font-display text-sm font-bold">{m}</span>
+              <span className="text-xs font-bold text-muted">
+                {Math.round(cals)} kcal · {Math.round(p)}g P
+              </span>
+            </button>
+            {open && (
+              <div className="mt-3 space-y-1.5">
+                {group.length === 0 && <div className="py-2 text-center text-xs text-faint">Nothing logged</div>}
+                {group.map(({ it, idx }) => (
+                  <FoodRow key={idx} item={it} onDelete={() => removeFood(idx)} />
+                ))}
+              </div>
+            )}
+          </Card>
+        );
+      })}
+
+      <p className="px-1 text-[0.7rem] text-faint">
+        Goals: {goals.cals} kcal · P {goals.protein} · C {goals.carbs} · F {goals.fat}. Units {settings.unit}.
+      </p>
+    </div>
+  );
+}
+
+function Macro({ label, used, goal, unit }: { label: string; used: number; goal: number; unit: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-surface-2 p-3">
+      <div className="text-[0.62rem] font-bold uppercase tracking-wider text-faint">{label}</div>
+      <div className="mt-0.5 font-display text-lg font-extrabold tabular">
+        {Math.round(used)}
+        <span className="text-xs font-bold text-muted">
+          /{goal}
+          {unit}
+        </span>
+      </div>
+      <Progress className="mt-2" value={(used / goal) * 100} />
+    </div>
+  );
+}
+
+function FoodRow({ item, onDelete }: { item: FoodItem; onDelete: () => void }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-border bg-surface-2 px-3 py-2">
+      <div>
+        <div className="text-sm font-bold">{item.name}</div>
+        <div className="text-[0.7rem] text-faint">
+          {item.serving}
+          {item.unit} · {Math.round(item.cals)} kcal · {item.p}p {item.c}c {item.f}f
+        </div>
+      </div>
+      <button type="button" onClick={onDelete} className="text-danger" aria-label="Remove food">
+        <Trash2 className="size-4" />
+      </button>
+    </div>
+  );
+}

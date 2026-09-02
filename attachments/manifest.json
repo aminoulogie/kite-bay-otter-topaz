@@ -1,0 +1,9 @@
+{
+  "id": "soma-smart-coach",
+  "name": "SOMA Smart Coach & Recovery HUD Pro",
+  "version": "5.1.3",
+  "minAppVersion": "0.15.0",
+  "description": "Modular fitness suite for Obsidian. Four focused widgets: soma-workout (live logger with warm-up/drop/superset set types, readiness-aware autoregulated targets, smart rest, exercise swaps, and an Insights tab covering consistency streaks, weekly volume vs MEV/MAV/MRV landmarks, per-lift strength charts, PRs and CNS load), soma-macros (nutrition, body weight, measurements, creatine, barcode scanning, and maintenance calories measured from real intake vs weight change), soma-sleep (hours and quality feeding autoregulation), and habittracker (habits with per-habit yearly heatmaps). Theme engine with light/dark and a custom accent, an in-app routine editor, schema-versioned self-healing data files, and CSV/JSON export.",
+  "author": "SOMA Engineering",
+  "isDesktopOnly": false
+}

@@ -1,0 +1,38 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "SOMA Smart Coach",
+      "hasCanvas": false,
+      "bodyTextLen": 2338,
+      "bodyTextHash": "2dfb80737a2eff8fcfc6b010f26ffe47ec565f32de9a6410f125fc934f7e4443",
+      "bodyTextPrefix": "SOMA SMART COACH LOCAL SCHEDULED · 2026-09-02 Upper A (Chest/Bac",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "SOMA Smart Coach",
+      "hasCanvas": false,
+      "bodyTextLen": 2338,
+      "bodyTextHash": "2dfb80737a2eff8fcfc6b010f26ffe47ec565f32de9a6410f125fc934f7e4443",
+      "bodyTextPrefix": "SOMA SMART COACH LOCAL SCHEDULED · 2026-09-02 Upper A (Chest/Bac",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": false,
+  "baselineReasons": []
+}

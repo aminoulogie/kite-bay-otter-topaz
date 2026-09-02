@@ -1,0 +1,15 @@
+{
+  "name": "soma-smart-coach",
+  "version": "5.1.0",
+  "description": "Modular fitness suite for Obsidian. Source in src/, bundled to main.js.",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "test": "node test/all.js",
+    "verify": "node build.mjs && node test/all.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

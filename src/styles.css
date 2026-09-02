@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Syne", "Manrope", ui-sans-serif, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-bg: #0b0c10;
+  --color-surface: #141720;
+  --color-surface-2: #1b1f2b;
+  --color-surface-3: #232838;
+  --color-fg: #f5f7fa;
+  --color-muted: #9aa4b4;
+  --color-faint: #6b7385;
+  --color-accent: #d3fd50;
+  --color-accent-ink: #0b1207;
+  --color-accent-text: #d3fd50;
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  --color-accent-line: color-mix(in srgb, var(--color-accent) 38%, transparent);
+  --color-border: rgba(255, 255, 255, 0.09);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+  --color-danger: #ef4444;
+  --color-warn: #f59e0b;
+  --color-info: #38bdf8;
+  --color-good: #22c55e;
+  --color-dock: rgba(20, 23, 32, 0.78);
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+
+  --shadow-card: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow-glow: 0 0 24px color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+html[data-soma-theme="light"] {
+  --color-bg: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-surface-2: #eef1f6;
+  --color-surface-3: #e3e8f0;
+  --color-fg: #101828;
+  --color-muted: #566072;
+  --color-faint: #858e9e;
+  --color-border: rgba(15, 23, 42, 0.1);
+  --color-border-strong: rgba(15, 23, 42, 0.2);
+  --color-accent-ink: #10231f;
+  --color-dock: rgba(255, 255, 255, 0.84);
+  --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.08);
+  --shadow-glow: 0 0 20px color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body,
+  #app {
+    min-height: 100%;
+    background: var(--color-bg);
+    color: var(--color-fg);
+  }
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.soma-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-fg) 18%, transparent) transparent;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
