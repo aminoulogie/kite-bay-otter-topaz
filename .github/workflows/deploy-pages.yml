@@ -34,9 +34,13 @@ jobs:
           for p in assets.glob("*.js"):
               text = p.read_text(encoding="utf-8")
               patched = text.replace("basepath:``", f"basepath:`{base}`").replace('basepath:""', f'basepath:"{base}"')
+              patched = patched.replace(
+                  "e.stores.ids.get().length||await Qn(e)",
+                  "0",
+              )
               if patched != text:
                   p.write_text(patched, encoding="utf-8")
-                  print(f"patched basepath in {p.name}")
+                  print(f"patched {p.name}")
           PY
           JS=$(ls -1 "$OUT/assets"/index-*.js | head -n1 | xargs -n1 basename)
           CSS=$(ls -1 "$OUT/assets"/styles-*.css | head -n1 | xargs -n1 basename)
@@ -46,7 +50,8 @@ jobs:
             <head>
               <meta charset="utf-8" />
               <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-              <meta name="theme-color" content="#000000" />
+              <meta name="theme-color" content="#0b0c10" />
+              <meta name="apple-mobile-web-app-capable" content="yes" />
               <meta name="apple-mobile-web-app-title" content="SOMA" />
               <meta name="apple-mobile-web-app-status-bar-style" content="black" />
               <title>SOMA</title>
@@ -54,8 +59,19 @@ jobs:
               <link rel="apple-touch-icon" href="${BASE}/__grok/icon-180.png" />
               <link rel="icon" href="${BASE}/favicon.svg" type="image/svg+xml" />
               <link rel="stylesheet" href="${BASE}/assets/${CSS}" />
+              <link rel="preconnect" href="https://fonts.googleapis.com" />
+              <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+              <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Manrope:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap" />
             </head>
-            <body>
+            <body class="antialiased" style="margin:0;background:#0b0c10;color:#eceef1">
+              <script>
+                window.$_TSR = window.$_TSR || {
+                  buffer: [],
+                  initialized: false,
+                  h: function () {},
+                  router: { manifest: { routes: {} }, matches: [] }
+                };
+              </script>
               <script type="module" src="${BASE}/assets/${JS}"></script>
             </body>
           </html>
@@ -70,8 +86,8 @@ jobs:
             "start_url": "${BASE}/",
             "scope": "${BASE}/",
             "display": "standalone",
-            "background_color": "#000000",
-            "theme_color": "#000000",
+            "background_color": "#0b0c10",
+            "theme_color": "#0b0c10",
             "icons": [
               { "src": "${BASE}/__grok/icon-180.png", "sizes": "180x180", "type": "image/png" },
               { "src": "${BASE}/icon-192.png", "sizes": "192x192", "type": "image/png" },
