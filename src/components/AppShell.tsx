@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   Dumbbell,
+  PanelLeft,
   Settings as SettingsIcon,
+  Target,
   TrendingUp,
   Utensils,
 } from "lucide-react";
 import { Toaster } from "sonner";
+import { DateDrawer } from "@/components/DateDrawer";
+import { useEdgeSwipe } from "@/lib/use-edge-swipe";
 import { BodyView } from "@/components/views/BodyView";
+import { HabitsView } from "@/components/views/HabitsView";
 import { InsightsView } from "@/components/views/InsightsView";
 import { NutritionView } from "@/components/views/NutritionView";
 import { SettingsView } from "@/components/views/SettingsView";
@@ -20,6 +25,7 @@ import type { TabId } from "@/lib/types";
 const TABS: { id: TabId; label: string; icon: typeof Dumbbell }[] = [
   { id: "workout", label: "Train", icon: Dumbbell },
   { id: "nutrition", label: "Fuel", icon: Utensils },
+  { id: "habits", label: "Habits", icon: Target },
   { id: "body", label: "Body", icon: Activity },
   { id: "insights", label: "Stats", icon: TrendingUp },
   { id: "settings", label: "Setup", icon: SettingsIcon },
@@ -27,6 +33,9 @@ const TABS: { id: TabId; label: string; icon: typeof Dumbbell }[] = [
 
 export function AppShell() {
   const [ready, setReady] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const openDrawer = useCallback(() => setDrawerOpen(true), []);
+  useEdgeSwipe(openDrawer, ready && !drawerOpen);
   const hydrated = useSoma((s) => s.hydrated);
   const tab = useSoma((s) => s.tab);
   const setTab = useSoma((s) => s.setTab);
@@ -73,19 +82,38 @@ export function AppShell() {
 
   return (
     <div className="relative mx-auto min-h-dvh max-w-lg bg-bg pb-28">
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-border bg-bg/85 px-5 py-3 backdrop-blur-xl">
-        <div>
-          <div className="font-display text-lg font-extrabold tracking-tight text-fg">SOMA</div>
-          <div className="text-[0.65rem] font-bold uppercase tracking-[0.16em] text-faint">Smart Coach</div>
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-bg/85 px-4 py-3 backdrop-blur-xl">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {/* The swipe is not discoverable on its own, so the drawer also has
+              a visible control. */}
+          <button
+            type="button"
+            onClick={openDrawer}
+            aria-label="Open logged days"
+            className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2 text-muted"
+          >
+            <PanelLeft className="size-4" />
+          </button>
+          <div className="min-w-0">
+            <div className="font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
+              SOMA
+            </div>
+            <div className="truncate text-[0.65rem] font-bold uppercase tracking-[0.16em] text-faint">
+              Smart Coach
+            </div>
+          </div>
         </div>
-        <div className="rounded-full border border-border bg-surface-2 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-muted">
+        <div className="shrink-0 rounded-full border border-border bg-surface-2 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-muted">
           Local
         </div>
       </header>
 
+      <DateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+
       <main className="soma-scroll px-4 pt-4">
         {tab === "workout" && <WorkoutView />}
         {tab === "nutrition" && <NutritionView />}
+        {tab === "habits" && <HabitsView />}
         {tab === "body" && <BodyView />}
         {tab === "insights" && <InsightsView />}
         {tab === "settings" && <SettingsView />}
@@ -102,12 +130,14 @@ export function AppShell() {
                 type="button"
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  "flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-1 py-1.5 text-[0.62rem] font-bold transition-colors duration-150",
+                  // min-w-0 lets the flex child shrink below its content width;
+                  // without it a six-tab dock overflows instead of fitting.
+                  "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-0.5 py-1.5 text-[0.58rem] font-bold leading-none transition-colors duration-150",
                   active ? "bg-accent text-accent-ink shadow-glow" : "text-faint hover:text-muted",
                 )}
               >
-                <Icon className="size-4" strokeWidth={active ? 2.4 : 2} />
-                {t.label}
+                <Icon className="size-4 shrink-0" strokeWidth={active ? 2.4 : 2} />
+                <span className="w-full truncate text-center">{t.label}</span>
               </button>
             );
           })}

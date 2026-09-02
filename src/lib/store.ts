@@ -16,6 +16,7 @@ import type {
   NutritionDay,
   SessionExercise,
   Settings,
+  TabId,
   WorkoutSet,
 } from "./types";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
@@ -56,7 +57,9 @@ export interface SomaStore {
   customFoods: FoodItem[];
   live: LiveSession;
   activeDate: string;
-  tab: "workout" | "nutrition" | "body" | "insights" | "settings";
+  // Uses the shared TabId rather than a second copy of the union; the two
+  // had already drifted apart once.
+  tab: TabId;
   markHydrated: () => void;
   ensureSeed: () => void;
   setTab: (tab: SomaStore["tab"]) => void;

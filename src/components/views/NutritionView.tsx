@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, ScanLine, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,10 @@ export function NutritionView() {
   const [meal, setMeal] = useState("Breakfast");
   const [openMeal, setOpenMeal] = useState<string>("Breakfast");
   const [custom, setCustom] = useState({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
+  const [scanning, setScanning] = useState(false);
+  // The library is browsable, not search-only: with nothing typed you should
+  // still be able to see what is in there rather than having to guess a name.
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     ensureDay(activeDate);
@@ -58,9 +63,10 @@ export function NutritionView() {
   const maintenance = tdee && tdee.ok ? tdee.maintenance : formula;
 
   const library = useMemo(() => [...BASE_FOOD_LIBRARY, ...customFoods], [customFoods]);
-  const hits = library
-    .filter((f) => f.name.toLowerCase().includes(query.toLowerCase()))
-    .slice(0, 8);
+  const matches = library.filter((f) =>
+    f.name.toLowerCase().includes(query.toLowerCase()),
+  );
+  const hits = query ? matches.slice(0, 8) : showAll ? matches : [];
 
   const addFromLib = (f: { name: string; serving: number; unit: string; cals: number; p: number; c: number; f: number; fiber?: number; sodium?: number; potassium?: number; calcium?: number; iron?: number; magnesium?: number; zinc?: number }, mealName: string) => {
     addFood({
@@ -152,13 +158,33 @@ export function NutritionView() {
             </button>
           ))}
         </div>
-        <Input
-          placeholder="Search chicken, rice, whey…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        {query && (
-          <div className="mt-2 overflow-hidden rounded-xl border border-border">
+        <div className="flex gap-2">
+          <Input
+            className="flex-1"
+            placeholder="Search chicken, rice, whey…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <Button variant="primary" onClick={() => setScanning(true)}>
+            <ScanLine className="size-4" /> Scan
+          </Button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-2 text-xs font-bold text-accent-text"
+        >
+          {showAll ? "Hide" : `Browse all ${library.length} foods`}
+        </button>
+
+        {(query || showAll) && (
+          <div className="mt-2 max-h-64 overflow-y-auto rounded-xl border border-border">
+            {hits.length === 0 && (
+              <div className="px-3 py-4 text-center text-xs text-faint">
+                No match — scan a barcode or add it by hand below.
+              </div>
+            )}
             {hits.map((f) => (
               <button
                 key={f.name}
@@ -270,6 +296,33 @@ export function NutritionView() {
       <p className="px-1 text-[0.7rem] text-faint">
         Goals: {goals.cals} kcal · P {goals.protein} · C {goals.carbs} · F {goals.fat}. Units {settings.unit}.
       </p>
+
+      {scanning && (
+        <BarcodeScanner
+          onClose={() => setScanning(false)}
+          onFound={(hit) => {
+            addFood({
+              name: hit.name,
+              serving: hit.serving,
+              unit: "g",
+              cals: hit.cals,
+              p: hit.p,
+              c: hit.c,
+              f: hit.f,
+              fiber: hit.fiber,
+              sodium: 0,
+              potassium: 0,
+              calcium: 0,
+              iron: 0,
+              magnesium: 0,
+              zinc: 0,
+              meal,
+            });
+            toast.success(`Added ${hit.name}`);
+            setScanning(false);
+          }}
+        />
+      )}
     </div>
   );
 }

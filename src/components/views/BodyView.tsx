@@ -22,7 +22,7 @@ const SITES = [
   { key: "calf", label: "Calf" },
 ];
 
-type BodyTab = "weight" | "sleep" | "measure" | "habits" | "creatine";
+type BodyTab = "weight" | "sleep" | "measure" | "creatine";
 
 export function BodyView() {
   const [tab, setTab] = useState<BodyTab>("weight");
@@ -30,7 +30,6 @@ export function BodyView() {
     { id: "weight", label: "Weight", icon: Scale },
     { id: "sleep", label: "Sleep", icon: Moon },
     { id: "measure", label: "Tape", icon: Ruler },
-    { id: "habits", label: "Habits", icon: Target },
     { id: "creatine", label: "Creatine", icon: Pill },
   ];
   return (
@@ -58,7 +57,6 @@ export function BodyView() {
       {tab === "weight" && <WeightPanel />}
       {tab === "sleep" && <SleepPanel />}
       {tab === "measure" && <MeasurePanel />}
-      {tab === "habits" && <HabitsPanel />}
       {tab === "creatine" && <CreatinePanel />}
     </div>
   );
@@ -259,86 +257,6 @@ function MeasurePanel() {
         Save
       </Button>
     </Card>
-  );
-}
-
-function HabitsPanel() {
-  const habits = useSoma((s) => s.habits);
-  const toggleHabit = useSoma((s) => s.toggleHabit);
-  const addHabit = useSoma((s) => s.addHabit);
-  const removeHabit = useSoma((s) => s.removeHabit);
-  const activeDate = useSoma((s) => s.activeDate);
-  const [name, setName] = useState("");
-  const today = parseLocalDateKey(activeDate);
-
-  return (
-    <>
-      {habits.map((h) => {
-        const done = !!h.history[activeDate];
-        const week = Array.from({ length: 7 }, (_, i) => {
-          const d = addDays(startOfWeek(today), i);
-          const key = getLocalDateKey(d);
-          return { key, done: !!h.history[key] };
-        });
-        const weekDone = week.filter((d) => d.done).length;
-        return (
-          <Card key={h.id}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="font-display text-sm font-bold">{h.name}</div>
-                <div className="text-xs text-muted">{h.desc}</div>
-              </div>
-              <button
-                type="button"
-                onClick={() => toggleHabit(h.id)}
-                className={cn(
-                  "flex size-11 items-center justify-center rounded-full border",
-                  done ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface-2 text-faint",
-                )}
-                aria-label={done ? "Uncheck habit" : "Complete habit"}
-              >
-                <Check className="size-5" />
-              </button>
-            </div>
-            <div className="mt-3 flex gap-1.5">
-              {week.map((d) => (
-                <button
-                  key={d.key}
-                  type="button"
-                  onClick={() => toggleHabit(h.id, d.key)}
-                  className={cn("h-6 flex-1 rounded-md", d.done ? "bg-accent" : "bg-surface-3")}
-                  aria-label={d.key}
-                />
-              ))}
-            </div>
-            <div className="mt-2 flex items-center justify-between text-[0.7rem] text-faint">
-              <span>
-                {weekDone}/7 this week · goal {h.goalDaysPerWeek}
-              </span>
-              <button type="button" className="text-danger" onClick={() => removeHabit(h.id)}>
-                Remove
-              </button>
-            </div>
-          </Card>
-        );
-      })}
-      <Card>
-        <CardTitle>New habit</CardTitle>
-        <div className="flex gap-2">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Walk 8k steps" />
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (!name.trim()) return;
-              addHabit({ name: name.trim(), desc: "", color: "#d3fd50", goalDaysPerWeek: 7 });
-              setName("");
-            }}
-          >
-            Add
-          </Button>
-        </div>
-      </Card>
-    </>
   );
 }
 
