@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Link2, Plus, Redo2, Search, Timer, Trash2, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
+import { PlateLoading } from "@/components/PlateLoading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -467,6 +468,8 @@ export function WorkoutView() {
                 {target.diffTier}
               </Badge>
             </div>
+
+            <PlateLoading exercise={ex} targetWeight={target.weight} unit={settings.unit} />
 
             {alts.length > 0 && (
               <div className="rounded-xl border border-dashed border-warn/40 bg-surface-2 p-2">
