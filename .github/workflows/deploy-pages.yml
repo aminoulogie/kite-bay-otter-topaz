@@ -25,77 +25,77 @@ jobs:
           REPO: ${{ github.event.repository.name }}
         run: |
           set -euo pipefail
-          OUT=".vercel/output/static"
-          BASE="/${REPO}"
-          python3 - <<'PY'
-          import pathlib, os
-          base = "/" + os.environ["REPO"]
-          assets = pathlib.Path(".vercel/output/static/assets")
+          python3 <<'PY'
+          import os, pathlib
+          repo = os.environ["REPO"]
+          base = "/" + repo
+          out = pathlib.Path(".vercel/output/static")
+          assets = out / "assets"
           for p in assets.glob("*.js"):
               text = p.read_text(encoding="utf-8")
               patched = text.replace("basepath:``", f"basepath:`{base}`").replace('basepath:""', f'basepath:"{base}"')
-              patched = patched.replace(
-                  "e.stores.ids.get().length||await Qn(e)",
-                  "0",
-              )
+              patched = patched.replace("e.stores.ids.get().length||await Qn(e)", "0")
               if patched != text:
                   p.write_text(patched, encoding="utf-8")
-                  print(f"patched {p.name}")
-          PY
-          JS=$(ls -1 "$OUT/assets"/index-*.js | head -n1 | xargs -n1 basename)
-          CSS=$(ls -1 "$OUT/assets"/styles-*.css | head -n1 | xargs -n1 basename)
-          cat > "$OUT/index.html" <<EOF
-          <!doctype html>
-          <html lang="en">
+                  print("patched", p.name)
+          js = next(assets.glob("index-*.js")).name
+          css = next(assets.glob("styles-*.css")).name
+          html = f"""<!doctype html>
+          <html lang=\"en\">
             <head>
-              <meta charset="utf-8" />
-              <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-              <meta name="theme-color" content="#0b0c10" />
-              <meta name="apple-mobile-web-app-capable" content="yes" />
-              <meta name="apple-mobile-web-app-title" content="SOMA" />
-              <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+              <meta charset=\"utf-8\" />
+              <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\" />
+              <meta name=\"theme-color\" content=\"#0b0c10\" />
+              <meta name=\"apple-mobile-web-app-capable\" content=\"yes\" />
+              <meta name=\"apple-mobile-web-app-title\" content=\"SOMA\" />
+              <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black\" />
               <title>SOMA</title>
-              <link rel="manifest" href="${BASE}/__grok/manifest.webmanifest" />
-              <link rel="apple-touch-icon" href="${BASE}/__grok/icon-180.png" />
-              <link rel="icon" href="${BASE}/favicon.svg" type="image/svg+xml" />
-              <link rel="stylesheet" href="${BASE}/assets/${CSS}" />
-              <link rel="preconnect" href="https://fonts.googleapis.com" />
-              <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-              <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Manrope:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap" />
+              <link rel=\"manifest\" href=\"{base}/__grok/manifest.webmanifest\" />
+              <link rel=\"apple-touch-icon\" href=\"{base}/__grok/icon-180.png\" />
+              <link rel=\"icon\" href=\"{base}/favicon.svg\" type=\"image/svg+xml\" />
+              <link rel=\"stylesheet\" href=\"{base}/assets/{css}\" />
+              <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />
+              <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin />
+              <link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Manrope:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap\" />
             </head>
-            <body class="antialiased" style="margin:0;background:#0b0c10;color:#eceef1">
+            <body class=\"antialiased\" style=\"margin:0;background:#0b0c10;color:#eceef1\">
               <script>
-                window.$_TSR = window.$_TSR || {
+                window.TSR_BOOT = true;
+                window['$_TSR'] = window['$_TSR'] || {{
                   buffer: [],
                   initialized: false,
-                  h: function () {},
-                  router: { manifest: { routes: {} }, matches: [] }
-                };
+                  h: function () {{}},
+                  router: {{ manifest: {{ routes: {{}} }}, matches: [] }}
+                }};
               </script>
-              <script type="module" src="${BASE}/assets/${JS}"></script>
+              <script type=\"module\" src=\"{base}/assets/{js}\"></script>
             </body>
           </html>
-          EOF
-          cp "$OUT/index.html" "$OUT/404.html"
-          mkdir -p "$OUT/__grok"
-          cat > "$OUT/__grok/manifest.webmanifest" <<EOF
-          {
-            "name": "SOMA",
-            "short_name": "SOMA",
-            "id": "${BASE}/",
-            "start_url": "${BASE}/",
-            "scope": "${BASE}/",
-            "display": "standalone",
-            "background_color": "#0b0c10",
-            "theme_color": "#0b0c10",
-            "icons": [
-              { "src": "${BASE}/__grok/icon-180.png", "sizes": "180x180", "type": "image/png" },
-              { "src": "${BASE}/icon-192.png", "sizes": "192x192", "type": "image/png" },
-              { "src": "${BASE}/icon-512.png", "sizes": "512x512", "type": "image/png" }
+          """
+          (out / "index.html").write_text(html, encoding="utf-8")
+          (out / "404.html").write_text(html, encoding="utf-8")
+          grok = out / "__grok"
+          grok.mkdir(parents=True, exist_ok=True)
+          (grok / "manifest.webmanifest").write_text(
+              f"""{{
+            \"name\": \"SOMA\",
+            \"short_name\": \"SOMA\",
+            \"id\": \"{base}/\",
+            \"start_url\": \"{base}/\",
+            \"scope\": \"{base}/\",
+            \"display\": \"standalone\",
+            \"background_color\": \"#0b0c10\",
+            \"theme_color\": \"#0b0c10\",
+            \"icons\": [
+              {{ \"src\": \"{base}/__grok/icon-180.png\", \"sizes\": \"180x180\", \"type\": \"image/png\" }},
+              {{ \"src\": \"{base}/icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\" }},
+              {{ \"src\": \"{base}/icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\" }}
             ]
-          }
-          EOF
-          echo "Staged $JS $CSS at $BASE"
+          }}\n""",
+              encoding="utf-8",
+          )
+          print("Staged", js, css, "at", base)
+          PY
 
       - uses: actions/configure-pages@v5
 
