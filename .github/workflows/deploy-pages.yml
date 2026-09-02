@@ -1,0 +1,123 @@
+name: Deploy Pages PWA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        env:
+          PWA_BASE: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      - name: Stage static PWA for Pages
+        env:
+          REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          OUT=".vercel/output/static"
+          if [ ! -d "$OUT/assets" ]; then
+            echo "Build did not emit $OUT/assets" >&2
+            ls -la .vercel/output || true
+            exit 1
+          fi
+          BASE="/${REPO}"
+          JS=$(ls -1 "$OUT/assets"/index-*.js | head -n1 | xargs -n1 basename)
+          CSS=$(ls -1 "$OUT/assets"/styles-*.css | head -n1 | xargs -n1 basename)
+          if [ -z "$JS" ] || [ -z "$CSS" ]; then
+            echo "Missing hashed assets" >&2
+            ls -la "$OUT/assets" >&2
+            exit 1
+          fi
+          cat > "$OUT/index.html" <<EOF
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+              <meta name="theme-color" content="#000000" />
+              <meta name="apple-mobile-web-app-title" content="SOMA" />
+              <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+              <title>SOMA</title>
+              <base href="${BASE}/" />
+              <link rel="manifest" href="${BASE}/__grok/manifest.webmanifest" />
+              <link rel="apple-touch-icon" href="${BASE}/__grok/icon-180.png" />
+              <link rel="icon" href="${BASE}/favicon.svg" type="image/svg+xml" />
+              <link rel="stylesheet" href="${BASE}/assets/${CSS}" />
+            </head>
+            <body>
+              <script type="module" src="${BASE}/assets/${JS}"></script>
+            </body>
+          </html>
+          EOF
+          cp "$OUT/index.html" "$OUT/404.html"
+          mkdir -p "$OUT/__grok"
+          cat > "$OUT/__grok/manifest.webmanifest" <<EOF
+          {
+            "name": "SOMA",
+            "short_name": "SOMA",
+            "id": "${BASE}/",
+            "start_url": "${BASE}/",
+            "scope": "${BASE}/",
+            "display": "standalone",
+            "background_color": "#000000",
+            "theme_color": "#000000",
+            "icons": [
+              {
+                "src": "${BASE}/__grok/icon-180.png",
+                "sizes": "180x180",
+                "type": "image/png"
+              },
+              {
+                "src": "${BASE}/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png"
+              },
+              {
+                "src": "${BASE}/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png"
+              }
+            ]
+          }
+          EOF
+          echo "Staged $OUT with $JS and $CSS"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .vercel/output/static
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
