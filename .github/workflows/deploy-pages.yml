@@ -20,19 +20,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install
-        run: npm ci
-
-      - name: Build
-        env:
-          PWA_BASE: /${{ github.event.repository.name }}/
-        run: npm run build
-
       - name: Stage static PWA for Pages
         env:
           REPO: ${{ github.event.repository.name }}
@@ -40,18 +27,23 @@ jobs:
           set -euo pipefail
           OUT=".vercel/output/static"
           if [ ! -d "$OUT/assets" ]; then
-            echo "Build did not emit $OUT/assets" >&2
-            ls -la .vercel/output || true
+            echo "Missing $OUT/assets" >&2
             exit 1
           fi
           BASE="/${REPO}"
+          python3 - <<'PY'
+          import pathlib, re, os
+          base = "/" + os.environ["REPO"]
+          assets = pathlib.Path(".vercel/output/static/assets")
+          for p in assets.glob("*.js"):
+              text = p.read_text(encoding="utf-8")
+              patched = text.replace("basepath:``", f"basepath:`{base}`").replace('basepath:""', f'basepath:"{base}"')
+              if patched != text:
+                  p.write_text(patched, encoding="utf-8")
+                  print(f"patched basepath in {p.name}")
+          PY
           JS=$(ls -1 "$OUT/assets"/index-*.js | head -n1 | xargs -n1 basename)
           CSS=$(ls -1 "$OUT/assets"/styles-*.css | head -n1 | xargs -n1 basename)
-          if [ -z "$JS" ] || [ -z "$CSS" ]; then
-            echo "Missing hashed assets" >&2
-            ls -la "$OUT/assets" >&2
-            exit 1
-          fi
           cat > "$OUT/index.html" <<EOF
           <!doctype html>
           <html lang="en">
@@ -62,7 +54,6 @@ jobs:
               <meta name="apple-mobile-web-app-title" content="SOMA" />
               <meta name="apple-mobile-web-app-status-bar-style" content="black" />
               <title>SOMA</title>
-              <base href="${BASE}/" />
               <link rel="manifest" href="${BASE}/__grok/manifest.webmanifest" />
               <link rel="apple-touch-icon" href="${BASE}/__grok/icon-180.png" />
               <link rel="icon" href="${BASE}/favicon.svg" type="image/svg+xml" />
@@ -104,7 +95,7 @@ jobs:
             ]
           }
           EOF
-          echo "Staged $OUT with $JS and $CSS"
+          echo "Staged $JS $CSS at $BASE"
 
       - uses: actions/configure-pages@v5
 
