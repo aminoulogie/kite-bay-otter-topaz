@@ -5,6 +5,11 @@ name: Build iOS IPA
 # runner time, so it should not fire on every push.
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Marketing version, e.g. 0.1.2 (defaults to 0.0.<run number>)"
+        required: false
+        type: string
   push:
     tags: ["ios-v*"]
 
@@ -20,6 +25,33 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      # Every build gets its own version so installing it UPGRADES the app that
+      # is already on the phone instead of looking like the same build. The
+      # bundle id never changes, which is what keeps logs, habits and photos
+      # across the upgrade — a fresh install under a new id would start empty.
+      #
+      # CFBundleVersion must increase monotonically for iOS to treat a build as
+      # newer, so it is the run number rather than anything hand-maintained.
+      - name: Resolve version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            V="$INPUT_VERSION"
+          elif [ "${GITHUB_REF}" != "${GITHUB_REF#refs/tags/ios-v}" ]; then
+            V="${GITHUB_REF#refs/tags/ios-v}"
+          else
+            V="0.0.${GITHUB_RUN_NUMBER}"
+          fi
+          case "$V" in
+            *[!0-9.]*|""|.*|*.) echo "FATAL: version '$V' is not digits and dots."; exit 1 ;;
+          esac
+          echo "marketing=$V" >> "$GITHUB_OUTPUT"
+          echo "build=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Building SOMA $V (build $GITHUB_RUN_NUMBER)"
 
       - name: Install
         run: npm install --no-audit --no-fund
@@ -54,6 +86,8 @@ jobs:
             -sdk iphoneos \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \
             -destination 'generic/platform=iOS' \
+            MARKETING_VERSION="${{ steps.ver.outputs.marketing }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.ver.outputs.build }}" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -63,6 +97,8 @@ jobs:
       # xcodebuild -exportArchive needs a signing identity, so the .ipa is
       # assembled by hand: an .ipa is just a zip with the .app inside Payload/.
       - name: Package .ipa
+        env:
+          V: ${{ steps.ver.outputs.marketing }}
         run: |
           set -euo pipefail
           APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
@@ -71,15 +107,27 @@ jobs:
             ls -R "$RUNNER_TEMP/App.xcarchive/Products" || true
             exit 1
           fi
+
+          # Assert the override actually landed. A silently un-versioned build
+          # would install as "the same app again" and defeat the whole point.
+          BUILT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")
+          BUILT_N=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist")
+          BUNDLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist")
+          echo "Built version $BUILT ($BUILT_N), bundle $BUNDLE"
+          if [ "$BUILT" != "$V" ]; then
+            echo "FATAL: expected version $V in the built app but found $BUILT."
+            exit 1
+          fi
+
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
           cd "$RUNNER_TEMP"
-          zip -qry SOMA-unsigned.ipa Payload
-          echo "Built $(du -h SOMA-unsigned.ipa | cut -f1) unsigned ipa"
+          zip -qry "SOMA-$V.ipa" Payload
+          echo "Built $(du -h "SOMA-$V.ipa" | cut -f1) unsigned ipa"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SOMA-unsigned-ipa
-          path: ${{ runner.temp }}/SOMA-unsigned.ipa
+          name: SOMA-${{ steps.ver.outputs.marketing }}-ipa
+          path: ${{ runner.temp }}/SOMA-${{ steps.ver.outputs.marketing }}.ipa
           if-no-files-found: error
           retention-days: 30
