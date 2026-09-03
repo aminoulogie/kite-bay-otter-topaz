@@ -118,7 +118,10 @@ export function AppShell() {
 
   return (
     <div className="relative mx-auto min-h-dvh max-w-lg bg-bg pb-28">
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-bg/85 px-4 py-3 backdrop-blur-xl">
+      {/* The native webview fills the screen including the area behind the
+          status bar, so without the safe-area inset the clock, wifi and battery
+          sit on top of the header. Harmless in a browser, where the inset is 0. */}
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-bg/85 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-xl">
         <div className="flex min-w-0 items-center gap-2.5">
           {/* The swipe is not discoverable on its own, so the drawer also has
               a visible control. */}
@@ -150,7 +153,7 @@ export function AppShell() {
         <button
           type="button"
           onClick={() => setActiveDate(getLocalDateKey())}
-          className="sticky top-[57px] z-30 flex w-full items-center justify-between gap-2 border-b border-warn/30 bg-warn/15 px-4 py-1.5 text-[0.68rem] font-bold text-warn"
+          className="sticky top-0 z-20 flex w-full items-center justify-between gap-2 border-b border-warn/30 bg-warn/15 px-4 py-1.5 text-[0.68rem] font-bold text-warn"
         >
           <span className="truncate">Viewing {activeDate}</span>
           <span className="shrink-0 underline">Back to today</span>

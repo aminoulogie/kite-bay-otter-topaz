@@ -171,23 +171,23 @@ export function SettingsView() {
           />
         </Field>
         <div className="mt-3 flex items-center justify-between">
-          <span className="text-sm font-semibold">Auto rest timer</span>
+          <span className="min-w-0 pr-3 text-sm font-semibold">Auto rest timer</span>
           <Toggle on={settings.autoRest} onChange={(v) => patchSettings({ autoRest: v })} />
         </div>
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-sm font-semibold">Sounds</span>
+          <span className="min-w-0 pr-3 text-sm font-semibold">Sounds</span>
           <Toggle on={settings.sound} onChange={(v) => patchSettings({ sound: v })} />
         </div>
         <div className="mt-2 flex items-center justify-between">
-          <span className="text-sm font-semibold">Confetti on PRs</span>
+          <span className="min-w-0 pr-3 text-sm font-semibold">Confetti on PRs</span>
           <Toggle on={settings.confetti} onChange={(v) => patchSettings({ confetti: v })} />
         </div>
       </Card>
 
       <Card>
         <CardTitle>Nutrition</CardTitle>
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold">Auto protein from bodyweight</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="min-w-0 text-sm font-semibold">Auto protein from bodyweight</span>
           <Toggle on={settings.autoProteinTarget} onChange={(v) => patchSettings({ autoProteinTarget: v })} />
         </div>
         <Field label="Protein g / kg">
@@ -486,14 +486,19 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
       aria-checked={on}
       onClick={() => onChange(!on)}
       className={cn(
-        "relative h-7 w-12 rounded-full transition-colors",
+        // shrink-0: in a flex row with a long label the track was being
+        // squeezed narrower than its own knob.
+        "relative h-7 w-12 shrink-0 rounded-full transition-colors",
         on ? "bg-accent" : "bg-surface-3",
       )}
     >
       <span
         className={cn(
-          "absolute top-0.5 size-6 rounded-full bg-fg transition-transform",
-          on ? "translate-x-5" : "translate-x-0.5",
+          // 48px track - 24px knob - 2px gap = 22px of travel, which leaves an
+          // even 2px either side. translate-x-5 left 4px on the right and 2px
+          // on the left, so the knob never looked centred in either state.
+          "absolute left-0 top-0.5 size-6 rounded-full bg-fg transition-transform",
+          on ? "translate-x-[22px]" : "translate-x-0.5",
         )}
       />
     </button>

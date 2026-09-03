@@ -3,7 +3,7 @@
   "appName": "SOMA",
   "webDir": ".vercel/output/static",
   "ios": {
-    "contentInset": "never",
+    "contentInset": "always",
     "backgroundColor": "#0b0c10"
   },
   "server": {

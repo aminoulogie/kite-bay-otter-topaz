@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { BodyHeatmap } from "@/components/BodyHeatmap";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -223,8 +224,21 @@ function HeatmapPanel() {
   const list = MUSCLE_REGIONS.filter((m) => m.view === view);
   const active = sel ? map[sel] : null;
 
+  // The anatomical map owns its own front/back switch, so the list below
+  // follows whichever side it is showing rather than duplicating the control.
+  const recoveryByKey = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(map)) out[k] = v.recovery;
+    return out;
+  }, [map]);
+
   return (
     <>
+      <Card>
+        <CardTitle>Muscle recovery</CardTitle>
+        <BodyHeatmap readiness={recoveryByKey} />
+      </Card>
+
       <div className="flex gap-1 rounded-full border border-border bg-surface p-1">
         {(["front", "back"] as const).map((v) => (
           <button
