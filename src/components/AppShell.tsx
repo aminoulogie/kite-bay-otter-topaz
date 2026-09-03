@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Toaster } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
+import { getLocalDateKey } from "@/lib/soma";
 import { useEdgeSwipe } from "@/lib/use-edge-swipe";
 import { BodyView } from "@/components/views/BodyView";
 import { HabitsView } from "@/components/views/HabitsView";
@@ -40,6 +41,8 @@ export function AppShell() {
   const tab = useSoma((s) => s.tab);
   const setTab = useSoma((s) => s.setTab);
   const settings = useSoma((s) => s.settings);
+  const activeDate = useSoma((s) => s.activeDate);
+  const setActiveDate = useSoma((s) => s.setActiveDate);
   const ensureSeed = useSoma((s) => s.ensureSeed);
   const markHydrated = useSoma((s) => s.markHydrated);
 
@@ -107,6 +110,19 @@ export function AppShell() {
           Local
         </div>
       </header>
+
+      {/* Selecting a past day changes what every tab reads. Without a standing
+          indicator that is invisible, and the app looks like it ignored the tap. */}
+      {activeDate !== getLocalDateKey() && (
+        <button
+          type="button"
+          onClick={() => setActiveDate(getLocalDateKey())}
+          className="sticky top-[57px] z-30 flex w-full items-center justify-between gap-2 border-b border-warn/30 bg-warn/15 px-4 py-1.5 text-[0.68rem] font-bold text-warn"
+        >
+          <span className="truncate">Viewing {activeDate}</span>
+          <span className="shrink-0 underline">Back to today</span>
+        </button>
+      )}
 
       <DateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 

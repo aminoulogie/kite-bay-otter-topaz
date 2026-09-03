@@ -18,7 +18,10 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide",
+        // A badge is a label, not a paragraph. Without shrink-0 + nowrap a flex
+        // row squeezes it until it wraps mid-word ("ME / 1 (W / • BA"), which
+        // reads as clipped text rather than a tag.
+        "inline-flex shrink-0 items-center whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide",
         tones[tone],
         className,
       )}

@@ -46,6 +46,7 @@ export function WorkoutView() {
   const resumeFinished = useSoma((s) => s.resumeFinished);
   const allExercises = useSoma((s) => s.allExercises);
   const logReadiness = useSoma((s) => s.logReadiness);
+  const setActiveDate = useSoma((s) => s.setActiveDate);
   const rootRef = useRef<HTMLDivElement>(null);
   const routines = routinesFn();
 
@@ -134,6 +135,70 @@ export function WorkoutView() {
     }
   };
 
+  // Picking a date in the drawer has to change this tab too, otherwise the
+  // Train screen silently ignores the selection and keeps showing the live
+  // session. A past day is a read-only recap of what was logged then; the
+  // live session is only ever today's.
+  const todayKey = getLocalDateKey();
+  if (activeDate !== todayKey) {
+    const past = history[activeDate];
+    return (
+      <div className="space-y-3 pb-4">
+        <Card className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <Badge>Viewing {activeDate}</Badge>
+            <h2 className="mt-2 truncate font-display text-lg font-extrabold tracking-tight">
+              {past ? past.split : "No session logged"}
+            </h2>
+          </div>
+          <Button variant="primary" onClick={() => setActiveDate(todayKey)}>
+            Today
+          </Button>
+        </Card>
+
+        {past ? (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <Stat label="Duration" value={past.durationFormatted} />
+              <Stat label="Burn" value={`${past.caloriesBurned} kcal`} />
+              <Stat label="Volume" value={past.totalVol.toLocaleString()} />
+              <Stat label="Sets" value={String(past.totalSets)} />
+            </div>
+            {past.exercises.map((ex, i) => (
+              <Card key={`${ex.name}-${i}`}>
+                <div className="mb-2 font-bold">{ex.name}</div>
+                {ex.sets.map((st, j) => (
+                  <div
+                    key={j}
+                    className="flex justify-between border-b border-border py-1.5 text-sm last:border-0"
+                  >
+                    <span className="text-muted">
+                      {st.type === "warmup" ? "Warm-up" : st.type === "dropset" ? "Drop" : `Set ${j + 1}`}
+                      {" · "}
+                      <b className="text-fg">{st.weight || 0}</b> × <b className="text-fg">{st.reps || 0}</b>
+                    </span>
+                    <span className={st.done ? "text-accent-text" : "text-faint"}>
+                      {st.done ? "Done" : "Skipped"}
+                    </span>
+                  </div>
+                ))}
+              </Card>
+            ))}
+          </>
+        ) : (
+          <Card className="py-10 text-center">
+            <Timer className="mx-auto mb-2 size-8 text-faint" />
+            <div className="font-display text-lg font-bold">Nothing trained</div>
+            <p className="mx-auto mt-1 max-w-xs text-sm text-muted">
+              No session was logged on {activeDate}. Food, sleep and habits for that
+              day are still on their own tabs.
+            </p>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
   if (live.finished) {
     const f = live.finished;
     return (
@@ -182,8 +247,10 @@ export function WorkoutView() {
     <div ref={rootRef} className="relative space-y-3 pb-4">
       <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_18%,transparent),transparent_55%),var(--color-surface)]">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <Badge tone="accent">Scheduled · {getLocalDateKey()}</Badge>
+          {/* min-w-0 lets a long split name wrap instead of forcing the row
+              wider than the card and squeezing the badge beside it. */}
+          <div className="min-w-0 flex-1">
+            <Badge tone="accent">Scheduled · {activeDate}</Badge>
             <h1 className="mt-2 font-display text-xl font-extrabold tracking-tight">{live.split}</h1>
             <p className="mt-1 text-xs text-muted">
               {proj.phase} · {proj.repScheme}
