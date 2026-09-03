@@ -113,6 +113,16 @@ export async function thumbsFor(habitId: string): Promise<Map<string, Blob>> {
   return out;
 }
 
+/** Every stored photo — the backup needs the blobs themselves, not just dates. */
+export function allPhotos(): Promise<HabitPhoto[]> {
+  return tx<HabitPhoto[]>("readonly", (s) => s.getAll());
+}
+
+/** Writes a photo row straight back, used when restoring a backup. */
+export async function putPhotoRecord(row: HabitPhoto): Promise<void> {
+  await tx("readwrite", (s) => s.put(row));
+}
+
 /** Every date that has a photo, for any habit — used to badge the calendar. */
 export async function allPhotoDates(): Promise<Set<string>> {
   const rows = await tx<HabitPhoto[]>("readonly", (s) => s.getAll());

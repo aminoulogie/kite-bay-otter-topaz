@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
+import { buildBackup, parseBackup, restorePhotos, saveBackupFile, type BackupSummary } from "@/lib/backup";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +24,8 @@ export function SettingsView() {
   const [rtName, setRtName] = useState("");
   const [rtList, setRtList] = useState<{ name: string }[]>([]);
   const [addEx, setAddEx] = useState("");
+  const [pending, setPending] = useState<{ summary: BackupSummary; apply: () => Promise<void> } | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const openEdit = (name: string) => {
     setEditing(name);
@@ -30,15 +33,47 @@ export function SettingsView() {
     setRtList(SomaIntelligenceEngine.normalizeRoutine(routines[name] || []));
   };
 
-  const download = () => {
-    const blob = new Blob([exportJson()], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `soma-backup.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success("Backup downloaded");
+  const download = async () => {
+    setBusy(true);
+    try {
+      const backup = await buildBackup(JSON.parse(exportJson()));
+      const json = JSON.stringify(backup);
+      const name = `soma-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      const how = await saveBackupFile(json, name);
+      const mb = (json.length / 1048576).toFixed(1);
+      toast.success(
+        how === "shared"
+          ? `Backup ready to save (${mb} MB, ${backup.photos.length} photos)`
+          : `Downloaded ${name} (${mb} MB)`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not build the backup.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const chooseRestore = async (file: File) => {
+    const result = parseBackup(await file.text());
+    if (!result.ok) {
+      toast.error(result.reason);
+      return;
+    }
+    // Nothing is overwritten until the summary has been seen and confirmed:
+    // restoring replaces every log on the device.
+    setPending({
+      summary: result.summary,
+      apply: async () => {
+        if (!importJson(JSON.stringify(result.backup.data))) {
+          toast.error("That backup could not be applied.");
+          return;
+        }
+        const n = await restorePhotos(result.backup.photos);
+        toast.success(
+          `Restored ${result.summary.sessions} sessions and ${n} photo${n === 1 ? "" : "s"}`,
+        );
+      },
+    });
   };
 
   return (
@@ -280,21 +315,25 @@ export function SettingsView() {
 
       <Card>
         <CardTitle>Data</CardTitle>
-        <p className="mb-3 text-xs text-muted">Everything lives on this device. Export a JSON backup before you wipe.</p>
+        <p className="mb-3 text-xs text-muted">
+          Everything lives on this device only. A backup includes your logs, habits and
+          habit photos — it is the only copy if this phone is lost or Safari clears its data.
+        </p>
         <div className="flex flex-col gap-2">
-          <Button onClick={download}>Download backup</Button>
+          <Button variant="primary" disabled={busy} onClick={() => void download()}>
+            {busy ? "Preparing…" : "Save backup"}
+          </Button>
           <label className="flex h-11 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-2 text-sm font-semibold">
             Restore backup
             <input
               type="file"
-              accept="application/json"
+              accept="application/json,.json"
               className="hidden"
-              onChange={async (e) => {
+              onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (!file) return;
-                const text = await file.text();
-                if (importJson(text)) toast.success("Restored");
-                else toast.error("Invalid backup");
+                // Reset the input so picking the same file twice still fires.
+                e.target.value = "";
+                if (file) void chooseRestore(file);
               }}
             />
           </label>
@@ -311,6 +350,43 @@ export function SettingsView() {
           </Button>
         </div>
       </Card>
+
+      {pending && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-bg/85 p-4 sm:items-center">
+          <Card className="w-full max-w-md space-y-3">
+            <CardTitle>Restore this backup?</CardTitle>
+            <p className="text-xs text-muted">
+              Taken {new Date(pending.summary.exportedAt).toLocaleString()}. This replaces
+              everything currently on this device.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Stat label="Sessions" value={pending.summary.sessions} />
+              <Stat label="Logged days" value={pending.summary.loggedDays} />
+              <Stat label="Habits" value={pending.summary.habits} />
+              <Stat label="Photos" value={pending.summary.photos} />
+            </div>
+            <div className="flex gap-2">
+              <Button className="flex-1" onClick={() => setPending(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                className="flex-1"
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  void pending.apply().finally(() => {
+                    setBusy(false);
+                    setPending(null);
+                  });
+                }}
+              >
+                Replace
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       <p className="px-1 text-center text-[0.7rem] text-faint">
         SOMA Smart Coach · converted from the Obsidian suite · data never leaves this device
@@ -348,5 +424,14 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
         )}
       />
     </button>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-border bg-surface-2 p-2.5">
+      <div className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">{label}</div>
+      <div className="tabular font-display text-lg font-extrabold">{value}</div>
+    </div>
   );
 }
