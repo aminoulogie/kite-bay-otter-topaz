@@ -1,0 +1,85 @@
+name: Build iOS IPA
+
+# Xcode only runs on macOS, and there is no Mac here — GitHub's macos runners
+# are the build machine. Manual trigger by default: this takes minutes and burns
+# runner time, so it should not fire on every push.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["ios-v*"]
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Build web bundle
+        run: npx vite build
+
+      # Root paths, no service worker: a Capacitor webview serves the bundle
+      # from the root of capacitor://localhost, and the files are already local
+      # so a worker would only add a second, staler cache in front of them.
+      - name: Stage for native
+        run: python3 scripts/stage_static.py --base "" --no-sw
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Install pods
+        working-directory: ios/App
+        run: pod install --repo-update
+
+      # Built WITHOUT a signing identity on purpose. This repo holds no Apple
+      # certificates, and it does not need to: AltStore and Sideloadly sign the
+      # .ipa with your own free Apple ID at install time, which is the only way
+      # a free account can install anything anyway.
+      - name: Archive (unsigned)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            archive
+
+      # xcodebuild -exportArchive needs a signing identity, so the .ipa is
+      # assembled by hand: an .ipa is just a zip with the .app inside Payload/.
+      - name: Package .ipa
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
+          if [ ! -d "$APP" ]; then
+            echo "FATAL: no App.app in the archive — the build produced nothing to package."
+            ls -R "$RUNNER_TEMP/App.xcarchive/Products" || true
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP"
+          zip -qry SOMA-unsigned.ipa Payload
+          echo "Built $(du -h SOMA-unsigned.ipa | cut -f1) unsigned ipa"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SOMA-unsigned-ipa
+          path: ${{ runner.temp }}/SOMA-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30

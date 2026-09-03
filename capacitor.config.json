@@ -1,0 +1,12 @@
+{
+  "appId": "io.github.aminoulogie.soma",
+  "appName": "SOMA",
+  "webDir": ".vercel/output/static",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0b0c10"
+  },
+  "server": {
+    "iosScheme": "capacitor"
+  }
+}
