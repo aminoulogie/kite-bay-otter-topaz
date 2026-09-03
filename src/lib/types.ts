@@ -128,7 +128,15 @@ export interface Settings {
 }
 
 export interface LiveSession {
+  /** When the session object was created — not what the timer measures. */
   startTime: number;
+  /**
+   * When the first set was actually completed. The workout clock runs from
+   * here, so time spent with the tab open before training does not count and
+   * a session left open overnight cannot report a 14-hour workout.
+   * Null until something is logged.
+   */
+  firstSetAt: number | null;
   split: string;
   exercises: SessionExercise[];
   undoStack: string[];

@@ -74,6 +74,10 @@ export function DateDrawer({ open, onClose }: { open: boolean; onClose: () => vo
           open ? "translate-x-0" : "-translate-x-full",
         )}
         aria-hidden={!open}
+        // A closed drawer is only moved off-screen, so its buttons stay in the
+        // tab order and remain clickable. `inert` takes the whole subtree out
+        // of focus, hit-testing and the accessibility tree while it is shut.
+        inert={!open}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3 pt-[max(12px,env(safe-area-inset-top))]">
           <div className="flex items-center gap-2">

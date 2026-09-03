@@ -44,16 +44,20 @@ export function AppShell() {
   const activeDate = useSoma((s) => s.activeDate);
   const setActiveDate = useSoma((s) => s.setActiveDate);
   const ensureSeed = useSoma((s) => s.ensureSeed);
+  const normalizeLive = useSoma((s) => s.normalizeLive);
   const markHydrated = useSoma((s) => s.markHydrated);
 
   useEffect(() => {
     const result = useSoma.persist.rehydrate();
     void Promise.resolve(result).then(() => {
       ensureSeed();
+      // Runs after rehydrate: a restored session can carry a clock that has
+      // been running since the day it was opened.
+      normalizeLive();
       markHydrated();
       setReady(true);
     });
-  }, [ensureSeed, markHydrated]);
+  }, [ensureSeed, markHydrated, normalizeLive]);
 
   useEffect(() => {
     if (!hydrated) return;

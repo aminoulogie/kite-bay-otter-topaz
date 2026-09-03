@@ -75,7 +75,9 @@ export function WorkoutView() {
     [history, now],
   );
 
-  const elapsed = Math.max(0, Math.floor((now - live.startTime) / 1000));
+  // Reads 00:00 until the first set is ticked, which is the truth: nothing
+  // has been trained yet.
+  const elapsed = live.firstSetAt ? Math.max(0, Math.floor((now - live.firstSetAt) / 1000)) : 0;
   const em = Math.floor(elapsed / 60);
   const es = elapsed % 60;
   const restLeft = live.restEndsAt ? Math.max(0, Math.ceil((live.restEndsAt - now) / 1000)) : 0;

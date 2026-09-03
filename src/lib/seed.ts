@@ -276,6 +276,7 @@ export function defaultSettings(): Settings {
 export function defaultLive(split: string) {
   return {
     startTime: Date.now(),
+    firstSetAt: null,
     split,
     exercises: [] as SessionExercise[],
     undoStack: [] as string[],

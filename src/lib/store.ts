@@ -62,6 +62,7 @@ export interface SomaStore {
   tab: TabId;
   markHydrated: () => void;
   ensureSeed: () => void;
+  normalizeLive: () => void;
   setTab: (tab: SomaStore["tab"]) => void;
   setActiveDate: (d: string) => void;
   patchSettings: (p: Partial<Settings>) => void;
@@ -125,6 +126,44 @@ export const useSoma = create<SomaStore>()(
       tab: "workout",
 
       markHydrated: () => set({ hydrated: true }),
+      /**
+       * Repairs a live session restored from storage.
+       *
+       * `live` is persisted, so a session opened days ago keeps ticking and
+       * reports something like 838:26 — and because duration feeds
+       * calculateCaloriesBurned, it inflates the burn it saves too.
+       *
+       * Nothing logged means the clock should never have been running. A
+       * session that does hold logged sets is kept (it is real work nobody
+       * asked to discard), but once it is more than 12 hours old its elapsed
+       * time is not a measurement of anything, so the clock is re-anchored to
+       * now rather than saving a fabricated duration.
+       */
+      normalizeLive: () => {
+        // activeDate is persisted, so after midnight the app would reopen on
+        // yesterday and greet you with a read-only recap. Looking back is a
+        // deliberate act via the drawer, not a state that should outlive the
+        // day it was chosen on.
+        const today = getLocalDateKey(new Date());
+        if (get().activeDate !== today) set({ activeDate: today });
+
+        const live = get().live;
+        if (live.finished) return;
+
+        const hasDone = live.exercises.some((ex) => ex.sets.some((s) => s.done));
+        const STALE_MS = 12 * 3600_000;
+        const anchor = live.firstSetAt ?? live.startTime;
+        const stale = Date.now() - anchor > STALE_MS;
+
+        if (!hasDone) {
+          set({ live: { ...live, startTime: Date.now(), firstSetAt: null } });
+          return;
+        }
+        if (stale || live.firstSetAt == null) {
+          set({ live: { ...live, startTime: Date.now(), firstSetAt: Date.now() } });
+        }
+      },
+
       ensureSeed: () => {
         if (get().seeded) return;
         const hist = seedHistory();
@@ -271,6 +310,7 @@ export const useSoma = create<SomaStore>()(
             exercises,
             finished: null,
             startTime: Date.now(),
+            firstSetAt: null,
           },
         });
       },
@@ -291,7 +331,11 @@ export const useSoma = create<SomaStore>()(
             sets: ex.sets.map((s, j) => (j === setIdx ? { ...s, ...patch } : s)),
           };
         });
-        set({ live: { ...get().live, exercises } });
+        // The clock starts when work starts, not when the screen opened.
+        const live = get().live;
+        const firstSetAt =
+          live.firstSetAt ?? (patch.done === true ? Date.now() : null);
+        set({ live: { ...live, exercises, firstSetAt } });
       },
       addSet: (exIdx, type = "normal") => {
         get().snapshot();
@@ -426,7 +470,8 @@ export const useSoma = create<SomaStore>()(
           const m = muscles[k]!;
           m.avgFail = m.sets ? m.avgFail / m.sets : 3;
         }
-        const elapsedMinutes = Math.max(1, Math.round((Date.now() - live.startTime) / 60000));
+        const clockFrom = live.firstSetAt ?? live.startTime;
+        const elapsedMinutes = Math.max(1, Math.round((Date.now() - clockFrom) / 60000));
         const avgIntensity = totalSets ? sumIntensity / totalSets : 3;
         const caloriesBurned = SomaIntelligenceEngine.calculateCaloriesBurned(
           elapsedMinutes,
@@ -435,7 +480,7 @@ export const useSoma = create<SomaStore>()(
           avgIntensity,
         );
         const mins = Math.floor(elapsedMinutes);
-        const secs = Math.round(((Date.now() - live.startTime) / 1000) % 60);
+        const secs = Math.round(((Date.now() - clockFrom) / 1000) % 60);
         const session: HistorySession = {
           timestamp: Date.now(),
           split: live.split,
