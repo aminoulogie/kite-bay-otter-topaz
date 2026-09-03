@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, ScanLine } from "lucide-react";
+import { Pencil, Plus, ScanLine, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { PortionSheet } from "@/components/PortionSheet";
@@ -25,6 +25,8 @@ export function NutritionView() {
   const addWater = useSoma((s) => s.addWater);
   const setWater = useSoma((s) => s.setWater);
   const updateFood = useSoma((s) => s.updateFood);
+  const addCustomFood = useSoma((s) => s.addCustomFood);
+  const removeCustomFood = useSoma((s) => s.removeCustomFood);
   const settings = useSoma((s) => s.settings);
 
   const [query, setQuery] = useState("");
@@ -223,64 +225,91 @@ export function NutritionView() {
           </div>
         )}
         <details className="mt-3">
-          <summary className="cursor-pointer text-xs font-bold text-muted">Quick custom item</summary>
-          <div className="mt-2 grid grid-cols-2 gap-2">
+          <summary className="cursor-pointer text-xs font-bold text-accent-text">
+            Create a new food
+          </summary>
+          <p className="mb-2 mt-2 text-[0.7rem] text-faint">
+            Enter the values per 100g, as printed on the label. It is saved to your
+            library so you can log it again at any portion.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
             <Input
+              className="col-span-2"
               placeholder="Name"
               value={custom.name}
               onChange={(e) => setCustom({ ...custom, name: e.target.value })}
             />
             <Input
-              type="number"
-              placeholder="kcal"
+              type="number" inputMode="decimal" placeholder="kcal /100g"
               value={custom.cals || ""}
               onChange={(e) => setCustom({ ...custom, cals: Number(e.target.value) })}
             />
             <Input
-              type="number"
-              placeholder="P"
+              type="number" inputMode="decimal" placeholder="Protein /100g"
               value={custom.p || ""}
               onChange={(e) => setCustom({ ...custom, p: Number(e.target.value) })}
             />
             <Input
-              type="number"
-              placeholder="C"
+              type="number" inputMode="decimal" placeholder="Carbs /100g"
               value={custom.c || ""}
               onChange={(e) => setCustom({ ...custom, c: Number(e.target.value) })}
             />
             <Input
-              type="number"
-              placeholder="F"
+              type="number" inputMode="decimal" placeholder="Fat /100g"
               value={custom.f || ""}
               onChange={(e) => setCustom({ ...custom, f: Number(e.target.value) })}
             />
-            <Button
-              variant="primary"
-              onClick={() => {
-                if (!custom.name) return;
-                addFood({
-                  name: custom.name,
-                  serving: custom.serving,
-                  unit: "g",
-                  cals: custom.cals,
-                  p: custom.p,
-                  c: custom.c,
-                  f: custom.f,
-                  fiber: 0,
-                  sodium: 0,
-                  potassium: 0,
-                  calcium: 0,
-                  iron: 0,
-                  magnesium: 0,
-                  zinc: 0,
-                  meal,
-                });
-                setCustom({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
-              }}
-            >
-              <Plus className="size-4" /> Add
-            </Button>
           </div>
+          <Button
+            variant="primary"
+            className="mt-2 w-full"
+            onClick={() => {
+              const name = custom.name.trim();
+              if (!name) {
+                toast.error("Give the food a name.");
+                return;
+              }
+              const food: FoodItem = {
+                name, serving: 100, unit: "g",
+                cals: custom.cals, p: custom.p, c: custom.c, f: custom.f,
+                fiber: 0, sodium: 0, potassium: 0, calcium: 0, iron: 0, magnesium: 0, zinc: 0,
+                meal,
+                per100: { cals: custom.cals, p: custom.p, c: custom.c, f: custom.f, fiber: 0 },
+              };
+              if (!addCustomFood(food)) {
+                toast.error(`"${name}" is already in your library.`);
+                return;
+              }
+              toast.success(`Saved ${name}`);
+              setCustom({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
+              // Straight into the portion sheet, since you almost always
+              // create a food because you are about to eat it.
+              setPortion({ mode: "add", meal, item: food });
+            }}
+          >
+            <Plus className="size-4" /> Save to library
+          </Button>
+
+          {customFoods.length > 0 && (
+            <div className="mt-3">
+              <div className="mb-1.5 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+                Your foods
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {customFoods.map((f) => (
+                  <button
+                    key={f.name}
+                    type="button"
+                    onClick={() => removeCustomFood(f.name)}
+                    className="flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-semibold text-muted"
+                  >
+                    <Trash2 className="size-3 text-danger" />
+                    <span className="max-w-32 truncate">{f.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </details>
       </Card>
 

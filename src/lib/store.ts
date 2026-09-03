@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   BASE_EXERCISE_DB,
+  BASE_FOOD_LIBRARY,
   DEFAULT_GOALS,
   ROUTINE_PRESETS,
   SomaIntelligenceEngine,
@@ -74,6 +75,8 @@ export interface SomaStore {
   addWater: (ml: number) => void;
   setWater: (ml: number) => void;
   updateFood: (idx: number, item: FoodItem) => void;
+  addCustomFood: (food: FoodItem) => boolean;
+  removeCustomFood: (name: string) => void;
   addCreatine: (g: number) => void;
   resetCreatine: () => void;
   logSleep: (hours: number, quality: number) => void;
@@ -268,6 +271,25 @@ export const useSoma = create<SomaStore>()(
         if (!items[idx]) return;
         items[idx] = item;
         get().patchDay(k, { items });
+      },
+      /**
+       * Saves a food to the personal library so it can be logged again.
+       * Stored per 100g, which is the basis the portion sheet scales from.
+       * Returns false on a name that already exists rather than creating a
+       * second entry you cannot tell apart in the picker.
+       */
+      addCustomFood: (food) => {
+        const name = food.name.trim();
+        if (!name) return false;
+        const taken = [...BASE_FOOD_LIBRARY, ...get().customFoods].some(
+          (f) => f.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (taken) return false;
+        set({ customFoods: [...get().customFoods, { ...food, name, serving: 100, unit: "g" }] });
+        return true;
+      },
+      removeCustomFood: (name) => {
+        set({ customFoods: get().customFoods.filter((f) => f.name !== name) });
       },
       addCreatine: (g) => {
         const k = get().activeDate;

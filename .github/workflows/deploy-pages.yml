@@ -102,7 +102,7 @@ jobs:
               <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black\" />
               <title>SOMA</title>
               <link rel=\"manifest\" href=\"{base}/__grok/manifest.webmanifest\" />
-              <link rel=\"apple-touch-icon\" href=\"{base}/__grok/icon-180.png\" />
+              <link rel=\"apple-touch-icon\" href=\"{base}/icon-192.png\" />
               <link rel=\"icon\" href=\"{base}/favicon.svg\" type=\"image/svg+xml\" />
               <link rel=\"stylesheet\" href=\"{base}/assets/{css}\" />
               <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\" />
@@ -120,6 +120,15 @@ jobs:
                 }};
               </script>
               <script type=\"module\" src=\"{base}/assets/{js}\"></script>
+              <script>
+                // Registered from the generated shell because only this step
+                // knows the Pages subpath the worker must be scoped to.
+                if ('serviceWorker' in navigator) {{
+                  addEventListener('load', function () {{
+                    navigator.serviceWorker.register('{base}/sw.js', {{ scope: '{base}/' }});
+                  }});
+                }}
+              </script>
             </body>
           </html>
           """
@@ -138,13 +147,96 @@ jobs:
             \"background_color\": \"#0b0c10\",
             \"theme_color\": \"#0b0c10\",
             \"icons\": [
-              {{ \"src\": \"{base}/__grok/icon-180.png\", \"sizes\": \"180x180\", \"type\": \"image/png\" }},
-              {{ \"src\": \"{base}/icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\" }},
+                            {{ \"src\": \"{base}/icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\" }},
               {{ \"src\": \"{base}/icon-512.png\", \"sizes\": \"512x512\", \"type\": \"image/png\" }}
             ]
           }}\n""",
               encoding="utf-8",
           )
+          # ---------------------------------------------------------------
+          # Service worker.
+          #
+          # This is a gym app: concrete walls, no signal. Without a worker the
+          # installed app is a white screen the moment the network drops.
+          #
+          # Generated here rather than shipped as a static file because the
+          # asset names are content-hashed — a hand-written precache list goes
+          # stale on the next build and silently caches nothing.
+          # ---------------------------------------------------------------
+          wasm = [p.name for p in assets.glob("*.wasm")]
+          routes = [p.name for p in assets.glob("routes-*.js")]
+          precache = [f"{base}/", f"{base}/index.html", f"{base}/assets/{js}", f"{base}/assets/{css}"]
+          precache += [f"{base}/assets/{n}" for n in routes + wasm]
+          precache += [f"{base}/__grok/manifest.webmanifest", f"{base}/favicon.svg", f"{base}/icon-192.png"]
+
+          # cache.addAll() rejects atomically: one 404 and nothing is cached at
+          # all, with no error surfaced anywhere. Keep only paths that exist.
+          missing = [u for u in precache
+                     if u not in (f"{base}/",) and not (out / u[len(base) + 1:]).exists()]
+          if missing:
+              print("Skipping absent precache entries:", missing)
+          precache = [u for u in precache if u not in missing]
+
+          import json as _json, time as _time
+          stamp = _time.strftime("%Y%m%d%H%M%S")
+          sw = """const CACHE = 'soma-%s';
+const PRECACHE = %s;
+
+// Take over immediately. The user's update ritual is force-quit and reopen;
+// waiting for every old client to close would make that not work.
+self.addEventListener('install', (e) => {
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET') return;
+
+  const url = new URL(req.url);
+
+  // Food lookups must never be served from cache: a stale product is worse
+  // than an honest failure the UI already handles as "offline".
+  if (url.hostname.endsWith('openfoodfacts.org')) return;
+
+  // Anything cross-origin (fonts) is left to the browser.
+  if (url.origin !== self.location.origin) return;
+
+  // Navigations resolve to the cached shell, which is what makes the app open
+  // at all with no network.
+  if (req.mode === 'navigate') {
+    e.respondWith(
+      fetch(req).catch(() => caches.match('%s/index.html').then((r) => r || caches.match('%s/')))
+    );
+    return;
+  }
+
+  // Hashed assets are immutable, so cache-first is safe and a new build simply
+  // requests a new name.
+  e.respondWith(
+    caches.match(req).then((hit) => {
+      if (hit) return hit;
+      return fetch(req).then((res) => {
+        if (res && res.status === 200 && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy));
+        }
+        return res;
+      });
+    })
+  );
+});
+""" % (stamp, _json.dumps(precache), base, base)
+          (out / "sw.js").write_text(sw, encoding="utf-8")
+          print("Service worker precaching", len(precache), "entries")
+
           print("Staged", js, css, "at", base)
           PY
 
