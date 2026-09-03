@@ -63,6 +63,7 @@ export interface SomaStore {
   markHydrated: () => void;
   ensureSeed: () => void;
   normalizeLive: () => void;
+  rollDayIfNeeded: () => boolean;
   setTab: (tab: SomaStore["tab"]) => void;
   setActiveDate: (d: string) => void;
   patchSettings: (p: Partial<Settings>) => void;
@@ -71,6 +72,8 @@ export interface SomaStore {
   addFood: (item: FoodItem) => void;
   removeFood: (idx: number) => void;
   addWater: (ml: number) => void;
+  setWater: (ml: number) => void;
+  updateFood: (idx: number, item: FoodItem) => void;
   addCreatine: (g: number) => void;
   resetCreatine: () => void;
   logSleep: (hours: number, quality: number) => void;
@@ -139,6 +142,40 @@ export const useSoma = create<SomaStore>()(
        * time is not a measurement of anything, so the clock is re-anchored to
        * now rather than saving a fabricated duration.
        */
+      /**
+       * Moves to a fresh sheet when the calendar day changes while the app is
+       * open. Yesterday is untouched — it stays in history and nutrition under
+       * its own key, reachable from the drawer.
+       *
+       * An unsaved session in progress is NOT discarded. If it has completed
+       * sets it is saved to the day it was actually trained on first, because
+       * losing a finished workout to a midnight tick would be the worst
+       * possible failure here. Returns whether the day actually rolled.
+       */
+      rollDayIfNeeded: () => {
+        const today = getLocalDateKey(new Date());
+        const prev = get().activeDate;
+        if (prev === today) return false;
+
+        const live = get().live;
+        const hasDone = live.exercises.some((ex) => ex.sets.some((s) => s.done));
+        if (hasDone && !live.finished) {
+          // saveWorkout writes to activeDate, which is still yesterday here —
+          // exactly where this session belongs.
+          get().saveWorkout();
+        }
+
+        set({ activeDate: today });
+        get().ensureDay(today);
+        set({
+          live: {
+            ...defaultLive(live.split),
+            split: live.split,
+          },
+        });
+        return true;
+      },
+
       normalizeLive: () => {
         // activeDate is persisted, so after midnight the app would reopen on
         // yesterday and greet you with a read-only recap. Looking back is a
@@ -219,6 +256,18 @@ export const useSoma = create<SomaStore>()(
         get().ensureDay(k);
         const day = get().nutrition[k]!;
         get().patchDay(k, { water: Math.max(0, (day.water || 0) + ml) });
+      },
+      setWater: (ml) => {
+        const k = get().activeDate;
+        get().ensureDay(k);
+        get().patchDay(k, { water: Math.max(0, Math.round(ml)) });
+      },
+      updateFood: (idx, item) => {
+        const k = get().activeDate;
+        const items = [...(get().nutrition[k]?.items || [])];
+        if (!items[idx]) return;
+        items[idx] = item;
+        get().patchDay(k, { items });
       },
       addCreatine: (g) => {
         const k = get().activeDate;

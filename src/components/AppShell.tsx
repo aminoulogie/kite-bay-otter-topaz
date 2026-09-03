@@ -8,7 +8,7 @@ import {
   TrendingUp,
   Utensils,
 } from "lucide-react";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
 import { useEdgeSwipe } from "@/lib/use-edge-swipe";
@@ -45,6 +45,7 @@ export function AppShell() {
   const setActiveDate = useSoma((s) => s.setActiveDate);
   const ensureSeed = useSoma((s) => s.ensureSeed);
   const normalizeLive = useSoma((s) => s.normalizeLive);
+  const rollDayIfNeeded = useSoma((s) => s.rollDayIfNeeded);
   const markHydrated = useSoma((s) => s.markHydrated);
 
   useEffect(() => {
@@ -58,6 +59,29 @@ export function AppShell() {
       setReady(true);
     });
   }, [ensureSeed, markHydrated, normalizeLive]);
+
+  /**
+   * Rolls onto a new sheet at midnight. A phone left on the Fuel tab overnight
+   * would otherwise keep logging breakfast into yesterday.
+   *
+   * Polled once a minute rather than scheduled for the exact moment, because a
+   * backgrounded tab has its timers throttled and iOS suspends them entirely —
+   * so the visibility change is what actually catches it after a night asleep.
+   */
+  useEffect(() => {
+    if (!ready) return;
+    const check = () => {
+      if (rollDayIfNeeded()) toast("New day — yesterday is saved in Logged days");
+    };
+    const id = setInterval(check, 60_000);
+    document.addEventListener("visibilitychange", check);
+    window.addEventListener("focus", check);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", check);
+      window.removeEventListener("focus", check);
+    };
+  }, [ready, rollDayIfNeeded]);
 
   useEffect(() => {
     if (!hydrated) return;

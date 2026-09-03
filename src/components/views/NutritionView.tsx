@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, ScanLine, Trash2 } from "lucide-react";
+import { Pencil, Plus, ScanLine } from "lucide-react";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
+import { PortionSheet } from "@/components/PortionSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,8 @@ export function NutritionView() {
   const addFood = useSoma((s) => s.addFood);
   const removeFood = useSoma((s) => s.removeFood);
   const addWater = useSoma((s) => s.addWater);
+  const setWater = useSoma((s) => s.setWater);
+  const updateFood = useSoma((s) => s.updateFood);
   const settings = useSoma((s) => s.settings);
 
   const [query, setQuery] = useState("");
@@ -32,6 +35,10 @@ export function NutritionView() {
   // The library is browsable, not search-only: with nothing typed you should
   // still be able to see what is in there rather than having to guess a name.
   const [showAll, setShowAll] = useState(false);
+  // One sheet drives both logging a portion and editing a logged one.
+  const [portion, setPortion] = useState<
+    { item: FoodItem; meal: string; mode: "add" | "edit"; idx?: number } | null
+  >(null);
 
   useEffect(() => {
     ensureDay(activeDate);
@@ -68,25 +75,25 @@ export function NutritionView() {
   );
   const hits = query ? matches.slice(0, 8) : showAll ? matches : [];
 
-  const addFromLib = (f: { name: string; serving: number; unit: string; cals: number; p: number; c: number; f: number; fiber?: number; sodium?: number; potassium?: number; calcium?: number; iron?: number; magnesium?: number; zinc?: number }, mealName: string) => {
-    addFood({
-      name: f.name,
-      serving: f.serving,
-      unit: f.unit,
-      cals: f.cals,
-      p: f.p,
-      c: f.c,
-      f: f.f,
-      fiber: f.fiber || 0,
-      sodium: f.sodium || 0,
-      potassium: f.potassium || 0,
-      calcium: f.calcium || 0,
-      iron: f.iron || 0,
-      magnesium: f.magnesium || 0,
-      zinc: f.zinc || 0,
-      meal: mealName,
+  const openPortion = (f: {
+    name: string; serving: number; unit: string; cals: number; p: number; c: number; f: number;
+    fiber?: number; sodium?: number; potassium?: number; calcium?: number; iron?: number;
+    magnesium?: number; zinc?: number;
+  }) => {
+    setPortion({
+      mode: "add",
+      meal,
+      item: {
+        name: f.name,
+        serving: f.serving || 100,
+        unit: f.unit || "g",
+        cals: f.cals, p: f.p, c: f.c, f: f.f,
+        fiber: f.fiber || 0,
+        sodium: f.sodium || 0, potassium: f.potassium || 0, calcium: f.calcium || 0,
+        iron: f.iron || 0, magnesium: f.magnesium || 0, zinc: f.zinc || 0,
+        meal,
+      },
     });
-    toast.success(`Added ${f.name}`);
     setQuery("");
   };
 
@@ -132,12 +139,27 @@ export function NutritionView() {
           </span>
         </CardTitle>
         <Progress value={waterPct} barClassName="bg-info" />
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
           <Button className="flex-1" onClick={() => addWater(250)}>
             +250 ml
           </Button>
           <Button className="flex-1" onClick={() => addWater(500)}>
             +500 ml
+          </Button>
+          {/* Water only ever went up, so one mis-tap was permanent for the day. */}
+          <Button className="flex-1" onClick={() => addWater(-250)}>
+            −250 ml
+          </Button>
+          <Button
+            variant="danger"
+            className="flex-1"
+            disabled={!day.water}
+            onClick={() => {
+              setWater(0);
+              toast.success("Water reset");
+            }}
+          >
+            Reset
           </Button>
         </div>
       </Card>
@@ -189,7 +211,7 @@ export function NutritionView() {
               <button
                 key={f.name}
                 type="button"
-                onClick={() => addFromLib(f, meal)}
+                onClick={() => openPortion(f)}
                 className="flex w-full items-center justify-between border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-2"
               >
                 <span className="text-sm font-bold">{f.name}</span>
@@ -285,7 +307,11 @@ export function NutritionView() {
               <div className="mt-3 space-y-1.5">
                 {group.length === 0 && <div className="py-2 text-center text-xs text-faint">Nothing logged</div>}
                 {group.map(({ it, idx }) => (
-                  <FoodRow key={idx} item={it} onDelete={() => removeFood(idx)} />
+                  <FoodRow
+                    key={idx}
+                    item={it}
+                    onEdit={() => setPortion({ item: it, meal: m, mode: "edit", idx })}
+                  />
                 ))}
               </div>
             )}
@@ -297,28 +323,50 @@ export function NutritionView() {
         Goals: {goals.cals} kcal · P {goals.protein} · C {goals.carbs} · F {goals.fat}. Units {settings.unit}.
       </p>
 
+      {portion && (
+        <PortionSheet
+          item={portion.item}
+          meal={portion.meal}
+          mode={portion.mode}
+          onClose={() => setPortion(null)}
+          onDelete={
+            portion.mode === "edit" && portion.idx !== undefined
+              ? () => {
+                  removeFood(portion.idx!);
+                  setPortion(null);
+                  toast.success("Removed");
+                }
+              : undefined
+          }
+          onConfirm={(next) => {
+            if (portion.mode === "edit" && portion.idx !== undefined) {
+              updateFood(portion.idx, next);
+              toast.success(`Updated to ${next.serving}g`);
+            } else {
+              addFood(next);
+              toast.success(`Added ${next.serving}g ${next.name}`);
+            }
+            setPortion(null);
+          }}
+        />
+      )}
+
       {scanning && (
         <BarcodeScanner
           onClose={() => setScanning(false)}
           onFound={(hit) => {
-            addFood({
-              name: hit.name,
-              serving: hit.serving,
-              unit: "g",
-              cals: hit.cals,
-              p: hit.p,
-              c: hit.c,
-              f: hit.f,
-              fiber: hit.fiber,
-              sodium: 0,
-              potassium: 0,
-              calcium: 0,
-              iron: 0,
-              magnesium: 0,
-              zinc: 0,
+            // Open Food Facts reports per 100g; ask how much was actually eaten
+            // rather than assuming the whole reference portion.
+            setPortion({
+              mode: "add",
               meal,
+              item: {
+                name: hit.name, serving: hit.serving || 100, unit: "g",
+                cals: hit.cals, p: hit.p, c: hit.c, f: hit.f, fiber: hit.fiber,
+                sodium: 0, potassium: 0, calcium: 0, iron: 0, magnesium: 0, zinc: 0,
+                meal,
+              },
             });
-            toast.success(`Added ${hit.name}`);
             setScanning(false);
           }}
         />
@@ -343,19 +391,23 @@ function Macro({ label, used, goal, unit }: { label: string; used: number; goal:
   );
 }
 
-function FoodRow({ item, onDelete }: { item: FoodItem; onDelete: () => void }) {
+function FoodRow({ item, onEdit }: { item: FoodItem; onEdit: () => void }) {
+  // The whole row opens the editor: correcting a portion is far more common
+  // than deleting, and delete lives inside the editor anyway.
   return (
-    <div className="flex items-center justify-between rounded-xl border border-border bg-surface-2 px-3 py-2">
-      <div>
-        <div className="text-sm font-bold">{item.name}</div>
+    <button
+      type="button"
+      onClick={onEdit}
+      className="flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2 text-left"
+    >
+      <div className="min-w-0">
+        <div className="truncate text-sm font-bold">{item.name}</div>
         <div className="text-[0.7rem] text-faint">
           {item.serving}
           {item.unit} · {Math.round(item.cals)} kcal · {item.p}p {item.c}c {item.f}f
         </div>
       </div>
-      <button type="button" onClick={onDelete} className="text-danger" aria-label="Remove food">
-        <Trash2 className="size-4" />
-      </button>
-    </div>
+      <Pencil className="size-4 shrink-0 text-faint" />
+    </button>
   );
 }

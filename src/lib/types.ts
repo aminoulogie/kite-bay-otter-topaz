@@ -77,6 +77,12 @@ export interface FoodItem {
   meal: string;
   isBase?: boolean;
   usageCount?: number;
+  /**
+   * Macros per 100g as logged from the library or a barcode. Kept so changing
+   * the portion later re-scales from the source figures instead of compounding
+   * rounding on already-rounded numbers.
+   */
+  per100?: { cals: number; p: number; c: number; f: number; fiber: number };
 }
 
 export interface SleepLog {
