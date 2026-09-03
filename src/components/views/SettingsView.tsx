@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,10 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
 import { buildBackup, parseBackup, restorePhotos, saveBackupFile, type BackupSummary } from "@/lib/backup";
+import {
+  backupIsDue, daysSinceBackup, formatBytes, markBackedUp, requestPersistence,
+  storageHealth, type StorageHealth,
+} from "@/lib/storage-health";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +30,12 @@ export function SettingsView() {
   const [addEx, setAddEx] = useState("");
   const [pending, setPending] = useState<{ summary: BackupSummary; apply: () => Promise<void> } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [health, setHealth] = useState<StorageHealth | null>(null);
+  const [sinceBackup, setSinceBackup] = useState<number | null>(daysSinceBackup());
+
+  useEffect(() => {
+    void storageHealth().then(setHealth);
+  }, [busy]);
 
   const openEdit = (name: string) => {
     setEditing(name);
@@ -40,6 +50,8 @@ export function SettingsView() {
       const json = JSON.stringify(backup);
       const name = `soma-backup-${new Date().toISOString().slice(0, 10)}.json`;
       const how = await saveBackupFile(json, name);
+      markBackedUp();
+      setSinceBackup(0);
       const mb = (json.length / 1048576).toFixed(1);
       toast.success(
         how === "shared"
@@ -319,6 +331,67 @@ export function SettingsView() {
           Everything lives on this device only. A backup includes your logs, habits and
           habit photos — it is the only copy if this phone is lost or Safari clears its data.
         </p>
+
+        <div className="mb-3 grid gap-1.5 rounded-xl border border-border bg-surface-2 p-3 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted">On-device storage</span>
+            {health?.state === "persisted" ? (
+              <Badge tone="good">Protected</Badge>
+            ) : health?.state === "denied" ? (
+              <Badge tone="warn">Evictable</Badge>
+            ) : (
+              <Badge>Unknown</Badge>
+            )}
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted">Used</span>
+            <span className="tabular font-bold">
+              {formatBytes(health?.usedBytes ?? null)}
+              {health?.quotaBytes ? " of " + formatBytes(health.quotaBytes) : ""}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-muted">Last backup</span>
+            <span
+              className={cn(
+                "font-bold",
+                sinceBackup === null || sinceBackup >= 7 ? "text-warn" : "text-accent-text",
+              )}
+            >
+              {sinceBackup === null
+                ? "never"
+                : sinceBackup === 0
+                  ? "today"
+                  : sinceBackup + (sinceBackup === 1 ? " day ago" : " days ago")}
+            </span>
+          </div>
+          {health?.state === "denied" && (
+            <button
+              type="button"
+              className="mt-1 text-left text-[0.7rem] font-bold text-accent-text underline"
+              onClick={() => {
+                void requestPersistence().then((r) => {
+                  void storageHealth().then(setHealth);
+                  toast(
+                    r === "persisted"
+                      ? "Storage protected"
+                      : "Safari refused. Add SOMA to your Home Screen and it is usually granted.",
+                  );
+                });
+              }}
+            >
+              Ask again to protect this data
+            </button>
+          )}
+        </div>
+
+        {backupIsDue() && (
+          <p className="mb-3 rounded-xl border border-warn/30 bg-warn/10 p-2.5 text-[0.7rem] font-semibold text-warn">
+            {sinceBackup === null
+              ? "You have never backed up. Save one to Files or iCloud Drive now."
+              : "Your last backup is " + sinceBackup + " days old."}
+          </p>
+        )}
         <div className="flex flex-col gap-2">
           <Button variant="primary" disabled={busy} onClick={() => void download()}>
             {busy ? "Preparing…" : "Save backup"}

@@ -11,6 +11,7 @@ import {
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
+import { requestPersistence } from "@/lib/storage-health";
 import { useEdgeSwipe } from "@/lib/use-edge-swipe";
 import { BodyView } from "@/components/views/BodyView";
 import { HabitsView } from "@/components/views/HabitsView";
@@ -52,6 +53,10 @@ export function AppShell() {
     const result = useSoma.persist.rehydrate();
     void Promise.resolve(result).then(() => {
       ensureSeed();
+      // Ask the browser to stop treating this data as disposable. Safari grants
+      // it to home-screen apps and usually refuses a plain tab; either way the
+      // answer is informational, so nothing here depends on it.
+      void requestPersistence();
       // Runs after rehydrate: a restored session can carry a clock that has
       // been running since the day it was opened.
       normalizeLive();
