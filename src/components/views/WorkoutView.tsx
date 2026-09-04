@@ -34,6 +34,7 @@ export function WorkoutView() {
   const addCustomExercise = useSoma((s) => s.addCustomExercise);
   const updateSet = useSoma((s) => s.updateSet);
   const addSet = useSoma((s) => s.addSet);
+  const updateExercise = useSoma((s) => s.updateExercise);
   const removeSet = useSoma((s) => s.removeSet);
   const removeExercise = useSoma((s) => s.removeExercise);
   const cycleSetType = useSoma((s) => s.cycleSetType);
@@ -669,6 +670,31 @@ export function WorkoutView() {
               <Button className="flex-1" size="sm" onClick={() => addSet(exIdx, "dropset")}>
                 Drop set
               </Button>
+            </div>
+
+            {/* Pump belongs to the exercise, not the set: it builds across all
+                of them and can only be judged once the weight is down. Shown
+                after the sets for the same reason. */}
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[0.65rem] font-bold uppercase tracking-wide text-faint">
+                Pump
+              </span>
+              {([1, 2, 3] as const).map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  aria-label={`Pump ${n} for ${ex.name}`}
+                  onClick={() => updateExercise(exIdx, { pump: ex.pump === n ? undefined : n })}
+                  className={cn(
+                    "h-8 flex-1 rounded-lg border text-[0.7rem] font-bold transition-colors",
+                    ex.pump === n
+                      ? "border-accent bg-accent/15 text-accent-text"
+                      : "border-border bg-surface-2 text-faint",
+                  )}
+                >
+                  {["light", "solid", "full"][n - 1]}
+                </button>
+              ))}
             </div>
           </Card>
         );

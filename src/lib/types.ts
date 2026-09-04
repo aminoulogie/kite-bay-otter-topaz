@@ -42,6 +42,14 @@ export interface SessionExercise {
   barWeight: number;
   supersetGroup: string;
   sets: WorkoutSet[];
+  /**
+   * How pumped the muscle was at the end of this exercise, 1-3.
+   *
+   * Per exercise rather than per set: pump accumulates across an exercise and
+   * is only really judgeable once the weight is racked. Optional, because
+   * every session logged before this existed has none.
+   */
+  pump?: 1 | 2 | 3;
 }
 
 export interface MuscleStimulus {

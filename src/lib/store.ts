@@ -93,6 +93,7 @@ export interface SomaStore {
   addExercise: (name: string) => void;
   addCustomExercise: (ex: ExerciseDef) => void;
   updateSet: (exIdx: number, setIdx: number, patch: Partial<WorkoutSet>) => void;
+  updateExercise: (exIdx: number, patch: Partial<SessionExercise>) => void;
   addSet: (exIdx: number, type?: WorkoutSet["type"]) => void;
   removeSet: (exIdx: number, setIdx: number) => void;
   removeExercise: (exIdx: number) => void;
@@ -407,6 +408,17 @@ export const useSoma = create<SomaStore>()(
         const firstSetAt =
           live.firstSetAt ?? (patch.done === true ? Date.now() : null);
         set({ live: { ...live, exercises, firstSetAt } });
+      },
+      // Exercise-level fields such as pump, which belong to the whole
+      // movement rather than to any one set.
+      updateExercise: (exIdx, patch) => {
+        const live = get().live;
+        set({
+          live: {
+            ...live,
+            exercises: live.exercises.map((ex, i) => (i === exIdx ? { ...ex, ...patch } : ex)),
+          },
+        });
       },
       addSet: (exIdx, type = "normal") => {
         get().snapshot();
