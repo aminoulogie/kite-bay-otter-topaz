@@ -7,6 +7,7 @@ import {
   buildTrainingLog, dayBest, estimated1RM, groupsOf, type ExerciseLog, type LoggedSet,
   formatSet,
 } from "@/lib/training-log";
+import { microMuscleStrength } from "@/lib/micro-muscle";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +62,7 @@ export function GraphsView() {
   }, [nutrition]);
   const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
   const groups = useMemo(() => groupsOf(log), [log]);
+  const micro = useMemo(() => microMuscleStrength(log), [log]);
 
   const [group, setGroup] = useState<string>("Chest");
   const [picked, setPicked] = useState<string[]>([]);
@@ -132,6 +134,8 @@ export function GraphsView() {
 
   return (
     <div className="space-y-3">
+      <MicroMusclePanel micro={micro} group={group} />
+
       <Card>
         <CardTitle>Progression</CardTitle>
 
@@ -292,5 +296,153 @@ export function GraphsView() {
         )}
       </Card>
     </div>
+  );
+}
+
+/**
+ * Strength per micro-muscle, above the per-exercise charts.
+ *
+ * Indexed to 100 at each muscle's baseline rather than shown in kilos, because
+ * the lifts feeding one micro-muscle span wildly different loads and adding
+ * them would track exercise selection instead of strength. See micro-muscle.ts.
+ */
+function MicroMusclePanel({
+  micro,
+  group,
+}: {
+  micro: ReturnType<typeof microMuscleStrength>;
+  group: string;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+
+  const rows = useMemo(
+    () => micro.filter((m) => m.muscle === group && m.usable),
+    [micro, group],
+  );
+  const thin = useMemo(
+    () => micro.filter((m) => m.muscle === group && !m.usable).length,
+    [micro, group],
+  );
+
+  if (!rows.length) {
+    return (
+      <Card>
+        <CardTitle>Micro-muscle strength</CardTitle>
+        <p className="text-xs text-muted">
+          {thin > 0
+            ? `${thin} ${thin === 1 ? "head" : "heads"} in this group have too few sessions to read as a trend yet.`
+            : "Nothing logged for this group yet."}
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardTitle>Micro-muscle strength</CardTitle>
+      <p className="mb-3 text-[0.65rem] leading-snug text-muted">
+        Indexed to 100 at each head&apos;s first session. The lifts feeding one head span
+        very different loads, so kilos cannot be averaged across them — this tracks the
+        trend instead.
+      </p>
+
+      <div className="space-y-1.5">
+        {rows.map((m) => {
+          const isOpen = open === m.subTarget;
+          const up = m.change >= 0;
+          return (
+            <div key={m.subTarget} className="overflow-hidden rounded-xl border border-border bg-surface-2">
+              <button
+                type="button"
+                onClick={() => setOpen(isOpen ? null : m.subTarget)}
+                className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[0.74rem] font-bold">{m.subTarget}</div>
+                  <div className="text-[0.6rem] text-faint">
+                    {m.exercises.length} {m.exercises.length === 1 ? "lift" : "lifts"} ·{" "}
+                    {m.points.length} sessions
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div
+                    className={cn(
+                      "font-display text-sm font-extrabold tabular-nums",
+                      up ? "text-emerald-400" : "text-orange-400",
+                    )}
+                  >
+                    {up ? "+" : ""}
+                    {m.change}%
+                  </div>
+                  <div className="text-[0.55rem] text-faint">since start</div>
+                </div>
+              </button>
+
+              {isOpen && (
+                <div className="border-t border-border px-2 pb-2 pt-1">
+                  <div className="h-28 w-full">
+                    <ResponsiveContainer>
+                      <LineChart
+                        data={m.points.map((p) => ({ ...p, t: new Date(p.date).getTime() }))}
+                        margin={{ top: 6, right: 8, bottom: 0, left: -26 }}
+                      >
+                        <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+                        <XAxis
+                          dataKey="t"
+                          type="number"
+                          scale="time"
+                          domain={["dataMin", "dataMax"]}
+                          tickFormatter={(t) =>
+                            new Date(t).toLocaleDateString(undefined, { month: "short", year: "2-digit" })}
+                          tick={{ fontSize: 9, fill: "var(--color-muted)" }}
+                          stroke="var(--color-border)"
+                        />
+                        <YAxis
+                          tick={{ fontSize: 9, fill: "var(--color-muted)" }}
+                          stroke="var(--color-border)"
+                          width={36}
+                          domain={["dataMin - 5", "dataMax + 5"]}
+                        />
+                        <Tooltip
+                          contentStyle={{
+                            background: "var(--color-surface-2)",
+                            border: "1px solid var(--color-border)",
+                            borderRadius: 12,
+                            fontSize: 11,
+                          }}
+                          labelFormatter={(t) => new Date(t as number).toLocaleDateString()}
+                          formatter={(v, _n, item) => [
+                            `${v} · ${(item?.payload as { contributing?: number })?.contributing ?? 0} lifts`,
+                            "index",
+                          ]}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="index"
+                          stroke="var(--color-accent)"
+                          strokeWidth={2}
+                          dot={{ r: 2 }}
+                          isAnimationActive
+                          animationDuration={380}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <p className="px-1 text-[0.58rem] leading-snug text-faint">
+                    From {m.exercises.join(", ")}
+                  </p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {thin > 0 && (
+        <p className="mt-2 text-[0.58rem] text-faint">
+          {thin} more {thin === 1 ? "head has" : "heads have"} too few sessions to plot yet.
+        </p>
+      )}
+    </Card>
   );
 }
