@@ -125,6 +125,12 @@ function authPopupPlugin(): Plugin {
 
 export default defineConfig(({ command, isPreview }) => ({
   base: pagesBase(),
+  // Stamped at build time from the CI tag, so the version shown in Settings is
+  // the one that actually shipped rather than a number edited by hand and
+  // forgotten. Falls back to "dev" for local builds.
+  define: {
+    __APP_VERSION__: JSON.stringify(process.env.APP_VERSION ?? "dev"),
+  },
   server: {
     host: "0.0.0.0",
     port: 8080,

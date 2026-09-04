@@ -426,6 +426,20 @@ export function SettingsView() {
         </div>
       </Card>
 
+      <Card>
+        <CardTitle>About</CardTitle>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted">Version</span>
+          {/* Stamped at build time from the CI tag, so this cannot drift from
+              what actually shipped the way a hand-edited number does. */}
+          <span className="font-bold tabular-nums">{__APP_VERSION__}</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between text-xs">
+          <span className="text-muted">Data</span>
+          <span className="font-bold">on this device only</span>
+        </div>
+      </Card>
+
       {pending && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-bg/85 p-4 sm:items-center">
           <Card className="w-full max-w-md space-y-3">

@@ -1,12 +1,15 @@
-import { useState } from "react";
-import { Check, Moon, Pill, Ruler, Scale, Target } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Moon, Pill, Ruler, Scale } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
-import { SomaIntelligenceEngine, addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
+import { SomaIntelligenceEngine } from "@/lib/soma";
+import {
+  currentSaturation, saturationLabel, saturationSeries, supplyStatus,
+} from "@/lib/creatine";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -263,50 +266,123 @@ function MeasurePanel() {
 function CreatinePanel() {
   const nutrition = useSoma((s) => s.nutrition);
   const settings = useSoma((s) => s.settings);
+  const patchSettings = useSoma((s) => s.patchSettings);
   const addCreatine = useSoma((s) => s.addCreatine);
   const resetCreatine = useSoma((s) => s.resetCreatine);
   const activeDate = useSoma((s) => s.activeDate);
-  let streak = 0;
-  const today = parseLocalDateKey(activeDate);
-  for (let i = 0; i < 60; i++) {
-    const k = getLocalDateKey(addDays(today, -i));
-    if ((nutrition[k]?.creatine || 0) > 0) streak++;
-    else if (i > 0) break;
-  }
-  const sat = Math.min(100, Math.round((streak / 28) * 100));
+  const [editingStash, setEditingStash] = useState(false);
+  const [stashDraft, setStashDraft] = useState(String(settings.creatineStashGrams ?? 0));
+
+  const doses = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [d, day] of Object.entries(nutrition || {})) {
+      if (day?.creatine) out[d] = day.creatine;
+    }
+    return out;
+  }, [nutrition]);
+
+  // Was streak / 28, which is a streak counter wearing saturation's name: one
+  // missed day reset it to zero, when in reality muscle stores barely move.
+  // This integrates the whole log, including the days nothing was taken.
+  const sat = Math.round(currentSaturation(doses, activeDate));
+  const supply = useMemo(
+    () => supplyStatus(settings.creatineStashGrams ?? 0, doses, activeDate),
+    [settings.creatineStashGrams, doses, activeDate],
+  );
+  const series = useMemo(() => saturationSeries(doses, { to: activeDate }).slice(-60), [doses, activeDate]);
   const todayDose = nutrition[activeDate]?.creatine || 0;
-  const daysLeft = Math.floor(settings.creatineStashGrams / 5);
 
   return (
-    <Card>
-      <div className="mb-2 flex items-center justify-between">
-        <CardTitle className="mb-0">Creatine saturation</CardTitle>
-        <Badge tone={sat >= 95 ? "accent" : "warn"}>{sat}%</Badge>
-      </div>
-      <Progress value={sat} />
-      <div className="mt-3 flex justify-between text-xs text-muted">
-        <span>
-          Stash <b className="text-fg">{settings.creatineStashGrams}g</b> ({daysLeft}d)
-        </span>
-        <span>
-          Streak <b className="text-fg">{streak}d</b>
-        </span>
-      </div>
-      <div className="mt-4 flex items-center justify-between">
-        <span className="text-sm font-bold">Today {todayDose}g</span>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => addCreatine(3)}>
-            +3g
-          </Button>
-          <Button size="sm" variant="primary" onClick={() => addCreatine(5)}>
-            +5g
-          </Button>
-          <Button size="sm" onClick={resetCreatine}>
-            Reset
-          </Button>
+    <div className="space-y-3">
+      <Card>
+        <div className="mb-2 flex items-center justify-between">
+          <CardTitle className="mb-0">Creatine saturation</CardTitle>
+          <Badge tone={sat >= 90 ? "accent" : sat >= 40 ? "warn" : "muted"}>
+            {sat}% · {saturationLabel(sat)}
+          </Badge>
         </div>
-      </div>
-    </Card>
+        <Progress value={sat} />
+        {series.length > 1 && <Spark points={series.map((p: { saturation: number }) => p.saturation)} className="mt-3" />}
+        <p className="mt-2 text-[0.65rem] leading-snug text-faint">
+          Stores fill over about four weeks and wash out over about as long, so one
+          missed day costs very little.
+        </p>
+
+        <div className="mt-4 flex items-center justify-between">
+          <span className="text-sm font-bold">Today {todayDose}g</span>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => addCreatine(3)}>
+              +3g
+            </Button>
+            <Button size="sm" variant="primary" onClick={() => addCreatine(5)}>
+              +5g
+            </Button>
+            <Button size="sm" onClick={resetCreatine}>
+              Reset
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Supply</CardTitle>
+        {editingStash ? (
+          <div className="flex items-end gap-2">
+            <label className="flex-1 text-[0.65rem] font-bold uppercase tracking-wide text-faint">
+              Grams left
+              <Input
+                type="number"
+                inputMode="decimal"
+                value={stashDraft}
+                onChange={(e) => setStashDraft(e.target.value)}
+                className="mt-1"
+              />
+            </label>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                patchSettings({ creatineStashGrams: Math.max(0, Number(stashDraft) || 0) });
+                setEditingStash(false);
+              }}
+            >
+              Save
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted">Left in the tub</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setStashDraft(String(settings.creatineStashGrams ?? 0));
+                  setEditingStash(true);
+                }}
+                className="font-bold text-accent-text underline"
+              >
+                {settings.creatineStashGrams ?? 0}g · edit
+              </button>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between text-xs">
+              <span className="text-muted">Actual daily average</span>
+              <span className="font-bold tabular-nums">{supply.dailyAverage}g</span>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between text-xs">
+              <span className="text-muted">Runs out</span>
+              {/* Based on real intake, not the nominal 5g: taking it half the
+                  time really does make a tub last twice as long, and saying
+                  otherwise sends you to the shop early. */}
+              <span className={cn("font-bold", supply.daysLeft != null && supply.daysLeft < 14 && "text-warn")}>
+                {supply.runsOut
+                  ? `${supply.runsOut} · ${supply.daysLeft}d`
+                  : "not enough intake logged"}
+              </span>
+            </div>
+          </>
+        )}
+      </Card>
+    </div>
   );
 }
 

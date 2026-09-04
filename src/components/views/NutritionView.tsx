@@ -31,7 +31,15 @@ export function NutritionView() {
 
   const [query, setQuery] = useState("");
   const [meal, setMeal] = useState("Breakfast");
-  const [openMeal, setOpenMeal] = useState<string>("Breakfast");
+  // A Set, not one name: opening dinner used to collapse breakfast, so
+  // comparing two meals meant reopening one every time.
+  const [openMeals, setOpenMeals] = useState<Set<string>>(() => new Set(["Breakfast"]));
+  const toggleMeal = (m: string) =>
+    setOpenMeals((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(m)) next.add(m);
+      return next;
+    });
   const [custom, setCustom] = useState({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
   const [scanning, setScanning] = useState(false);
   // The library is browsable, not search-only: with nothing typed you should
@@ -319,13 +327,13 @@ export function NutritionView() {
           .filter(({ it }) => (it.meal || "Snacks") === m);
         const cals = group.reduce((a, g) => a + g.it.cals, 0);
         const p = group.reduce((a, g) => a + g.it.p, 0);
-        const open = openMeal === m;
+        const open = openMeals.has(m);
         return (
           <Card key={m}>
             <button
               type="button"
               className="flex w-full items-center justify-between"
-              onClick={() => setOpenMeal(open ? "" : m)}
+              onClick={() => toggleMeal(m)}
             >
               <span className="font-display text-sm font-bold">{m}</span>
               <span className="text-xs font-bold text-muted">
