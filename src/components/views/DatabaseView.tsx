@@ -5,6 +5,7 @@ import {
   allDates, buildTrainingLog, dayBest, formatSet, groupsOf,
   type ExerciseLog, type LoggedSet,
 } from "@/lib/training-log";
+import { rateAllExercises, ratingBreakdown, ratingLabel, ratingTone } from "@/lib/exercise-ratings";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +67,7 @@ export function DatabaseView() {
 
   const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
   const groups = useMemo(() => groupsOf(log), [log]);
+  const ratings = useMemo(() => rateAllExercises(history, log), [history, log]);
 
   const [group, setGroup] = useState<string | null>(null);
   const [openExercise, setOpenExercise] = useState<string | null>(null);
@@ -127,6 +129,7 @@ export function DatabaseView() {
         const dates = Object.keys(ex.days);
         const best = Math.max(0, ...Object.values(ex.days).map(dayBest));
         const heaviest = Math.max(0, ...Object.values(ex.days).map(topWeight));
+        const rated = ratings.get(ex.name);
 
         return (
           <div key={ex.name} className="overflow-hidden rounded-2xl border border-border bg-surface">
@@ -143,13 +146,33 @@ export function DatabaseView() {
                   {Math.round(best)}kg 1RM
                 </div>
               </div>
+              {/* Shown only once there is enough quality data to mean
+                  something. A number on five unrated sets would look earned
+                  and be noise. */}
+              {rated?.usable ? (
+                <div className="shrink-0 text-right">
+                  <div className={cn("font-display text-sm font-extrabold tabular-nums", ratingTone(rated.rating.score))}>
+                    {rated.rating.score.toFixed(1)}
+                  </div>
+                  <div className="text-[0.55rem] text-faint">/10</div>
+                </div>
+              ) : (
+                <div className="shrink-0 text-[0.55rem] text-faint">unrated</div>
+              )}
               <ChevronDown
                 className={cn("size-4 shrink-0 text-muted transition-transform", open && "rotate-180")}
               />
             </button>
 
             {open && (
-              <ExerciseWindow ex={ex} best={best} heaviest={heaviest} sort={sort} onSort={setSort} />
+              <ExerciseWindow
+                ex={ex}
+                best={best}
+                heaviest={heaviest}
+                sort={sort}
+                onSort={setSort}
+                rated={ratings.get(ex.name)}
+              />
             )}
           </div>
         );
@@ -165,13 +188,14 @@ export function DatabaseView() {
  * around — the list you were reading stays where it was.
  */
 function ExerciseWindow({
-  ex, best, heaviest, sort, onSort,
+  ex, best, heaviest, sort, onSort, rated,
 }: {
   ex: ExerciseLog;
   best: number;
   heaviest: number;
   sort: SortBy;
   onSort: (s: SortBy) => void;
+  rated?: { rating: import("@/lib/set-quality").Rating; usable: boolean };
 }) {
   const entries = useMemo(() => {
     const list = Object.entries(ex.days).map(([date, sets]) => ({
@@ -188,6 +212,41 @@ function ExerciseWindow({
 
   return (
     <div className="border-t border-border">
+      {rated?.usable ? (
+        <div className="border-b border-border bg-surface-2 px-3 py-2">
+          <div className="mb-1 flex items-baseline gap-2">
+            <span className={cn("font-display text-sm font-extrabold", ratingTone(rated.rating.score))}>
+              {rated.rating.score.toFixed(1)}/10
+            </span>
+            <span className="text-[0.65rem] font-bold text-muted">
+              {ratingLabel(rated.rating.score)}
+            </span>
+            <span className="ml-auto text-[0.58rem] text-faint">
+              {rated.rating.sampleSets} rated sets · {rated.rating.confidence} confidence
+            </span>
+          </div>
+          {/* A bare number invites arguing with it; the breakdown makes it
+              checkable and points at what would move it. */}
+          <div className="space-y-0.5">
+            {ratingBreakdown(rated.rating).map((b) => (
+              <div key={b.label} className="flex items-center gap-2">
+                <span className="w-32 shrink-0 text-[0.58rem] text-muted">{b.label}</span>
+                <div className="h-1 flex-1 overflow-hidden rounded-full bg-surface-3">
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${b.pct}%` }} />
+                </div>
+                <span className="w-7 shrink-0 text-right text-[0.55rem] tabular-nums text-faint">
+                  {b.pct}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="border-b border-border bg-surface-2 px-3 py-2 text-[0.6rem] leading-snug text-faint">
+          Not rated yet — rate the sets on this lift for a few sessions and a score appears.
+          Imported history carries no set ratings, so it cannot be scored.
+        </p>
+      )}
       <div className="flex items-center gap-1 border-b border-border bg-surface-2 px-2 py-1.5">
         <span className="mr-1 text-[0.6rem] font-bold uppercase tracking-wide text-faint">Sort</span>
         {SORTS.map((s) => (

@@ -19,6 +19,24 @@ const MONTH_DAYS = 28;
 const YEAR_WEEKS = 52;
 
 /** 28-day activity matrix for one habit. Click a pixel to toggle that day. */
+/**
+ * Full brightness is reached after this many consecutive days.
+ *
+ * Seven, so a full week of consistency is what a solid square means. Longer
+ * and the grid would stay dim through streaks worth seeing; shorter and every
+ * other day would look the same as a month of them.
+ */
+const STREAK_FOR_FULL = 7;
+
+/**
+ * A month as 30 small squares, lit by streak rather than by on/off.
+ *
+ * A binary grid says whether a day was done and nothing about momentum: three
+ * scattered days and three consecutive days looked identical. Intensity now
+ * follows the run of days leading up to each square, so a streak visibly
+ * brightens and breaking it drops the next square back to the floor — which is
+ * the thing actually worth seeing at a glance.
+ */
 export function MonthMatrix({
   habit,
   onToggle,
@@ -29,27 +47,37 @@ export function MonthMatrix({
   const today = new Date();
   const cells = [];
 
+  // Walk forward so each square knows the streak that reached it.
+  let streak = 0;
   for (let i = MONTH_DAYS - 1; i >= 0; i--) {
     const dStr = getLocalDateKey(addDays(today, -i));
     const done = habit.history[dStr] === true;
+    streak = done ? streak + 1 : 0;
+
+    // A completed day never falls below a readable floor, so day one of a new
+    // streak still reads as done rather than as a miss.
+    const intensity = done ? Math.min(1, 0.35 + (streak / STREAK_FOR_FULL) * 0.65) : 0;
+
     cells.push(
       <button
         key={dStr}
         type="button"
         onClick={() => onToggle(dStr)}
-        title={`${dStr}: ${done ? "Completed" : "Incomplete"}`}
-        aria-label={`${dStr} ${done ? "completed" : "incomplete"}`}
-        className="aspect-square rounded-[5px] transition-transform active:scale-90"
-        style={{ background: done ? habit.color : "var(--color-surface-2)" }}
+        title={`${dStr}: ${done ? `done, ${streak} day streak` : "missed"}`}
+        aria-label={`${dStr} ${done ? `completed, ${streak} day streak` : "incomplete"}`}
+        className="aspect-square rounded-[3px] transition-transform active:scale-90"
+        style={{
+          background: done ? habit.color : "var(--color-surface-2)",
+          opacity: done ? intensity : 1,
+        }}
       />,
     );
   }
 
   return (
-    <div
-      className="grid grid-cols-7 rounded-[14px] bg-surface p-3"
-      style={{ gap: "6px" }}
-    >
+    // Ten across rather than seven: 30 squares in three tight rows reads as a
+    // month at a glance, and keeps each one small.
+    <div className="grid grid-cols-10 gap-[3px] rounded-[14px] bg-surface p-2.5">
       {cells}
     </div>
   );
