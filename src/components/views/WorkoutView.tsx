@@ -10,6 +10,8 @@ import { playChime, burstConfetti } from "@/lib/audio";
 import { computeBiologicalReadiness } from "@/lib/recovery";
 import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
+import { SetQualitySheet } from "@/components/SetQualitySheet";
+import { isGenuineFailure } from "@/lib/set-quality";
 import { cn } from "@/lib/utils";
 import type { SessionExercise } from "@/lib/types";
 
@@ -55,6 +57,8 @@ export function WorkoutView() {
   const [showSearch, setShowSearch] = useState(false);
   const [query, setQuery] = useState("");
   const [customOpen, setCustomOpen] = useState(false);
+  // which set's quality sheet is open, if any
+  const [rating, setRating] = useState<{ exIdx: number; sIdx: number } | null>(null);
   const [customName, setCustomName] = useState("");
   const [customMuscle, setCustomMuscle] = useState("chest");
   const [soreness, setSoreness] = useState(3);
@@ -610,17 +614,30 @@ export function WorkoutView() {
                       updateSet(exIdx, sIdx, { reps: e.target.value === "" ? "" : Number(e.target.value) })
                     }
                   />
-                  <select
-                    className="h-9 rounded-xl border border-border bg-surface-2 px-1 text-xs font-semibold"
-                    value={s.failure}
-                    onChange={(e) => updateSet(exIdx, sIdx, { failure: Number(e.target.value) })}
+                  {/* Replaces the old 1-5 dropdown. That scale could not tell a
+                      chest failure from a triceps failure on the same press, so
+                      the detail is captured in a sheet instead of a select. */}
+                  <button
+                    type="button"
+                    aria-label={`Rate set ${sIdx + 1}`}
+                    onClick={() => setRating({ exIdx, sIdx })}
+                    className={cn(
+                      "h-9 rounded-xl border px-1 text-[0.65rem] font-bold leading-tight transition-colors",
+                      isGenuineFailure(s)
+                        ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                        : s.limiter
+                          ? "border-accent/40 bg-accent/10 text-accent-text"
+                          : "border-border bg-surface-2 text-faint",
+                    )}
                   >
-                    <option value={1}>1 Easy</option>
-                    <option value={2}>2 RIR2</option>
-                    <option value={3}>3 Target</option>
-                    <option value={4}>4 Grind</option>
-                    <option value={5}>5 Fail</option>
-                  </select>
+                    {isGenuineFailure(s)
+                      ? "FAIL"
+                      : s.limiter === "synergist"
+                        ? "synrg"
+                        : s.limiter
+                          ? (s.closeness === "nothing" || s.closeness === "forced" ? "hard" : "easy")
+                          : "rate"}
+                  </button>
                   <button
                     type="button"
                     aria-label="Mark set done"
@@ -711,6 +728,37 @@ export function WorkoutView() {
           </Card>
         </div>
       )}
+      {rating &&
+        (() => {
+          const ex = live.exercises[rating.exIdx];
+          const set = ex?.sets[rating.sIdx];
+          if (!ex || !set) return null;
+          // Everything the lift touches, minus what it is programmed for, is
+          // the shortlist of things that can have given out first.
+          const primary = (ex.targetKeys ?? []).slice(0, 1);
+          return (
+            <SetQualitySheet
+              exerciseName={ex.name}
+              setNumber={rating.sIdx + 1}
+              primaryKeys={primary}
+              allKeys={ex.targetKeys ?? []}
+              value={set}
+              onChange={(patch) => {
+                // Keep the legacy 1-5 in step with `closeness`. Calorie burn
+                // and muscle stimulus still read it, and two fields describing
+                // the same thing must never disagree.
+                const CLOSENESS_TO_FAILURE = {
+                  reps_left: 2, one_left: 3, nothing: 5, forced: 5,
+                } as const;
+                const next = { ...patch } as typeof patch & { failure?: number };
+                if (patch.closeness) next.failure = CLOSENESS_TO_FAILURE[patch.closeness];
+                updateSet(rating.exIdx, rating.sIdx, next);
+              }}
+              onClose={() => setRating(null)}
+            />
+          );
+        })()}
+
     </div>
   );
 }

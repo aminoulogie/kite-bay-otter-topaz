@@ -6,9 +6,26 @@ export type TabId = "workout" | "nutrition" | "habits" | "body" | "insights" | "
 export interface WorkoutSet {
   weight: number | "";
   reps: number | "";
+  /**
+   * The old 1-5 rating. Kept because every imported set and every session
+   * logged before the quality fields existed carries one, and calorie and
+   * stimulus maths still reads it. New sets get it derived from `closeness`
+   * so the two never disagree.
+   */
   failure: number;
   done: boolean;
   type: SetType;
+
+  /**
+   * What actually ended the set. See lib/set-quality.ts — these are optional
+   * because history predates them, and absent must read as "not recorded"
+   * rather than as a zero.
+   */
+  limiter?: "target" | "synergist" | "form" | "choice";
+  closeness?: "reps_left" | "one_left" | "nothing" | "forced";
+  limitedBy?: string[];
+  burn?: 1 | 2 | 3;
+  form?: 1 | 2 | 3;
 }
 
 export interface SessionExercise {
