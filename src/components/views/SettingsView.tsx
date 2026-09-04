@@ -28,7 +28,9 @@ export function SettingsView() {
   const [rtName, setRtName] = useState("");
   const [rtList, setRtList] = useState<{ name: string }[]>([]);
   const [addEx, setAddEx] = useState("");
-  const [pending, setPending] = useState<{ summary: BackupSummary; apply: () => Promise<void> } | null>(null);
+  const [pending, setPending] = useState<
+    { summary: BackupSummary; apply: (mode: "merge" | "replace") => Promise<void> } | null
+  >(null);
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<StorageHealth | null>(null);
   const [sinceBackup, setSinceBackup] = useState<number | null>(daysSinceBackup());
@@ -75,8 +77,8 @@ export function SettingsView() {
     // restoring replaces every log on the device.
     setPending({
       summary: result.summary,
-      apply: async () => {
-        if (!importJson(JSON.stringify(result.backup.data))) {
+      apply: async (mode: "merge" | "replace") => {
+        if (!importJson(JSON.stringify(result.backup.data), mode)) {
           toast.error("That backup could not be applied.");
           return;
         }
@@ -429,8 +431,13 @@ export function SettingsView() {
           <Card className="w-full max-w-md space-y-3">
             <CardTitle>Restore this backup?</CardTitle>
             <p className="text-xs text-muted">
-              Taken {new Date(pending.summary.exportedAt).toLocaleString()}. This replaces
-              everything currently on this device.
+              Taken {new Date(pending.summary.exportedAt).toLocaleString()}.
+            </p>
+            <p className="text-xs text-muted">
+              <b className="text-fg">Merge</b> adds anything this device is missing and keeps
+              what is already here — nothing is lost. <b className="text-fg">Replace</b> throws
+              away everything on the device first, and is only for restoring onto a phone with
+              nothing on it.
             </p>
             <div className="grid grid-cols-2 gap-2">
               <Stat label="Sessions" value={pending.summary.sessions} />
@@ -442,21 +449,37 @@ export function SettingsView() {
               <Button className="flex-1" onClick={() => setPending(null)}>
                 Cancel
               </Button>
+              {/* Merge is the primary action. Restoring a backup should only
+                  ever be able to add — reaching for one must not cost data. */}
               <Button
-                variant="danger"
+                variant="primary"
                 className="flex-1"
                 disabled={busy}
                 onClick={() => {
                   setBusy(true);
-                  void pending.apply().finally(() => {
+                  void pending.apply("merge").finally(() => {
                     setBusy(false);
                     setPending(null);
                   });
                 }}
               >
-                Replace
+                Merge
               </Button>
             </div>
+            <Button
+              variant="danger"
+              className="w-full"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void pending.apply("replace").finally(() => {
+                  setBusy(false);
+                  setPending(null);
+                });
+              }}
+            >
+              Replace everything
+            </Button>
           </Card>
         </div>
       )}

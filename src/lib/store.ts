@@ -113,7 +113,7 @@ export interface SomaStore {
   saveRoutine: (name: string, list: { name: string }[], original?: string) => string | null;
   deleteRoutine: (name: string) => void;
   exportJson: () => string;
-  importJson: (raw: string) => boolean;
+  importJson: (raw: string, mode?: "merge" | "replace") => boolean;
   resetAll: () => void;
 }
 
@@ -596,7 +596,15 @@ export const useSoma = create<SomaStore>()(
           muscles,
         };
         if (totalSets === 0) return null;
-        const key = get().activeDate;
+        // File the session under the day it was PERFORMED, never under the date
+        // being browsed. activeDate is a view cursor: filing by it meant a
+        // glance at yesterday saved today's workout onto yesterday, destroying
+        // that day's record and leaving today empty.
+        //
+        // The day work started, not the day it ended, so a session running past
+        // midnight stays on the day it belongs to.
+        const startedAt = live.firstSetAt ?? live.startTime ?? Date.now();
+        const key = getLocalDateKey(new Date(startedAt));
         set({
           history: { ...get().history, [key]: session },
           live: { ...live, finished: session, restEndsAt: null },
@@ -642,17 +650,70 @@ export const useSoma = create<SomaStore>()(
           null,
           2,
         ),
-      importJson: (raw) => {
+      /**
+       * Fold a backup into what is already here.
+       *
+       * MERGE is the default, and deliberately so. A restore used to replace
+       * every collection outright, so importing a backup taken before today
+       * silently destroyed today — the user reached for a backup to recover
+       * data and lost more of it. Restoring should only ever be able to ADD.
+       *
+       * On a conflict the device wins: it holds the newer edit by definition,
+       * since the backup is a snapshot of an older moment. The backup fills
+       * only what is missing. Habit day-marks are the exception and union
+       * together — a day ticked in either place really was done.
+       *
+       * "replace" remains available for a genuine restore onto a wiped device,
+       * where there is nothing to protect.
+       */
+      importJson: (raw, mode = "merge") => {
         try {
           const data = JSON.parse(raw);
           if (!data || typeof data !== "object") return false;
+
+          if (mode === "replace") {
+            set({
+              settings: { ...defaultSettings(), ...(data.settings || {}) },
+              history: data.history || {},
+              nutrition: data.nutrition || {},
+              habits: data.habits || seedHabits(),
+              customExercises: data.customExercises || [],
+              customFoods: data.customFoods || [],
+              seeded: true,
+            });
+            return true;
+          }
+
+          const cur = get();
+
+          // Incoming days fill gaps; a day already on the device is kept.
+          const history = { ...(data.history || {}), ...cur.history };
+          const nutrition = { ...(data.nutrition || {}), ...cur.nutrition };
+
+          // Habits merge by id, and their day-marks union: a day ticked in
+          // either copy was genuinely done, and dropping it would erase a
+          // streak the user actually earned.
+          const byId = new Map<string, Habit>();
+          for (const h of (data.habits || []) as Habit[]) byId.set(h.id, h);
+          for (const h of cur.habits) {
+            const prior = byId.get(h.id);
+            byId.set(h.id, prior ? { ...prior, ...h, history: { ...prior.history, ...h.history } } : h);
+          }
+
+          const mergeByName = <T extends { name: string }>(incoming: T[], mine: T[]): T[] => {
+            const out = new Map<string, T>();
+            for (const x of incoming || []) out.set(x.name.trim().toLowerCase(), x);
+            for (const x of mine) out.set(x.name.trim().toLowerCase(), x); // mine wins
+            return [...out.values()];
+          };
+
           set({
-            settings: { ...defaultSettings(), ...(data.settings || {}) },
-            history: data.history || {},
-            nutrition: data.nutrition || {},
-            habits: data.habits || seedHabits(),
-            customExercises: data.customExercises || [],
-            customFoods: data.customFoods || [],
+            settings: { ...defaultSettings(), ...(data.settings || {}), ...cur.settings },
+            history,
+            nutrition,
+            habits: [...byId.values()],
+            customExercises: mergeByName(data.customExercises || [], cur.customExercises),
+            customFoods: mergeByName(data.customFoods || [], cur.customFoods),
             seeded: true,
           });
           return true;
