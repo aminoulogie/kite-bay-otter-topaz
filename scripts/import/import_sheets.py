@@ -107,6 +107,11 @@ def flags(canon):
 
 def import_all(sp):
     records, rejects = [], []
+    # Apr26 and Week 1 are near-copies, so the same cell appears in both. Skip
+    # the whole CELL when it repeats, never the individual sets: one cell holds
+    # several sets, and filtering those after the fact would keep only the first
+    # of "259,2512,255" and silently lose two thirds of the day.
+    seen_cells: set[tuple[str, str, str]] = set()
 
     # ---- Sheet A: exercise x date matrix ----------------------------------
     wb = openpyxl.load_workbook(os.path.join(sp, "A.xlsx"), data_only=True)
@@ -140,6 +145,10 @@ def import_all(sp):
                 cell = row[col - 1] if col - 1 < len(row) else None
                 if cell is None or not str(cell).strip():
                     continue
+                cell_key = (d.isoformat(), canon, str(cell).strip())
+                if cell_key in seen_cells:
+                    continue
+                seen_cells.add(cell_key)
                 res = parse_cell(str(cell), **fl)
                 for s in res.sets:
                     records.append(
@@ -196,15 +205,11 @@ def import_all(sp):
                      straps=straps, note=note, source="B/" + ws.title, raw="")
             )
 
-    # Idempotency: the identical set from the identical place is one record, so
-    # re-running the import cannot duplicate history.
-    seen, uniq = set(), []
-    for r in records:
-        k = (r["date"], r["exercise"], r["weight"], r["reps"], r["source"])
-        if k not in seen:
-            seen.add(k)
-            uniq.append(r)
-    return uniq, rejects
+    # Sheet A is already de-duplicated per cell above. Sheet B is one row per
+    # set, so an identical row twice in the same tab is a genuine repeat and is
+    # kept; re-running the import re-reads the same file and yields the same
+    # list, which is what idempotent means here.
+    return records, rejects
 
 
 if __name__ == "__main__":
