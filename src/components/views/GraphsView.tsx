@@ -5,6 +5,7 @@ import {
 import { Card, CardTitle } from "@/components/ui/card";
 import {
   buildTrainingLog, dayBest, estimated1RM, groupsOf, type ExerciseLog, type LoggedSet,
+  formatSet,
 } from "@/lib/training-log";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,12 @@ const RANGES: { id: Range; days: number | null }[] = [
 // Distinguishable in both themes and reasonably colourblind-safe.
 const SERIES_COLORS = ["#38bdf8", "#f97316", "#a78bfa", "#34d399", "#f472b6"];
 
+/** The heaviest set of a day, for labelling — "Top set" means a set, not a number. */
+function topSetOf(sets: LoggedSet[]): LoggedSet | null {
+  if (!sets.length) return null;
+  return sets.reduce((a, b) => (b.weight > a.weight ? b : a));
+}
+
 function metricOf(sets: LoggedSet[], m: Metric): number {
   if (!sets.length) return 0;
   if (m === "top") return Math.max(...sets.map((s) => s.weight));
@@ -43,7 +50,16 @@ function metricOf(sets: LoggedSet[], m: Metric): number {
 
 export function GraphsView() {
   const history = useSoma((s) => s.history);
-  const log = useMemo(() => buildTrainingLog(history), [history]);
+  const nutrition = useSoma((s) => s.nutrition);
+  // Bodyweight lifts need the body's own load, which lives in the nutrition log.
+  const bodyweights = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [d, day] of Object.entries(nutrition || {})) {
+      if (day?.bodyWeight) out[d] = day.bodyWeight;
+    }
+    return out;
+  }, [nutrition]);
+  const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
   const groups = useMemo(() => groupsOf(log), [log]);
 
   const [group, setGroup] = useState<string>("Chest");
@@ -82,7 +98,12 @@ export function GraphsView() {
       const row: Record<string, string | number> = { date: d, t: new Date(d).getTime() };
       for (const e of series) {
         const sets = e.days[d];
-        if (sets?.length) row[e.name] = Math.round(metricOf(sets, metric) * 10) / 10;
+        if (!sets?.length) continue;
+        row[e.name] = Math.round(metricOf(sets, metric) * 10) / 10;
+        // Carried alongside the number so the tooltip can say "80kg x 12"
+        // rather than leaving the reps to be guessed at.
+        const top = topSetOf(sets);
+        if (top) row[`${e.name}__label`] = formatSet(top);
       }
       return row;
     });
@@ -197,7 +218,10 @@ export function GraphsView() {
                     fontSize: 12,
                   }}
                   labelFormatter={(t) => new Date(t as number).toLocaleDateString()}
-                  formatter={(v, n) => [`${v} ${unit}`, n as string]}
+                  formatter={(v, n, item) => {
+                    const label = (item?.payload as Record<string, string>)?.[`${n as string}__label`];
+                    return [label ? `${v} ${unit} · top set ${label}` : `${v} ${unit}`, n as string];
+                  }}
                 />
                 {active.map((n, i) => (
                   <Line

@@ -1,26 +1,33 @@
-import { useDeferredValue, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import {
-  allDates, buildTrainingLog, dayBest, formatDay, groupsOf, type ExerciseLog,
+  allDates, buildTrainingLog, dayBest, formatSet, groupsOf,
+  type ExerciseLog, type LoggedSet,
 } from "@/lib/training-log";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 /**
- * Every set ever done, as exercises x dates.
+ * Every set ever done.
  *
- * The heat scale is normalised PER EXERCISE and never across them: 100kg is a
- * personal record on one lift and a warm-up on another, so a shared scale
- * would paint the whole table by which exercise happens to be heaviest.
+ * Built as muscle group → exercise → that exercise's own dates, rather than as
+ * one wide exercise-by-date grid. The grid was mostly empty: an exercise
+ * trained twenty times across two hundred training days is 90% blank cells, and
+ * on a phone that meant scrolling sideways through nothing to find anything.
  *
- * Colour is never the only signal. A personal best also carries a PR badge and
- * bolder text, so the table still reads without colour vision — the tiers are
- * ordered by lightness as well as hue for the same reason.
+ * Each exercise opens into a fixed-height window that scrolls INSIDE itself, so
+ * the page never grows and the app stays where it was. Newest first, because
+ * the last session is the one you are trying to beat.
  */
 
-const COL_W = 132; // px per date column
-const NAME_W = 148; // frozen exercise column
-const OVERSCAN = 4; // columns rendered beyond the viewport, to cover fast scrolls
+type SortBy = "date" | "e1rm" | "top";
+
+const SORTS: { id: SortBy; label: string }[] = [
+  { id: "date", label: "Newest" },
+  { id: "e1rm", label: "Best 1RM" },
+  { id: "top", label: "Heaviest" },
+];
 
 type Tier = "pr" | "near" | "mid" | "light";
 
@@ -40,183 +47,216 @@ function tierFor(best: number, dayValue: number): Tier {
   return "light";
 }
 
+function topWeight(sets: LoggedSet[]): number {
+  return sets.reduce((m, s) => Math.max(m, s.weight), 0);
+}
+
 export function DatabaseView() {
   const history = useSoma((s) => s.history);
-  const log = useMemo(() => buildTrainingLog(history), [history]);
+  const nutrition = useSoma((s) => s.nutrition);
+
+  // Bodyweight lifts carry the body's own load, which lives in the nutrition log.
+  const bodyweights = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [d, day] of Object.entries(nutrition || {})) {
+      if (day?.bodyWeight) out[d] = day.bodyWeight;
+    }
+    return out;
+  }, [nutrition]);
+
+  const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
   const groups = useMemo(() => groupsOf(log), [log]);
 
   const [group, setGroup] = useState<string | null>(null);
-  const [scrollLeft, setScrollLeft] = useState(0);
-  const scroller = useRef<HTMLDivElement>(null);
-  // Deferred so dragging the scrollbar never blocks on re-rendering cells.
-  const deferredScroll = useDeferredValue(scrollLeft);
+  const [openExercise, setOpenExercise] = useState<string | null>(null);
+  const [sort, setSort] = useState<SortBy>("date");
 
-  const rows: ExerciseLog[] = useMemo(
-    () => (group ? log.filter((e) => e.group === group) : []),
+  const rows = useMemo(
+    () =>
+      (group ? log.filter((e) => e.group === group) : []).sort(
+        (a, b) => Object.keys(b.days).length - Object.keys(a.days).length,
+      ),
     [log, group],
   );
-  const dates = useMemo(() => {
-    if (!rows.length) return [];
-    const s = new Set<string>();
-    for (const e of rows) for (const d of Object.keys(e.days)) s.add(d);
-    return [...s].sort();
-  }, [rows]);
-
-  // Personal best per exercise, over that exercise's whole history.
-  const bests = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const e of rows) {
-      let best = 0;
-      for (const sets of Object.values(e.days)) best = Math.max(best, dayBest(sets));
-      m.set(e.name, best);
-    }
-    return m;
-  }, [rows]);
-
-  // Only the columns on screen are built. With a few hundred dates a static
-  // grid would mount thousands of cells and drop frames on every scroll.
-  const viewW = scroller.current?.clientWidth ?? 360;
-  const first = Math.max(0, Math.floor((deferredScroll - NAME_W) / COL_W) - OVERSCAN);
-  const last = Math.min(dates.length, first + Math.ceil(viewW / COL_W) + OVERSCAN * 2);
-  const visible = dates.slice(first, last);
 
   if (!group) {
     return (
       <Card>
         <CardTitle>Database</CardTitle>
         <p className="mb-3 text-xs text-muted">
-          Every set you have logged, {allDates(log).length} training days across{" "}
-          {log.length} exercises. Pick a muscle group.
+          {allDates(log).length} training days across {log.length} exercises.
         </p>
         <div className="grid grid-cols-2 gap-2">
-          {groups.map((g) => {
-            const n = log.filter((e) => e.group === g).length;
-            return (
-              <button
-                key={g}
-                type="button"
-                onClick={() => setGroup(g)}
-                className="flex items-center justify-between rounded-xl border border-border bg-surface-2 px-3 py-3 text-left transition-colors active:bg-surface-3"
-              >
-                <span className="text-sm font-bold">{g}</span>
-                <span className="text-xs font-semibold text-faint">{n}</span>
-              </button>
-            );
-          })}
+          {groups.map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => setGroup(g)}
+              className="flex items-center justify-between rounded-xl border border-border bg-surface-2 px-3 py-3 text-left active:bg-surface-3"
+            >
+              <span className="text-sm font-bold">{g}</span>
+              <span className="text-xs font-semibold text-faint">
+                {log.filter((e) => e.group === g).length}
+              </span>
+            </button>
+          ))}
         </div>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => setGroup(null)}
+          onClick={() => {
+            setGroup(null);
+            setOpenExercise(null);
+          }}
           className="rounded-full border border-border bg-surface-2 px-3 py-1.5 text-xs font-bold text-muted"
         >
           ← Groups
         </button>
         <span className="font-display text-sm font-extrabold">{group}</span>
-        <span className="ml-auto text-[0.7rem] text-faint">
-          {rows.length} exercises · {dates.length} days
-        </span>
+        <span className="ml-auto text-[0.7rem] text-faint">{rows.length} exercises</span>
       </div>
 
-      {dates.length === 0 ? (
-        <Card>
-          <p className="py-6 text-center text-xs text-muted">
-            Nothing logged for {group} yet.
-          </p>
-        </Card>
-      ) : (
-        <div
-          ref={scroller}
-          onScroll={(e) => setScrollLeft(e.currentTarget.scrollLeft)}
-          className="relative max-h-[62vh] overflow-auto rounded-2xl border border-border bg-surface"
-        >
-          <div style={{ width: NAME_W + dates.length * COL_W }} className="relative">
-            {/* Header: sticky on both axes so the corner cell stays put. */}
-            <div className="sticky top-0 z-20 flex h-9 border-b border-border bg-surface-2">
-              <div
-                style={{ width: NAME_W }}
-                className="sticky left-0 z-30 flex shrink-0 items-center border-r border-border bg-surface-2 px-2 text-[0.65rem] font-bold uppercase tracking-wide text-faint"
-              >
-                Exercise
+      {rows.map((ex) => {
+        const open = openExercise === ex.name;
+        const dates = Object.keys(ex.days);
+        const best = Math.max(0, ...Object.values(ex.days).map(dayBest));
+        const heaviest = Math.max(0, ...Object.values(ex.days).map(topWeight));
+
+        return (
+          <div key={ex.name} className="overflow-hidden rounded-2xl border border-border bg-surface">
+            <button
+              type="button"
+              onClick={() => setOpenExercise(open ? null : ex.name)}
+              aria-expanded={open}
+              className="flex w-full items-center gap-2 px-3 py-3 text-left active:bg-surface-2"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[0.8rem] font-bold">{ex.name}</div>
+                <div className="mt-0.5 text-[0.65rem] text-faint">
+                  {dates.length} {dates.length === 1 ? "session" : "sessions"} · best{" "}
+                  {Math.round(best)}kg 1RM
+                </div>
               </div>
-              <div style={{ width: first * COL_W }} className="shrink-0" />
-              {visible.map((d) => (
-                <div
-                  key={d}
-                  style={{ width: COL_W }}
-                  className="flex shrink-0 items-center justify-center border-r border-border/50 text-[0.65rem] font-bold tabular-nums text-muted"
-                >
-                  {d.slice(8, 10)}/{d.slice(5, 7)}/{d.slice(2, 4)}
-                </div>
-              ))}
-            </div>
+              <ChevronDown
+                className={cn("size-4 shrink-0 text-muted transition-transform", open && "rotate-180")}
+              />
+            </button>
 
-            {rows.map((ex) => {
-              const best = bests.get(ex.name) ?? 0;
-              return (
-                <div key={ex.name} className="flex h-12 border-b border-border/40">
-                  <div
-                    style={{ width: NAME_W }}
-                    className="sticky left-0 z-10 flex shrink-0 items-center border-r border-border bg-surface px-2 text-[0.7rem] font-bold leading-tight"
-                  >
-                    <span className="line-clamp-2">{ex.name}</span>
-                  </div>
-                  <div style={{ width: first * COL_W }} className="shrink-0" />
-                  {visible.map((d) => {
-                    const sets = ex.days[d];
-                    if (!sets?.length) {
-                      return <div key={d} style={{ width: COL_W }} className="shrink-0 border-r border-border/30" />;
-                    }
-                    const tier = tierFor(best, dayBest(sets));
-                    const t = TIERS[tier];
-                    return (
-                      <div
-                        key={d}
-                        style={{ width: COL_W }}
-                        className={cn(
-                          "relative flex shrink-0 items-center border-r border-border/30 px-1.5",
-                          t.bg,
-                        )}
-                        title={`${ex.name} · ${d}\n${formatDay(sets)}`}
-                      >
-                        <span
-                          className={cn(
-                            "text-[0.68rem] leading-tight tabular-nums",
-                            t.fg,
-                            tier === "pr" ? "font-extrabold" : "font-semibold",
-                          )}
-                        >
-                          {formatDay(sets)}
-                        </span>
-                        {tier === "pr" && (
-                          <span className="absolute right-1 top-1 rounded bg-red-50 px-1 text-[0.5rem] font-extrabold text-red-900">
-                            PR
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+            {open && (
+              <ExerciseWindow ex={ex} best={best} heaviest={heaviest} sort={sort} onSort={setSort} />
+            )}
           </div>
-        </div>
-      )}
+        );
+      })}
+    </div>
+  );
+}
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-1">
+/**
+ * One exercise's sessions, in a window that scrolls inside itself.
+ *
+ * Fixed to under half the viewport so opening an exercise never pushes the page
+ * around — the list you were reading stays where it was.
+ */
+function ExerciseWindow({
+  ex, best, heaviest, sort, onSort,
+}: {
+  ex: ExerciseLog;
+  best: number;
+  heaviest: number;
+  sort: SortBy;
+  onSort: (s: SortBy) => void;
+}) {
+  const entries = useMemo(() => {
+    const list = Object.entries(ex.days).map(([date, sets]) => ({
+      date,
+      sets,
+      e1rm: dayBest(sets),
+      top: topWeight(sets),
+    }));
+    if (sort === "e1rm") return list.sort((a, b) => b.e1rm - a.e1rm);
+    if (sort === "top") return list.sort((a, b) => b.top - a.top);
+    // Newest first: the last session is the one being chased.
+    return list.sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [ex.days, sort]);
+
+  return (
+    <div className="border-t border-border">
+      <div className="flex items-center gap-1 border-b border-border bg-surface-2 px-2 py-1.5">
+        <span className="mr-1 text-[0.6rem] font-bold uppercase tracking-wide text-faint">Sort</span>
+        {SORTS.map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => onSort(s.id)}
+            className={cn(
+              "rounded-md px-2 py-1 text-[0.65rem] font-bold transition-colors",
+              sort === s.id ? "bg-accent text-accent-ink" : "text-muted",
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Scrolls inside itself: the page height never changes. */}
+      <div className="max-h-[42vh] overflow-y-auto overscroll-contain">
+        {entries.map((row) => {
+          const tier = tierFor(best, row.e1rm);
+          const t = TIERS[tier];
+          const isHeaviest = row.top >= heaviest && heaviest > 0;
+          return (
+            <div key={row.date} className="border-b border-border/40 px-3 py-2 last:border-0">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-[0.7rem] font-bold tabular-nums">
+                  {new Date(row.date + "T00:00:00").toLocaleDateString(undefined, {
+                    day: "2-digit", month: "short", year: "2-digit",
+                  })}
+                </span>
+                <span
+                  className={cn("rounded px-1.5 py-0.5 text-[0.55rem] font-extrabold", t.bg, t.fg)}
+                >
+                  {t.label}
+                </span>
+                {isHeaviest && (
+                  <span className="rounded bg-surface-3 px-1.5 py-0.5 text-[0.55rem] font-extrabold text-fg">
+                    HEAVIEST
+                  </span>
+                )}
+                <span className="ml-auto text-[0.62rem] tabular-nums text-faint">
+                  {Math.round(row.e1rm)}kg 1RM
+                </span>
+              </div>
+              {/* Units kept and reps spelled out: "80kg x 12", not "80x12". */}
+              <div className="flex flex-wrap gap-1">
+                {row.sets.map((s, i) => (
+                  <span
+                    key={i}
+                    className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[0.68rem] font-semibold tabular-nums"
+                  >
+                    {formatSet(s)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-surface-2 px-3 py-1.5">
         {(Object.keys(TIERS) as Tier[]).map((k) => (
-          <span key={k} className="flex items-center gap-1.5 text-[0.65rem] text-muted">
-            <span className={cn("size-2.5 rounded", TIERS[k].bg)} />
-            <b className="text-fg">{TIERS[k].label}</b> {TIERS[k].hint}
+          <span key={k} className="flex items-center gap-1 text-[0.58rem] text-muted">
+            <span className={cn("size-2 rounded", TIERS[k].bg)} />
+            {TIERS[k].label}
           </span>
         ))}
-        <span className="text-[0.65rem] text-faint">Scaled per exercise, not across them.</span>
+        <span className="text-[0.58rem] text-faint">scaled to this lift only</span>
       </div>
     </div>
   );

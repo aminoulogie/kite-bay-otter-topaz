@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, Check, Link2, Plus, Redo2, Search, Timer, Trash2, Undo2, X } from "lucide-react";
+import { Check, Link2, Plus, Redo2, Search, Timer, Trash2, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PlateLoading } from "@/components/PlateLoading";
 import { Badge } from "@/components/ui/badge";
@@ -12,8 +12,6 @@ import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
-import { TrainCalendar } from "@/components/TrainCalendar";
-import { useRightEdgeSwipe } from "@/lib/use-edge-swipe";
 import { cn } from "@/lib/utils";
 import type { SessionExercise } from "@/lib/types";
 
@@ -34,21 +32,6 @@ const SUPERSET_COLOR: Record<string, string> = {
  * all three, and keeps the gesture alive on those screens too.
  */
 export function WorkoutView() {
-  const [calendarOpen, setCalendarOpen] = useState(false);
-
-  // 40px rather than 28: a thumb reaching in from the bezel is not precise,
-  // and the narrow strip was most of why this felt like it did nothing.
-  useRightEdgeSwipe(() => setCalendarOpen(true), !calendarOpen, 40);
-
-  return (
-    <>
-      <WorkoutViewInner onOpenCalendar={() => setCalendarOpen(true)} />
-      {calendarOpen && <TrainCalendar onClose={() => setCalendarOpen(false)} />}
-    </>
-  );
-}
-
-function WorkoutViewInner({ onOpenCalendar }: { onOpenCalendar: () => void }) {
   const live = useSoma((s) => s.live);
   const settings = useSoma((s) => s.settings);
   const history = useSoma((s) => s.history);
@@ -289,21 +272,7 @@ function WorkoutViewInner({ onOpenCalendar }: { onOpenCalendar: () => void }) {
               {proj.phase} · {proj.repScheme}
             </p>
           </div>
-          <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <Badge tone={proj.isDeload ? "warn" : "muted"}>{proj.phaseBadge}</Badge>
-            {/* The swipe is the intended way in, but a gesture with no
-                affordance is undiscoverable — there was no way to know it
-                existed. This is the same destination, visible. */}
-            <button
-              type="button"
-              onClick={onOpenCalendar}
-              aria-label="Open training calendar"
-              className="flex items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-[0.65rem] font-bold text-muted"
-            >
-              <CalendarDays className="size-3.5" />
-              Calendar
-            </button>
-          </div>
+          <Badge tone={proj.isDeload ? "warn" : "muted"}>{proj.phaseBadge}</Badge>
         </div>
       </Card>
 

@@ -10,6 +10,9 @@ import json
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from exercise_catalog import BODYWEIGHT
+
 # "Marteau" is French for hammer, logged at dumbbell weights: the author's
 # hammer curls under another name.
 RENAME = {"Marteau": "Hammer Curl"}
@@ -79,6 +82,9 @@ def main(sheets_dir, out_path):
             "name": ex,
             "key": keys[ex],
             "group": GROUP.get(keys[ex], "Other"),
+            # Bodyweight movements: the logged number is the ADDED plate, so the
+            # app must add the body's own load or they plot as a flat zero.
+            **({"bw": True} if ex in BODYWEIGHT else {}),
             # heaviest first, so a day reads as its top set down to its back-offs
             "days": {d: sorted(s, key=lambda x: -x[0]) for d, s in sorted(days.items())},
         }

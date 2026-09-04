@@ -1,18 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  Activity,
-  Dumbbell,
-  PanelLeft,
-  Settings as SettingsIcon,
-  Target,
-  TrendingUp,
-  Utensils,
-} from "lucide-react";
+import { Activity, CalendarDays, Dumbbell, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, Utensils } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
 import { requestPersistence } from "@/lib/storage-health";
-import { useEdgeSwipe } from "@/lib/use-edge-swipe";
+import { TrainCalendar } from "@/components/TrainCalendar";
+import { useEdgeSwipe, useRightEdgeSwipe } from "@/lib/use-edge-swipe";
 import { BodyView } from "@/components/views/BodyView";
 import { HabitsView } from "@/components/views/HabitsView";
 import { InsightsView } from "@/components/views/InsightsView";
@@ -38,8 +31,19 @@ export function AppShell() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   useEdgeSwipe(openDrawer, ready && !drawerOpen);
+
   const hydrated = useSoma((s) => s.hydrated);
   const tab = useSoma((s) => s.tab);
+  // The calendar lives here rather than inside WorkoutView so one instance
+  // serves the header button on every tab. The swipe stays scoped to Train,
+  // where it was asked for, and the 40px edge is wide enough for a thumb
+  // coming in off the bezel.
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  useRightEdgeSwipe(
+    () => setCalendarOpen(true),
+    ready && !drawerOpen && !calendarOpen && tab === "workout",
+    40,
+  );
   const setTab = useSoma((s) => s.setTab);
   const settings = useSoma((s) => s.settings);
   const activeDate = useSoma((s) => s.activeDate);
@@ -146,10 +150,21 @@ export function AppShell() {
             </div>
           </div>
         </div>
-        <div className="shrink-0 rounded-full border border-border bg-surface-2 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wider text-muted">
-          Local
-        </div>
+        {/* Was a static "Local" badge, which said something the user already
+            knew and did nothing. The calendar is the thing worth reaching from
+            every screen. */}
+        <button
+          type="button"
+          onClick={() => setCalendarOpen(true)}
+          aria-label="Open training calendar"
+          className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-muted active:bg-surface-3"
+        >
+          <CalendarDays className="size-3.5" />
+          Calendar
+        </button>
       </header>
+
+      {calendarOpen && <TrainCalendar onClose={() => setCalendarOpen(false)} />}
 
       {/* Selecting a past day changes what every tab reads. Without a standing
           indicator that is invisible, and the app looks like it ignored the tap. */}

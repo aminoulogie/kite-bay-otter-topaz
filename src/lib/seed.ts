@@ -237,14 +237,25 @@ export function seedNutrition(): Record<string, NutritionDay> {
 }
 
 export function seedHabits(): Habit[] {
-  const mk = (id: string, name: string, desc: string, color: string, goal: number, missEvery: number): Habit => {
-    const history: Record<string, boolean> = {};
-    for (let i = 48; i >= 0; i--) {
-      const key = dateKeyOffset(-i);
-      history[key] = i % missEvery !== 0;
-    }
-    return { id, name, desc, color, goalDaysPerWeek: goal, history };
-  };
+  /**
+   * Habits start EMPTY.
+   *
+   * They used to ship with 48 days of invented history, which showed a streak
+   * nobody had earned and made every heatmap and completion figure a fiction.
+   * A habit tracker whose first screen lies about the past is worse than an
+   * empty one.
+   *
+   * `missEvery` is kept in the signature only so the call sites below stay
+   * readable as a list; it no longer generates anything.
+   */
+  const mk = (id: string, name: string, desc: string, color: string, goal: number, _missEvery: number): Habit => ({
+    id,
+    name,
+    desc,
+    color,
+    goalDaysPerWeek: goal,
+    history: {},
+  });
   return [
     mk("gym-movement", "Train", "Hit the day's split", "#22c55e", 5, 6),
     mk("clean-nutrition", "Hit protein", "Land the protein target", "#38bdf8", 7, 9),
