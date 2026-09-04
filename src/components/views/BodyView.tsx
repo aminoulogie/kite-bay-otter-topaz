@@ -10,6 +10,7 @@ import { SomaIntelligenceEngine } from "@/lib/soma";
 import {
   currentSaturation, saturationLabel, saturationSeries, supplyStatus,
 } from "@/lib/creatine";
+import { SLEEP_FACTORS, currentDebt, debtLabel, nightsToClear } from "@/lib/sleep-debt";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -154,7 +155,10 @@ function SleepPanel() {
     .map((k) => ({ date: k, hours: nutrition[k]!.sleep!.hours, quality: nutrition[k]!.sleep!.quality }));
   const last7 = series.slice(-7);
   const avg = last7.length ? last7.reduce((a, p) => a + p.hours, 0) / last7.length : null;
-  const debt = avg !== null ? Math.max(0, (8 - avg) * 7) : null;
+  // Was (8 - avg) * 7: a flat extrapolation that never decayed and never let a
+  // long night pay anything back, so it only ever grew.
+  const debt = series.length ? currentDebt(series) : null;
+  const toClear = debt !== null ? nightsToClear(debt) : null;
 
   return (
     <>
@@ -209,10 +213,53 @@ function SleepPanel() {
           <div className="rounded-xl bg-surface-2 p-3">
             <div className="text-[0.62rem] font-bold uppercase text-faint">Sleep debt</div>
             <div className="font-display text-lg font-bold tabular">{debt === null ? "—" : `${debt.toFixed(1)} h`}</div>
+            {debt !== null && (
+              <div className="mt-0.5 text-[0.58rem] text-faint">
+                {debtLabel(debt)}
+                {toClear ? ` · ~${toClear} nights to clear` : ""}
+              </div>
+            )}
           </div>
         </div>
         {series.length >= 2 && <Spark points={series.slice(-14).map((s) => s.hours)} className="mt-3" />}
       </Card>
+      <Card>
+        <CardTitle>What moves sleep</CardTitle>
+        <p className="mb-3 text-xs text-muted">
+          Deliberately short. These have real evidence behind them; most of the usual
+          list does not.
+        </p>
+        <div className="space-y-2">
+          {SLEEP_FACTORS.map((f) => {
+            // Checked against the actual food log where a nutrient backs it,
+            // so this is a measurement rather than a checklist to tick.
+            const eaten = f.nutrientKey
+              ? (day.items ?? []).reduce<number>(
+                  (t, i) => t + (Number((i as unknown as Record<string, unknown>)[f.nutrientKey!]) || 0),
+                  0,
+                )
+              : null;
+            const goal = f.nutrientKey ? (day.goals?.[f.nutrientKey] ?? 0) : 0;
+            const hit = eaten !== null && goal > 0 && eaten >= goal * 0.9;
+            return (
+              <div key={f.id} className="rounded-xl border border-border bg-surface-2 p-2.5">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[0.75rem] font-bold">{f.label}</span>
+                  {eaten !== null && goal > 0 ? (
+                    <span className={cn("text-[0.68rem] font-bold tabular-nums", hit ? "text-emerald-400" : "text-warn")}>
+                      {Math.round(eaten)} / {Math.round(goal)}
+                    </span>
+                  ) : (
+                    <span className="text-[0.62rem] font-semibold text-faint">{f.target}</span>
+                  )}
+                </div>
+                <p className="mt-0.5 text-[0.62rem] leading-snug text-faint">{f.note}</p>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
     </>
   );
 }

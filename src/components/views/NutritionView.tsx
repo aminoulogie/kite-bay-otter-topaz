@@ -6,6 +6,7 @@ import { PortionSheet } from "@/components/PortionSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { NutritionGraphs } from "@/components/NutritionGraphs";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -337,6 +338,8 @@ export function NutritionView() {
           )}
         </details>
       </Card>
+
+      <NutritionGraphs />
 
       {MEALS.map((m) => {
         const group = items
