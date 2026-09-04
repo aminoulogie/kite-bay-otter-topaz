@@ -56,10 +56,19 @@ def _split_digits(d: str) -> tuple[float, int] | None:
     if n <= 2:
         return None                      # too short to carry both
     if n == 3:
-        return float(d[:2]), int(d[2])   # 355 -> 35 x 5
+        # 355 -> 35 x 5. But a trailing 0 cannot be a rep count, so 810 is
+        # 8kg x 10 rather than 81 x 0.
+        if d[2] == "0":
+            return (float(d[0]), int(d[1:])) if 1 <= int(d[1:]) <= 30 else None
+        return float(d[:2]), int(d[2])
     if n == 4:
         # reps never have a leading zero, so '0' here means a 3-digit weight
-        return (float(d[:3]), int(d[3])) if d[2] == "0" else (float(d[:2]), int(d[2:]))
+        if d[2] == "0":
+            return float(d[:3]), int(d[3])
+        reps = int(d[2:])
+        if reps <= 30:
+            return float(d[:2]), reps        # 2012 -> 20 x 12
+        return None                          # 4588 is 45 x 8 x 8, handled above
     if n == 5:
         return float(d[:3]), int(d[3:])  # 12512 -> 125 x 12
     return None
@@ -98,6 +107,11 @@ def parse_cell(
         return res
 
     text = str(cell).strip()
+    # Excel hands back whole numbers as floats, so "708.0" arrives with a
+    # trailing .0 that would otherwise fail the digit test.
+    text = re.sub(r"(?<=\d)\.0(?!\d)", "", text)
+    # A dot between two digit runs separates sets: 276.276 is 27x6, twice.
+    text = re.sub(r"(?<=\d)\.(?=\d)", ",", text)
     # single spaces separate sets too ("20kgx7 10kgx5"), but only when
     # the pieces look like sets rather than one phrase.
     for token in re.split(r"[,;/]+|\s+", text):
@@ -142,6 +156,14 @@ def parse_cell(
         # turn it into 25x1, 21x2. A true drop set like 908607 fails this test
         # (86 is not a rep count) and falls through, so the two disambiguate
         # each other rather than needing a rule about which is more likely.
+        if digits_only and len(token) == 4 and token[2] != "0":
+            w, r1, r2 = float(token[:2]), int(token[2]), int(token[3])
+            if int(token[2:]) > 30 and 1 <= r1 <= 9 and 1 <= r2 <= 9:
+                for r in (r1, r2):
+                    actual = w * 2 + bar_kg if plate_loaded else w
+                    res.sets.append(ParsedSet(actual, r, failure, straps, token, note))
+                continue
+
         if digits_only and len(token) == 6:
             w, r1, r2 = float(token[:2]), int(token[2:4]), int(token[4:])
             if 0 < w <= 300 and 1 <= r1 <= 30 and 1 <= r2 <= 30:
