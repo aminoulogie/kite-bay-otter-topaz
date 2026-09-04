@@ -45,6 +45,7 @@ export function AppShell() {
   const activeDate = useSoma((s) => s.activeDate);
   const setActiveDate = useSoma((s) => s.setActiveDate);
   const ensureSeed = useSoma((s) => s.ensureSeed);
+  const mergeCustomFoods = useSoma((s) => s.mergeCustomFoods);
   const normalizeLive = useSoma((s) => s.normalizeLive);
   const rollDayIfNeeded = useSoma((s) => s.rollDayIfNeeded);
   const markHydrated = useSoma((s) => s.markHydrated);
@@ -53,6 +54,9 @@ export function AppShell() {
     const result = useSoma.persist.rehydrate();
     void Promise.resolve(result).then(() => {
       ensureSeed();
+      // Runs every boot, not only on a fresh install, so foods added to the
+      // seed later still reach an app that was seeded long ago.
+      mergeCustomFoods();
       // Ask the browser to stop treating this data as disposable. Safari grants
       // it to home-screen apps and usually refuses a plain tab; either way the
       // answer is informational, so nothing here depends on it.
@@ -63,7 +67,7 @@ export function AppShell() {
       markHydrated();
       setReady(true);
     });
-  }, [ensureSeed, markHydrated, normalizeLive]);
+  }, [ensureSeed, mergeCustomFoods, markHydrated, normalizeLive]);
 
   /**
    * Rolls onto a new sheet at midnight. A phone left on the Fuel tab overnight

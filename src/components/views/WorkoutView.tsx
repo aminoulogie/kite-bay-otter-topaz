@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Link2, Plus, Redo2, Search, Timer, Trash2, Undo2, X } from "lucide-react";
+import { CalendarDays, Check, Link2, Plus, Redo2, Search, Timer, Trash2, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PlateLoading } from "@/components/PlateLoading";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +24,31 @@ const SUPERSET_COLOR: Record<string, string> = {
   D: "var(--color-warn)",
 };
 
+/**
+ * Owns the calendar so every branch of the view can reach it.
+ *
+ * WorkoutViewInner returns early for a past date and for the saved-session
+ * summary, and the calendar used to be mounted only in the third, main return.
+ * The swipe flipped the state and nothing appeared, because the branch that
+ * would have rendered it was never reached. Hoisting it here fixes that for
+ * all three, and keeps the gesture alive on those screens too.
+ */
 export function WorkoutView() {
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
+  // 40px rather than 28: a thumb reaching in from the bezel is not precise,
+  // and the narrow strip was most of why this felt like it did nothing.
+  useRightEdgeSwipe(() => setCalendarOpen(true), !calendarOpen, 40);
+
+  return (
+    <>
+      <WorkoutViewInner onOpenCalendar={() => setCalendarOpen(true)} />
+      {calendarOpen && <TrainCalendar onClose={() => setCalendarOpen(false)} />}
+    </>
+  );
+}
+
+function WorkoutViewInner({ onOpenCalendar }: { onOpenCalendar: () => void }) {
   const live = useSoma((s) => s.live);
   const settings = useSoma((s) => s.settings);
   const history = useSoma((s) => s.history);
@@ -62,11 +86,6 @@ export function WorkoutView() {
   const [customOpen, setCustomOpen] = useState(false);
   // which set's quality sheet is open, if any
   const [rating, setRating] = useState<{ exIdx: number; sIdx: number } | null>(null);
-  const [calendarOpen, setCalendarOpen] = useState(false);
-
-  // Swipe in from the right edge to reach the calendar. Disabled while a sheet
-  // is open so the gesture cannot fire underneath one.
-  useRightEdgeSwipe(() => setCalendarOpen(true), !calendarOpen && !rating && !customOpen);
   const [customName, setCustomName] = useState("");
   const [customMuscle, setCustomMuscle] = useState("chest");
   const [soreness, setSoreness] = useState(3);
@@ -270,7 +289,21 @@ export function WorkoutView() {
               {proj.phase} · {proj.repScheme}
             </p>
           </div>
-          <Badge tone={proj.isDeload ? "warn" : "muted"}>{proj.phaseBadge}</Badge>
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            <Badge tone={proj.isDeload ? "warn" : "muted"}>{proj.phaseBadge}</Badge>
+            {/* The swipe is the intended way in, but a gesture with no
+                affordance is undiscoverable — there was no way to know it
+                existed. This is the same destination, visible. */}
+            <button
+              type="button"
+              onClick={onOpenCalendar}
+              aria-label="Open training calendar"
+              className="flex items-center gap-1 rounded-lg border border-border bg-surface-2 px-2 py-1 text-[0.65rem] font-bold text-muted"
+            >
+              <CalendarDays className="size-3.5" />
+              Calendar
+            </button>
+          </div>
         </div>
       </Card>
 
@@ -761,8 +794,6 @@ export function WorkoutView() {
           </Card>
         </div>
       )}
-      {calendarOpen && <TrainCalendar onClose={() => setCalendarOpen(false)} />}
-
       {rating &&
         (() => {
           const ex = live.exercises[rating.exIdx];

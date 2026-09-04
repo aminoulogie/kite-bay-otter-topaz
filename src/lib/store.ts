@@ -20,6 +20,7 @@ import type {
   TabId,
   WorkoutSet,
 } from "./types";
+import CUSTOM_FOOD_SEED from "./custom-foods-seed.json";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 
 function emptyDay(weight = 78): NutritionDay {
@@ -63,6 +64,7 @@ export interface SomaStore {
   tab: TabId;
   markHydrated: () => void;
   ensureSeed: () => void;
+  mergeCustomFoods: () => void;
   normalizeLive: () => void;
   rollDayIfNeeded: () => boolean;
   setTab: (tab: SomaStore["tab"]) => void;
@@ -220,6 +222,24 @@ export const useSoma = create<SomaStore>()(
           activeDate: today,
         });
         if (!proj.isRest) get().loadSplit(proj.split);
+      },
+      /**
+       * Fold the imported custom foods in, without duplicating them.
+       *
+       * Separate from ensureSeed because that runs once and returns early
+       * forever after, so an install that was already seeded would never see
+       * foods added later. This runs every boot and matches on name, so it is
+       * safe to call repeatedly and safe to extend the seed list over time.
+       * Anything the user edited themselves wins — their version is kept.
+       */
+      mergeCustomFoods: () => {
+        const have = new Set(
+          [...BASE_FOOD_LIBRARY, ...get().customFoods].map((f) => f.name.trim().toLowerCase()),
+        );
+        const missing = (CUSTOM_FOOD_SEED as FoodItem[]).filter(
+          (f) => !have.has(f.name.trim().toLowerCase()),
+        );
+        if (missing.length) set({ customFoods: [...get().customFoods, ...missing] });
       },
       setTab: (tab) => set({ tab }),
       setActiveDate: (d) => set({ activeDate: d }),
