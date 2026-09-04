@@ -12,6 +12,8 @@ import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
+import { TrainCalendar } from "@/components/TrainCalendar";
+import { useRightEdgeSwipe } from "@/lib/use-edge-swipe";
 import { cn } from "@/lib/utils";
 import type { SessionExercise } from "@/lib/types";
 
@@ -60,6 +62,11 @@ export function WorkoutView() {
   const [customOpen, setCustomOpen] = useState(false);
   // which set's quality sheet is open, if any
   const [rating, setRating] = useState<{ exIdx: number; sIdx: number } | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+
+  // Swipe in from the right edge to reach the calendar. Disabled while a sheet
+  // is open so the gesture cannot fire underneath one.
+  useRightEdgeSwipe(() => setCalendarOpen(true), !calendarOpen && !rating && !customOpen);
   const [customName, setCustomName] = useState("");
   const [customMuscle, setCustomMuscle] = useState("chest");
   const [soreness, setSoreness] = useState(3);
@@ -754,6 +761,8 @@ export function WorkoutView() {
           </Card>
         </div>
       )}
+      {calendarOpen && <TrainCalendar onClose={() => setCalendarOpen(false)} />}
+
       {rating &&
         (() => {
           const ex = live.exercises[rating.exIdx];
