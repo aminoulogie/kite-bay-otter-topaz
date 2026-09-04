@@ -95,3 +95,29 @@ html[data-soma-theme="light"] {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------------------------------------------------------------------------
+   iOS zoom-on-focus.
+
+   WKWebView (and mobile Safari) zoom the page in whenever a focused form
+   control has a computed font-size below 16px, and with no `maximum-scale` in
+   the viewport they never zoom back out on blur — the page just stays zoomed
+   with no way back. Our Input is text-sm (14px), which is exactly the trigger.
+
+   The fix is the font size, not the viewport: pinning `maximum-scale=1` or
+   `user-scalable=no` would stop the zoom by disabling pinch-zoom entirely,
+   which breaks zoom for anyone who actually needs it. 16px removes the reason
+   iOS zooms at all, so deliberate pinch-zoom keeps working and still returns
+   to 1.0.
+
+   Scoped to coarse pointers so the denser 14px type is kept on desktop, and
+   applied globally rather than per component so a control added later cannot
+   silently reintroduce the bug.
+--------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

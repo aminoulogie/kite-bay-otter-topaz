@@ -54,20 +54,20 @@ const BASE_EXERCISE_DB = [
   { name: "Lat Pulldown (Wide/Neutral)", muscle: "Back", subTarget: "Lats (Vertical Pull)", targetKeys: ["upper_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Single-Arm Lat Cable Row", muscle: "Back", subTarget: "Lats (Iliac / Lower)", targetKeys: ["upper_back"], position: "Lengthened & Shortened", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Single-Arm Dumbbell Row", muscle: "Back", subTarget: "Lats & Upper Back", targetKeys: ["upper_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Chest-Supported T-Bar Row", muscle: "Back", subTarget: "Upper Back / Rhomboids", targetKeys: ["trapezius_back", "upper_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Chest-Supported T-Bar Row", muscle: "Back", subTarget: "Upper Back / Rhomboids", targetKeys: ["trapezius_back", "upper_back", "trapezius"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Meadows Row", muscle: "Back", subTarget: "Upper Lats & Teres Major", targetKeys: ["upper_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Barbell Bent-Over Row", muscle: "Back", subTarget: "Upper Back / Lats", targetKeys: ["upper_back", "trapezius_back", "lower_back"], position: "Mid-Range", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false },
-  { name: "Seated Cable Row (Wide)", muscle: "Back", subTarget: "Upper Back / Mid-Traps", targetKeys: ["trapezius_back", "upper_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },
+  { name: "Barbell Bent-Over Row", muscle: "Back", subTarget: "Upper Back / Lats", targetKeys: ["upper_back", "trapezius_back", "lower_back", "trapezius"], position: "Mid-Range", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false },
+  { name: "Seated Cable Row (Wide)", muscle: "Back", subTarget: "Upper Back / Mid-Traps", targetKeys: ["trapezius_back", "upper_back", "trapezius"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },
   { name: "Barbell Deadlift", muscle: "Back", subTarget: "Erectors / Posterior Chain", targetKeys: ["lower_back", "hamstring", "gluteal"], position: "Mid-Range", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false },
 
   // SHOULDERS
   { name: "Standing Overhead Press (OHP)", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids", "triceps", "triceps_back"], position: "Mid-Range", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false },
   { name: "Seated Dumbbell Shoulder Press", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids", "triceps", "triceps_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: false },
-  { name: "Machine Shoulder Press", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids", "triceps"], position: "Mid-Range", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Machine Shoulder Press", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids", "triceps", "triceps_back"], position: "Mid-Range", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Cable Lateral Raise", muscle: "Shoulders", subTarget: "Side Delt (Lateral)", targetKeys: ["deltoids", "deltoids_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Cable Y-Raise", muscle: "Shoulders", subTarget: "Side Delt (Lateral)", targetKeys: ["deltoids", "deltoids_back"], position: "Lengthened & Shortened", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Dumbbell Lateral Raise", muscle: "Shoulders", subTarget: "Side Delt (Lateral)", targetKeys: ["deltoids", "deltoids_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },
-  { name: "Face Pulls", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back", "trapezius_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Face Pulls", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back", "trapezius_back", "trapezius"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Reverse Pec Deck", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back"], position: "Lengthened & Shortened", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
 
   // ARMS
@@ -84,9 +84,9 @@ const BASE_EXERCISE_DB = [
   // LEGS & CALVES
   { name: "Hack Squat", muscle: "Legs", subTarget: "Quads (Knee Extensors)", targetKeys: ["quadriceps", "gluteal"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Barbell Back Squat", muscle: "Legs", subTarget: "Quads & Glutes", targetKeys: ["quadriceps", "gluteal", "lower_back"], position: "Lengthened (Stretch)", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false },
-  { name: "Leg Press", muscle: "Legs", subTarget: "Quads & Adductors", targetKeys: ["quadriceps", "adductors"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Leg Press", muscle: "Legs", subTarget: "Quads & Adductors", targetKeys: ["quadriceps", "adductors", "adductors_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Leg Extensions", muscle: "Legs", subTarget: "Rectus Femoris", targetKeys: ["quadriceps"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Bulgarian Split Squat", muscle: "Legs", subTarget: "Glutes & Quads", targetKeys: ["gluteal", "quadriceps", "adductors"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Bulgarian Split Squat", muscle: "Legs", subTarget: "Glutes & Quads", targetKeys: ["gluteal", "quadriceps", "adductors", "adductors_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Romanian Deadlift (DB/Barbell)", muscle: "Legs", subTarget: "Hamstrings (Lengthened)", targetKeys: ["hamstring", "gluteal", "lower_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: true, isBW: false },
   { name: "Seated Leg Curl", muscle: "Legs", subTarget: "Hamstrings (Knee Flexion)", targetKeys: ["hamstring"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Lying Leg Curl", muscle: "Legs", subTarget: "Hamstrings (Shortened)", targetKeys: ["hamstring"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },

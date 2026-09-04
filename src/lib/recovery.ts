@@ -24,6 +24,20 @@ export const BASE_RECOVERY_HOURS: Record<string, number> = {
   obliques: 36,
 };
 
+/**
+ * Which anatomical view each muscle key is drawn on.
+ *
+ * This list and the SVG body map used to disagree, which is what made a
+ * triceps session light up the front of the body and leave the back blank:
+ * this table called "triceps" a back muscle, while anatomy.json draws key
+ * "triceps" on the FRONT (the head visible from the front of the arm) and
+ * "triceps_back" on the back. Nothing reconciled the two.
+ *
+ * The views below now match anatomy.json exactly — it owns the geometry, so it
+ * owns the view. Muscles that genuinely appear on both sides get an entry per
+ * side, keyed to the shape actually drawn there. A test asserts this table and
+ * anatomy.json never diverge again.
+ */
 export const MUSCLE_REGIONS: {
   key: string;
   label: string;
@@ -33,17 +47,22 @@ export const MUSCLE_REGIONS: {
   { key: "deltoids", label: "Front Delts", view: "front" },
   { key: "biceps", label: "Biceps", view: "front" },
   { key: "abs", label: "Abs", view: "front" },
+  { key: "obliques", label: "Obliques", view: "front" },
   { key: "quadriceps", label: "Quads", view: "front" },
   { key: "adductors", label: "Adductors", view: "front" },
   { key: "forearm", label: "Forearms", view: "front" },
+  { key: "trapezius", label: "Traps", view: "front" },
+  { key: "triceps", label: "Triceps", view: "front" },
   { key: "calves", label: "Calves", view: "front" },
-  { key: "upper_back", label: "Back", view: "back" },
+  { key: "upper_back", label: "Lats / Upper Back", view: "back" },
   { key: "trapezius_back", label: "Traps", view: "back" },
   { key: "deltoids_back", label: "Rear Delts", view: "back" },
-  { key: "triceps", label: "Triceps", view: "back" },
+  { key: "triceps_back", label: "Triceps", view: "back" },
   { key: "lower_back", label: "Lower Back", view: "back" },
   { key: "gluteal", label: "Glutes", view: "back" },
   { key: "hamstring", label: "Hamstrings", view: "back" },
+  { key: "adductors_back", label: "Adductors", view: "back" },
+  { key: "forearm_back", label: "Forearms", view: "back" },
   { key: "calves_back", label: "Calves", view: "back" },
 ];
 
