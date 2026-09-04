@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BodyHeatmap } from "@/components/BodyHeatmap";
+import { DatabaseView } from "@/components/views/DatabaseView";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -9,13 +10,14 @@ import { SomaIntelligenceEngine, getLocalDateKey, parseLocalDateKey } from "@/li
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-type InsightTab = "overview" | "strength" | "heatmap" | "calendar";
+type InsightTab = "overview" | "strength" | "heatmap" | "calendar" | "database";
 
 export function InsightsView() {
   const [tab, setTab] = useState<InsightTab>("overview");
   const tabs: { id: InsightTab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "strength", label: "Strength" },
+    { id: "database", label: "Database" },
     { id: "heatmap", label: "Heatmap" },
     { id: "calendar", label: "Calendar" },
   ];
@@ -38,6 +40,7 @@ export function InsightsView() {
       </div>
       {tab === "overview" && <OverviewPanel />}
       {tab === "strength" && <StrengthPanel />}
+      {tab === "database" && <DatabaseView />}
       {tab === "heatmap" && <HeatmapPanel />}
       {tab === "calendar" && <CalendarPanel />}
     </div>
