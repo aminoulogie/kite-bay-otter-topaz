@@ -6,6 +6,7 @@ import { PortionSheet } from "@/components/PortionSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { BASE_FOOD_LIBRARY, DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
@@ -41,6 +42,9 @@ export function NutritionView() {
       return next;
     });
   const [custom, setCustom] = useState({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
+  // The raw text is kept beside the parsed numbers so a value mid-typing —
+  // "12," on the way to "12,5" — is not erased on every keystroke.
+  const [customRaw, setCustomRaw] = useState({ cals: "", p: "", c: "", f: "" });
   const [scanning, setScanning] = useState(false);
   // The library is browsable, not search-only: with nothing typed you should
   // still be able to see what is in there rather than having to guess a name.
@@ -247,25 +251,37 @@ export function NutritionView() {
               value={custom.name}
               onChange={(e) => setCustom({ ...custom, name: e.target.value })}
             />
-            <Input
-              type="number" inputMode="decimal" placeholder="kcal /100g"
-              value={custom.cals || ""}
-              onChange={(e) => setCustom({ ...custom, cals: Number(e.target.value) })}
+            <DecimalInput
+              placeholder="kcal /100g"
+              value={customRaw.cals}
+              onValueChange={(n, raw) => {
+                setCustomRaw({ ...customRaw, cals: raw });
+                setCustom({ ...custom, cals: n ?? 0 });
+              }}
             />
-            <Input
-              type="number" inputMode="decimal" placeholder="Protein /100g"
-              value={custom.p || ""}
-              onChange={(e) => setCustom({ ...custom, p: Number(e.target.value) })}
+            <DecimalInput
+              placeholder="Protein /100g"
+              value={customRaw.p}
+              onValueChange={(n, raw) => {
+                setCustomRaw({ ...customRaw, p: raw });
+                setCustom({ ...custom, p: n ?? 0 });
+              }}
             />
-            <Input
-              type="number" inputMode="decimal" placeholder="Carbs /100g"
-              value={custom.c || ""}
-              onChange={(e) => setCustom({ ...custom, c: Number(e.target.value) })}
+            <DecimalInput
+              placeholder="Carbs /100g"
+              value={customRaw.c}
+              onValueChange={(n, raw) => {
+                setCustomRaw({ ...customRaw, c: raw });
+                setCustom({ ...custom, c: n ?? 0 });
+              }}
             />
-            <Input
-              type="number" inputMode="decimal" placeholder="Fat /100g"
-              value={custom.f || ""}
-              onChange={(e) => setCustom({ ...custom, f: Number(e.target.value) })}
+            <DecimalInput
+              placeholder="Fat /100g"
+              value={customRaw.f}
+              onValueChange={(n, raw) => {
+                setCustomRaw({ ...customRaw, f: raw });
+                setCustom({ ...custom, f: n ?? 0 });
+              }}
             />
           </div>
           <Button
@@ -290,6 +306,7 @@ export function NutritionView() {
               }
               toast.success(`Saved ${name}`);
               setCustom({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
+              setCustomRaw({ cals: "", p: "", c: "", f: "" });
               // Straight into the portion sheet, since you almost always
               // create a food because you are about to eat it.
               setPortion({ mode: "add", meal, item: food });

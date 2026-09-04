@@ -43,6 +43,7 @@ export function WorkoutView() {
   const addCustomExercise = useSoma((s) => s.addCustomExercise);
   const updateSet = useSoma((s) => s.updateSet);
   const addSet = useSoma((s) => s.addSet);
+  const startBackfill = useSoma((s) => s.startBackfill);
   const updateExercise = useSoma((s) => s.updateExercise);
   const removeSet = useSoma((s) => s.removeSet);
   const removeExercise = useSoma((s) => s.removeExercise);
@@ -156,7 +157,11 @@ export function WorkoutView() {
   // session. A past day is a read-only recap of what was logged then; the
   // live session is only ever today's.
   const todayKey = getLocalDateKey();
-  if (activeDate !== todayKey) {
+  // A day being backfilled shows the normal logger, not the read-only view —
+  // otherwise starting one would land straight back on the screen that has no
+  // way to log anything.
+  const backfilling = live.forDate === activeDate;
+  if (activeDate !== todayKey && !backfilling) {
     const past = history[activeDate];
     return (
       <div className="space-y-3 pb-4">
@@ -202,13 +207,31 @@ export function WorkoutView() {
             ))}
           </>
         ) : (
-          <Card className="py-10 text-center">
+          <Card className="py-8 text-center">
             <Timer className="mx-auto mb-2 size-8 text-faint" />
             <div className="font-display text-lg font-bold">Nothing trained</div>
             <p className="mx-auto mt-1 max-w-xs text-sm text-muted">
               No session was logged on {activeDate}. Food, sleep and habits for that
               day are still on their own tabs.
             </p>
+            {/* A forgotten session was previously unrecoverable: the day was
+                read-only with no way in. This opens a normal logger dated to
+                that day. */}
+            <Button
+              variant="primary"
+              className="mx-auto mt-4"
+              onClick={() => {
+                const openWork = live.exercises.some((ex) => ex.sets.some((st) => st.done));
+                if (openWork && !live.finished) {
+                  toast.error("Finish or clear the session in progress first.");
+                  return;
+                }
+                startBackfill(activeDate);
+                toast.success(`Logging ${activeDate}`);
+              }}
+            >
+              Log this day now
+            </Button>
           </Card>
         )}
       </div>

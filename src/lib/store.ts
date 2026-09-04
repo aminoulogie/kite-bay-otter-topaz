@@ -109,6 +109,7 @@ export interface SomaStore {
   clearRest: () => void;
   saveWorkout: () => HistorySession | null;
   resetLive: () => void;
+  startBackfill: (date: string, split?: string) => void;
   resumeFinished: () => void;
   saveRoutine: (name: string, list: { name: string }[], original?: string) => string | null;
   deleteRoutine: (name: string) => void;
@@ -603,14 +604,44 @@ export const useSoma = create<SomaStore>()(
         //
         // The day work started, not the day it ended, so a session running past
         // midnight stays on the day it belongs to.
+        // A backfilled session names its own day; otherwise the day work
+        // started, which keeps a session running past midnight on the day it
+        // belongs to.
         const startedAt = live.firstSetAt ?? live.startTime ?? Date.now();
-        const key = getLocalDateKey(new Date(startedAt));
+        const key = live.forDate ?? getLocalDateKey(new Date(startedAt));
         set({
           history: { ...get().history, [key]: session },
           live: { ...live, finished: session, restEndsAt: null },
         });
         void settings;
         return session;
+      },
+      /**
+       * Begin logging a day that was missed.
+       *
+       * Refuses while a session with completed sets is open: silently swapping
+       * the live session out would destroy work in progress, and losing a
+       * workout to a mis-tap is exactly the failure this app has already had
+       * once.
+       */
+      startBackfill: (date, split) => {
+        const live = get().live;
+        const hasWork = live.exercises.some((ex) => ex.sets.some((s) => s.done));
+        if (hasWork && !live.finished) return;
+        const proj = SomaIntelligenceEngine.getProgramProjectedDay(
+          new Date(date + "T12:00:00"),
+          get().settings.scheduleOverrides,
+        );
+        set({
+          live: { ...defaultLive(split ?? proj.split), forDate: date },
+          activeDate: date,
+        });
+        // Load that day's programmed exercises so backfilling is filling in
+        // numbers, not rebuilding the whole session from an empty list.
+        if (!proj.isRest) {
+          get().loadSplit(split ?? proj.split);
+          set({ live: { ...get().live, forDate: date } });
+        }
       },
       resetLive: () => {
         const proj = SomaIntelligenceEngine.getProgramProjectedDay(new Date(), get().settings.scheduleOverrides);

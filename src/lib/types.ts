@@ -168,6 +168,14 @@ export interface LiveSession {
    * Null until something is logged.
    */
   firstSetAt: number | null;
+  /**
+   * Set only when logging a day retroactively.
+   *
+   * The clock cannot decide the date for a session being backfilled: work
+   * "started" whenever the user opened the form, which is today, not the day
+   * being logged. When present this wins over the clock.
+   */
+  forDate?: string;
   split: string;
   exercises: SessionExercise[];
   undoStack: string[];
