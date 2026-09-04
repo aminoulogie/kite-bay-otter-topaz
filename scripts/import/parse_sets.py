@@ -65,8 +65,34 @@ def _split_digits(d: str) -> tuple[float, int] | None:
     return None
 
 
-def parse_cell(cell: str, plate_loaded: bool = False) -> ParseResult:
-    """Decode one spreadsheet cell into its sets."""
+def _chunk3(d: str) -> list[tuple[float, int]] | None:
+    """A run of 3-digit sets, e.g. 908607457 = 90x8, 60x7, 45x7 (a drop set)."""
+    if len(d) % 3 or len(d) < 6:
+        return None
+    out = []
+    for i in range(0, len(d), 3):
+        w, r = float(d[i:i + 2]), int(d[i + 2])
+        if not (0 < w <= 300 and 1 <= r <= 30):
+            return None
+        out.append((w, r))
+    # A drop set descends. Ascending runs are more likely a different notation,
+    # so they are left for review rather than decoded the wrong way round.
+    return out if all(a[0] >= b[0] for a, b in zip(out, out[1:])) else None
+
+
+def parse_cell(
+    cell: str,
+    plate_loaded: bool = False,
+    bodyweight: bool = False,
+    bar_kg: float = BAR_KG,
+) -> ParseResult:
+    """
+    Decode one spreadsheet cell into its sets.
+
+    On a bodyweight movement a bare 1-2 digit number is a REP COUNT with no
+    added load, which is why those must not be rejected as "too short to
+    carry both" — 786 of them would otherwise be dropped.
+    """
     res = ParseResult()
     if not cell or not str(cell).strip():
         return res
@@ -100,6 +126,39 @@ def parse_cell(cell: str, plate_loaded: bool = False) -> ParseResult:
         if not token:
             continue
 
+        digits_only = re.fullmatch(r"\d+", token)
+
+        # Bodyweight: a bare 1-2 digit number is reps at zero added load.
+        if bodyweight and digits_only and len(token) <= 2:
+            r = int(token)
+            if 1 <= r <= 60:
+                res.sets.append(ParsedSet(0.0, r, failure, straps, token, note))
+            else:
+                res.rejects.append((token, f"implausible rep count {r}"))
+            continue
+
+        # Same weight repeated: 251212 = 25kg x 12, then x 12 again. Tried
+        # before the drop-set reading because 3-digit chunking would silently
+        # turn it into 25x1, 21x2. A true drop set like 908607 fails this test
+        # (86 is not a rep count) and falls through, so the two disambiguate
+        # each other rather than needing a rule about which is more likely.
+        if digits_only and len(token) == 6:
+            w, r1, r2 = float(token[:2]), int(token[2:4]), int(token[4:])
+            if 0 < w <= 300 and 1 <= r1 <= 30 and 1 <= r2 <= 30:
+                for r in (r1, r2):
+                    actual = w * 2 + bar_kg if plate_loaded else w
+                    res.sets.append(ParsedSet(actual, r, failure, straps, token, note))
+                continue
+
+        # A drop set written as consecutive 3-digit sets.
+        if digits_only and len(token) >= 6:
+            chunks = _chunk3(token)
+            if chunks:
+                for w, r in chunks:
+                    actual = w * 2 + bar_kg if plate_loaded else w
+                    res.sets.append(ParsedSet(actual, r, failure, straps, token, "drop set"))
+                continue
+
         pair = None
         for rx in (_EXPLICIT, _XFORM):
             m = rx.match(token)
@@ -108,8 +167,7 @@ def parse_cell(cell: str, plate_loaded: bool = False) -> ParseResult:
                 break
 
         if pair is None:
-            digits = re.fullmatch(r"\d+", token)
-            if digits:
+            if digits_only:
                 pair = _split_digits(token)
                 if pair is None:
                     res.rejects.append((token, f"cannot split {len(token)} digits unambiguously"))
@@ -127,7 +185,7 @@ def parse_cell(cell: str, plate_loaded: bool = False) -> ParseResult:
             continue
 
         # one side written -> both sides plus the bar
-        actual = w * 2 + BAR_KG if plate_loaded else w
+        actual = w * 2 + bar_kg if plate_loaded else w
         res.sets.append(ParsedSet(actual, r, failure, straps, token, note))
 
     return res
