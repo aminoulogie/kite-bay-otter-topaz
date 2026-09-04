@@ -57,6 +57,10 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Build web bundle
+        # The same version the .ipa is stamped with, so what Settings reports
+        # and what the phone installed cannot disagree.
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.marketing }}
         run: npx vite build
 
       # Root paths, no service worker: a Capacitor webview serves the bundle

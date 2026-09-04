@@ -36,6 +36,10 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Build
+        # Pages shows the same version string as the tagged builds; "web" makes
+        # it obvious which surface is running when the two differ.
+        env:
+          APP_VERSION: web-${{ github.run_number }}
         run: npx vite build
 
       - name: Stage static PWA for Pages
