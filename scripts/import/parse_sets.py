@@ -60,6 +60,14 @@ def _split_digits(d: str) -> tuple[float, int] | None:
         # 8kg x 10 rather than 81 x 0.
         if d[2] == "0":
             return (float(d[0]), int(d[1:])) if 1 <= int(d[1:]) <= 30 else None
+        # A trailing 1 or 2 is far more often the start of a two-digit rep count
+        # than a genuine single or double: 512 is 5kg x 12, not 51kg x 2. Only
+        # taken when the alternative reading is plausible, so 602 stays 60 x 2
+        # (6 x 02 has a leading zero and is rejected) and 355 stays 35 x 5.
+        if int(d[2]) <= 2:
+            alt = int(d[1:])
+            if 3 <= alt <= 30 and d[1] != "0":
+                return float(d[0]), alt
         return float(d[:2]), int(d[2])
     if n == 4:
         # reps never have a leading zero, so '0' here means a 3-digit weight

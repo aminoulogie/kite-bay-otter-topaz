@@ -19,6 +19,7 @@ Usage:
 import argparse
 import json
 import pathlib
+import re
 import time
 
 OUT = pathlib.Path(".vercel/output/static")
@@ -53,9 +54,14 @@ def patch_bundles(assets: pathlib.Path, base: str) -> None:
             # rewrite and nothing to assert.
             basepath_hit = True
 
-        before = patched
-        patched = patched.replace("e.stores.ids.get().length||await Qn(e)", "0")
-        if patched != before:
+        # Matched by shape, not by name. The awaited identifier is minified and
+        # has already been renamed once (Qn -> $n) simply because a dependency
+        # was added, which broke a hardcoded match and would have shipped a
+        # black screen if the assertion below were not here.
+        patched, n = re.subn(
+            r"e\.stores\.ids\.get\(\)\.length\|\|await [\w$]+\(e\)", "0", patched
+        )
+        if n:
             ssr_guard_hit = True
 
         if patched != text:
