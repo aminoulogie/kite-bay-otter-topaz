@@ -1,13 +1,12 @@
 import { useMemo } from "react";
 import { buildTrainingLog, type ExerciseLog } from "./training-log";
 import { useSoma } from "./store";
-import type { HistorySession } from "./types";
 
 export function useTrainingLog(): ExerciseLog[] {
   const history = useSoma((s) => s.history);
   const live = useSoma((s) => s.live);
   const nutrition = useSoma((s) => s.nutrition);
-  const extra = useSoma((s) => (s as { sessionArchive?: HistorySession[] }).sessionArchive);
+  const archive = useSoma((s) => s.sessionArchive);
 
   const bodyweights = useMemo(() => {
     const out: Record<string, number> = {};
@@ -18,7 +17,7 @@ export function useTrainingLog(): ExerciseLog[] {
   }, [nutrition]);
 
   return useMemo(
-    () => buildTrainingLog(history, bodyweights, { archive: extra ?? [], live }),
-    [history, bodyweights, extra, live],
+    () => buildTrainingLog(history, bodyweights, { archive: archive ?? [], live }),
+    [history, bodyweights, archive, live],
   );
 }

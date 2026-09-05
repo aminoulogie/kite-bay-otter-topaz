@@ -47,7 +47,6 @@ export interface MuscleStimulus {
 
 export interface HistorySession {
   timestamp: number;
-  /** Local calendar day (YYYY-MM-DD). Database must not re-date via UTC. */
   date?: string;
   split: string;
   durationFormatted: string;
@@ -142,6 +141,7 @@ export interface Settings {
   scheduleOverrides: Record<string, string>;
   customRoutines: Record<string, { name: string }[]>;
   customRoutinesRemoved: string[];
+  demoSeeded?: boolean;
 }
 
 export interface LiveSession {
