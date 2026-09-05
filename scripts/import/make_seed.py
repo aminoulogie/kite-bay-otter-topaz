@@ -27,13 +27,16 @@ EXPLICIT = {
 # Ordered: the first match wins, so "rear delt" must be tested before "delt".
 KEYWORDS = [
     ("deltoids_back", ["rear delt", "reverse pec", "face pull"]),
-    ("chest", ["bench", "chest", "pec", "fly", "dips"]),
-    ("upper_back", ["row", "pulldown", "pullup", "lat ", "chinup", "t-bar"]),
+    ("chest", ["bench", "chest", "pec", "fly", "dips", "crossover",
+                # An incline press is a chest movement; without these the
+                # renamed variants had no keyword left to match on.
+                "incline press", "incline dumbbell", "incline machine", "machine incline"]),
+    ("upper_back", ["row", "pulldown", "pullup", "lat ", "chinup", "tbar"]),
     ("lower_back", ["deadlift", "dead lift", "back extension", "hyper"]),
     ("deltoids", ["shoulder", "delt", "lateral raise", "front raise", "ohp", "overhead"]),
     ("biceps", ["curl", "biceps", "hammer"]),
-    ("triceps", ["triceps", "pushdown", "skull"]),
-    ("quadriceps", ["squat", "leg extension", "leg press", "hack"]),
+    ("triceps", ["triceps", "pushdown", "skull", "close grip dumbbell"]),
+    ("quadriceps", ["squat", "leg extension", "leg press", "hack", "stepup", "lunge"]),
     ("hamstring", ["leg curl", "romanian", "hamstring"]),
     ("gluteal", ["hip thrust", "glute", "lunge", "bulgarian"]),
     ("calves", ["calf", "calve"]),
@@ -56,7 +59,10 @@ GROUP = {
 def classify(name):
     if name in EXPLICIT:
         return EXPLICIT[name]
-    n = name.lower()
+    # Hyphens are collapsed before matching: renaming "Pullup" to the correct
+    # "Pull-Up" silently stopped it matching the "pullup" pattern, and eleven
+    # exercises fell through to Other.
+    n = name.lower().replace("-", "").replace("  ", " ")
     for key, pats in KEYWORDS:
         if any(p in n for p in pats):
             return key
