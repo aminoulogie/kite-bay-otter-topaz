@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
 import {
-  PRE_WINDOWS, checkPreWorkout, preTargets, suggestFoods, type PreWindow,
+  PRE_WINDOWS, checkPreWorkout, portionsFor, preTargets, type PreWindow,
 } from "@/lib/preworkout";
 import { BASE_FOOD_LIBRARY } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -38,9 +38,16 @@ export function PreWorkoutCard() {
 
   const target = useMemo(() => preTargets(bodyweight, win), [bodyweight, win]);
   const check = useMemo(() => checkPreWorkout(day, target), [day, target]);
-  const suggestions = useMemo(
-    () => suggestFoods([...BASE_FOOD_LIBRARY, ...customFoods] as FoodItem[], target),
-    [customFoods, target],
+  // Portions, not gram targets. "You need 63g of carbohydrate" leaves the
+  // arithmetic to be done in the gym car park; "145g of rice" does not.
+  const portions = useMemo(
+    () =>
+      portionsFor(
+        [...BASE_FOOD_LIBRARY, ...customFoods] as FoodItem[],
+        target,
+        check.carbsG,
+      ),
+    [customFoods, target, check.carbsG],
   );
 
   const tone =
@@ -97,22 +104,36 @@ export function PreWorkoutCard() {
       </p>
       <p className="mt-0.5 text-[0.6rem] leading-snug text-faint">{win.note}</p>
 
-      {suggestions.length > 0 && check.verdict !== "good" && (
+      {portions.length > 0 && check.verdict !== "good" && (
         <div className="mt-3">
           <div className="mb-1.5 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
-            From your library
+            Any one of these closes the gap
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {suggestions.map((f) => (
-              <span
-                key={f.name}
-                className="rounded-lg border border-border bg-surface-2 px-2 py-1 text-[0.65rem] font-semibold"
+          <div className="space-y-1">
+            {portions.map((p) => (
+              <div
+                key={p.food.name}
+                className={cn(
+                  "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5",
+                  p.overLimit ? "border-warn/40 bg-warn/5" : "border-border bg-surface-2",
+                )}
               >
-                {f.name}
-                <span className="ml-1 text-faint">{f.c}c</span>
-              </span>
+                <span className="min-w-0 truncate text-[0.7rem] font-bold">
+                  {p.grams}
+                  {p.food.unit || "g"} {p.food.name}
+                </span>
+                <span className="shrink-0 text-[0.6rem] tabular-nums text-faint">
+                  {p.carbsG}c · {p.proteinG}p · {p.cals}kcal
+                </span>
+              </div>
             ))}
           </div>
+          {portions.some((p) => p.overLimit) && (
+            <p className="mt-1 text-[0.58rem] leading-snug text-warn">
+              Highlighted portions clear the carbohydrate target but break this window&apos;s
+              fat or fibre limit at the size needed.
+            </p>
+          )}
         </div>
       )}
     </Card>

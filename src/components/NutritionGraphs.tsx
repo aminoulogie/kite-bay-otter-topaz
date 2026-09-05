@@ -3,6 +3,7 @@ import {
   Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Card, CardTitle } from "@/components/ui/card";
+import { ZoomableChart, useChartZoom } from "@/components/ZoomableChart";
 import { useSoma } from "@/lib/store";
 import type { NutritionDay } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,10 @@ const RANGES = [
 
 export function NutritionGraphs() {
   const nutrition = useSoma((s) => s.nutrition);
+  // The target you have set NOW, which is what the line should show. Reading it
+  // only from stored day goals meant changing a target in Settings did nothing
+  // to the chart until every day in range had been re-goaled.
+  const customGoals = useSoma((s) => s.settings.customGoals);
   const [nutrient, setNutrient] = useState<Nutrient>("p");
   const [rangeId, setRangeId] = useState<(typeof RANGES)[number]["id"]>("30");
 
@@ -74,13 +79,38 @@ export function NutritionGraphs() {
       rows.push({ date, t: new Date(date).getTime(), value: value == null ? null : Math.round(value) });
     }
 
+    // An explicit target always wins over whatever the days happen to store.
+    const current = customGoals?.[spec.goal];
+    if (typeof current === "number" && current > 0) goal = current;
+
     return {
       data: rows,
       target: goal,
       average: logged ? Math.round(sum / logged) : 0,
       hitRate: logged ? Math.round((hits / logged) * 100) : 0,
     };
-  }, [nutrition, nutrient, days, spec.goal]);
+  }, [nutrition, nutrient, days, spec.goal, customGoals]);
+
+  const fullX = useMemo(() => {
+    const ts = data.map((d) => d.t).filter(Number.isFinite);
+    return ts.length ? { min: Math.min(...ts), max: Math.max(...ts) } : { min: 0, max: 1 };
+  }, [data]);
+
+  const fullY = useMemo(() => {
+    const vs = data.map((d) => d.value).filter((v): v is number => typeof v === "number");
+    // The axis has to contain the TARGET as well as the data. Fitting to the
+    // data alone put a 3600 kcal target line off the top of a chart that maxed
+    // at 2300 — the line the whole card exists to show was invisible.
+    const hi = Math.max(target || 0, ...(vs.length ? vs : [0]));
+    if (hi <= 0) return { min: 0, max: 1 };
+    // Rounded up to a readable step. Multiplying by 1.08 gave axis labels like
+    // "3888.0000000000005", which is a float artifact printed at the user.
+    const headroom = hi * 1.08;
+    const step = headroom > 1000 ? 100 : headroom > 100 ? 10 : 1;
+    return { min: 0, max: Math.ceil(headroom / step) * step };
+  }, [data, target]);
+
+  const zoom = useChartZoom(fullX, fullY);
 
   return (
     <Card>
@@ -145,7 +175,15 @@ export function NutritionGraphs() {
             )}
           </div>
 
-          <div className="h-52 w-full">
+          <ZoomableChart
+            className="h-52 w-full"
+            fullX={fullX}
+            fullY={fullY}
+            state={zoom.state}
+            setState={zoom.setState}
+            reset={zoom.reset}
+            zoomed={zoom.zoomed}
+          >
             <ResponsiveContainer>
               <AreaChart data={data} /* left margin was negative, which pushed the axis labels off the
                    card and clipped "1200" into "200". */
@@ -161,13 +199,16 @@ export function NutritionGraphs() {
                   dataKey="t"
                   type="number"
                   scale="time"
-                  domain={["dataMin", "dataMax"]}
+                  domain={[zoom.state.x.min, zoom.state.x.max]}
+                  allowDataOverflow
                   tickFormatter={(t) =>
                     new Date(t).toLocaleDateString(undefined, { day: "2-digit", month: "short" })}
                   tick={{ fontSize: 10, fill: "var(--color-muted)" }}
                   stroke="var(--color-border)"
                 />
                 <YAxis
+                  domain={[zoom.state.y.min, zoom.state.y.max]}
+                  allowDataOverflow
                   tick={{ fontSize: 10, fill: "var(--color-muted)" }}
                   stroke="var(--color-border)"
                   width={52}
@@ -214,10 +255,11 @@ export function NutritionGraphs() {
                 />
               </AreaChart>
             </ResponsiveContainer>
-          </div>
+          </ZoomableChart>
 
           <p className="mt-1 text-[0.6rem] text-faint">
-            Days with nothing logged are left as gaps, not zeros.
+            Days with nothing logged are left as gaps, not zeros. Pinch to zoom, drag to
+            pan, double-tap to reset.
           </p>
         </>
       )}

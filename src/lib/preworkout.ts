@@ -186,3 +186,62 @@ export function suggestFoods(library: FoodItem[], target: PreTarget, limit = 5):
     .slice(0, limit)
     .map((x) => x.f);
 }
+
+export interface Portion {
+  food: FoodItem;
+  grams: number;
+  carbsG: number;
+  proteinG: number;
+  cals: number;
+  /** True when the portion needed would break the window's fat or fibre limit. */
+  overLimit: boolean;
+}
+
+/**
+ * How much of a food actually closes the gap.
+ *
+ * "You need 63g of carbohydrate" is a number, not an instruction — it still
+ * leaves the arithmetic of turning it into food to be done in the gym car
+ * park. This answers in portions: 145g of rice, two bananas.
+ *
+ * Rounded to something a person can serve. Nobody weighs 147g of anything, and
+ * a target that looks precise invites ignoring it entirely.
+ */
+export function portionsFor(
+  library: FoodItem[],
+  target: PreTarget,
+  alreadyEatenCarbsG = 0,
+  limit = 4,
+): Portion[] {
+  const need = Math.max(0, target.carbsG - alreadyEatenCarbsG);
+  if (need <= 0) return [];
+
+  return suggestFoods(library, target, limit).map((food) => {
+    const per = food.serving || 100;
+    const carbsPerG = (food.c || 0) / per;
+    if (carbsPerG <= 0) {
+      return { food, grams: 0, carbsG: 0, proteinG: 0, cals: 0, overLimit: true };
+    }
+
+    const rawGrams = need / carbsPerG;
+    // To the nearest 5g under 100, nearest 10g above: the precision a kitchen
+    // scale and a human are actually going to agree on.
+    const grams = rawGrams < 100 ? Math.round(rawGrams / 5) * 5 : Math.round(rawGrams / 10) * 10;
+    const scale = grams / per;
+
+    const fatG = (food.f || 0) * scale;
+    const fiberG = (food.fiber || 0) * scale;
+
+    return {
+      food,
+      grams,
+      carbsG: Math.round((food.c || 0) * scale),
+      proteinG: Math.round((food.p || 0) * scale),
+      cals: Math.round((food.cals || 0) * scale),
+      // A food can pass the per-100g check and still break the ceiling once
+      // scaled to the portion actually needed — that is the case worth warning
+      // about, because it is invisible until the maths is done.
+      overLimit: fatG > target.maxFatG || fiberG > target.maxFiberG,
+    };
+  });
+}

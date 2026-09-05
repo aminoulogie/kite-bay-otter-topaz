@@ -74,6 +74,41 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
   const trainHabit = habits.find((h) => h.id === TRAIN_HABIT_ID);
   const cells = useMemo(() => monthMatrix(cursor.y, cursor.m), [cursor]);
 
+  /**
+   * Each day's completion score, for the number shown in its square.
+   *
+   * Computed for the whole month at once and memoised: scoring inside the cell
+   * render would rebuild every day's score on every re-render of the grid,
+   * including the ones a month navigation is about to discard.
+   *
+   * Future days are skipped — a day that has not happened cannot be scored,
+   * and showing 0 for tomorrow would read as a failure rather than as nothing.
+   */
+  const scores = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const date of cells) {
+      if (!date || date > today) continue;
+      const session = sessionsByDate.get(date) ?? null;
+      const day = nutrition[date];
+      const logged = (day?.items?.length ?? 0) > 0;
+      const totals = (day?.items ?? []).reduce(
+        (t, i) => ({ cals: t.cals + (i.cals || 0), p: t.p + (i.p || 0) }),
+        { cals: 0, p: 0 },
+      );
+      const s = scoreDay({
+        session,
+        previous: findPrevious(sessionsByDate, date),
+        protein: logged && day?.goals?.protein ? { grams: totals.p, target: day.goals.protein } : null,
+        calories: logged && day?.goals?.cals ? { kcal: totals.cals, target: day.goals.cals } : null,
+        sleepHours: day?.sleep?.hours ?? null,
+        creatineG: day?.creatine ?? null,
+      });
+      // Nothing tracked at all is not a zero-scoring day, it is an unscored one.
+      if (s.tracked > 0) out.set(date, s.score);
+    }
+    return out;
+  }, [cells, sessionsByDate, nutrition, today]);
+
   const shift = (delta: number) =>
     setCursor((c) => {
       const d = new Date(c.y, c.m + delta, 1);
@@ -91,7 +126,9 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <div className="fixed inset-0 z-[57] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+    // soma-view animates it in; the calendar appeared instantly before while
+    // every other overlay slid, which read as a different, older screen.
+    <div className="soma-view fixed inset-0 z-[57] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
       <div className="flex items-center justify-between border-b border-border px-4 pb-3">
         <div>
           <div className="font-display text-base font-extrabold">{monthLabel}</div>
@@ -116,8 +153,10 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
+      {/* justify-center: the month sits in the middle of the screen rather than
+          pinned under the header with dead space below it. */}
       <div
-        className="flex-1 overflow-y-auto px-3 pb-6 pt-3"
+        className="flex flex-1 flex-col justify-center overflow-y-auto px-3 pb-6 pt-3"
         onTouchStart={(e) => {
           const t = e.touches[0];
           touch.current = t ? { x: t.clientX, y: t.clientY } : null;
@@ -151,6 +190,7 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
             const future = date > today;
             const covered = isCovered(periods, date);
             const isEnd = status.period?.end === date;
+            const score = scores.get(date);
             // What was trained, or what is scheduled for a day still to come —
             // a grid of bare numbers says nothing about the week ahead.
             // Every day is labelled, not only trained and future ones: a past
@@ -191,6 +231,20 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
                         : "border border-dashed border-faint/50 bg-transparent",
                   )}
                 />
+                {score != null && (
+                  <span
+                    className={cn(
+                      "absolute right-1 top-1 text-[0.5rem] font-extrabold tabular-nums",
+                      score >= 80
+                        ? "text-emerald-400"
+                        : score >= 55
+                          ? "text-warn"
+                          : "text-orange-400/80",
+                    )}
+                  >
+                    {score}
+                  </span>
+                )}
                 {label && !isEnd && (
                   <span
                     className={cn(

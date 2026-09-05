@@ -430,57 +430,7 @@ function MicroMusclePanel({ micro }: { micro: ReturnType<typeof microMuscleStren
 
               {isOpen && (
                 <div className="soma-expand border-t border-border px-2 pb-2 pt-1">
-                  <div className="h-28 w-full">
-                    <ResponsiveContainer>
-                      <LineChart
-                        data={m.points.map((p) => ({ ...p, t: new Date(p.date).getTime() }))}
-                        margin={{ top: 6, right: 8, bottom: 0, left: -26 }}
-                      >
-                        <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
-                        <XAxis
-                          dataKey="t"
-                          type="number"
-                          scale="time"
-                          domain={["dataMin", "dataMax"]}
-                          tickFormatter={(t) =>
-                            new Date(t).toLocaleDateString(undefined, { month: "short", year: "2-digit" })}
-                          tick={{ fontSize: 9, fill: "var(--color-muted)" }}
-                          stroke="var(--color-border)"
-                        />
-                        <YAxis
-                          tick={{ fontSize: 9, fill: "var(--color-muted)" }}
-                          stroke="var(--color-border)"
-                          width={36}
-                          domain={["dataMin - 5", "dataMax + 5"]}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            background: "var(--color-surface-2)",
-                            border: "1px solid var(--color-border)",
-                            borderRadius: 12,
-                            fontSize: 11,
-                          }}
-                          labelFormatter={(t) => new Date(t as number).toLocaleDateString()}
-                          formatter={(v, _n, item) => [
-                            `${v} · ${(item?.payload as { contributing?: number })?.contributing ?? 0} lifts`,
-                            "index",
-                          ]}
-                        />
-                        <Line
-                          type="monotone"
-                          dataKey="index"
-                          stroke="var(--color-accent)"
-                          strokeWidth={2}
-                          dot={{ r: 2 }}
-                          isAnimationActive
-                          animationDuration={380}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <p className="px-1 text-[0.58rem] leading-snug text-faint">
-                    From {m.exercises.join(", ")}
-                  </p>
+                  <MicroChart m={m} />
                 </div>
               )}
             </div>
@@ -493,5 +443,98 @@ function MicroMusclePanel({ micro }: { micro: ReturnType<typeof microMuscleStren
         fewer than four sessions, so read them as a hint rather than a trend.
       </p>
     </Card>
+  );
+}
+
+/**
+ * One micro-muscle's trend, with the same gestures as every other chart.
+ *
+ * Its own component so the zoom state belongs to the head being viewed:
+ * holding it in the parent would mean opening a different head inherited the
+ * previous one's zoom window, which is confusing and looks like a bug.
+ */
+function MicroChart({ m }: { m: ReturnType<typeof microMuscleStrength>[number] }) {
+  const points = useMemo(
+    () => m.points.map((p) => ({ ...p, t: new Date(p.date).getTime() })),
+    [m.points],
+  );
+
+  const fullX = useMemo(() => {
+    const ts = points.map((p) => p.t);
+    return ts.length ? { min: Math.min(...ts), max: Math.max(...ts) } : { min: 0, max: 1 };
+  }, [points]);
+
+  const fullY = useMemo(() => {
+    const vs = points.map((p) => p.index);
+    if (!vs.length) return { min: 0, max: 1 };
+    const lo = Math.min(...vs);
+    const hi = Math.max(...vs);
+    const pad = Math.max(2, (hi - lo) * 0.1);
+    return { min: lo - pad, max: hi + pad };
+  }, [points]);
+
+  const zoom = useChartZoom(fullX, fullY);
+
+  return (
+    <>
+      <ZoomableChart
+        className="h-28 w-full"
+        fullX={fullX}
+        fullY={fullY}
+        state={zoom.state}
+        setState={zoom.setState}
+        reset={zoom.reset}
+        zoomed={zoom.zoomed}
+      >
+        <ResponsiveContainer>
+          <LineChart data={points} margin={{ top: 6, right: 8, bottom: 0, left: -18 }}>
+            <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              dataKey="t"
+              type="number"
+              scale="time"
+              domain={[zoom.state.x.min, zoom.state.x.max]}
+              allowDataOverflow
+              tickFormatter={(t) =>
+                new Date(t).toLocaleDateString(undefined, { month: "short", year: "2-digit" })}
+              tick={{ fontSize: 9, fill: "var(--color-muted)" }}
+              stroke="var(--color-border)"
+            />
+            <YAxis
+              domain={[zoom.state.y.min, zoom.state.y.max]}
+              allowDataOverflow
+              tick={{ fontSize: 9, fill: "var(--color-muted)" }}
+              stroke="var(--color-border)"
+              width={40}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "var(--color-surface-2)",
+                border: "1px solid var(--color-border)",
+                borderRadius: 12,
+                fontSize: 11,
+              }}
+              labelFormatter={(t) => new Date(t as number).toLocaleDateString()}
+              formatter={(v, _n, item) => [
+                `${v} · ${(item?.payload as { contributing?: number })?.contributing ?? 0} lifts`,
+                "index",
+              ]}
+            />
+            <Line
+              type="monotone"
+              dataKey="index"
+              stroke="var(--color-accent)"
+              strokeWidth={2}
+              dot={{ r: 2 }}
+              isAnimationActive
+              animationDuration={380}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </ZoomableChart>
+      <p className="px-1 text-[0.58rem] leading-snug text-faint">
+        From {m.exercises.join(", ")}
+      </p>
+    </>
   );
 }

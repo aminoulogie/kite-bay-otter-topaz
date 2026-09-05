@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  PRE_WINDOWS, checkPreWorkout, preTargets, suggestFoods, windowForMinutes,
+  PRE_WINDOWS, checkPreWorkout, portionsFor, preTargets, suggestFoods, windowForMinutes,
 } from "./preworkout.ts";
 
 const meal = PRE_WINDOWS[0]!;
@@ -74,4 +74,51 @@ test("suggestions respect the window's fat and fibre ceilings", () => {
   const s = suggestFoods(library as never, preTargets(80, topup));
   assert.ok(s.some((f) => f.name === "Rice"));
   assert.ok(!s.some((f) => f.name === "Peanut butter"), "55g of fat cannot suit a top-up");
+});
+
+test("suggestions come back as portions, not just gram targets", () => {
+  // "You need 63g of carbohydrate" still leaves the arithmetic to be done in
+  // the gym car park.
+  const library = [{ name: "White Rice", c: 43, p: 4, f: 0.4, fiber: 0.6, cals: 195, serving: 100, unit: "g" }];
+  const [p] = portionsFor(library as never, preTargets(80, PRE_WINDOWS[1]!));
+  assert.ok(p);
+  assert.ok(p!.grams > 100, `should need a real portion, got ${p!.grams}g`);
+  assert.ok(p!.carbsG >= preTargets(80, PRE_WINDOWS[1]!).carbsG * 0.9);
+});
+
+test("portions round to something a person would actually serve", () => {
+  const library = [{ name: "Rice", c: 43, p: 4, f: 0.4, fiber: 0.6, cals: 195, serving: 100, unit: "g" }];
+  const [p] = portionsFor(library as never, preTargets(80, PRE_WINDOWS[1]!));
+  assert.equal(p!.grams % 10, 0, `${p!.grams}g should round to 10s above 100`);
+});
+
+test("what is already eaten reduces the portion needed", () => {
+  const library = [{ name: "Rice", c: 43, p: 4, f: 0.4, fiber: 0.6, cals: 195, serving: 100, unit: "g" }];
+  const t = preTargets(80, PRE_WINDOWS[1]!);
+  const full = portionsFor(library as never, t, 0)[0]!;
+  const partial = portionsFor(library as never, t, t.carbsG / 2)[0]!;
+  assert.ok(partial.grams < full.grams, "eating half should halve what is left");
+});
+
+test("nothing is suggested once the target is met", () => {
+  const library = [{ name: "Rice", c: 43, p: 4, f: 0.4, fiber: 0.6, cals: 195, serving: 100, unit: "g" }];
+  const t = preTargets(80, PRE_WINDOWS[1]!);
+  assert.deepEqual(portionsFor(library as never, t, t.carbsG), []);
+});
+
+test("a food over the ceiling per 100g is not suggested at all", () => {
+  // Granola at 11g fat cannot suit a top-up whose ceiling is 5g, at any portion.
+  const library = [{ name: "Granola", c: 60, p: 8, f: 11, fiber: 2, cals: 450, serving: 100, unit: "g" }];
+  assert.deepEqual(portionsFor(library as never, preTargets(80, PRE_WINDOWS[2]!)), []);
+});
+
+test("a portion that only breaks the ceiling once scaled is flagged", () => {
+  // The case worth warning about: 4g of fat per 100g passes the 5g ceiling,
+  // but the ~250g needed to hit the carbohydrate target carries 10g. Invisible
+  // until the arithmetic is done, which is exactly why the app should do it.
+  const library = [{ name: "Oat bar", c: 13, p: 3, f: 4, fiber: 1, cals: 100, serving: 100, unit: "g" }];
+  const [p] = portionsFor(library as never, preTargets(80, PRE_WINDOWS[2]!));
+  assert.ok(p, "it passes the per-100g filter, so it is suggested");
+  assert.ok(p!.grams > 200, `should need a big portion, got ${p!.grams}g`);
+  assert.equal(p!.overLimit, true, "and that portion breaks the fat ceiling");
 });
