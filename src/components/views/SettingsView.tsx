@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
 import { buildBackup, parseBackup, restorePhotos, saveBackupFile, type BackupSummary } from "@/lib/backup";
@@ -10,8 +11,18 @@ import {
   backupIsDue, daysSinceBackup, formatBytes, markBackedUp, requestPersistence,
   storageHealth, type StorageHealth,
 } from "@/lib/storage-health";
+import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+
+const GOAL_FIELDS = [
+  { key: "cals" as const, label: "Calories" },
+  { key: "protein" as const, label: "Protein g" },
+  { key: "carbs" as const, label: "Carbs g" },
+  { key: "fat" as const, label: "Fat g" },
+  { key: "fiber" as const, label: "Fiber g" },
+  { key: "water" as const, label: "Water ml" },
+];
 
 export function SettingsView() {
   const settings = useSoma((s) => s.settings);
@@ -32,6 +43,14 @@ export function SettingsView() {
     { summary: BackupSummary; apply: (mode: "merge" | "replace") => Promise<void> } | null
   >(null);
   const clearSeededHabitHistory = useSoma((s) => s.clearSeededHabitHistory);
+  const applyGoalsToOpenDays = useSoma((s) => s.applyGoalsToOpenDays);
+  // Raw text beside the stored numbers, so a half-typed target is not wiped on
+  // every keystroke.
+  const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(useSoma.getState().settings.customGoals ?? {}).map(([k, v]) => [k, String(v)]),
+    ),
+  );
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<StorageHealth | null>(null);
   const [sinceBackup, setSinceBackup] = useState<number | null>(daysSinceBackup());
@@ -425,6 +444,45 @@ export function SettingsView() {
             Reset to demo
           </Button>
         </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Daily nutrition targets</CardTitle>
+        <p className="mb-3 text-xs text-muted">
+          Leave a field blank to keep following the default — protein blank also keeps
+          following your bodyweight when that setting is on.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {GOAL_FIELDS.map((g) => (
+            <label key={g.key} className="text-[0.62rem] font-bold uppercase tracking-wide text-faint">
+              {g.label}
+              <DecimalInput
+                className="mt-1"
+                placeholder={String(DEFAULT_GOALS[g.key])}
+                value={goalDrafts[g.key] ?? ""}
+                onValueChange={(n, raw) => {
+                  setGoalDrafts({ ...goalDrafts, [g.key]: raw });
+                  const next = { ...(settings.customGoals ?? {}) };
+                  if (n == null) delete next[g.key];
+                  else next[g.key] = n;
+                  patchSettings({ customGoals: next });
+                }}
+              />
+            </label>
+          ))}
+        </div>
+        <Button
+          className="mt-3 w-full"
+          variant="primary"
+          onClick={() => {
+            const n = applyGoalsToOpenDays();
+            toast.success(
+              n ? `Applied to ${n} ${n === 1 ? "day" : "days"}` : "Nothing to update",
+            );
+          }}
+        >
+          Apply to today
+        </Button>
       </Card>
 
       <Card>

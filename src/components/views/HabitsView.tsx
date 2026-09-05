@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CalendarDays, Camera, Check, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
-import { MonthMatrix, YearlyOverview } from "@/components/HabitHeatmap";
+import { MonthMatrix, MonthStrip, YearlyOverview } from "@/components/HabitHeatmap";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -269,18 +269,11 @@ function TodayPanel() {
                 </button>
               </div>
             </div>
-            <div className="flex gap-1.5">
-              {week.map((d) => (
-                <button
-                  key={d.key}
-                  type="button"
-                  onClick={() => toggleHabit(h.id, d.key)}
-                  className="h-6 flex-1 rounded-md"
-                  style={{ background: d.done ? h.color : "var(--color-surface-3)" }}
-                  aria-label={d.key}
-                />
-              ))}
-            </div>
+            {/* Thirty days rather than seven, in the same strip height: a week
+                of bars said almost nothing, and this fits the month into the
+                space the week already occupied. Lit by streak, so a run
+                brightens and breaking it drops back to the floor. */}
+            <MonthStrip habit={h} onToggle={(d) => toggleHabit(h.id, d)} />
           </Card>
         );
       })}

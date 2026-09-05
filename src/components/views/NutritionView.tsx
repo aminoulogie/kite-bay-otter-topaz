@@ -339,8 +339,6 @@ export function NutritionView() {
         </details>
       </Card>
 
-      <NutritionGraphs />
-
       {MEALS.map((m) => {
         const group = items
           .map((it, idx) => ({ it, idx }))
@@ -428,6 +426,11 @@ export function NutritionView() {
           }}
         />
       )}
+
+      {/* Last on the page: it is a review of the week, not part of logging
+          today, and it was pushing the meal sections below the fold. */}
+      <NutritionGraphs />
+
     </div>
   );
 }

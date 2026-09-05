@@ -6,6 +6,7 @@ import {
   addDays, isCovered, isoDate, loadPeriods, membershipStatus, periodFromDuration,
   periodFromEnd, savePeriods, type MembershipPeriod,
 } from "@/lib/membership";
+import { SomaIntelligenceEngine } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import type { HistorySession, NutritionDay } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,22 @@ import { cn } from "@/lib/utils";
 const TRAIN_HABIT_ID = "gym-movement";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
+
+/**
+ * "Legs B (Posterior Chain & Glute Bias)" will not fit in a calendar cell, so
+ * it is reduced to the word that identifies the day.
+ */
+function shortSplit(split: string): string {
+  const s = split.toLowerCase();
+  if (s.includes("rest")) return "REST";
+  if (s.includes("push")) return "PUSH";
+  if (s.includes("pull")) return "PULL";
+  if (s.includes("leg")) return "LEGS";
+  if (s.includes("upper")) return "UPPER";
+  if (s.includes("lower")) return "LOWER";
+  if (s.includes("full")) return "FULL";
+  return split.split(/[\s(]/)[0]!.slice(0, 5).toUpperCase();
+}
 
 function monthMatrix(year: number, month: number): (string | null)[] {
   const first = new Date(year, month, 1);
@@ -30,6 +47,7 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
   const history = useSoma((s) => s.history);
   const habits = useSoma((s) => s.habits);
   const nutrition = useSoma((s) => s.nutrition);
+  const settings = useSoma((s) => s.settings);
 
   const today = isoDate(new Date());
   const [cursor, setCursor] = useState(() => {
@@ -126,10 +144,24 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-7 gap-1">
           {cells.map((date, i) => {
             if (!date) return <div key={i} />;
-            const trained = !!sessionsByDate.get(date) || !!trainHabit?.history?.[date];
+            const session = sessionsByDate.get(date);
+            const trained = !!session || !!trainHabit?.history?.[date];
             const future = date > today;
             const covered = isCovered(periods, date);
             const isEnd = status.period?.end === date;
+            // What was trained, or what is scheduled for a day still to come —
+            // a grid of bare numbers says nothing about the week ahead.
+            // Every day is labelled, not only trained and future ones: a past
+            // day with no session still had a split scheduled, and leaving it
+            // blank hides whether it was a rest day or a missed one.
+            const label = session
+              ? shortSplit(session.split)
+              : shortSplit(
+                  SomaIntelligenceEngine.getProgramProjectedDay(
+                    new Date(date + "T12:00:00"),
+                    settings.scheduleOverrides,
+                  ).split,
+                );
 
             return (
               <button
@@ -143,12 +175,13 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
                   future ? "text-faint" : "text-fg",
                 )}
               >
-                <span>{Number(date.slice(8, 10))}</span>
-                {/* Trained, rest, and missed are three different things, and a
-                    future day is none of them. */}
+                <span className="leading-none">{Number(date.slice(8, 10))}</span>
+                {/* Trained, missed, and still to come are three different
+                    states; the label carries the split, the dot carries which
+                    of the three this is. */}
                 <span
                   className={cn(
-                    "mt-1 size-1.5 rounded-full",
+                    "mt-0.5 size-1 rounded-full",
                     trained
                       ? "bg-emerald-500"
                       : future
@@ -156,9 +189,23 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
                         : "border border-dashed border-faint/50 bg-transparent",
                   )}
                 />
+                {label && !isEnd && (
+                  <span
+                    className={cn(
+                      "mt-0.5 max-w-full truncate rounded px-1 text-[0.45rem] font-extrabold uppercase tracking-wide",
+                      trained
+                        ? "bg-emerald-500/20 text-emerald-300"
+                        : label === "REST"
+                          ? "bg-surface-3 text-faint"
+                          : "bg-surface-3 text-muted",
+                    )}
+                  >
+                    {label}
+                  </span>
+                )}
                 {isEnd && (
-                  <span className="absolute inset-x-0 bottom-0.5 text-[0.5rem] font-extrabold text-amber-400">
-                    END
+                  <span className="mt-0.5 rounded bg-amber-500/20 px-1 text-[0.45rem] font-extrabold text-amber-400">
+                    EXPIRY
                   </span>
                 )}
               </button>

@@ -616,6 +616,9 @@ export function WorkoutView() {
                   key={sIdx}
                   className={cn(
                     "grid grid-cols-[36px_1fr_1fr_1.3fr_36px_28px] items-center gap-1.5 rounded-xl p-1",
+                    // A completed set acknowledges itself for half a second,
+                    // so the tap has a visible consequence beyond a checkbox.
+                    s.done && "soma-flash",
                     s.done && "bg-accent-soft",
                     s.type === "dropset" && "bg-warn/10",
                     s.type === "warmup" && "opacity-70",

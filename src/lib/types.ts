@@ -141,6 +141,15 @@ export interface Habit {
 }
 
 export interface Settings {
+  /**
+   * Daily nutrition targets the user has set themselves.
+   *
+   * Partial and optional: only the fields actually overridden are stored, so
+   * anything left alone keeps following the defaults (and protein keeps
+   * following bodyweight when autoProteinTarget is on) instead of being frozen
+   * at whatever the default happened to be on the day it was first edited.
+   */
+  customGoals?: Partial<Goals>;
   unit: Unit;
   barWeight: number;
   restDefault: number;

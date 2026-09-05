@@ -134,7 +134,7 @@ export function GraphsView() {
 
   return (
     <div className="space-y-3">
-      <MicroMusclePanel micro={micro} group={group} />
+      <MicroMusclePanel micro={micro} />
 
       <Card>
         <CardTitle>Progression</CardTitle>
@@ -306,33 +306,30 @@ export function GraphsView() {
  * the lifts feeding one micro-muscle span wildly different loads and adding
  * them would track exercise selection instead of strength. See micro-muscle.ts.
  */
-function MicroMusclePanel({
-  micro,
-  group,
-}: {
-  micro: ReturnType<typeof microMuscleStrength>;
-  group: string;
-}) {
+function MicroMusclePanel({ micro }: { micro: ReturnType<typeof microMuscleStrength> }) {
   const [open, setOpen] = useState<string | null>(null);
+  // Its own picker, independent of the exercise chart below: the two answer
+  // different questions and tying them together meant you could not look at
+  // back heads while charting a chest lift.
+  const [pick, setPick] = useState<string>("All");
 
+  // Every head with any history, not only the well-sampled ones. A head with
+  // three sessions is still worth seeing — it is marked thin rather than
+  // hidden, because hiding it looked like the app had lost the data.
+  const groups = useMemo(
+    () => ["All", ...[...new Set(micro.map((m) => m.muscle))].sort()],
+    [micro],
+  );
   const rows = useMemo(
-    () => micro.filter((m) => m.muscle === group && m.usable),
-    [micro, group],
-  );
-  const thin = useMemo(
-    () => micro.filter((m) => m.muscle === group && !m.usable).length,
-    [micro, group],
+    () => (pick === "All" ? micro : micro.filter((m) => m.muscle === pick)),
+    [micro, pick],
   );
 
-  if (!rows.length) {
+  if (!micro.length) {
     return (
       <Card>
         <CardTitle>Micro-muscle strength</CardTitle>
-        <p className="text-xs text-muted">
-          {thin > 0
-            ? `${thin} ${thin === 1 ? "head" : "heads"} in this group have too few sessions to read as a trend yet.`
-            : "Nothing logged for this group yet."}
-        </p>
+        <p className="text-xs text-muted">Nothing logged yet.</p>
       </Card>
     );
   }
@@ -345,6 +342,24 @@ function MicroMusclePanel({
         very different loads, so kilos cannot be averaged across them — this tracks the
         trend instead.
       </p>
+
+      <div className="mb-2 flex gap-1 overflow-x-auto pb-1">
+        {groups.map((g) => (
+          <button
+            key={g}
+            type="button"
+            onClick={() => setPick(g)}
+            className={cn(
+              "shrink-0 rounded-full border px-3 py-1.5 text-[0.68rem] font-bold transition-colors",
+              pick === g
+                ? "border-accent bg-accent text-accent-ink"
+                : "border-border bg-surface-2 text-muted",
+            )}
+          >
+            {g}
+          </button>
+        ))}
+      </div>
 
       <div className="space-y-1.5">
         {rows.map((m) => {
@@ -360,8 +375,9 @@ function MicroMusclePanel({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[0.74rem] font-bold">{m.subTarget}</div>
                   <div className="text-[0.6rem] text-faint">
-                    {m.exercises.length} {m.exercises.length === 1 ? "lift" : "lifts"} ·{" "}
-                    {m.points.length} sessions
+                    {m.muscle} · {m.exercises.length}{" "}
+                    {m.exercises.length === 1 ? "lift" : "lifts"} · {m.points.length} sessions
+                    {!m.usable && " · thin data"}
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
@@ -379,7 +395,7 @@ function MicroMusclePanel({
               </button>
 
               {isOpen && (
-                <div className="border-t border-border px-2 pb-2 pt-1">
+                <div className="soma-expand border-t border-border px-2 pb-2 pt-1">
                   <div className="h-28 w-full">
                     <ResponsiveContainer>
                       <LineChart
@@ -438,11 +454,10 @@ function MicroMusclePanel({
         })}
       </div>
 
-      {thin > 0 && (
-        <p className="mt-2 text-[0.58rem] text-faint">
-          {thin} more {thin === 1 ? "head has" : "heads have"} too few sessions to plot yet.
-        </p>
-      )}
+      <p className="mt-2 text-[0.58rem] text-faint">
+        {rows.length} {rows.length === 1 ? "head" : "heads"} shown. Ones marked thin have
+        fewer than four sessions, so read them as a hint rather than a trend.
+      </p>
     </Card>
   );
 }

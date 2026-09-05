@@ -71,6 +71,7 @@ export interface SomaStore {
   setTab: (tab: SomaStore["tab"]) => void;
   setActiveDate: (d: string) => void;
   patchSettings: (p: Partial<Settings>) => void;
+  applyGoalsToOpenDays: () => number;
   ensureDay: (key?: string) => void;
   patchDay: (key: string, patch: Partial<NutritionDay>) => void;
   addFood: (item: FoodItem) => void;
@@ -263,6 +264,31 @@ export const useSoma = create<SomaStore>()(
         set({ habits: habits.map((h) => ({ ...h, history: {} })) });
         return removed;
       },
+      /**
+       * Push edited targets onto days that already exist.
+       *
+       * A day stores the goals it was created with, so editing a target would
+       * otherwise change nothing visible until tomorrow — and today's rings
+       * would keep measuring against a number the user had just replaced.
+       * Only days with nothing logged yet, and today, are touched: rewriting
+       * the target on a finished past day would silently rescore history.
+       */
+      applyGoalsToOpenDays: () => {
+        const s = get().settings;
+        const custom = s.customGoals;
+        if (!custom || !Object.keys(custom).length) return 0;
+        const today = getLocalDateKey(new Date());
+        const nutrition = { ...get().nutrition };
+        let touched = 0;
+        for (const [k, day] of Object.entries(nutrition)) {
+          if (!day) continue;
+          if (k !== today && (day.items?.length ?? 0) > 0) continue;
+          nutrition[k] = { ...day, goals: { ...day.goals, ...custom } };
+          touched += 1;
+        }
+        set({ nutrition });
+        return touched;
+      },
       setTab: (tab) => set({ tab }),
       setActiveDate: (d) => set({ activeDate: d }),
       patchSettings: (p) => set({ settings: { ...get().settings, ...p } }),
@@ -275,6 +301,9 @@ export const useSoma = create<SomaStore>()(
           const s = get().settings;
           const goals = { ...DEFAULT_GOALS };
           if (s.autoProteinTarget) goals.protein = SomaIntelligenceEngine.proteinTargetFor(w, s.proteinPerKg) || goals.protein;
+          // Applied last so an explicit target always wins, including over the
+          // bodyweight-derived protein figure.
+          Object.assign(goals, s.customGoals ?? {});
           nutrition[k] = emptyDay(w);
           nutrition[k]!.goals = goals;
           set({ nutrition });

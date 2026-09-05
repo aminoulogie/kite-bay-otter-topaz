@@ -147,7 +147,9 @@ export function NutritionGraphs() {
 
           <div className="h-52 w-full">
             <ResponsiveContainer>
-              <AreaChart data={data} margin={{ top: 6, right: 6, bottom: 0, left: -20 }}>
+              <AreaChart data={data} /* left margin was negative, which pushed the axis labels off the
+                   card and clipped "1200" into "200". */
+                margin={{ top: 6, right: 10, bottom: 0, left: 4 }}>
                 <defs>
                   <linearGradient id="fill-nutrient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.35} />
@@ -168,7 +170,7 @@ export function NutritionGraphs() {
                 <YAxis
                   tick={{ fontSize: 10, fill: "var(--color-muted)" }}
                   stroke="var(--color-border)"
-                  width={42}
+                  width={52}
                 />
                 <Tooltip
                   contentStyle={{

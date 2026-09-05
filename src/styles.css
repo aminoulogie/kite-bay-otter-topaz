@@ -186,3 +186,76 @@ button:not(:disabled):active,
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Second motion pass: make the app answer, not just settle.
+
+   The first pass covered sheets and taps. What was still dead: numbers that
+   jumped between values, cards that appeared in a block, tabs that swapped
+   with no sense of direction, and progress bars that teleported. Each of
+   those is a moment where the app should look like it is doing something.
+--------------------------------------------------------------------------- */
+
+/* Views change with a short slide, so switching tabs has a direction. */
+@keyframes soma-view-in {
+  from { transform: translateY(6px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+.soma-view { animation: soma-view-in 260ms var(--ease-out) both; }
+
+/* Cards arrive in sequence rather than all at once. Capped at six, because
+   beyond that the last card is waiting on an animation nobody is watching. */
+.soma-stagger > * { animation: soma-rise 260ms var(--ease-out) both; }
+.soma-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.soma-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.soma-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.soma-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.soma-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.soma-stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
+
+/* A number that changed draws the eye for a moment. */
+@keyframes soma-tick {
+  0%   { transform: translateY(3px); opacity: 0.4; }
+  100% { transform: translateY(0);   opacity: 1; }
+}
+.soma-tick { animation: soma-tick 200ms var(--ease-out); }
+
+/* Progress and rings move rather than jump. */
+[role="progressbar"] > *,
+.soma-bar {
+  transition: width 420ms var(--ease-out), background-color 220ms var(--ease-out);
+}
+
+/* A set marked done: the row acknowledges it. */
+@keyframes soma-flash {
+  0%   { background-color: color-mix(in srgb, var(--color-accent) 26%, transparent); }
+  100% { background-color: transparent; }
+}
+.soma-flash { animation: soma-flash 520ms var(--ease-out); }
+
+/* Accordions open with height rather than snapping. */
+@keyframes soma-expand {
+  from { opacity: 0; transform: translateY(-4px) scaleY(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scaleY(1); }
+}
+.soma-expand { animation: soma-expand 200ms var(--ease-out) both; transform-origin: top; }
+
+/* The active tab pill glides between positions instead of blinking. */
+.soma-pill { transition: background-color 200ms var(--ease-out), color 200ms var(--ease-out),
+             box-shadow 260ms var(--ease-spring); }
+
+/* Skeletons, so loading looks designed rather than blank. */
+@keyframes soma-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.soma-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2) 25%,
+    var(--color-surface-3) 37%,
+    var(--color-surface-2) 63%
+  );
+  background-size: 200% 100%;
+  animation: soma-shimmer 1.4s ease-in-out infinite;
+}

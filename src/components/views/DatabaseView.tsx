@@ -165,6 +165,7 @@ export function DatabaseView() {
             </button>
 
             {open && (
+              // eslint-disable-next-line react/jsx-no-useless-fragment
               <ExerciseWindow
                 ex={ex}
                 best={best}
@@ -211,7 +212,7 @@ function ExerciseWindow({
   }, [ex.days, sort]);
 
   return (
-    <div className="border-t border-border">
+    <div className="soma-expand border-t border-border">
       {rated?.usable ? (
         <div className="border-b border-border bg-surface-2 px-3 py-2">
           <div className="mb-1 flex items-baseline gap-2">

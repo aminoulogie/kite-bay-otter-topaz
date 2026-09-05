@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Moon, Pill, Ruler, Scale } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, Camera, Moon, Pill, Ruler, Scale } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,9 @@ import {
   currentSaturation, saturationLabel, saturationSeries, supplyStatus,
 } from "@/lib/creatine";
 import { SLEEP_FACTORS, currentDebt, debtLabel, nightsToClear } from "@/lib/sleep-debt";
+import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
+import { captureImage, getPhoto, savePhoto } from "@/lib/habit-photos";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -264,6 +267,16 @@ function SleepPanel() {
   );
 }
 
+/**
+ * Measurement photos share the habit photo store, under their own id space.
+ *
+ * A separate store would mean a second backup path, a second restore path and
+ * a second set of object-URL bugs, for data that is shaped identically.
+ */
+function sitePhotoId(key: string): string {
+  return `measure:${key}`;
+}
+
 function MeasurePanel() {
   const nutrition = useSoma((s) => s.nutrition);
   const logMeasurements = useSoma((s) => s.logMeasurements);
@@ -272,22 +285,74 @@ function MeasurePanel() {
   const [vals, setVals] = useState<Record<string, string>>(() =>
     Object.fromEntries(SITES.map((s) => [s.key, existing[s.key] != null ? String(existing[s.key]) : ""])),
   );
+  const [photoSite, setPhotoSite] = useState<{ key: string; label: string } | null>(null);
+  const [shots, setShots] = useState<Set<string>>(new Set());
+  const [reload, setReload] = useState(0);
+
+  // Which sites already have a photo for the day being viewed, so the camera
+  // button can say so rather than making it a guess.
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(
+      SITES.map(async (s) => ((await getPhoto(sitePhotoId(s.key), activeDate)) ? s.key : null)),
+    ).then((keys) => {
+      if (!cancelled) setShots(new Set(keys.filter((k): k is string => !!k)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDate, reload]);
+
+  const shoot = async (key: string, label: string) => {
+    try {
+      const file = await captureImage();
+      if (!file) return;
+      await savePhoto(sitePhotoId(key), activeDate, file);
+      setReload((k) => k + 1);
+      toast.success(`${label} photo saved`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save that photo.");
+    }
+  };
   return (
     <Card>
       <CardTitle>Circumference</CardTitle>
       <p className="mb-3 text-xs text-muted">Measure cold, same spots. Weekly is plenty.</p>
       <div className="space-y-2">
         {SITES.map((s) => (
-          <div key={s.key} className="grid grid-cols-[1fr_100px] items-center gap-2">
+          <div key={s.key} className="grid grid-cols-[1fr_84px_auto_auto] items-center gap-2">
             <span className="text-sm font-semibold text-muted">{s.label}</span>
-            <Input
-              type="number"
-              step="0.1"
+            <DecimalInput
               className="h-10 text-center"
               placeholder="cm"
               value={vals[s.key] || ""}
-              onChange={(e) => setVals({ ...vals, [s.key]: e.target.value })}
+              onValueChange={(_n, raw) => setVals({ ...vals, [s.key]: raw })}
             />
+            {/* A tape reading and a photo of the same site on the same day are
+                the two halves of one measurement, so they are logged together
+                rather than on separate screens. Photos are filed under the
+                site key, reusing the habit photo store. */}
+            <button
+              type="button"
+              aria-label={`Photo history for ${s.label}`}
+              onClick={() => setPhotoSite(s)}
+              className="flex size-10 items-center justify-center rounded-lg border border-border bg-surface-2 text-muted transition-transform active:scale-90"
+            >
+              <CalendarDays className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-label={`Take a photo of ${s.label}`}
+              onClick={() => void shoot(s.key, s.label)}
+              className={cn(
+                "flex size-10 items-center justify-center rounded-lg border transition-transform active:scale-90",
+                shots.has(s.key)
+                  ? "border-accent bg-accent/15 text-accent-text"
+                  : "border-border bg-surface-2 text-muted",
+              )}
+            >
+              <Camera className="size-4" />
+            </button>
           </div>
         ))}
       </div>
@@ -306,6 +371,23 @@ function MeasurePanel() {
       >
         Save
       </Button>
+
+      {photoSite && (
+        <HabitPhotoCalendar
+          habit={{
+            id: sitePhotoId(photoSite.key),
+            name: photoSite.label,
+            desc: "Measurement photos",
+            color: "#a3e635",
+            goalDaysPerWeek: 1,
+            history: {},
+          }}
+          onClose={() => {
+            setPhotoSite(null);
+            setReload((k) => k + 1);
+          }}
+        />
+      )}
     </Card>
   );
 }

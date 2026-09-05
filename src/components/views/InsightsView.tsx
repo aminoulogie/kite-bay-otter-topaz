@@ -11,7 +11,7 @@ import { SomaIntelligenceEngine, getLocalDateKey, parseLocalDateKey } from "@/li
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-type InsightTab = "overview" | "strength" | "heatmap" | "calendar" | "database" | "graphs";
+type InsightTab = "overview" | "strength" | "heatmap" | "database" | "graphs";
 
 export function InsightsView() {
   const [tab, setTab] = useState<InsightTab>("overview");
@@ -21,7 +21,6 @@ export function InsightsView() {
     { id: "database", label: "Database" },
     { id: "graphs", label: "Graphs" },
     { id: "heatmap", label: "Heatmap" },
-    { id: "calendar", label: "Calendar" },
   ];
   return (
     <div className="space-y-3 pb-4">
@@ -45,7 +44,6 @@ export function InsightsView() {
       {tab === "database" && <DatabaseView />}
       {tab === "graphs" && <GraphsView />}
       {tab === "heatmap" && <HeatmapPanel />}
-      {tab === "calendar" && <CalendarPanel />}
     </div>
   );
 }

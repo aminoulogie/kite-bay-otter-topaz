@@ -181,7 +181,7 @@ export function AppShell() {
 
       <DateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
-      <main className="soma-scroll px-4 pt-4">
+      <main key={tab} className="soma-scroll px-4 pt-4 soma-view soma-stagger">
         {tab === "workout" && <WorkoutView />}
         {tab === "nutrition" && <NutritionView />}
         {tab === "habits" && <HabitsView />}

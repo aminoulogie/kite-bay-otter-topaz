@@ -194,3 +194,54 @@ export function YearlyOverview({ habits }: { habits: Habit[] }) {
     </div>
   );
 }
+
+/**
+ * The same month, as one thin row.
+ *
+ * For the Today card, where the previous seven-bar week strip said almost
+ * nothing and a full grid would dominate the card. Thirty squares fit the whole
+ * month into the height the week already used, so nothing else moves.
+ *
+ * Shares the streak lighting with MonthMatrix deliberately: two different
+ * brightness rules for the same data would make the two views disagree.
+ */
+export function MonthStrip({
+  habit,
+  onToggle,
+}: {
+  habit: Habit;
+  onToggle: (date: string) => void;
+}) {
+  const today = new Date();
+  const cells = [];
+  let streak = 0;
+
+  for (let i = MONTH_DAYS - 1; i >= 0; i--) {
+    const dStr = getLocalDateKey(addDays(today, -i));
+    const done = habit.history[dStr] === true;
+    streak = done ? streak + 1 : 0;
+    const intensity = done ? Math.min(1, 0.35 + (streak / 7) * 0.65) : 0;
+    const isToday = i === 0;
+
+    cells.push(
+      <button
+        key={dStr}
+        type="button"
+        onClick={() => onToggle(dStr)}
+        title={`${dStr}: ${done ? `done, ${streak} day streak` : "missed"}`}
+        aria-label={`${dStr} ${done ? `completed, ${streak} day streak` : "incomplete"}`}
+        className="h-5 min-w-0 flex-1 rounded-[2px] transition-transform active:scale-90"
+        style={{
+          background: done ? habit.color : "var(--color-surface-3)",
+          opacity: done ? intensity : 1,
+          // Today gets an outline rather than a colour, so it reads as a
+          // position in the month and not as a completion state.
+          outline: isToday ? "1px solid var(--color-accent)" : undefined,
+          outlineOffset: isToday ? "1px" : undefined,
+        }}
+      />,
+    );
+  }
+
+  return <div className="flex gap-[2px]">{cells}</div>;
+}
