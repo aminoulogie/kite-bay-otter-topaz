@@ -1,4 +1,5 @@
 import seed from "./training-seed.json";
+import { exerciseKey } from "./exercise-key";
 import type { HistorySession } from "./types";
 
 /**
@@ -79,13 +80,17 @@ function fromSeed(bodyweightByDate: Record<string, number>): ExerciseLog[] {
  * after a re-import — cannot duplicate a set. A day present in both wins from
  * the app, since that is the record with real set-by-set detail.
  */
+
 export function buildTrainingLog(
   history: Record<string, HistorySession>,
   /** date -> bodyweight in kg, so bodyweight lifts carry their real load */
   bodyweightByDate: Record<string, number> = {},
 ): ExerciseLog[] {
-  const byName = new Map<string, ExerciseLog>();
-  for (const e of fromSeed(bodyweightByDate)) byName.set(e.name, e);
+  // Keyed on the shared form of the name, not the name itself — see
+  // exerciseKey. Keying on the raw name is what split every exercise the two
+  // vocabularies spell differently into two separate rows.
+  const byKey = new Map<string, ExerciseLog>();
+  for (const e of fromSeed(bodyweightByDate)) byKey.set(exerciseKey(e.name), e);
 
   for (const session of Object.values(history || {})) {
     if (!session?.exercises?.length) continue;
@@ -95,10 +100,19 @@ export function buildTrainingLog(
       const done = (ex.sets || []).filter((s) => s.done);
       if (!done.length) continue;
 
-      let entry = byName.get(ex.name);
+      const key = exerciseKey(ex.name);
+      let entry = byKey.get(key);
       if (!entry) {
         entry = { name: ex.name, key: ex.targetKeys?.[0] ?? null, group: ex.muscle || "Other", days: {} };
-        byName.set(ex.name, entry);
+        byKey.set(key, entry);
+      } else {
+        // Show the name the app itself uses. Logging "Leg Extensions" in Train
+        // and reading "Leg Extension" here looks like a different exercise, and
+        // this is the name the user actually picked.
+        entry.name = ex.name;
+        // The seed carries no muscle key for some rows; the catalogue does, and
+        // the body map and micro-muscle grouping both read it.
+        entry.key ??= ex.targetKeys?.[0] ?? null;
       }
       // On a bodyweight movement the logged number is the ADDED plate, so the
       // real load is the body plus that. Falling back to the nearest known
@@ -116,7 +130,7 @@ export function buildTrainingLog(
     }
   }
 
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**

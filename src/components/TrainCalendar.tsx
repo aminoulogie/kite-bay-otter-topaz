@@ -189,12 +189,12 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         </div>
       </div>
 
-      {/* The month sits at the top and the day panel is docked under it.
-          min-h-0 is what lets this shrink inside the flex column — without it
-          a flex child refuses to go below its content height and pushes the
-          docked card off the bottom of the screen. */}
+      {/* One scrolling column: month first, then the day widget under it.
+          min-h-0 is what lets this shrink inside the flex column — without it a
+          flex child refuses to go below its content height and the column
+          overflows the screen instead of scrolling inside it. */}
       <div
-        className="flex min-h-0 flex-col overflow-y-auto px-3 pb-3 pt-3"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
         onTouchStart={(e) => {
           const t = e.touches[0];
           touch.current = t ? { x: t.clientX, y: t.clientY } : null;
@@ -249,11 +249,21 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
                 key={date}
                 type="button"
                 onClick={() => setSelected(date)}
+                aria-pressed={date === selected}
                 className={cn(
                   "relative flex aspect-square flex-col items-center justify-center rounded-xl border text-[0.75rem] font-bold transition-colors",
-                  date === today ? "border-accent" : "border-transparent",
-                  covered ? "bg-surface-2" : "bg-surface",
-                  future ? "text-faint" : "text-fg",
+                  // Selection and "today" are different things and need to stay
+                  // distinguishable: today keeps its outline, the day you are
+                  // reading is filled. Without the fill, tapping around the
+                  // month changed the widget below with nothing on the grid to
+                  // say which day you had landed on.
+                  date === selected
+                    ? "border-accent bg-accent/20 text-fg"
+                    : covered
+                      ? "border-transparent bg-surface-2"
+                      : "border-transparent bg-surface",
+                  date === today && date !== selected && "border-accent",
+                  future && date !== selected ? "text-faint" : "text-fg",
                 )}
               >
                 <span className="leading-none">{Number(date.slice(8, 10))}</span>
@@ -327,6 +337,18 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         >
           Log a renewal
         </button>
+
+        {/* In the same scrolling column as the month, not a second pane. Two
+            panes each with their own scrollbar split a phone screen in half and
+            leave both halves cramped; one column just continues downward. */}
+        <DayCard
+          date={selected}
+          isToday={selected === today}
+          session={sessionsByDate.get(selected) ?? null}
+          previous={findPrevious(sessionsByDate, selected)}
+          nutrition={nutrition}
+          onBackToToday={() => setSelected(today)}
+        />
       </div>
 
       {renewing && (
@@ -342,14 +364,6 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         />
       )}
 
-      <DayCard
-        date={selected}
-        isToday={selected === today}
-        session={sessionsByDate.get(selected) ?? null}
-        previous={findPrevious(sessionsByDate, selected)}
-        nutrition={nutrition}
-        onBackToToday={() => setSelected(today)}
-      />
       </div>
     </>
   );
@@ -428,7 +442,7 @@ function DayCard({
     // Docked, not fixed: it is part of the calendar column and takes at most
     // half the height, so the month above it always stays visible.
     <div
-      className="flex max-h-[50vh] shrink-0 flex-col overflow-y-auto border-t border-border bg-surface px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
+      className="mt-4 rounded-2xl border border-border bg-surface-2 p-3"
       aria-live="polite"
     >
         <div className="mb-3 flex items-baseline justify-between gap-2">
