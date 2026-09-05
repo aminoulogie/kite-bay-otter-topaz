@@ -276,7 +276,7 @@ function DayCard({
   return (
     <div className="fixed inset-0 z-[59] flex flex-col justify-end bg-black/60" onClick={onClose}>
       <div
-        className="max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
+        className="soma-sheet max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-3" />

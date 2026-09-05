@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { MUSCLE_REGIONS } from "@/lib/recovery";
 import type { Closeness, Limiter, SetQuality } from "@/lib/set-quality";
 import { isGenuineFailure } from "@/lib/set-quality";
+import { tapLight } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 
 /**
@@ -72,7 +73,7 @@ export function SetQualitySheet({
   return (
     <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/60" onClick={onClose}>
       <div
-        className="max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
+        className="soma-sheet max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-3" />
@@ -222,7 +223,10 @@ function Choice({ on, onClick, label, hint }: { on: boolean; onClick: () => void
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => {
+        tapLight();
+        onClick();
+      }}
       className={cn(
         "rounded-xl border px-2.5 py-2 text-left transition-colors",
         on ? "border-accent bg-accent/15" : "border-border bg-surface-2",

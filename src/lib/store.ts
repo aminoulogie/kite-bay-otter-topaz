@@ -65,6 +65,7 @@ export interface SomaStore {
   markHydrated: () => void;
   ensureSeed: () => void;
   mergeCustomFoods: () => void;
+  clearSeededHabitHistory: () => number;
   normalizeLive: () => void;
   rollDayIfNeeded: () => boolean;
   setTab: (tab: SomaStore["tab"]) => void;
@@ -241,6 +242,26 @@ export const useSoma = create<SomaStore>()(
           (f) => !have.has(f.name.trim().toLowerCase()),
         );
         if (missing.length) set({ customFoods: [...get().customFoods, ...missing] });
+      },
+      /**
+       * Wipe habit day-marks, once, on request.
+       *
+       * Early builds seeded 48 days of invented history, so installs from
+       * before that fix carry a streak nobody earned — and now that the grid
+       * lights by streak, that fiction reads as real momentum.
+       *
+       * Deliberately manual and deliberately not automatic: this destroys real
+       * marks alongside the fake ones, and there is no way to tell them apart
+       * after the fact. Returns how many were removed so the caller can say.
+       */
+      clearSeededHabitHistory: () => {
+        const habits = get().habits;
+        const removed = habits.reduce(
+          (n, h) => n + Object.values(h.history || {}).filter(Boolean).length,
+          0,
+        );
+        set({ habits: habits.map((h) => ({ ...h, history: {} })) });
+        return removed;
       },
       setTab: (tab) => set({ tab }),
       setActiveDate: (d) => set({ activeDate: d }),

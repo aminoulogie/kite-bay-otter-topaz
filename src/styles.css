@@ -121,3 +121,68 @@ html[data-soma-theme="light"] {
     font-size: 16px;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Motion.
+
+   Springs rather than linear easing, because a linear move reads as a thing
+   being dragged and a spring reads as a thing responding. The overshoot is
+   small on purpose: enough to feel alive, not enough to look like a toy on the
+   twentieth set of the session.
+
+   Every rule below is disabled wholesale under prefers-reduced-motion. Motion
+   sickness is not a preference to style around — the animation simply stops.
+--------------------------------------------------------------------------- */
+:root {
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 140ms;
+  --dur: 220ms;
+  --dur-slow: 340ms;
+}
+
+/* Sheets rise rather than appear. */
+@keyframes soma-sheet-in {
+  from { transform: translateY(14%); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+/* Cards settle in, staggered by their own position in the list. */
+@keyframes soma-rise {
+  from { transform: translateY(8px) scale(0.995); opacity: 0; }
+  to   { transform: translateY(0)   scale(1);     opacity: 1; }
+}
+
+@keyframes soma-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+.soma-sheet { animation: soma-sheet-in var(--dur) var(--ease-out) both; }
+.soma-rise  { animation: soma-rise var(--dur) var(--ease-out) both; }
+.soma-pop   { animation: soma-pop var(--dur-slow) var(--ease-spring) both; }
+
+/* Anything tappable answers immediately, before any state has changed. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  transition: transform var(--dur-fast) var(--ease-spring),
+              background-color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              opacity var(--dur-fast) var(--ease-out);
+}
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

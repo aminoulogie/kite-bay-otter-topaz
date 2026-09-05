@@ -12,6 +12,7 @@ import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
+import { tapLight, tapMedium, tapSuccess } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import type { SessionExercise } from "@/lib/types";
 
@@ -131,6 +132,8 @@ export function WorkoutView() {
     .slice(0, 12);
 
   const onCheck = (ex: SessionExercise, exIdx: number, setIdx: number, done: boolean) => {
+    // The most repeated action in the app, so it gets the clearest feedback.
+    if (done) tapMedium();
     updateSet(exIdx, setIdx, { done });
     if (done) {
       if (settings.sound) playChime("chime");
@@ -147,6 +150,7 @@ export function WorkoutView() {
       if (pr) {
         if (settings.sound) playChime("pr");
         if (settings.confetti && rootRef.current) burstConfetti(rootRef.current);
+        tapSuccess();
         toast.success(`PR on ${ex.name}`);
       }
     }

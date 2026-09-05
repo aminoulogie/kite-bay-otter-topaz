@@ -31,6 +31,7 @@ export function SettingsView() {
   const [pending, setPending] = useState<
     { summary: BackupSummary; apply: (mode: "merge" | "replace") => Promise<void> } | null
   >(null);
+  const clearSeededHabitHistory = useSoma((s) => s.clearSeededHabitHistory);
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<StorageHealth | null>(null);
   const [sinceBackup, setSinceBackup] = useState<number | null>(daysSinceBackup());
@@ -424,6 +425,28 @@ export function SettingsView() {
             Reset to demo
           </Button>
         </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Habit history</CardTitle>
+        <p className="mb-3 text-xs text-muted">
+          Early builds seeded 48 days of invented habit history. Now that the grid lights
+          by streak, that fiction reads as momentum you did not earn. This clears every
+          habit day-mark — including any real ones, which cannot be told apart from the
+          seeded ones after the fact.
+        </p>
+        <Button
+          variant="danger"
+          className="w-full"
+          onClick={() => {
+            const n = clearSeededHabitHistory();
+            toast.success(
+              n ? `Cleared ${n} habit ${n === 1 ? "day" : "days"}` : "Habit history was already empty",
+            );
+          }}
+        >
+          Clear all habit days
+        </Button>
       </Card>
 
       <Card>
