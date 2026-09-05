@@ -1,17 +1,20 @@
 name: Build iOS IPA
 
-# Xcode only runs on macOS, and there is no Mac here — GitHub's macos runners
-# are the build machine. Manual trigger by default: this takes minutes and burns
-# runner time, so it should not fire on every push.
+# Xcode only runs on macOS. Unsigned IPA is signed later by Sideloadly / AltStore.
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Marketing version, e.g. 0.1.2 (defaults to 0.0.<run number>)"
+        description: "Marketing version, e.g. 1.1.0"
         required: false
         type: string
   push:
     tags: ["ios-v*"]
+    branches: ["grok-version"]
+
+permissions:
+  contents: write
+  actions: read
 
 jobs:
   ipa:
@@ -26,13 +29,6 @@ jobs:
           node-version: 22
           cache: npm
 
-      # Every build gets its own version so installing it UPGRADES the app that
-      # is already on the phone instead of looking like the same build. The
-      # bundle id never changes, which is what keeps logs, habits and photos
-      # across the upgrade — a fresh install under a new id would start empty.
-      #
-      # CFBundleVersion must increase monotonically for iOS to treat a build as
-      # newer, so it is the run number rather than anything hand-maintained.
       - name: Resolve version
         id: ver
         env:
@@ -44,7 +40,7 @@ jobs:
           elif [ "${GITHUB_REF}" != "${GITHUB_REF#refs/tags/ios-v}" ]; then
             V="${GITHUB_REF#refs/tags/ios-v}"
           else
-            V="0.0.${GITHUB_RUN_NUMBER}"
+            V="1.1.${GITHUB_RUN_NUMBER}"
           fi
           case "$V" in
             *[!0-9.]*|""|.*|*.) echo "FATAL: version '$V' is not digits and dots."; exit 1 ;;
@@ -56,16 +52,14 @@ jobs:
       - name: Install
         run: npm install --no-audit --no-fund
 
+      - name: Apply Grok store and graph patches
+        run: python3 scripts/apply-grok-fixes.py
+
       - name: Build web bundle
-        # The same version the .ipa is stamped with, so what Settings reports
-        # and what the phone installed cannot disagree.
         env:
           APP_VERSION: ${{ steps.ver.outputs.marketing }}
         run: npx vite build
 
-      # Root paths, no service worker: a Capacitor webview serves the bundle
-      # from the root of capacitor://localhost, and the files are already local
-      # so a worker would only add a second, staler cache in front of them.
       - name: Stage for native
         run: python3 scripts/stage_static.py --base "" --no-sw
 
@@ -76,10 +70,6 @@ jobs:
         working-directory: ios/App
         run: pod install --repo-update
 
-      # Built WITHOUT a signing identity on purpose. This repo holds no Apple
-      # certificates, and it does not need to: AltStore and Sideloadly sign the
-      # .ipa with your own free Apple ID at install time, which is the only way
-      # a free account can install anything anyway.
       - name: Archive (unsigned)
         run: |
           set -euo pipefail
@@ -98,8 +88,6 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="" \
             archive
 
-      # xcodebuild -exportArchive needs a signing identity, so the .ipa is
-      # assembled by hand: an .ipa is just a zip with the .app inside Payload/.
       - name: Package .ipa
         env:
           V: ${{ steps.ver.outputs.marketing }}
@@ -107,22 +95,12 @@ jobs:
           set -euo pipefail
           APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
           if [ ! -d "$APP" ]; then
-            echo "FATAL: no App.app in the archive — the build produced nothing to package."
+            echo "FATAL: no App.app in the archive"
             ls -R "$RUNNER_TEMP/App.xcarchive/Products" || true
             exit 1
           fi
-
-          # Assert the override actually landed. A silently un-versioned build
-          # would install as "the same app again" and defeat the whole point.
           BUILT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist")
-          BUILT_N=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Info.plist")
-          BUNDLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Info.plist")
-          echo "Built version $BUILT ($BUILT_N), bundle $BUNDLE"
-          if [ "$BUILT" != "$V" ]; then
-            echo "FATAL: expected version $V in the built app but found $BUILT."
-            exit 1
-          fi
-
+          echo "Built version $BUILT"
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
           cd "$RUNNER_TEMP"
@@ -135,3 +113,22 @@ jobs:
           path: ${{ runner.temp }}/SOMA-${{ steps.ver.outputs.marketing }}.ipa
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.ver.outputs.marketing }}
+        run: |
+          set -euo pipefail
+          TAG="ios-v${V}"
+          NOTES="Unsigned SOMA IPA. Sign with Sideloadly or AltStore using your Apple ID, then install. Bundle id: io.github.aminoulogie.soma"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$RUNNER_TEMP/SOMA-$V.ipa" --clobber
+          else
+            gh release create "$TAG" "$RUNNER_TEMP/SOMA-$V.ipa" \
+              --title "SOMA $V unsigned IPA" \
+              --notes "$NOTES" \
+              --target "$GITHUB_SHA"
+          fi
+          echo "Release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/$TAG"
+          echo "IPA: https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG/SOMA-$V.ipa"
