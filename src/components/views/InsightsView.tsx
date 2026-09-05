@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BodyHeatmap } from "@/components/BodyHeatmap";
 import { DatabaseView } from "@/components/views/DatabaseView";
-import { GraphsView } from "@/components/views/GraphsView";
+import { GraphsView, MicroMuscleView } from "@/components/views/GraphsView";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -11,28 +11,70 @@ import { SomaIntelligenceEngine, getLocalDateKey, parseLocalDateKey } from "@/li
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-type InsightTab = "overview" | "strength" | "heatmap" | "database" | "graphs";
+type InsightTab =
+  | "overview"
+  | "strength"
+  | "database"
+  | "micro"
+  | "exercise"
+  | "heatmap";
 
 export function InsightsView() {
   const [tab, setTab] = useState<InsightTab>("overview");
+  // Two graph tabs, not one: micro-muscle strength and per-exercise analysis
+  // answer different questions and were competing for the same screen.
   const tabs: { id: InsightTab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "strength", label: "Strength" },
     { id: "database", label: "Database" },
-    { id: "graphs", label: "Graphs" },
+    { id: "micro", label: "Micro-muscle" },
+    { id: "exercise", label: "Exercises" },
     { id: "heatmap", label: "Heatmap" },
   ];
+
+  // Measured, not derived from an index, because the bar scrolls once six tabs
+  // no longer fit at a legible size.
+  const barRef = useRef<HTMLDivElement>(null);
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [pill, setPill] = useState({ x: 0, w: 0 });
+
+  useEffect(() => {
+    const move = () => {
+      const el = refs.current[tab];
+      if (el) setPill({ x: el.offsetLeft, w: el.offsetWidth });
+    };
+    move();
+    const id = requestAnimationFrame(move);
+    return () => cancelAnimationFrame(id);
+  }, [tab]);
+
   return (
     <div className="space-y-3 pb-4">
-      <div className="flex gap-1 rounded-full border border-border bg-surface p-1">
+      <div
+        ref={barRef}
+        className="relative flex snap-x gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute left-0 top-1 rounded-full bg-accent transition-[transform,width] duration-300 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
+          style={{
+            width: pill.w,
+            height: "calc(100% - 0.5rem)",
+            transform: `translateX(${pill.x}px)`,
+            opacity: pill.w ? 1 : 0,
+          }}
+        />
         {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
+            ref={(el) => {
+              refs.current[t.id] = el;
+            }}
             onClick={() => setTab(t.id)}
             className={cn(
-              "h-10 flex-1 rounded-full text-xs font-bold",
-              tab === t.id ? "bg-accent text-accent-ink" : "text-muted",
+              "relative z-10 h-10 shrink-0 snap-center rounded-full px-3 text-xs font-bold transition-colors duration-200",
+              tab === t.id ? "text-accent-ink" : "text-muted",
             )}
           >
             {t.label}
@@ -42,7 +84,8 @@ export function InsightsView() {
       {tab === "overview" && <OverviewPanel />}
       {tab === "strength" && <StrengthPanel />}
       {tab === "database" && <DatabaseView />}
-      {tab === "graphs" && <GraphsView />}
+      {tab === "micro" && <MicroMuscleView />}
+      {tab === "exercise" && <GraphsView />}
       {tab === "heatmap" && <HeatmapPanel />}
     </div>
   );

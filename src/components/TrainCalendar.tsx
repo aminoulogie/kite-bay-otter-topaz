@@ -44,7 +44,7 @@ function monthMatrix(year: number, month: number): (string | null)[] {
   return cells;
 }
 
-export function TrainCalendar({ onClose }: { onClose: () => void }) {
+export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const sheetRef = useSheet(onClose);
   const history = useSoma((s) => s.history);
   const habits = useSoma((s) => s.habits);
@@ -128,7 +128,26 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
   return (
     // soma-view animates it in; the calendar appeared instantly before while
     // every other overlay slid, which read as a different, older screen.
-    <div className="soma-view fixed inset-0 z-[57] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+    <>
+      {/* Mounted always and translated, rather than conditionally rendered.
+          A conditional mount can only animate IN — it vanishes on close — and
+          the history drawer already slides both ways, so the two gestures felt
+          like different apps. */}
+      <div
+        aria-hidden
+        onClick={onClose}
+        className={cn(
+          "fixed inset-0 z-[56] bg-black/60 transition-opacity duration-200",
+          open ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+      />
+      <div
+        className={cn(
+          "fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong bg-bg pt-[max(12px,env(safe-area-inset-top))]",
+          "transition-transform duration-200 ease-out",
+          open ? "translate-x-0" : "translate-x-full",
+        )}
+      >
       <div className="flex items-center justify-between border-b border-border px-4 pb-3">
         <div>
           <div className="font-display text-base font-extrabold">{monthLabel}</div>
@@ -312,7 +331,8 @@ export function TrainCalendar({ onClose }: { onClose: () => void }) {
           onClose={() => setSelected(null)}
         />
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -63,7 +63,6 @@ export function GraphsView() {
   }, [nutrition]);
   const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
   const groups = useMemo(() => groupsOf(log), [log]);
-  const micro = useMemo(() => microMuscleStrength(log), [log]);
 
   const [group, setGroup] = useState<string>("Chest");
   const [picked, setPicked] = useState<string[]>([]);
@@ -154,8 +153,6 @@ export function GraphsView() {
 
   return (
     <div className="space-y-3">
-      <MicroMusclePanel micro={micro} />
-
       <Card>
         <CardTitle>Progression</CardTitle>
 
@@ -340,6 +337,29 @@ export function GraphsView() {
  * the lifts feeding one micro-muscle span wildly different loads and adding
  * them would track exercise selection instead of strength. See micro-muscle.ts.
  */
+/**
+ * Micro-muscle strength, as its own screen.
+ *
+ * Split out of the exercise charts because the two answer different questions:
+ * one is "is this head getting stronger", the other is "what is this lift
+ * doing". Sharing a screen meant both were cramped and the group picker was
+ * ambiguous about which chart it applied to.
+ */
+export function MicroMuscleView() {
+  const history = useSoma((s) => s.history);
+  const nutrition = useSoma((s) => s.nutrition);
+  const bodyweights = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const [d, day] of Object.entries(nutrition || {})) {
+      if (day?.bodyWeight) out[d] = day.bodyWeight;
+    }
+    return out;
+  }, [nutrition]);
+  const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
+  const micro = useMemo(() => microMuscleStrength(log), [log]);
+  return <MicroMusclePanel micro={micro} />;
+}
+
 function MicroMusclePanel({ micro }: { micro: ReturnType<typeof microMuscleStrength> }) {
   const [open, setOpen] = useState<string | null>(null);
   // Its own picker, independent of the exercise chart below: the two answer

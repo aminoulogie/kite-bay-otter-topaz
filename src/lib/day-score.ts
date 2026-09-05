@@ -20,10 +20,19 @@ import type { HistorySession } from "./types.ts";
 /** Every weight lives here so the whole thing can be retuned in one place. */
 export const SCORE_WEIGHTS = {
   workout: 40,
-  protein: 20,
-  calories: 15,
-  sleep: 15,
-  creatine: 10,
+  protein: 18,
+  calories: 13,
+  sleep: 13,
+  creatine: 8,
+  /**
+   * Pre-workout fuelling.
+   *
+   * Taken from the other nutrition weights rather than added on top, so the
+   * total stays 100 and every previous day's score keeps the same meaning.
+   * Worth its own slice because what you eat before a session changes the
+   * session, in a way that the day's total macros do not capture.
+   */
+  preworkout: 8,
 } as const;
 
 /** How the workout's 40 is split. Sums to SCORE_WEIGHTS.workout. */
@@ -47,6 +56,11 @@ export interface DayInputs {
   creatineG?: number | null;
   /** A rest day is not a missed workout, so the workout share is not counted. */
   isRestDay?: boolean;
+  /**
+   * How well the pre-workout window was fuelled, 0-1, or null when nothing was
+   * logged under it. Null on a rest day too — there was no session to fuel.
+   */
+  preworkout?: number | null;
 }
 
 export interface ScoreLine {
@@ -188,6 +202,22 @@ export function scoreDay(inp: DayInputs): DayScore {
     earned: inp.sleepHours != null ? Math.round(ratio(inp.sleepHours, SLEEP_TARGET_HOURS) * SCORE_WEIGHTS.sleep * 10) / 10 : null,
     possible: SCORE_WEIGHTS.sleep,
     detail: inp.sleepHours != null ? `${inp.sleepHours}h of ${SLEEP_TARGET_HOURS}h` : "not logged",
+  });
+
+  lines.push({
+    id: "preworkout",
+    label: "Pre-workout",
+    earned:
+      inp.preworkout != null
+        ? Math.round(Math.max(0, Math.min(1, inp.preworkout)) * SCORE_WEIGHTS.preworkout * 10) / 10
+        : null,
+    possible: SCORE_WEIGHTS.preworkout,
+    detail:
+      inp.preworkout != null
+        ? `${Math.round(inp.preworkout * 100)}% of the window's target`
+        : inp.isRestDay
+          ? "rest day"
+          : "not logged",
   });
 
   lines.push({

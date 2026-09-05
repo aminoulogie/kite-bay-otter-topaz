@@ -6,6 +6,8 @@ import {
 import { BASE_FOOD_LIBRARY } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import type { FoodItem } from "@/lib/types";
+import { toast } from "sonner";
+import { tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 
 /**
@@ -22,6 +24,7 @@ export function PreWorkoutCard() {
   const nutrition = useSoma((s) => s.nutrition);
   const activeDate = useSoma((s) => s.activeDate);
   const customFoods = useSoma((s) => s.customFoods);
+  const addFood = useSoma((s) => s.addFood);
 
   const [windowId, setWindowId] = useState<string>("snack");
   const win: PreWindow = PRE_WINDOWS.find((w) => w.id === windowId) ?? PRE_WINDOWS[1]!;
@@ -91,8 +94,22 @@ export function PreWorkoutCard() {
       <div className="grid grid-cols-4 gap-1.5">
         <Metric label="Carbs" value={`${check.carbsG}`} target={`${target.carbsG}g`} pct={check.carbsPct} />
         <Metric label="Protein" value={`${check.proteinG}`} target={`${target.proteinG}g`} pct={check.proteinPct} />
-        <Metric label="Fat" value={`${check.fatG}`} target={`≤${target.maxFatG}g`} over={check.fatOver} />
-        <Metric label="Fiber" value={`${check.fiberG}`} target={`≤${target.maxFiberG}g`} over={check.fiberOver} />
+        <Metric
+          label="Fat"
+          value={`${check.fatG}`}
+          target={`≤${target.maxFatG}g`}
+          over={check.fatOver}
+          ceiling
+          pct={target.maxFatG ? (check.fatG / target.maxFatG) * 100 : 0}
+        />
+        <Metric
+          label="Fiber"
+          value={`${check.fiberG}`}
+          target={`≤${target.maxFiberG}g`}
+          over={check.fiberOver}
+          ceiling
+          pct={target.maxFiberG ? (check.fiberG / target.maxFiberG) * 100 : 0}
+        />
       </div>
 
       <p className={cn("mt-2 text-[0.7rem] font-bold", tone)}>
@@ -111,10 +128,26 @@ export function PreWorkoutCard() {
           </div>
           <div className="space-y-1">
             {portions.map((p) => (
-              <div
+              // Tapping logs it straight into the Pre-Workout meal. Sending the
+              // user to the search box to re-find a food the app has just named
+              // is the kind of step that makes a feature go unused.
+              <button
                 key={p.food.name}
+                type="button"
+                onClick={() => {
+                  const per = p.food.serving || 100;
+                  const scale = p.grams / per;
+                  const scaled = { ...p.food, meal: "Pre-Workout", serving: p.grams } as FoodItem;
+                  for (const k of ["cals", "p", "c", "f", "fiber", "sodium", "potassium", "calcium", "iron", "magnesium", "zinc"] as const) {
+                    (scaled as unknown as Record<string, number>)[k] =
+                      Math.round(((Number(p.food[k]) || 0) * scale) * 10) / 10;
+                  }
+                  addFood(scaled);
+                  tapMedium();
+                  toast.success(`${p.grams}g ${p.food.name} logged`);
+                }}
                 className={cn(
-                  "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5",
+                  "flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left active:scale-[0.99]",
                   p.overLimit ? "border-warn/40 bg-warn/5" : "border-border bg-surface-2",
                 )}
               >
@@ -125,7 +158,7 @@ export function PreWorkoutCard() {
                 <span className="shrink-0 text-[0.6rem] tabular-nums text-faint">
                   {p.carbsG}c · {p.proteinG}p · {p.cals}kcal
                 </span>
-              </div>
+              </button>
             ))}
           </div>
           {portions.some((p) => p.overLimit) && (
@@ -140,16 +173,28 @@ export function PreWorkoutCard() {
   );
 }
 
+/**
+ * A target as a bar rather than a pair of numbers.
+ *
+ * "63 / 105g" makes you do the division; a bar shows the gap at a glance,
+ * which is the only question being asked here.
+ *
+ * Ceilings fill in the opposite sense to targets: for fat and fibre a full bar
+ * is bad, so those are coloured by whether the limit is breached rather than
+ * by how close they are to it.
+ */
 function Metric({
-  label, value, target, pct, over,
+  label, value, target, pct, over, ceiling,
 }: {
   label: string;
   value: string;
   target: string;
   pct?: number;
   over?: boolean;
+  ceiling?: boolean;
 }) {
-  const hit = pct != null && pct >= 90;
+  const filled = Math.max(0, Math.min(100, pct ?? 0));
+  const hit = !ceiling && filled >= 90;
   return (
     <div className="rounded-lg bg-surface-2 px-1.5 py-1.5 text-center">
       <div className="text-[0.55rem] font-bold uppercase text-faint">{label}</div>
@@ -161,7 +206,16 @@ function Metric({
       >
         {value}
       </div>
-      <div className="text-[0.52rem] text-faint">{target}</div>
+      <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-3">
+        <div
+          className={cn(
+            "soma-bar h-full rounded-full",
+            over ? "bg-orange-400" : hit ? "bg-emerald-400" : "bg-accent",
+          )}
+          style={{ width: `${filled}%` }}
+        />
+      </div>
+      <div className="mt-0.5 text-[0.52rem] text-faint">{target}</div>
     </div>
   );
 }

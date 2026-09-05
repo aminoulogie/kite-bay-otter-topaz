@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Camera, Moon, Pill, Ruler, Scale } from "lucide-react";
+import { CalendarDays, Camera, Check, Moon, Pill, Ruler, Scale } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,9 @@ import { SLEEP_FACTORS, currentDebt, debtLabel, nightsToClear } from "@/lib/slee
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
 import { captureImage, getPhoto, savePhoto } from "@/lib/habit-photos";
 import { DecimalInput } from "@/components/ui/decimal-input";
+import {
+  EVIDENCE_LABEL, EVIDENCE_TONE, SUPPLEMENTS, loadTaken, saveTaken,
+} from "@/lib/supplements";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +32,7 @@ const SITES = [
   { key: "calf", label: "Calf" },
 ];
 
-type BodyTab = "weight" | "sleep" | "measure" | "creatine";
+type BodyTab = "weight" | "sleep" | "measure" | "supplements";
 
 export function BodyView() {
   const [tab, setTab] = useState<BodyTab>("weight");
@@ -37,7 +40,7 @@ export function BodyView() {
     { id: "weight", label: "Weight", icon: Scale },
     { id: "sleep", label: "Sleep", icon: Moon },
     { id: "measure", label: "Tape", icon: Ruler },
-    { id: "creatine", label: "Creatine", icon: Pill },
+    { id: "supplements", label: "Supps", icon: Pill },
   ];
   return (
     <div className="space-y-3 pb-4">
@@ -64,7 +67,7 @@ export function BodyView() {
       {tab === "weight" && <WeightPanel />}
       {tab === "sleep" && <SleepPanel />}
       {tab === "measure" && <MeasurePanel />}
-      {tab === "creatine" && <CreatinePanel />}
+      {tab === "supplements" && <SupplementsPanel />}
     </div>
   );
 }
@@ -389,6 +392,86 @@ function MeasurePanel() {
         />
       )}
     </Card>
+  );
+}
+
+/**
+ * Creatine, plus everything else worth an opinion.
+ *
+ * The evidence grade is the point of the list. Presenting creatine and BCAAs
+ * as equals would launder a marketing claim into something that looks like a
+ * recommendation, so the ones that do nothing are listed AS doing nothing
+ * rather than left off and assumed untested.
+ */
+function SupplementsPanel() {
+  const [taken, setTaken] = useState<string[]>(() => loadTaken());
+  const toggle = (id: string) => {
+    const next = taken.includes(id) ? taken.filter((x) => x !== id) : [...taken, id];
+    setTaken(next);
+    saveTaken(next);
+  };
+
+  return (
+    <div className="space-y-3">
+      <CreatinePanel />
+
+      <Card>
+        <CardTitle>Supplements</CardTitle>
+        <p className="mb-3 text-[0.68rem] leading-snug text-muted">
+          Graded by the evidence behind them. Marking one only records that you take it —
+          nothing here doses you or tells you to start.
+        </p>
+        <div className="space-y-1.5">
+          {SUPPLEMENTS.map((sup) => {
+            const on = taken.includes(sup.id);
+            return (
+              <div
+                key={sup.id}
+                className={cn(
+                  "rounded-xl border p-2.5 transition-colors",
+                  on ? "border-accent/40 bg-accent/5" : "border-border bg-surface-2",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggle(sup.id)}
+                  className="flex w-full items-start gap-2 text-left"
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border",
+                      on ? "border-accent bg-accent text-accent-ink" : "border-border",
+                    )}
+                  >
+                    {on && <Check className="size-3" />}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-[0.78rem] font-bold">{sup.name}</span>
+                      <span className={cn("text-[0.58rem] font-bold uppercase", EVIDENCE_TONE[sup.evidence])}>
+                        {EVIDENCE_LABEL[sup.evidence]}
+                      </span>
+                      {sup.foodCovers && (
+                        <span className="text-[0.55rem] font-semibold text-faint">food covers this</span>
+                      )}
+                    </span>
+                    <span className="mt-0.5 block text-[0.65rem] leading-snug text-muted">{sup.what}</span>
+                    {sup.dose !== "—" && (
+                      <span className="mt-0.5 block text-[0.6rem] text-faint">
+                        {sup.dose} · {sup.timing}
+                      </span>
+                    )}
+                    {sup.caveat && (
+                      <span className="mt-1 block text-[0.6rem] leading-snug text-warn/90">{sup.caveat}</span>
+                    )}
+                  </span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
   );
 }
 

@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { FoodEditorSheet } from "@/components/FoodEditorSheet";
 import { PreWorkoutCard } from "@/components/PreWorkoutCard";
+import { MealBuilder } from "@/components/MealBuilder";
+import { MineralsCard } from "@/components/MineralsCard";
 import { NutritionGraphs } from "@/components/NutritionGraphs";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
@@ -364,6 +366,8 @@ export function NutritionView() {
         </details>
       </Card>
 
+      <MealBuilder meal={meal} />
+
       <PreWorkoutCard />
 
       {MEALS.map((m) => {
@@ -457,6 +461,8 @@ export function NutritionView() {
       {/* Last on the page: it is a review of the week, not part of logging
           today, and it was pushing the meal sections below the fold. */}
       <NutritionGraphs />
+
+      <MineralsCard />
 
       {editingFood && (
         <FoodEditorSheet food={editingFood} onClose={() => setEditingFood(null)} />

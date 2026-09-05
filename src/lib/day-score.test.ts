@@ -37,6 +37,7 @@ test("unlogged food is not logged, not zero", () => {
 
 test("a perfect tracked day scores 100 even with things untracked", () => {
   const r = scoreDay({
+    preworkout: 1,
     session: session([set({ limiter: "target", closeness: "nothing", burn: 3 })]),
     protein: { grams: 200, target: 200 },
     calories: { kcal: 2500, target: 2500 },

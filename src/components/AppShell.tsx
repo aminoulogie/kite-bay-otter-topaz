@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, CalendarDays, Dumbbell, LineChart, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, Utensils } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
@@ -41,6 +41,32 @@ export function AppShell() {
   // where it was asked for, and the 40px edge is wide enough for a thumb
   // coming in off the bezel.
   const [calendarOpen, setCalendarOpen] = useState(false);
+
+  // Measured rather than computed from an index, because the dock scrolls and
+  // the tabs are not evenly spaced once it does.
+  const dockRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const [pill, setPill] = useState({ x: 0, w: 0 });
+
+  useEffect(() => {
+    const move = () => {
+      const el = tabRefs.current[tab];
+      const dock = dockRef.current;
+      if (!el || !dock) return;
+      // Offset within the scrollable content, so the pill stays under its tab
+      // when the dock is scrolled rather than drifting with the viewport.
+      setPill({ x: el.offsetLeft, w: el.offsetWidth });
+    };
+    move();
+    // Fonts and layout settle a frame later; without this the pill lands at
+    // the previous tab's width on first paint.
+    const id = requestAnimationFrame(move);
+    window.addEventListener("resize", move);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener("resize", move);
+    };
+  }, [tab, ready]);
   useRightEdgeSwipe(
     () => setCalendarOpen(true),
     ready && !drawerOpen && !calendarOpen && tab === "workout",
@@ -166,7 +192,7 @@ export function AppShell() {
         </button>
       </header>
 
-      {calendarOpen && <TrainCalendar onClose={() => setCalendarOpen(false)} />}
+      <TrainCalendar open={calendarOpen} onClose={() => setCalendarOpen(false)} />
 
       {/* Selecting a past day changes what every tab reads. Without a standing
           indicator that is invisible, and the app looks like it ignored the tap. */}
@@ -197,7 +223,23 @@ export function AppShell() {
         {/* Scrollable: seven tabs no longer fit at a legible size, and
             shrinking them further would make the labels unreadable before it
             made them fit. snap-x keeps a tab from ending up half off-screen. */}
-        <div className="pointer-events-auto flex w-full max-w-lg snap-x items-center gap-1 overflow-x-auto rounded-full border border-border-strong bg-dock p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          ref={dockRef}
+          className="pointer-events-auto relative flex w-full max-w-lg snap-x items-center gap-1 overflow-x-auto rounded-full border border-border-strong bg-dock p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {/* One pill that travels, rather than each tab painting its own
+              background. Colour swapping between two elements reads as a
+              blink; a single element moving reads as the selection sliding. */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute left-0 top-1.5 rounded-full bg-accent shadow-glow transition-[transform,width] duration-300 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
+            style={{
+              width: pill.w,
+              height: "calc(100% - 0.75rem)",
+              transform: `translateX(${pill.x}px)`,
+              opacity: pill.w ? 1 : 0,
+            }}
+          />
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = tab === t.id;
@@ -205,12 +247,16 @@ export function AppShell() {
               <button
                 key={t.id}
                 type="button"
+                ref={(el) => {
+                  tabRefs.current[t.id] = el;
+                }}
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  // min-w-0 lets the flex child shrink below its content width;
-                  // without it a six-tab dock overflows instead of fitting.
-                  "flex min-h-11 w-[4.2rem] shrink-0 snap-center flex-col items-center justify-center gap-0.5 rounded-full px-0.5 py-1.5 text-[0.58rem] font-bold leading-none transition-colors duration-150",
-                  active ? "bg-accent text-accent-ink shadow-glow" : "text-faint hover:text-muted",
+                  // No background of its own: the travelling pill is the only
+                  // thing that paints the selection, so the highlight slides
+                  // between tabs instead of blinking off one and on another.
+                  "relative z-10 flex min-h-11 w-[4.2rem] shrink-0 snap-center flex-col items-center justify-center gap-0.5 rounded-full px-0.5 py-1.5 text-[0.58rem] font-bold leading-none transition-colors duration-200",
+                  active ? "text-accent-ink" : "text-faint hover:text-muted",
                 )}
               >
                 <Icon className="size-4 shrink-0" strokeWidth={active ? 2.4 : 2} />
