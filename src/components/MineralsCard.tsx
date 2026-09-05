@@ -54,14 +54,45 @@ export function MineralsCard() {
 
   const anyKnown = rows.some((r) => r.known);
 
+  /**
+   * Which of today's foods carry no mineral figures at all.
+   *
+   * The totals are only as complete as the foods behind them, and most of the
+   * library is branded local products whose figures are not in any reference
+   * database — so rather than filling them in with plausible numbers, the card
+   * names the packets worth reading. Editing a food writes the values back for
+   * every future day it is logged.
+   */
+  const unrecorded = useMemo(() => {
+    const items = day?.items ?? [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const i of items) {
+      const row = i as unknown as Record<string, unknown>;
+      if (MICROS.some((m) => Number(row[m.key]) > 0)) continue;
+      const name = String(i.name ?? "").trim();
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      out.push(name);
+    }
+    return out;
+  }, [day]);
+
   return (
     <Card>
       <CardTitle>Minerals</CardTitle>
       {!anyKnown ? (
-        <p className="text-[0.68rem] leading-snug text-muted">
-          None of today&apos;s foods carry mineral figures. Scanned products often do; foods
-          entered by hand only have what you typed.
-        </p>
+        <>
+          <p className="text-[0.68rem] leading-snug text-muted">
+            None of today&apos;s foods carry mineral figures. Scanned products often do;
+            foods entered by hand only have what you typed.
+          </p>
+          {unrecorded.length > 0 && (
+            <p className="mt-1.5 text-[0.62rem] leading-snug text-faint">
+              Add them from the packet on: {unrecorded.join(", ")}.
+            </p>
+          )}
+        </>
       ) : (
         <div className="space-y-2">
           {rows.map((r) => (
@@ -90,6 +121,14 @@ export function MineralsCard() {
               </div>
             </div>
           ))}
+          {unrecorded.length > 0 && (
+            // A partial total reads as a low day rather than an incomplete one,
+            // which is the more misleading of the two.
+            <p className="pt-1 text-[0.6rem] leading-snug text-warn">
+              Missing figures for {unrecorded.join(", ")}, so these totals are lower than
+              what you actually ate.
+            </p>
+          )}
           <p className="pt-1 text-[0.58rem] leading-snug text-faint">
             Bars stop at the target. Three times your iron target is not three times as
             good, so it is not drawn that way.
