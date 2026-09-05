@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 export function EstimatesView() {
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
+  const customGoals = useSoma((s) => s.settings.customGoals);
 
   const bodyweights = useMemo(() => {
     const out: Record<string, number> = {};
@@ -32,11 +33,78 @@ export function EstimatesView() {
   const strength = useMemo(() => strengthEstimates(log), [log]);
   const measures = useMemo(() => measurementEstimates(nutrition), [nutrition]);
 
+  /**
+   * Average intake against the calorie target, over the last month.
+   *
+   * ~7700 kcal is the commonly used figure for a kilogram of bodyweight. It is
+   * an approximation and treated as one — the sentence says "roughly".
+   */
+  const intake = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    let sum = 0;
+    let logged = 0;
+    let target = 0;
+    for (const [date, d] of Object.entries(nutrition || {})) {
+      if (new Date(date) < cutoff) continue;
+      if (d?.goals?.cals) target = d.goals.cals;
+      const items = d?.items ?? [];
+      if (!items.length) continue; // unlogged is unknown, not a fast
+      sum += items.reduce((t, i) => t + (i.cals || 0), 0);
+      logged += 1;
+    }
+    const explicit = customGoals?.cals;
+    if (typeof explicit === "number" && explicit > 0) target = explicit;
+    if (!logged || !target) return null;
+    const avg = Math.round(sum / logged);
+    return { avg, target: Math.round(target), gap: avg - Math.round(target), loggedDays: logged };
+  }, [nutrition, customGoals]);
+
   return (
     <div className="space-y-3">
       <Card>
         <CardTitle>Bodyweight</CardTitle>
         <EstimateBlock est={weight} />
+        {intake && (
+          // The question this card kept prompting: "why am I losing weight if
+          // my target is 3600?" Because the target is not what you ate. The
+          // projection follows the scale, and the scale follows intake, so the
+          // gap between the two is the whole explanation.
+          <div className="mt-3 rounded-xl border border-border bg-surface-2 p-2.5">
+            <div className="text-[0.68rem] font-bold">
+              {intake.gap < -150
+                ? "You are eating under your target"
+                : intake.gap > 150
+                  ? "You are eating over your target"
+                  : "You are eating close to your target"}
+            </div>
+            <div className="mt-1 flex items-baseline gap-3 text-[0.65rem] text-muted">
+              <span>
+                avg <b className="text-fg tabular-nums">{intake.avg}</b> kcal
+              </span>
+              <span>
+                target <b className="text-fg tabular-nums">{intake.target}</b>
+              </span>
+              <span
+                className={cn(
+                  "ml-auto font-bold tabular-nums",
+                  intake.gap < 0 ? "text-orange-400" : "text-emerald-400",
+                )}
+              >
+                {intake.gap > 0 ? "+" : ""}
+                {intake.gap}/day
+              </span>
+            </div>
+            <p className="mt-1.5 text-[0.6rem] leading-snug text-faint">
+              A target is what you intend to eat; the projection follows what the scale
+              actually did. Roughly {Math.abs(Math.round((intake.gap * 30) / 7700) * 10) / 10}kg
+              a month is explained by this gap alone
+              {intake.loggedDays < 14
+                ? ` — though only ${intake.loggedDays} days are logged, so treat it loosely.`
+                : "."}
+            </p>
+          </div>
+        )}
       </Card>
 
       <Card>
