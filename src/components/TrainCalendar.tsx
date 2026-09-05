@@ -45,7 +45,9 @@ function monthMatrix(year: number, month: number): (string | null)[] {
 }
 
 export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const sheetRef = useSheet(onClose);
+  // Passing `open`: this sheet stays mounted so it can slide both ways, so it
+  // must only hold the scroll lock while it is actually showing.
+  const sheetRef = useSheet(onClose, open);
   const history = useSoma((s) => s.history);
   const habits = useSoma((s) => s.habits);
   const nutrition = useSoma((s) => s.nutrition);
@@ -57,7 +59,12 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
     const d = new Date();
     return { y: d.getFullYear(), m: d.getMonth() };
   });
-  const [selected, setSelected] = useState<string | null>(null);
+  /**
+   * The day shown in the panel below the month. Always set, starting on today:
+   * the card is docked open rather than being a popup you have to summon, so
+   * opening the calendar already answers "how did today go".
+   */
+  const [selected, setSelected] = useState<string>(today);
   const [periods, setPeriods] = useState<MembershipPeriod[]>(() => loadPeriods());
   const [renewing, setRenewing] = useState(false);
 
@@ -143,6 +150,15 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         )}
       />
       <div
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Training calendar"
+        tabIndex={-1}
+        // Hidden from assistive tech while parked off-screen: a translated
+        // panel is still in the accessibility tree, so without this the whole
+        // calendar was readable by VoiceOver while the user was on Train.
+        aria-hidden={!open}
         className={cn(
           "fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong bg-bg pt-[max(12px,env(safe-area-inset-top))]",
           "transition-transform duration-200 ease-out",
@@ -173,10 +189,12 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         </div>
       </div>
 
-      {/* justify-center: the month sits in the middle of the screen rather than
-          pinned under the header with dead space below it. */}
+      {/* The month sits at the top and the day panel is docked under it.
+          min-h-0 is what lets this shrink inside the flex column — without it
+          a flex child refuses to go below its content height and pushes the
+          docked card off the bottom of the screen. */}
       <div
-        className="flex flex-1 flex-col justify-center overflow-y-auto px-3 pb-6 pt-3"
+        className="flex min-h-0 flex-col overflow-y-auto px-3 pb-3 pt-3"
         onTouchStart={(e) => {
           const t = e.touches[0];
           touch.current = t ? { x: t.clientX, y: t.clientY } : null;
@@ -324,15 +342,14 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         />
       )}
 
-      {selected && (
-        <DayCard
-          date={selected}
-          session={sessionsByDate.get(selected) ?? null}
-          previous={findPrevious(sessionsByDate, selected)}
-          nutrition={nutrition}
-          onClose={() => setSelected(null)}
-        />
-      )}
+      <DayCard
+        date={selected}
+        isToday={selected === today}
+        session={sessionsByDate.get(selected) ?? null}
+        previous={findPrevious(sessionsByDate, selected)}
+        nutrition={nutrition}
+        onBackToToday={() => setSelected(today)}
+      />
       </div>
     </>
   );
@@ -349,16 +366,24 @@ function findPrevious(map: Map<string, HistorySession>, date: string): HistorySe
 
 // ------------------------------------------------------------------- day card
 
+/**
+ * The day panel docked under the month.
+ *
+ * It was a modal over the calendar, which meant the calendar was only ever
+ * visible with no day open, and reading a day meant dismissing it to look at
+ * another. Docked, both are on screen at once and tapping around the month
+ * just changes what this shows.
+ */
 function DayCard({
-  date, session, previous, nutrition, onClose,
+  date, isToday, session, previous, nutrition, onBackToToday,
 }: {
   date: string;
+  isToday: boolean;
   session: HistorySession | null;
   previous: HistorySession | null;
   nutrition: Record<string, NutritionDay>;
-  onClose: () => void;
+  onBackToToday: () => void;
 }) {
-  const sheetRef = useSheet(onClose);
   const [photo, setPhoto] = useState<string | null>(null);
 
   useEffect(() => {
@@ -400,22 +425,31 @@ function DayCard({
   }, [session, previous, day]);
 
   return (
-    <div className="fixed inset-0 z-[59] flex flex-col justify-end bg-black/60" onClick={onClose}>
-      <div
-        className="soma-sheet max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
-        ref={sheetRef}
-        role="dialog"
-        aria-modal="true"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-3" />
-
-        <div className="mb-3 flex items-baseline justify-between">
-          <div className="font-display text-sm font-extrabold">
-            {new Date(date + "T00:00:00").toLocaleDateString(undefined, {
-              weekday: "long", day: "numeric", month: "long",
-            })}
+    // Docked, not fixed: it is part of the calendar column and takes at most
+    // half the height, so the month above it always stays visible.
+    <div
+      className="flex max-h-[50vh] shrink-0 flex-col overflow-y-auto border-t border-border bg-surface px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
+      aria-live="polite"
+    >
+        <div className="mb-3 flex items-baseline justify-between gap-2">
+          <div className="min-w-0">
+            {/* Short weekday and month: "Saturday, September 5" truncated to
+                "Saturday, Septembe…" next to the score, losing the day number,
+                which is the part that identifies which day this is. */}
+            <div className="truncate font-display text-sm font-extrabold">
+              {new Date(date + "T00:00:00").toLocaleDateString(undefined, {
+                weekday: "short", day: "numeric", month: "short",
+              })}
+            </div>
+            {!isToday && (
+              <button
+                type="button"
+                onClick={onBackToToday}
+                className="text-[0.6rem] font-bold text-accent-text"
+              >
+                Back to today
+              </button>
+            )}
           </div>
           <div className="text-right">
             <div className="font-display text-2xl font-extrabold tabular-nums">{score.score}</div>
@@ -486,7 +520,6 @@ function DayCard({
             than counted as zero.
           </p>
         )}
-      </div>
     </div>
   );
 }
