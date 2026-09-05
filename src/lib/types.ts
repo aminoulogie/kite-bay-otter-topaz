@@ -1,7 +1,14 @@
 export type SetType = "normal" | "dropset" | "warmup";
 export type Unit = "kg" | "lb";
 export type ThemePref = "dark" | "light" | "system";
-export type TabId = "workout" | "nutrition" | "habits" | "body" | "insights" | "settings";
+export type TabId =
+  | "workout"
+  | "nutrition"
+  | "habits"
+  | "body"
+  | "insights"
+  | "estimates"
+  | "settings";
 
 export interface WorkoutSet {
   weight: number | "";

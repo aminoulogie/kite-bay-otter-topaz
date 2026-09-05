@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Activity, CalendarDays, Dumbbell, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, Utensils } from "lucide-react";
+import { Activity, CalendarDays, Dumbbell, LineChart, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, Utensils } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
@@ -10,6 +10,7 @@ import { BodyView } from "@/components/views/BodyView";
 import { HabitsView } from "@/components/views/HabitsView";
 import { InsightsView } from "@/components/views/InsightsView";
 import { NutritionView } from "@/components/views/NutritionView";
+import { EstimatesView } from "@/components/views/EstimatesView";
 import { SettingsView } from "@/components/views/SettingsView";
 import { WorkoutView } from "@/components/views/WorkoutView";
 import { accentInk, accentText, normalizeAccent, resolveTheme } from "@/lib/soma";
@@ -23,6 +24,7 @@ const TABS: { id: TabId; label: string; icon: typeof Dumbbell }[] = [
   { id: "habits", label: "Habits", icon: Target },
   { id: "body", label: "Body", icon: Activity },
   { id: "insights", label: "Stats", icon: TrendingUp },
+  { id: "estimates", label: "Ahead", icon: LineChart },
   { id: "settings", label: "Setup", icon: SettingsIcon },
 ];
 
@@ -187,11 +189,15 @@ export function AppShell() {
         {tab === "habits" && <HabitsView />}
         {tab === "body" && <BodyView />}
         {tab === "insights" && <InsightsView />}
+        {tab === "estimates" && <EstimatesView />}
         {tab === "settings" && <SettingsView />}
       </main>
 
       <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-        <div className="pointer-events-auto flex w-full max-w-lg items-center justify-between gap-1 rounded-full border border-border-strong bg-dock p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+        {/* Scrollable: seven tabs no longer fit at a legible size, and
+            shrinking them further would make the labels unreadable before it
+            made them fit. snap-x keeps a tab from ending up half off-screen. */}
+        <div className="pointer-events-auto flex w-full max-w-lg snap-x items-center gap-1 overflow-x-auto rounded-full border border-border-strong bg-dock p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = tab === t.id;
@@ -203,7 +209,7 @@ export function AppShell() {
                 className={cn(
                   // min-w-0 lets the flex child shrink below its content width;
                   // without it a six-tab dock overflows instead of fitting.
-                  "flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-full px-0.5 py-1.5 text-[0.58rem] font-bold leading-none transition-colors duration-150",
+                  "flex min-h-11 w-[4.2rem] shrink-0 snap-center flex-col items-center justify-center gap-0.5 rounded-full px-0.5 py-1.5 text-[0.58rem] font-bold leading-none transition-colors duration-150",
                   active ? "bg-accent text-accent-ink shadow-glow" : "text-faint hover:text-muted",
                 )}
               >
