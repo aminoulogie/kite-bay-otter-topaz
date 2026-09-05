@@ -27,6 +27,7 @@ import {
   savePrograms, type Program,
 } from "./programs";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
+import { tallyMuscles } from "./set-quality";
 
 function emptyDay(weight = 78): NutritionDay {
   return {
@@ -709,7 +710,10 @@ export const useSoma = create<SomaStore>()(
         let totalSets = 0;
         let sumIntensity = 0;
         let axialVolume = 0;
-        const muscles: HistorySession["muscles"] = {};
+        // Split by where the stimulus actually landed: a set the triceps ended
+        // is not full chest work, and counting it as such both overstates the
+        // chest and hides the triceps as the ceiling on the lift.
+        const muscles: HistorySession["muscles"] = tallyMuscles(live.exercises);
         for (const ex of live.exercises) {
           for (const s of ex.sets) {
             if (!s.done || s.type === "warmup") continue;
@@ -720,18 +724,9 @@ export const useSoma = create<SomaStore>()(
             totalVol += vol;
             if (ex.isAxial) axialVolume += vol;
             sumIntensity += s.failure || 3;
-            if (s.type === "dropset") continue;
-            for (const k of ex.targetKeys) {
-              if (!muscles[k]) muscles[k] = { sets: 0, avgFail: 0 };
-              muscles[k].sets += 1;
-              muscles[k].avgFail += s.failure || 3;
-            }
           }
         }
-        for (const k of Object.keys(muscles)) {
-          const m = muscles[k]!;
-          m.avgFail = m.sets ? m.avgFail / m.sets : 3;
-        }
+
         const clockFrom = live.firstSetAt ?? live.startTime;
         const elapsedMinutes = Math.max(1, Math.round((Date.now() - clockFrom) / 60000));
         const avgIntensity = totalSets ? sumIntensity / totalSets : 3;

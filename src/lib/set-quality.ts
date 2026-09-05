@@ -89,6 +89,54 @@ export function stimulusSplit(
   return out;
 }
 
+// ------------------------------------------------------------ muscle tally --
+
+export interface MuscleTally {
+  /** Share-weighted set count, so a redirected set can read as 0.7. */
+  sets: number;
+  /** Share-weighted mean of the 1-5 failure rating. */
+  avgFail: number;
+}
+
+/**
+ * How much work each muscle actually absorbed in a session.
+ *
+ * Splitting by stimulus rather than counting a whole set against every target
+ * key is what makes the body map honest. A bench press where the triceps gave
+ * out is not three sets of chest work, and recording it as such both overstates
+ * the chest's fatigue and hides the triceps as the thing holding the lift back.
+ *
+ * Warm-ups and drop sets are excluded to match the rest of the session maths:
+ * a warm-up is not stimulus, and a drop set's reps are already represented by
+ * the set they hang off.
+ */
+export function tallyMuscles(
+  exercises: { targetKeys?: string[]; sets: QualitySet[] }[],
+): Record<string, MuscleTally> {
+  const out: Record<string, MuscleTally> = {};
+  for (const ex of exercises) {
+    for (const s of ex.sets ?? []) {
+      if (!s.done || s.type === "warmup" || s.type === "dropset") continue;
+      const share = stimulusSplit({ targetKeys: ex.targetKeys ?? [] }, s, s.limitedBy ?? []);
+      for (const [k, portion] of Object.entries(share)) {
+        const m = (out[k] ??= { sets: 0, avgFail: 0 });
+        m.sets += portion;
+        m.avgFail += (s.failure || 3) * portion;
+      }
+    }
+  }
+  for (const k of Object.keys(out)) {
+    const m = out[k]!;
+    m.avgFail = m.sets ? m.avgFail / m.sets : 3;
+    // Shares are fractional and this count is displayed, so 2.1 rather than
+    // 2.0999999999999996. Two decimals, not one: splitting 0.7 between two
+    // synergists gives each 0.35, which one decimal would round up to 0.4 and
+    // make the parts add to more than the set.
+    m.sets = Math.round(m.sets * 100) / 100;
+  }
+  return out;
+}
+
 // --------------------------------------------------------------- weak links --
 
 export interface WeakLink {

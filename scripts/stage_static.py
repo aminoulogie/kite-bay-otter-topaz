@@ -27,11 +27,13 @@ OUT = pathlib.Path(".vercel/output/static")
 
 def patch_bundles(assets: pathlib.Path, base: str) -> None:
     """
-    Two rewrites make an SSR bundle run as a static page.
+    Three rewrites make an SSR bundle run as a static page.
 
     The basepath rewrite teaches the router its subpath. The second disables an
     SSR-only store hydration that otherwise waits for a server handoff that
-    never arrives and leaves a black screen.
+    never arrives and leaves a black screen. The third re-bases the stylesheet
+    href the root route injects at runtime, which the router writes into the
+    head itself and so never passes through the HTML shell.
 
     Both match MINIFIED output and the second matches a mangled identifier any
     minifier bump may rename, so each is asserted: a silent miss ships a blank
@@ -39,6 +41,7 @@ def patch_bundles(assets: pathlib.Path, base: str) -> None:
     """
     basepath_hit = False
     ssr_guard_hit = False
+    asset_href_hit = False
 
     for p in assets.glob("*.js"):
         text = p.read_text(encoding="utf-8")
@@ -64,6 +67,25 @@ def patch_bundles(assets: pathlib.Path, base: str) -> None:
         if n:
             ssr_guard_hit = True
 
+        # The root route carries `href: "/assets/styles-<hash>.css"`, emitted
+        # root-relative by Vite. The router injects that link at runtime, after
+        # the shell's own correctly-based link, so the CSS still applies and the
+        # only symptom is a 404 on every single page load — easy to miss, and
+        # wrong on Pages as much as locally.
+        if base:
+            # The quote character is captured and replayed, so a double-quoted,
+            # single-quoted or backtick literal all survive intact.
+            patched, n_href = re.subn(
+                r"([\"'`])/assets/([\w.-]+\.(?:css|js))\1",
+                lambda m: f"{m.group(1)}{base}/assets/{m.group(2)}{m.group(1)}",
+                patched,
+            )
+            if n_href:
+                asset_href_hit = True
+        else:
+            # Served from the webview root, so root-relative is already right.
+            asset_href_hit = True
+
         if patched != text:
             p.write_text(patched, encoding="utf-8")
             print("patched", p.name)
@@ -73,6 +95,12 @@ def patch_bundles(assets: pathlib.Path, base: str) -> None:
             "FATAL: router basepath rewrite matched nothing. Every route would resolve "
             f"against / instead of {base}. The minified shape of `basepath:` changed — "
             "re-derive it from .vercel/output/static/assets/index-*.js."
+        )
+    if not asset_href_hit:
+        raise SystemExit(
+            "FATAL: no root-relative /assets/ href found to re-base. The root route "
+            "injects the stylesheet itself, so a miss means a 404 on every page load "
+            f"instead of {base}/assets/. Check how Vite emitted the ?url import."
         )
     if not ssr_guard_hit:
         raise SystemExit(

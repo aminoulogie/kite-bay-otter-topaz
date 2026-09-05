@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  findWeakLinks, isGenuineFailure, rateExercise, stimulusSplit, type QualitySet,
+  findWeakLinks, isGenuineFailure, rateExercise, stimulusSplit, tallyMuscles,
+  type QualitySet,
 } from "./set-quality.ts";
 
 const set = (q: Partial<QualitySet>): QualitySet =>
@@ -124,4 +125,98 @@ test("an axial lift must deliver more to rate the same", () => {
   const machine = rateExercise({ sets, pumps: [2], e1rmByDate: [] });
   const axial = rateExercise({ sets, pumps: [2], e1rmByDate: [], isAxial: true });
   assert.ok(axial.score < machine.score, "systemic fatigue should cost something");
+});
+
+// ------------------------------------------------------------ muscle tally --
+
+test("a set the target finished counts wholly to the target", () => {
+  const t = tallyMuscles([{ targetKeys: ["chest"], sets: [set({ limiter: "target" })] }]);
+  assert.equal(t.chest?.sets, 1);
+  assert.equal(Object.keys(t).length, 1);
+});
+
+test("a synergist-limited set sends most of the work to the synergist", () => {
+  // The case this exists for: bench where the triceps gave out. Recording it
+  // as full chest work overstates the chest and hides the actual ceiling.
+  const t = tallyMuscles([
+    {
+      targetKeys: ["chest"],
+      sets: [set({ limiter: "synergist", limitedBy: ["triceps"] })],
+    },
+  ]);
+  assert.equal(t.triceps?.sets, 0.7);
+  assert.equal(t.chest?.sets, 0.3);
+});
+
+test("work is split evenly when several muscles gave out", () => {
+  const t = tallyMuscles([
+    {
+      targetKeys: ["back"],
+      sets: [set({ limiter: "synergist", limitedBy: ["forearms", "biceps"] })],
+    },
+  ]);
+  assert.equal(t.forearms?.sets, 0.35);
+  assert.equal(t.biceps?.sets, 0.35);
+  assert.equal(t.back?.sets, 0.3);
+});
+
+test("a synergist claimed as the limiter still leaves the target credited", () => {
+  // Never zero: the target still did work, it just was not what stopped the set.
+  const t = tallyMuscles([
+    { targetKeys: ["back"], sets: [set({ limiter: "synergist", limitedBy: ["forearms"] })] },
+  ]);
+  assert.ok((t.back?.sets ?? 0) > 0);
+});
+
+test("saying a synergist stopped it without naming one keeps the target credited", () => {
+  const t = tallyMuscles([
+    { targetKeys: ["chest"], sets: [set({ limiter: "synergist", limitedBy: [] })] },
+  ]);
+  assert.equal(t.chest?.sets, 1);
+  assert.equal(t.triceps, undefined);
+});
+
+test("warm-ups and drop sets do not feed the tally", () => {
+  const t = tallyMuscles([
+    {
+      targetKeys: ["chest"],
+      sets: [
+        set({ type: "warmup" }),
+        set({ type: "dropset" }),
+        set({ done: false }),
+        set({}),
+      ],
+    },
+  ]);
+  assert.equal(t.chest?.sets, 1);
+});
+
+test("average failure is weighted by share, not by raw set count", () => {
+  const t = tallyMuscles([
+    {
+      targetKeys: ["chest"],
+      sets: [
+        set({ failure: 5, limiter: "target" }),
+        set({ failure: 1, limiter: "synergist", limitedBy: ["triceps"] }),
+      ],
+    },
+  ]);
+  // chest carries 1.0 of a 5 and 0.3 of a 1 => 5.3 / 1.3
+  assert.equal(Math.round((t.chest?.avgFail ?? 0) * 100) / 100, 4.08);
+  assert.equal(t.triceps?.avgFail, 1);
+});
+
+test("fractional set counts stay readable", () => {
+  const t = tallyMuscles([
+    {
+      targetKeys: ["chest"],
+      sets: [
+        set({ limiter: "synergist", limitedBy: ["triceps"] }),
+        set({ limiter: "synergist", limitedBy: ["triceps"] }),
+        set({ limiter: "synergist", limitedBy: ["triceps"] }),
+      ],
+    },
+  ]);
+  assert.equal(t.chest?.sets, 0.9); // not 0.8999999999999999
+  assert.equal(t.triceps?.sets, 2.1);
 });
