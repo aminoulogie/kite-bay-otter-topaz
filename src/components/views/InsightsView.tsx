@@ -8,7 +8,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { computeBiologicalReadiness, heatColor, heatLabel, MUSCLE_REGIONS } from "@/lib/recovery";
 import { SomaIntelligenceEngine, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
-import { useSoma } from "@/lib/store";
+import { useActiveProgram, useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type InsightTab =
@@ -358,7 +358,7 @@ function HeatmapPanel() {
 function CalendarPanel() {
   const history = useSoma((s) => s.history);
   const settings = useSoma((s) => s.settings);
-  const program = useSoma((s) => s.activeProgram());
+  const program = useActiveProgram();
   const setActiveDate = useSoma((s) => s.setActiveDate);
   const setTab = useSoma((s) => s.setTab);
   const [cursor, setCursor] = useState(() => new Date());

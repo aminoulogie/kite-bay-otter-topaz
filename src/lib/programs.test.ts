@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  REST_DAY, emptyWeek, makeProgram, normaliseWeek, reorder, splitForDate,
+  REST_DAY, emptyWeek, isoDay, makeProgram, normaliseWeek, reorder, splitForDate,
   trainingDaysPerWeek,
 } from "./programs.ts";
 
@@ -79,4 +79,31 @@ test("training days per week reflects the shape of the programme", () => {
 test("a programme with no days still answers with rest", () => {
   const empty = makeProgram({ name: "Empty", kind: "cycle", days: [] });
   assert.equal(splitForDate(empty, new Date()), REST_DAY);
+});
+
+test("an unanchored cycle still advances day to day", () => {
+  // Regression: the fallback anchor used to be "today", recomputed per call,
+  // which put the current date at index 0 every day — the cycle sat on its
+  // first split forever and the calendar's past re-labelled itself daily.
+  const p = makeProgram({ name: "no anchor", kind: "cycle", days: ["A", "B", "C"] });
+  const d1 = splitForDate(p, new Date(2026, 8, 5));
+  const d2 = splitForDate(p, new Date(2026, 8, 6));
+  const d3 = splitForDate(p, new Date(2026, 8, 7));
+  assert.notEqual(d1, d2);
+  assert.notEqual(d2, d3);
+  // and it comes back round rather than running off the end
+  assert.equal(splitForDate(p, new Date(2026, 8, 8)), d1);
+});
+
+test("an unanchored cycle gives the same answer whenever it is asked", () => {
+  const p = makeProgram({ name: "no anchor", kind: "cycle", days: ["A", "B", "C"] });
+  const date = new Date(2026, 8, 5);
+  assert.equal(splitForDate(p, date), splitForDate(p, date));
+});
+
+test("anchors are local dates, not UTC", () => {
+  // 23:30 local on the 5th is already the 6th in UTC. Stamping the UTC date
+  // would phase the whole cycle by a day for anyone east of Greenwich.
+  const lateEvening = new Date(2026, 8, 5, 23, 30);
+  assert.equal(isoDay(lateEvening), "2026-09-05");
 });

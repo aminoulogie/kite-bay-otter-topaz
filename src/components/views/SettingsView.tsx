@@ -14,7 +14,7 @@ import {
 import { ProgramBuilder } from "@/components/ProgramBuilder";
 import { allCsv } from "@/lib/csv-export";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
-import { useSoma } from "@/lib/store";
+import { useActiveProgram, useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const GOAL_FIELDS = [
@@ -46,7 +46,7 @@ export function SettingsView() {
   >(null);
   const clearSeededHabitHistory = useSoma((s) => s.clearSeededHabitHistory);
   const applyGoalsToOpenDays = useSoma((s) => s.applyGoalsToOpenDays);
-  const activeProgram = useSoma((s) => s.activeProgram());
+  const activeProgram = useActiveProgram();
   const [programsOpen, setProgramsOpen] = useState(false);
   // Raw text beside the stored numbers, so a half-typed target is not wiped on
   // every keystroke.

@@ -79,6 +79,7 @@ export function AppShell() {
   const ensureSeed = useSoma((s) => s.ensureSeed);
   const mergeCustomFoods = useSoma((s) => s.mergeCustomFoods);
   const hydratePrograms = useSoma((s) => s.hydratePrograms);
+  const refreshScheduledDay = useSoma((s) => s.refreshScheduledDay);
   const normalizeLive = useSoma((s) => s.normalizeLive);
   const rollDayIfNeeded = useSoma((s) => s.rollDayIfNeeded);
   const markHydrated = useSoma((s) => s.markHydrated);
@@ -91,6 +92,11 @@ export function AppShell() {
       // seed later still reach an app that was seeded long ago.
       mergeCustomFoods();
       hydratePrograms();
+      // Programmes load after the store rehydrates, so an untouched session
+      // restored from a previous launch can still be carrying the split it was
+      // created under. Re-derive once they are in — this only replaces a
+      // session with nothing logged in it, so no work is ever discarded.
+      refreshScheduledDay();
       // Ask the browser to stop treating this data as disposable. Safari grants
       // it to home-screen apps and usually refuses a plain tab; either way the
       // answer is informational, so nothing here depends on it.
@@ -101,7 +107,10 @@ export function AppShell() {
       markHydrated();
       setReady(true);
     });
-  }, [ensureSeed, mergeCustomFoods, hydratePrograms, markHydrated, normalizeLive]);
+  }, [
+    ensureSeed, mergeCustomFoods, hydratePrograms, refreshScheduledDay, markHydrated,
+    normalizeLive,
+  ]);
 
   /**
    * Rolls onto a new sheet at midnight. A phone left on the Fuel tab overnight

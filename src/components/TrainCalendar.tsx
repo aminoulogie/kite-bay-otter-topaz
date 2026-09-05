@@ -7,7 +7,7 @@ import {
   periodFromEnd, savePeriods, type MembershipPeriod,
 } from "@/lib/membership";
 import { SomaIntelligenceEngine } from "@/lib/soma";
-import { useSoma } from "@/lib/store";
+import { useActiveProgram, useSoma } from "@/lib/store";
 import type { HistorySession, NutritionDay } from "@/lib/types";
 import { useSheet } from "@/lib/use-sheet";
 import { cn } from "@/lib/utils";
@@ -50,7 +50,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   const habits = useSoma((s) => s.habits);
   const nutrition = useSoma((s) => s.nutrition);
   const settings = useSoma((s) => s.settings);
-  const program = useSoma((s) => s.activeProgram());
+  const program = useActiveProgram();
 
   const today = isoDate(new Date());
   const [cursor, setCursor] = useState(() => {

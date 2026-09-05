@@ -23,7 +23,8 @@ import type {
 } from "./types";
 import CUSTOM_FOOD_SEED from "./custom-foods-seed.json";
 import {
-  defaultProgram, loadActiveId, loadPrograms, saveActiveId, savePrograms, type Program,
+  defaultProgram, loadActiveId, loadPrograms, resolveActiveProgram, saveActiveId,
+  savePrograms, type Program,
 } from "./programs";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 
@@ -75,6 +76,7 @@ export interface SomaStore {
   activeProgram: () => Program;
   setPrograms: (programs: Program[]) => void;
   setActiveProgram: (id: string) => void;
+  refreshScheduledDay: () => void;
   upsertLibraryFood: (food: FoodItem) => void;
   isFoodEdited: (name: string) => boolean;
   clearSeededHabitHistory: () => number;
@@ -131,6 +133,18 @@ export interface SomaStore {
   importJson: (raw: string, mode?: "merge" | "replace") => boolean;
   resetAll: () => void;
 }
+
+/**
+ * The shipped rotation, built once.
+ *
+ * Exported so no other module builds its own copy: two structurally equal
+ * programmes are still two objects, and one of them coming out of a selector
+ * or into a memo dependency starts the same render loop again.
+ *
+ * Module scope so it is referentially stable — rebuilding it per call is what
+ * made the selector return a new object every render.
+ */
+export const BUILT_IN_PROGRAM = defaultProgram(ROTATION_SEQUENCE);
 
 const SUPERSETS = ["", "A", "B", "C", "D"];
 
@@ -240,6 +254,10 @@ export const useSoma = create<SomaStore>()(
         });
         if (!proj.isRest) get().loadSplit(proj.split);
       },
+      /** Programmes live outside the persisted store, so they load explicitly. */
+      hydratePrograms: () => {
+        set({ programs: loadPrograms(), activeProgramId: loadActiveId() });
+      },
       /**
        * Fold the imported custom foods in, without duplicating them.
        *
@@ -249,10 +267,6 @@ export const useSoma = create<SomaStore>()(
        * safe to call repeatedly and safe to extend the seed list over time.
        * Anything the user edited themselves wins — their version is kept.
        */
-      /** Programmes live outside the persisted store, so they load explicitly. */
-      hydratePrograms: () => {
-        set({ programs: loadPrograms(), activeProgramId: loadActiveId() });
-      },
       mergeCustomFoods: () => {
         const have = new Set(
           [...BASE_FOOD_LIBRARY, ...get().customFoods].map((f) => f.name.trim().toLowerCase()),
@@ -328,28 +342,49 @@ export const useSoma = create<SomaStore>()(
         return base && get().customFoods.some((f) => f.name.trim().toLowerCase() === key);
       },
       /**
-       * The programme every projection is read from.
+       * The programme every projection is read from, for use inside actions.
        *
        * Falls back to the shipped rotation rather than to nothing, so an
        * install that never opens this screen behaves exactly as before and no
        * call site has to handle "no programme selected".
+       *
+       * Components use useActiveProgram() instead. Calling a method from a
+       * selector re-runs it on every store change, so the value it returns has
+       * to be referentially stable or React never settles.
        */
-      activeProgram: () => {
-        const fallback = defaultProgram(ROTATION_SEQUENCE);
-        const id = get().activeProgramId;
-        if (!id) return fallback;
-        return get().programs.find((p) => p.id === id) ?? fallback;
-      },
+      activeProgram: () =>
+        resolveActiveProgram(get().programs, get().activeProgramId, BUILT_IN_PROGRAM),
       setPrograms: (programs) => {
+        const wasActive = resolveActiveProgram(
+          get().programs, get().activeProgramId, BUILT_IN_PROGRAM,
+        );
         set({ programs });
         savePrograms(programs);
+        // Editing the programme you are currently on has to move today with it.
+        // The calendar recomputes from the programme on every render, so
+        // without this the calendar would say Pull while Train still said Push.
+        const nowActive = resolveActiveProgram(programs, get().activeProgramId, BUILT_IN_PROGRAM);
+        if (
+          nowActive.days.join("|") !== wasActive.days.join("|") ||
+          nowActive.kind !== wasActive.kind ||
+          nowActive.anchor !== wasActive.anchor
+        ) {
+          get().refreshScheduledDay();
+        }
       },
       setActiveProgram: (id) => {
         set({ activeProgramId: id });
         saveActiveId(id);
-        // Reload today's split immediately: leaving the live session on the old
-        // programme's day would have the Train tab disagree with the calendar
-        // until the next app start.
+        get().refreshScheduledDay();
+      },
+      /**
+       * Re-derive today's split from the active programme.
+       *
+       * Only replaces the live session when nothing has been logged into it.
+       * Rebuilding a session with completed sets in it would throw away work
+       * the user has already done, which is never worth a label being right.
+       */
+      refreshScheduledDay: () => {
         const proj = SomaIntelligenceEngine.getProgramProjectedDay(
           new Date(),
           get().settings.scheduleOverrides,
@@ -946,4 +981,18 @@ function makeSessionEx(name: string, db: ExerciseDef[], store: SomaStore): Sessi
       { weight: w, reps: Math.max(6, target.reps - 1), failure: 3, done: false, type: "normal" },
     ],
   };
+}
+
+/**
+ * The active programme, for components.
+ *
+ * Subscribes to the two fields it actually depends on and resolves them
+ * outside the selector. Both branches return an object that already existed —
+ * the shipped programme built once at module scope, or an element of the
+ * stored array — so the value only changes when the programme really does.
+ */
+export function useActiveProgram(): Program {
+  const programs = useSoma((s) => s.programs);
+  const activeId = useSoma((s) => s.activeProgramId);
+  return resolveActiveProgram(programs, activeId, BUILT_IN_PROGRAM);
 }

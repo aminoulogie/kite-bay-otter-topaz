@@ -1,16 +1,17 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Check, GripVertical, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { tapLight, tapMedium } from "@/lib/haptics";
+import { useLongPressDrag } from "@/lib/use-long-press-drag";
 import {
-  REST_DAY, WEEKDAYS, isRestSplit, makeProgram, normaliseWeek, reorder,
+  REST_DAY, WEEKDAYS, isRestSplit, isoDay, makeProgram, normaliseWeek, reorder,
   trainingDaysPerWeek, type Program, type ProgramKind,
 } from "@/lib/programs";
-import { ROTATION_SEQUENCE } from "@/lib/soma";
-import { useSoma } from "@/lib/store";
+import { ROTATION_SEQUENCE, ROUTINE_PRESETS, SomaIntelligenceEngine } from "@/lib/soma";
+import { BUILT_IN_PROGRAM, useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 /**
@@ -56,7 +57,20 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
   const activeId = useSoma((s) => s.activeProgramId);
   const setPrograms = useSoma((s) => s.setPrograms);
   const setActiveProgram = useSoma((s) => s.setActiveProgram);
-  const routines = useSoma((s) => s.routines());
+  // Subscribed to as raw settings and merged here, not read through
+  // s.routines(): that method builds a new object on every call, and a new
+  // object returned from a selector makes the store look changed on every
+  // render — which is what took this screen down with React #185.
+  const customRoutines = useSoma((s) => s.settings.customRoutines);
+  const removedRoutines = useSoma((s) => s.settings.customRoutinesRemoved);
+  const routines = useMemo(
+    () =>
+      SomaIntelligenceEngine.mergeRoutines(ROUTINE_PRESETS, {
+        ...customRoutines,
+        _removed: removedRoutines,
+      }) as Record<string, { name: string }[]>,
+    [customRoutines, removedRoutines],
+  );
 
   const [editing, setEditing] = useState<Program | null>(null);
 
@@ -106,10 +120,7 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
 
         <div className="space-y-1.5">
           <ProgramRow
-            program={makeProgram({
-              id: "built-in", name: "Default rotation", kind: "cycle",
-              days: [...ROTATION_SEQUENCE], anchor: "2026-08-23", builtIn: true,
-            })}
+            program={BUILT_IN_PROGRAM}
             active={!activeId || activeId === "built-in"}
             onSelect={() => {
               setActiveProgram("built-in");
@@ -237,8 +248,17 @@ function ProgramEditor({
 }) {
   const [draft, setDraft] = useState<Program>(program);
   const [picking, setPicking] = useState<number | null>(null);
-  const dragFrom = useRef<number | null>(null);
-  const [dragOver, setDragOver] = useState<number | null>(null);
+  /**
+   * Press-and-hold to pick a day up, then drag it over another.
+   *
+   * Not HTML5 drag-and-drop: that never fires for touch on iOS, so on the
+   * phone this app actually runs on it would do nothing at all.
+   */
+  const drag = useLongPressDrag(
+    draft.days.length,
+    (from, to) => setDays(reorder(days, from, to)),
+    tapMedium,
+  );
 
   const days = draft.kind === "week" ? normaliseWeek(draft.days) : draft.days;
 
@@ -290,29 +310,21 @@ function ProgramEditor({
         {days.map((d, i) => (
           <div
             key={`${d}-${i}`}
-            draggable
-            onDragStart={() => {
-              dragFrom.current = i;
-              tapLight();
-            }}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(i);
-            }}
-            onDrop={() => {
-              if (dragFrom.current != null) setDays(reorder(days, dragFrom.current, i));
-              dragFrom.current = null;
-              setDragOver(null);
-            }}
-            onDragEnd={() => {
-              dragFrom.current = null;
-              setDragOver(null);
-            }}
+            data-drag-index={i}
+            {...drag.handlers(i)}
             className={cn(
-              "flex items-center gap-2 rounded-xl border p-2 transition-colors",
-              dragOver === i ? "border-accent bg-accent/10" : "border-border bg-surface-2",
-              isRestSplit(d) && "opacity-70",
+              "flex items-center gap-2 rounded-xl border p-2 transition-[colors,transform]",
+              // Held: lifted and following the finger.
+              drag.dragging === i
+                ? "scale-[1.02] border-accent bg-accent/15 shadow-lg"
+                : drag.over === i && drag.dragging != null
+                  ? "border-accent bg-accent/10"
+                  : "border-border bg-surface-2",
+              isRestSplit(d) && drag.dragging !== i && "opacity-70",
             )}
+            // Vertical panning is handled by the drag itself once a row is
+            // held; leaving it to the browser would scroll the page instead.
+            style={{ touchAction: drag.dragging != null ? "none" : "pan-y" }}
           >
             <GripVertical className="size-4 shrink-0 cursor-grab text-faint" />
             <span className="w-16 shrink-0 text-[0.6rem] font-bold uppercase text-faint">
@@ -381,7 +393,10 @@ function ProgramEditor({
               days,
               // Anchored the day it is saved, so a new cycle starts today
               // rather than being phased by whenever the app was first opened.
-              anchor: draft.anchor ?? new Date().toISOString().slice(0, 10),
+              // Local date, not toISOString(): that returns UTC, which stamps
+              // tomorrow for an evening save east of Greenwich and shifts every
+              // day of the cycle by one.
+              anchor: draft.anchor ?? isoDay(new Date()),
             })
           }
         >

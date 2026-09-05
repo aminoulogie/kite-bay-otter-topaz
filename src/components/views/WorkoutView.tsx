@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { playChime, burstConfetti } from "@/lib/audio";
 import { computeBiologicalReadiness } from "@/lib/recovery";
 import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
-import { useSoma } from "@/lib/store";
+import { useActiveProgram, useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
 import { tapLight, tapMedium, tapSuccess } from "@/lib/haptics";
@@ -35,7 +35,7 @@ const SUPERSET_COLOR: Record<string, string> = {
 export function WorkoutView() {
   const live = useSoma((s) => s.live);
   const settings = useSoma((s) => s.settings);
-  const program = useSoma((s) => s.activeProgram());
+  const program = useActiveProgram();
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
   const activeDate = useSoma((s) => s.activeDate);

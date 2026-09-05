@@ -27,6 +27,9 @@ export const WEEKDAYS = [
 
 export type ProgramKind = "cycle" | "week";
 
+/** Fallback phase for a cycle with no anchor of its own. */
+const CYCLE_EPOCH = "2026-01-04"; // a Sunday, so an unanchored cycle lines up with the week
+
 export interface Program {
   id: string;
   name: string;
@@ -83,7 +86,14 @@ export function makeProgram(partial: Partial<Program> & { name: string }): Progr
   };
 }
 
-function isoDay(d: Date): string {
+/**
+ * Local calendar date, not UTC.
+ *
+ * The whole app keys days locally; anchoring in UTC would stamp tomorrow for
+ * anyone saving late in the evening east of Greenwich and phase their entire
+ * cycle by a day.
+ */
+export function isoDay(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
@@ -110,7 +120,12 @@ export function splitForDate(program: Program, date: Date): string {
     return normaliseWeek(program.days)[date.getDay()] ?? REST_DAY;
   }
 
-  const anchor = program.anchor ?? isoDay(new Date());
+  // A fixed epoch, never "today": today recomputed on each call would make the
+  // current date day 1 every day, so the cycle would sit on its first split
+  // forever instead of advancing. Programmes saved through the builder always
+  // carry an anchor, so this only catches hand-edited or future-written data —
+  // where advancing from an arbitrary date is wrong but silent-freezing is worse.
+  const anchor = program.anchor ?? CYCLE_EPOCH;
   const diff = daysBetween(anchor, date);
   const len = program.days.length;
   const idx = ((diff % len) + len) % len;
@@ -132,10 +147,31 @@ export const PROGRAMS_KEY = "soma-programs";
 export const ACTIVE_PROGRAM_KEY = "soma-active-program";
 
 /**
+ * Resolve the active programme from raw state.
+ *
+ * A plain function over its inputs, deliberately taking the fallback rather
+ * than building one: anything that constructs a Program returns a new object,
+ * and a new object coming out of a zustand selector makes the store see a
+ * changed snapshot on every render. React then re-renders until it throws
+ * #185. That is exactly how this shipped broken once, so the only programme
+ * objects in play are ones created a single time and passed in.
+ */
+export function resolveActiveProgram(
+  programs: Program[],
+  activeId: string | null,
+  fallback: Program,
+): Program {
+  if (!activeId) return fallback;
+  return programs.find((p) => p.id === activeId) ?? fallback;
+}
+
+/**
  * The rotation the app shipped with, as a programme.
  *
  * Kept so that an install which never opens this screen behaves exactly as it
  * did before, and so "what was I on?" always has an answer.
+ *
+ * Call this once and hold the result — see resolveActiveProgram above.
  */
 export function defaultProgram(rotation: string[]): Program {
   return makeProgram({
