@@ -1,8 +1,7 @@
-# Grok version — 9/10 pass
+# Grok complete pass
 
-New installs start empty. Demo history is Setup → Reset to demo only.
-Database, graphs, micro-muscle and Ahead share useTrainingLog().
-Local dates, live sets, same-day archive. lb overload. Dock fits 7 tabs.
-Calendar is a bottom sheet. Fuel targets apply immediately.
-
-Deploy `grok-version` or Pages stays on old main.
+- Empty first install (demo only via Setup → Reset to demo)
+- Database + graphs + micro + Ahead share useTrainingLog
+- Local dates, live sets, same-day archive
+- lb overload, Fuel targets apply now, creatine stash guard
+- 7-tab dock, calendar sheet, unsaved warning
