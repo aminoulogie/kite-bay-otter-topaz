@@ -9,6 +9,7 @@ import {
 import { SomaIntelligenceEngine } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import type { HistorySession, NutritionDay } from "@/lib/types";
+import { useSheet } from "@/lib/use-sheet";
 import { cn } from "@/lib/utils";
 
 /** The habit progress photos are filed under — the same one Habits → Train uses. */
@@ -44,6 +45,7 @@ function monthMatrix(year: number, month: number): (string | null)[] {
 }
 
 export function TrainCalendar({ onClose }: { onClose: () => void }) {
+  const sheetRef = useSheet(onClose);
   const history = useSoma((s) => s.history);
   const habits = useSoma((s) => s.habits);
   const nutrition = useSoma((s) => s.nutrition);
@@ -280,6 +282,7 @@ function DayCard({
   nutrition: Record<string, NutritionDay>;
   onClose: () => void;
 }) {
+  const sheetRef = useSheet(onClose);
   const [photo, setPhoto] = useState<string | null>(null);
 
   useEffect(() => {
@@ -324,6 +327,10 @@ function DayCard({
     <div className="fixed inset-0 z-[59] flex flex-col justify-end bg-black/60" onClick={onClose}>
       <div
         className="soma-sheet max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-3" />
@@ -417,6 +424,7 @@ function RenewalSheet({
   onClose: () => void;
   onSave: (p: MembershipPeriod) => void;
 }) {
+  const sheetRef = useSheet(onClose);
   const [mode, setMode] = useState<"duration" | "end">("duration");
   const [start, setStart] = useState(today);
   const [days, setDays] = useState(30);
@@ -426,6 +434,10 @@ function RenewalSheet({
     <div className="fixed inset-0 z-[59] flex flex-col justify-end bg-black/60" onClick={onClose}>
       <div
         className="rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-3" />

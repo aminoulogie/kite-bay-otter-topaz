@@ -4,6 +4,7 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { useSoma } from "@/lib/store";
 import type { FoodItem } from "@/lib/types";
+import { useSheet } from "@/lib/use-sheet";
 import { cn } from "@/lib/utils";
 
 /**
@@ -40,6 +41,7 @@ export function FoodEditorSheet({
   food: FoodItem;
   onClose: () => void;
 }) {
+  const sheetRef = useSheet(onClose);
   const upsertLibraryFood = useSoma((s) => s.upsertLibraryFood);
   const removeCustomFood = useSoma((s) => s.removeCustomFood);
   const isEdited = useSoma((s) => s.isFoodEdited(food.name));
@@ -57,6 +59,10 @@ export function FoodEditorSheet({
     <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/60" onClick={onClose}>
       <div
         className="soma-sheet max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-surface-3" />
