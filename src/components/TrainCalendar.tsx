@@ -50,6 +50,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   const habits = useSoma((s) => s.habits);
   const nutrition = useSoma((s) => s.nutrition);
   const settings = useSoma((s) => s.settings);
+  const program = useSoma((s) => s.activeProgram());
 
   const today = isoDate(new Date());
   const [cursor, setCursor] = useState(() => {
@@ -221,6 +222,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
                   SomaIntelligenceEngine.getProgramProjectedDay(
                     new Date(date + "T12:00:00"),
                     settings.scheduleOverrides,
+                    program,
                   ).split,
                 );
 

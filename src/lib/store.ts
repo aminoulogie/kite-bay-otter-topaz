@@ -7,6 +7,7 @@ import {
   ROUTINE_PRESETS,
   SomaIntelligenceEngine,
   getLocalDateKey,
+  ROTATION_SEQUENCE,
 } from "./soma";
 import type {
   ExerciseDef,
@@ -21,6 +22,9 @@ import type {
   WorkoutSet,
 } from "./types";
 import CUSTOM_FOOD_SEED from "./custom-foods-seed.json";
+import {
+  defaultProgram, loadActiveId, loadPrograms, saveActiveId, savePrograms, type Program,
+} from "./programs";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 
 function emptyDay(weight = 78): NutritionDay {
@@ -65,6 +69,12 @@ export interface SomaStore {
   markHydrated: () => void;
   ensureSeed: () => void;
   mergeCustomFoods: () => void;
+  hydratePrograms: () => void;
+  programs: Program[];
+  activeProgramId: string | null;
+  activeProgram: () => Program;
+  setPrograms: (programs: Program[]) => void;
+  setActiveProgram: (id: string) => void;
   upsertLibraryFood: (food: FoodItem) => void;
   isFoodEdited: (name: string) => boolean;
   clearSeededHabitHistory: () => number;
@@ -135,6 +145,8 @@ export const useSoma = create<SomaStore>()(
       habits: [],
       customExercises: [],
       customFoods: [],
+      programs: [],
+      activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
       activeDate: getLocalDateKey(new Date()),
       tab: "workout",
@@ -217,7 +229,7 @@ export const useSoma = create<SomaStore>()(
         const hist = seedHistory();
         const nutrition = seedNutrition();
         const today = getLocalDateKey(new Date());
-        const proj = SomaIntelligenceEngine.getProgramProjectedDay(new Date(), {});
+        const proj = SomaIntelligenceEngine.getProgramProjectedDay(new Date(), {}, get().activeProgram());
         set({
           seeded: true,
           history: hist,
@@ -237,6 +249,10 @@ export const useSoma = create<SomaStore>()(
        * safe to call repeatedly and safe to extend the seed list over time.
        * Anything the user edited themselves wins — their version is kept.
        */
+      /** Programmes live outside the persisted store, so they load explicitly. */
+      hydratePrograms: () => {
+        set({ programs: loadPrograms(), activeProgramId: loadActiveId() });
+      },
       mergeCustomFoods: () => {
         const have = new Set(
           [...BASE_FOOD_LIBRARY, ...get().customFoods].map((f) => f.name.trim().toLowerCase()),
@@ -310,6 +326,41 @@ export const useSoma = create<SomaStore>()(
         const key = name.trim().toLowerCase();
         const base = BASE_FOOD_LIBRARY.some((f) => f.name.trim().toLowerCase() === key);
         return base && get().customFoods.some((f) => f.name.trim().toLowerCase() === key);
+      },
+      /**
+       * The programme every projection is read from.
+       *
+       * Falls back to the shipped rotation rather than to nothing, so an
+       * install that never opens this screen behaves exactly as before and no
+       * call site has to handle "no programme selected".
+       */
+      activeProgram: () => {
+        const fallback = defaultProgram(ROTATION_SEQUENCE);
+        const id = get().activeProgramId;
+        if (!id) return fallback;
+        return get().programs.find((p) => p.id === id) ?? fallback;
+      },
+      setPrograms: (programs) => {
+        set({ programs });
+        savePrograms(programs);
+      },
+      setActiveProgram: (id) => {
+        set({ activeProgramId: id });
+        saveActiveId(id);
+        // Reload today's split immediately: leaving the live session on the old
+        // programme's day would have the Train tab disagree with the calendar
+        // until the next app start.
+        const proj = SomaIntelligenceEngine.getProgramProjectedDay(
+          new Date(),
+          get().settings.scheduleOverrides,
+          get().activeProgram(),
+        );
+        const live = get().live;
+        const untouched = !live.exercises.some((ex) => ex.sets.some((st) => st.done));
+        if (untouched && !live.finished) {
+          set({ live: defaultLive(proj.split) });
+          if (!proj.isRest) get().loadSplit(proj.split);
+        }
       },
       setTab: (tab) => set({ tab }),
       setActiveDate: (d) => set({ activeDate: d }),
@@ -703,6 +754,7 @@ export const useSoma = create<SomaStore>()(
         const proj = SomaIntelligenceEngine.getProgramProjectedDay(
           new Date(date + "T12:00:00"),
           get().settings.scheduleOverrides,
+          get().activeProgram(),
         );
         set({
           live: { ...defaultLive(split ?? proj.split), forDate: date },
@@ -716,7 +768,11 @@ export const useSoma = create<SomaStore>()(
         }
       },
       resetLive: () => {
-        const proj = SomaIntelligenceEngine.getProgramProjectedDay(new Date(), get().settings.scheduleOverrides);
+        const proj = SomaIntelligenceEngine.getProgramProjectedDay(
+          new Date(),
+          get().settings.scheduleOverrides,
+          get().activeProgram(),
+        );
         set({ live: defaultLive(proj.split) });
       },
       resumeFinished: () => set({ live: { ...get().live, finished: null } }),

@@ -13,7 +13,7 @@
     "preview:stop": "node scripts/preview.mjs stop",
     "typecheck": "tsc --noEmit",
     "check:auth": "node scripts/check-auth-invariant.mjs",
-    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/muscle-mapping.test.ts src/lib/set-quality.test.ts src/lib/day-score.test.ts src/lib/restore-merge.test.ts src/lib/creatine.test.ts src/lib/decimal.test.ts src/lib/sleep-debt.test.ts src/lib/micro-muscle.test.ts src/lib/csv-export.test.ts src/lib/preworkout.test.ts src/lib/chart-zoom.test.ts src/lib/recipes.test.ts src/lib/estimates.test.ts src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts",
+    "test": "node --test 'scripts/**/*.test.mjs' && node --experimental-strip-types --test src/lib/muscle-mapping.test.ts src/lib/set-quality.test.ts src/lib/day-score.test.ts src/lib/restore-merge.test.ts src/lib/creatine.test.ts src/lib/decimal.test.ts src/lib/sleep-debt.test.ts src/lib/micro-muscle.test.ts src/lib/csv-export.test.ts src/lib/preworkout.test.ts src/lib/chart-zoom.test.ts src/lib/recipes.test.ts src/lib/programs.test.ts src/lib/estimates.test.ts src/lib/app-data/app-data.test.ts src/lib/auth/gate-identity.test.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
     "stage:pages": "node scripts/run-stage.mjs pages",

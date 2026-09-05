@@ -835,7 +835,22 @@ class SomaIntelligenceEngine {
     return { ok: true, name: n };
   }
 
-  static getProgramProjectedDay(targetDateObj, scheduleOverrides = {}) {
+  /**
+   * Which split a date falls on.
+   *
+   * `program` is optional and defaults to the shipped rotation, so every
+   * existing call site keeps working unchanged. When one IS passed, the
+   * calendar, the Train tab, backfilling, rest detection and the Ahead
+   * projections all follow it — they every one read this function, which is
+   * why switching programme needs no other wiring.
+   */
+  static getProgramProjectedDay(
+    targetDateObj,
+    scheduleOverrides = {},
+    // Annotated: with only a `null` default TypeScript infers the parameter
+    // as `null | undefined` and rejects every real programme passed to it.
+    program: { days: string[]; kind?: string; anchor?: string } | null = null,
+  ) {
     const anchorDate = new Date(2026, 7, 23, 12, 0, 0); // Aligned to Aug 23 Base Anchor
     const targetMidday = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 12, 0, 0);
     const dateKey = getLocalDateKey(targetMidday);
@@ -866,10 +881,28 @@ class SomaIntelligenceEngine {
       repScheme = "5–8 Reps • 1–2 RIR";
     }
 
-    const seqLen = ROTATION_SEQUENCE.length;
-    const seqIndex = ((diffDays % seqLen) + seqLen) % seqLen;
-    const splitName = ROTATION_SEQUENCE[seqIndex];
-    const isRest = splitName.toLowerCase().includes("rest");
+    let splitName;
+    if (program && Array.isArray(program.days) && program.days.length) {
+      if (program.kind === "week") {
+        // getDay() is Sunday-indexed, matching how a week programme is stored.
+        splitName = program.days[targetMidday.getDay()] ?? "Rest & Active Recovery";
+      } else {
+        // Anchored per programme, so switching away and back does not re-phase
+        // the rotation and relabel every past day.
+        const anchorIso = program.anchor ?? "2026-08-23";
+        const [ay, am, ad] = anchorIso.split("-").map(Number);
+        const progAnchor = new Date(ay, (am || 1) - 1, ad || 1, 12, 0, 0);
+        const progDiff = Math.round((targetMidday.getTime() - progAnchor.getTime()) / 86400000);
+        const len = program.days.length;
+        // Kept positive: a plain % gives a negative index before the anchor.
+        splitName = program.days[((progDiff % len) + len) % len];
+      }
+    } else {
+      const seqLen = ROTATION_SEQUENCE.length;
+      const seqIndex = ((diffDays % seqLen) + seqLen) % seqLen;
+      splitName = ROTATION_SEQUENCE[seqIndex];
+    }
+    const isRest = String(splitName).toLowerCase().includes("rest");
 
     return { split: splitName, phase, phaseBadge, repScheme, isDeload, isRest, weekNumber: totalWeeks };
   }

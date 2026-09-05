@@ -35,6 +35,7 @@ const SUPERSET_COLOR: Record<string, string> = {
 export function WorkoutView() {
   const live = useSoma((s) => s.live);
   const settings = useSoma((s) => s.settings);
+  const program = useSoma((s) => s.activeProgram());
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
   const activeDate = useSoma((s) => s.activeDate);

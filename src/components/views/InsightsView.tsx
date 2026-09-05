@@ -358,6 +358,7 @@ function HeatmapPanel() {
 function CalendarPanel() {
   const history = useSoma((s) => s.history);
   const settings = useSoma((s) => s.settings);
+  const program = useSoma((s) => s.activeProgram());
   const setActiveDate = useSoma((s) => s.setActiveDate);
   const setTab = useSoma((s) => s.setTab);
   const [cursor, setCursor] = useState(() => new Date());
@@ -393,7 +394,11 @@ function CalendarPanel() {
           if (!day) return <div key={i} />;
           const key = getLocalDateKey(new Date(year, month, day));
           const logged = !!history[key];
-          const proj = SomaIntelligenceEngine.getProgramProjectedDay(new Date(year, month, day, 12), settings.scheduleOverrides);
+          const proj = SomaIntelligenceEngine.getProgramProjectedDay(
+            new Date(year, month, day, 12),
+            settings.scheduleOverrides,
+            program,
+          );
           const isToday = key === today;
           return (
             <button

@@ -11,6 +11,7 @@ import {
   backupIsDue, daysSinceBackup, formatBytes, markBackedUp, requestPersistence,
   storageHealth, type StorageHealth,
 } from "@/lib/storage-health";
+import { ProgramBuilder } from "@/components/ProgramBuilder";
 import { allCsv } from "@/lib/csv-export";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useSoma } from "@/lib/store";
@@ -45,6 +46,8 @@ export function SettingsView() {
   >(null);
   const clearSeededHabitHistory = useSoma((s) => s.clearSeededHabitHistory);
   const applyGoalsToOpenDays = useSoma((s) => s.applyGoalsToOpenDays);
+  const activeProgram = useSoma((s) => s.activeProgram());
+  const [programsOpen, setProgramsOpen] = useState(false);
   // Raw text beside the stored numbers, so a half-typed target is not wiped on
   // every keystroke.
   const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>(() =>
@@ -482,6 +485,21 @@ export function SettingsView() {
       </Card>
 
       <Card>
+        <CardTitle>Training programme</CardTitle>
+        <p className="mb-3 text-xs text-muted">
+          Currently on <b className="text-fg">{activeProgram.name}</b> —{" "}
+          {activeProgram.kind === "week"
+            ? "fixed weekdays"
+            : `${activeProgram.days.length}-day cycle`}
+          . This decides the calendar, the split Train opens on, and what Ahead projects
+          against.
+        </p>
+        <Button variant="primary" className="w-full" onClick={() => setProgramsOpen(true)}>
+          Change programme
+        </Button>
+      </Card>
+
+      <Card>
         <CardTitle>Daily nutrition targets</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Leave a field blank to keep following the default — protein blank also keeps
@@ -555,6 +573,25 @@ export function SettingsView() {
           <span className="font-bold">on this device only</span>
         </div>
       </Card>
+
+      {programsOpen && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+          <div className="flex items-center justify-between border-b border-border px-4 pb-3">
+            <span className="font-display text-base font-extrabold">Programme</span>
+            <button
+              type="button"
+              onClick={() => setProgramsOpen(false)}
+              className="text-xs font-bold text-accent-text"
+            >
+              Close
+            </button>
+          </div>
+          <div className="soma-view flex-1 overflow-y-auto px-4 py-4">
+            <ProgramBuilder onClose={() => setProgramsOpen(false)} />
+          </div>
+        </div>
+      )}
+
 
       {pending && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-bg/85 p-4 sm:items-center">
