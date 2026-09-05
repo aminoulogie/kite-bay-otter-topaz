@@ -8,6 +8,7 @@ import {
   formatSet,
 } from "@/lib/training-log";
 import { microMuscleStrength } from "@/lib/micro-muscle";
+import { ZoomableChart, useChartZoom } from "@/components/ZoomableChart";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -132,6 +133,25 @@ export function GraphsView() {
 
   const unit = METRICS.find((m) => m.id === metric)!.unit;
 
+  // Full extent of what is plotted, which is what zoom clamps against.
+  const fullX = useMemo(() => {
+    const ts = data.map((d) => d.t as number).filter(Number.isFinite);
+    return ts.length ? { min: Math.min(...ts), max: Math.max(...ts) } : { min: 0, max: 1 };
+  }, [data]);
+  const fullY = useMemo(() => {
+    const vs = data.flatMap((row) =>
+      active.map((n) => row[n]).filter((v): v is number => typeof v === "number"),
+    );
+    if (!vs.length) return { min: 0, max: 1 };
+    const lo = Math.min(...vs);
+    const hi = Math.max(...vs);
+    // A little headroom, so the top point is not welded to the frame.
+    const pad = Math.max(1, (hi - lo) * 0.08);
+    return { min: Math.max(0, lo - pad), max: hi + pad };
+  }, [data, active]);
+
+  const zoom = useChartZoom(fullX, fullY);
+
   return (
     <div className="space-y-3">
       <MicroMusclePanel micro={micro} />
@@ -195,7 +215,15 @@ export function GraphsView() {
               : "Nothing logged in this range."}
           </p>
         ) : (
-          <div className="h-60 w-full">
+          <ZoomableChart
+            className="h-60 w-full"
+            fullX={fullX}
+            fullY={fullY}
+            state={zoom.state}
+            setState={zoom.setState}
+            reset={zoom.reset}
+            zoomed={zoom.zoomed}
+          >
             <ResponsiveContainer>
               <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
                 <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
@@ -203,13 +231,16 @@ export function GraphsView() {
                   dataKey="t"
                   type="number"
                   scale="time"
-                  domain={["dataMin", "dataMax"]}
+                  domain={[zoom.state.x.min, zoom.state.x.max]}
+                  allowDataOverflow
                   tickFormatter={(t) =>
                     new Date(t).toLocaleDateString(undefined, { month: "short", year: "2-digit" })}
                   tick={{ fontSize: 10, fill: "var(--color-muted)" }}
                   stroke="var(--color-border)"
                 />
                 <YAxis
+                  domain={[zoom.state.y.min, zoom.state.y.max]}
+                  allowDataOverflow
                   tick={{ fontSize: 10, fill: "var(--color-muted)" }}
                   stroke="var(--color-border)"
                   width={44}
@@ -255,8 +286,11 @@ export function GraphsView() {
                 ))}
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ZoomableChart>
         )}
+        <p className="mt-1 text-center text-[0.58rem] text-faint">
+          Pinch across to zoom time, up and down to zoom weight. Drag to pan, double-tap to reset.
+        </p>
       </Card>
 
       <Card>
