@@ -11,6 +11,7 @@ import {
   backupIsDue, daysSinceBackup, formatBytes, markBackedUp, requestPersistence,
   storageHealth, type StorageHealth,
 } from "@/lib/storage-health";
+import { allCsv } from "@/lib/csv-export";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -444,6 +445,40 @@ export function SettingsView() {
             Reset to demo
           </Button>
         </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Export as CSV</CardTitle>
+        <p className="mb-3 text-xs text-muted">
+          Three plain spreadsheets — every set, every food, and a day-by-day summary.
+          One file per shape, because sets and meals share nothing but a date and
+          flattening them together produces a sheet full of blanks. This is for taking
+          your data elsewhere; restoring still needs the backup file.
+        </p>
+        <Button
+          className="w-full"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            void (async () => {
+              try {
+                const files = allCsv(useSoma.getState().history, useSoma.getState().nutrition);
+                for (const f of files) {
+                  if (!f.rows) continue;
+                  await saveBackupFile(f.content, f.name, "text/csv");
+                }
+                const total = files.reduce((n, f) => n + f.rows, 0);
+                toast.success(`Exported ${total} rows across ${files.filter((f) => f.rows).length} files`);
+              } catch {
+                toast.error("Could not write the CSV files.");
+              } finally {
+                setBusy(false);
+              }
+            })();
+          }}
+        >
+          Export CSV
+        </Button>
       </Card>
 
       <Card>

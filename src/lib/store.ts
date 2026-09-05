@@ -65,6 +65,8 @@ export interface SomaStore {
   markHydrated: () => void;
   ensureSeed: () => void;
   mergeCustomFoods: () => void;
+  upsertLibraryFood: (food: FoodItem) => void;
+  isFoodEdited: (name: string) => boolean;
   clearSeededHabitHistory: () => number;
   normalizeLive: () => void;
   rollDayIfNeeded: () => boolean;
@@ -288,6 +290,26 @@ export const useSoma = create<SomaStore>()(
         }
         set({ nutrition });
         return touched;
+      },
+      /**
+       * Create or edit a food in the library, base foods included.
+       *
+       * BASE_FOOD_LIBRARY is a shipped constant and cannot be mutated, so
+       * editing one writes a custom food under the SAME NAME instead. The
+       * library is composed base-first with customs after and deduplicated by
+       * name, so the edit simply wins — and a future correction to the shipped
+       * figures still reaches anyone who never edited that food.
+       */
+      upsertLibraryFood: (food) => {
+        const key = food.name.trim().toLowerCase();
+        const rest = get().customFoods.filter((f) => f.name.trim().toLowerCase() !== key);
+        set({ customFoods: [...rest, { ...food, isBase: false }] });
+      },
+      /** Whether a base food has been overridden, so the UI can say so. */
+      isFoodEdited: (name) => {
+        const key = name.trim().toLowerCase();
+        const base = BASE_FOOD_LIBRARY.some((f) => f.name.trim().toLowerCase() === key);
+        return base && get().customFoods.some((f) => f.name.trim().toLowerCase() === key);
       },
       setTab: (tab) => set({ tab }),
       setActiveDate: (d) => set({ activeDate: d }),

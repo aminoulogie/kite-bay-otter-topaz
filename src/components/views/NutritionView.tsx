@@ -6,6 +6,7 @@ import { PortionSheet } from "@/components/PortionSheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { FoodEditorSheet } from "@/components/FoodEditorSheet";
 import { NutritionGraphs } from "@/components/NutritionGraphs";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
@@ -50,6 +51,7 @@ export function NutritionView() {
   // The library is browsable, not search-only: with nothing typed you should
   // still be able to see what is in there rather than having to guess a name.
   const [showAll, setShowAll] = useState(false);
+  const [editingFood, setEditingFood] = useState<FoodItem | null>(null);
   // One sheet drives both logging a portion and editing a logged one.
   const [portion, setPortion] = useState<
     { item: FoodItem; meal: string; mode: "add" | "edit"; idx?: number } | null
@@ -84,7 +86,14 @@ export function NutritionView() {
   const formula = SomaIntelligenceEngine.formulaMaintenance(day.bodyWeight || 78) || 2400;
   const maintenance = tdee && tdee.ok ? tdee.maintenance : formula;
 
-  const library = useMemo(() => [...BASE_FOOD_LIBRARY, ...customFoods], [customFoods]);
+  // Base first, customs after, deduplicated by name so an edited base food is
+  // replaced by the edit rather than appearing twice.
+  const library = useMemo(() => {
+    const byName = new Map<string, (typeof BASE_FOOD_LIBRARY)[number]>();
+    for (const f of BASE_FOOD_LIBRARY) byName.set(f.name.trim().toLowerCase(), f);
+    for (const f of customFoods) byName.set(f.name.trim().toLowerCase(), f as never);
+    return [...byName.values()];
+  }, [customFoods]);
   const matches = library.filter((f) =>
     f.name.toLowerCase().includes(query.toLowerCase()),
   );
@@ -223,17 +232,32 @@ export function NutritionView() {
               </div>
             )}
             {hits.map((f) => (
-              <button
+              <div
                 key={f.name}
-                type="button"
-                onClick={() => openPortion(f)}
-                className="flex w-full items-center justify-between border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-2"
+                className="flex items-center border-b border-border last:border-0 hover:bg-surface-2"
               >
-                <span className="text-sm font-bold">{f.name}</span>
-                <span className="text-xs text-muted">
-                  {f.cals} kcal · {f.p}p
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => openPortion(f)}
+                  className="flex min-w-0 flex-1 items-center justify-between px-3 py-2 text-left"
+                >
+                  <span className="truncate text-sm font-bold">{f.name}</span>
+                  <span className="shrink-0 pl-2 text-xs text-muted">
+                    {f.cals} kcal · {f.p}p
+                  </span>
+                </button>
+                {/* Editing sits beside logging rather than inside it: a wrong
+                    label should be correctable without first pretending to eat
+                    the food. */}
+                <button
+                  type="button"
+                  aria-label={`Edit ${f.name}`}
+                  onClick={() => setEditingFood(f as FoodItem)}
+                  className="shrink-0 px-3 py-2 text-muted"
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -430,6 +454,11 @@ export function NutritionView() {
       {/* Last on the page: it is a review of the week, not part of logging
           today, and it was pushing the meal sections below the fold. */}
       <NutritionGraphs />
+
+      {editingFood && (
+        <FoodEditorSheet food={editingFood} onClose={() => setEditingFood(null)} />
+      )}
+
 
     </div>
   );

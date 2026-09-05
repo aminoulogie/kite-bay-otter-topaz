@@ -120,7 +120,14 @@ export interface ProductHit {
   c: number;
   f: number;
   fiber: number;
+  /** Micronutrients, in mg, where the source reports them. */
+  sodium?: number;
+  calcium?: number;
+  iron?: number;
+  potassium?: number;
   serving: number;
+  /** Which database answered, so a wrong entry can be traced. */
+  source?: string;
   needsMacros: boolean;
 }
 
@@ -131,56 +138,151 @@ export interface ProductHit {
  * has no equivalent, so this depends on the API sending permissive CORS
  * headers. It does — verified against a live request rather than assumed.
  */
+/**
+ * A source that can answer a barcode, and how to read its reply.
+ *
+ * Several, because one is not enough in practice: Open Food Facts is strong on
+ * European retail and thin elsewhere, and a product it holds with no nutrition
+ * table is exactly the "Imported Product, 0 kcal" entry that has been landing
+ * in the log. Falling through to another database turns those into real food.
+ *
+ * Every source must send permissive CORS headers — a web app has no way around
+ * that, unlike the Obsidian plugin, which used Obsidian's own requestUrl.
+ */
+interface Source {
+  id: string;
+  label: string;
+  url: (code: string) => string;
+  parse: (json: unknown, code: string) => ProductHit | null;
+}
+
+function round1(n: unknown): number {
+  const v = Number(n);
+  return Number.isFinite(v) ? Math.round(v * 10) / 10 : 0;
+}
+
+const SOURCES: Source[] = [
+  {
+    id: "off",
+    label: "Open Food Facts",
+    url: (code) =>
+      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json` +
+      `?fields=product_name,brands,nutriments`,
+    parse: (raw, code) => {
+      const json = raw as {
+        status?: number;
+        product?: {
+          product_name?: string;
+          brands?: string;
+          nutriments?: Record<string, number | undefined>;
+        };
+      };
+      if (json.status !== 1 || !json.product) return null;
+      const n = json.product.nutriments ?? {};
+      const name =
+        [json.product.brands?.split(",")[0]?.trim(), json.product.product_name?.trim()]
+          .filter(Boolean)
+          .join(" ") || `Item ${code}`;
+      return {
+        name,
+        cals: Math.round(n["energy-kcal_100g"] ?? 0),
+        p: round1(n.proteins_100g),
+        c: round1(n.carbohydrates_100g),
+        f: round1(n.fat_100g),
+        fiber: round1(n.fiber_100g),
+        sodium: round1((n.sodium_100g ?? 0) * 1000),
+        calcium: round1((n.calcium_100g ?? 0) * 1000),
+        iron: round1((n.iron_100g ?? 0) * 1000),
+        potassium: round1((n.potassium_100g ?? 0) * 1000),
+        serving: 100,
+        source: "Open Food Facts",
+        needsMacros: false,
+      };
+    },
+  },
+  {
+    // Same project, separate database: household and restaurant items that the
+    // food database deliberately does not carry.
+    id: "offp",
+    label: "Open Products Facts",
+    url: (code) =>
+      `https://world.openproductsfacts.org/api/v2/product/${encodeURIComponent(code)}.json` +
+      `?fields=product_name,brands,nutriments`,
+    parse: (raw, code) => SOURCES[0]!.parse(raw, code),
+  },
+  {
+    // United States coverage, where Open Food Facts is thinnest.
+    id: "usda",
+    label: "USDA FoodData Central",
+    url: (code) =>
+      `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=DEMO_KEY&pageSize=1&query=${encodeURIComponent(code)}`,
+    parse: (raw, code) => {
+      const json = raw as {
+        foods?: { description?: string; foodNutrients?: { nutrientName?: string; value?: number }[] }[];
+      };
+      const food = json.foods?.[0];
+      if (!food) return null;
+      const by = (needle: string) =>
+        round1(
+          food.foodNutrients?.find((x) => x.nutrientName?.toLowerCase().includes(needle))?.value,
+        );
+      return {
+        name: food.description?.trim() || `Item ${code}`,
+        cals: Math.round(by("energy")),
+        p: by("protein"),
+        c: by("carbohydrate"),
+        f: by("total lipid"),
+        fiber: by("fiber"),
+        sodium: by("sodium"),
+        calcium: by("calcium"),
+        iron: by("iron"),
+        potassium: by("potassium"),
+        serving: 100,
+        source: "USDA",
+        needsMacros: false,
+      };
+    },
+  },
+];
+
+function isEmpty(hit: ProductHit): boolean {
+  return hit.cals === 0 && hit.p === 0 && hit.c === 0 && hit.f === 0;
+}
+
+/**
+ * Ask each source in turn until one returns real nutrition.
+ *
+ * A hit with no macros does NOT stop the search: a product can exist in a
+ * database with an empty nutrition table, and accepting that was how
+ * "Imported Product, 0 kcal" kept reaching the food log. An empty hit is
+ * remembered only as a last-resort name, so a scan that finds nothing
+ * anywhere still tells the user what the product is called.
+ *
+ * Sources are tried sequentially rather than in parallel: the first usually
+ * answers, and firing three requests for every scan would waste the other two
+ * on a phone that may be on mobile data.
+ */
 export async function lookupBarcode(
   code: string,
 ): Promise<{ hit: ProductHit | null; offline: boolean }> {
   if (!navigator.onLine) return { hit: null, offline: true };
 
-  try {
-    const res = await fetch(
-      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json` +
-        `?fields=product_name,brands,nutriments`,
-      { headers: { Accept: "application/json" } },
-    );
-    if (!res.ok) return { hit: null, offline: false };
+  let fallback: ProductHit | null = null;
 
-    const json = (await res.json()) as {
-      status?: number;
-      product?: {
-        product_name?: string;
-        brands?: string;
-        nutriments?: Record<string, number | undefined>;
-      };
-    };
-    if (json.status !== 1 || !json.product) return { hit: null, offline: false };
-
-    const n = json.product.nutriments ?? {};
-    const name =
-      [json.product.brands?.split(",")[0]?.trim(), json.product.product_name?.trim()]
-        .filter(Boolean)
-        .join(" ") || `Item ${code}`;
-
-    const cals = Math.round(n["energy-kcal_100g"] ?? 0);
-    const p = Math.round((n.proteins_100g ?? 0) * 10) / 10;
-    const c = Math.round((n.carbohydrates_100g ?? 0) * 10) / 10;
-    const f = Math.round((n.fat_100g ?? 0) * 10) / 10;
-
-    return {
-      hit: {
-        name,
-        cals,
-        p,
-        c,
-        f,
-        fiber: Math.round((n.fiber_100g ?? 0) * 10) / 10,
-        serving: 100,
-        // A product can exist in the database with no nutrition at all;
-        // adding it as zero calories would quietly corrupt the day's totals.
-        needsMacros: cals === 0 && p === 0 && c === 0 && f === 0,
-      },
-      offline: false,
-    };
-  } catch {
-    return { hit: null, offline: !navigator.onLine };
+  for (const src of SOURCES) {
+    try {
+      const res = await fetch(src.url(code), { headers: { Accept: "application/json" } });
+      if (!res.ok) continue;
+      const hit = src.parse(await res.json(), code);
+      if (!hit) continue;
+      if (!isEmpty(hit)) return { hit, offline: false };
+      // Keep the name, keep looking for the numbers.
+      fallback ??= { ...hit, needsMacros: true };
+    } catch {
+      // One source being unreachable must not end the search.
+      continue;
+    }
   }
+
+  return { hit: fallback, offline: !navigator.onLine };
 }

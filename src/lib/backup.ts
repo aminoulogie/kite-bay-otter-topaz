@@ -14,10 +14,14 @@
  *     anchor download does nothing at all.
  */
 
+import { checksum } from "./checksum";
 import { allPhotos, putPhotoRecord, type HabitPhoto } from "./habit-photos";
 
 export const BACKUP_FORMAT = "soma-backup";
 export const BACKUP_VERSION = 1;
+
+export { checksum } from "./checksum";
+
 
 export interface BackupPhoto {
   habitId: string;
@@ -29,6 +33,8 @@ export interface BackupPhoto {
 
 export interface Backup {
   format: typeof BACKUP_FORMAT;
+  /** Absent on files written before checksums existed; those still restore. */
+  checksum?: string;
   version: number;
   exportedAt: string;
   data: Record<string, unknown>;
@@ -67,12 +73,15 @@ export async function buildBackup(data: Record<string, unknown>): Promise<Backup
       display: await blobToDataUrl(p.display),
     });
   }
+  const body = { data, photos };
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
-    data,
-    photos,
+    // Computed over exactly what will be compared on import, so the two cannot
+    // drift apart as fields are added around them.
+    checksum: checksum(JSON.stringify(body)),
+    ...body,
   };
 }
 
@@ -104,6 +113,21 @@ export function parseBackup(raw: string): ParseResult {
       ok: false,
       reason: `That backup was written by a newer version of SOMA (v${String(b.version)}).`,
     };
+  }
+
+  // A file that fails its own checksum is rejected outright rather than
+  // half-imported. Older files carry no checksum and are still accepted —
+  // refusing them would strand every backup taken before this existed.
+  if (typeof b.checksum === "string") {
+    const actual = checksum(JSON.stringify({ data: b.data, photos: b.photos }));
+    if (actual !== b.checksum) {
+      return {
+        ok: false,
+        reason:
+          "That backup is damaged — its contents do not match its checksum. " +
+          "Nothing was imported. Try another copy of the file.",
+      };
+    }
   }
   if (!b.data || typeof b.data !== "object") {
     return { ok: false, reason: "That backup is missing its data." };
@@ -155,8 +179,12 @@ export async function restorePhotos(photos: BackupPhoto[]): Promise<number> {
  * where this app is installed — so the share sheet is tried first. That is the
  * route to Files, iCloud Drive or AirDrop on the device the data lives on.
  */
-export async function saveBackupFile(json: string, filename: string): Promise<"shared" | "downloaded"> {
-  const file = new File([json], filename, { type: "application/json" });
+export async function saveBackupFile(
+  json: string,
+  filename: string,
+  mime = "application/json",
+): Promise<"shared" | "downloaded"> {
+  const file = new File([json], filename, { type: mime });
 
   if (navigator.canShare?.({ files: [file] }) && navigator.share) {
     try {
