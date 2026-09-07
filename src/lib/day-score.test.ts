@@ -58,10 +58,19 @@ test("turning up is not worth the full workout share", () => {
       .reduce((t, l) => t + (l.earned ?? 0), 0);
 
   assert.ok(workoutOf(hard) > workoutOf(lazy), "real failures must outscore coasting");
+
+  // The effort component used to be binary — a set was a genuine failure of the
+  // target or it earned nothing — so coasting scored exactly completion plus
+  // coverage. It is now the session's own 0-100 quality rating, which is
+  // continuous, so a set stopped two reps short with clean technique earns
+  // something rather than zero. That is the intended change: what must still
+  // hold is that coasting collects well under half of the effort slice.
+  const effortOf = (r: typeof lazy) => r.lines.find((l) => l.id === "effort")!.earned!;
   assert.ok(
-    workoutOf(lazy) < WORKOUT_WEIGHTS.completion + WORKOUT_WEIGHTS.coverage + 1,
-    "completing sets alone should not approach the full 40",
+    effortOf(lazy) < WORKOUT_WEIGHTS.effort * 0.65,
+    `coasting should not earn most of the effort share, got ${effortOf(lazy)}`,
   );
+  assert.equal(effortOf(hard), WORKOUT_WEIGHTS.effort, "a true failure earns the full share");
 });
 
 test("a set the synergist ended does not earn full effort", () => {

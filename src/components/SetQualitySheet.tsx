@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { MUSCLE_REGIONS } from "@/lib/recovery";
 import type { Closeness, Limiter, SetQuality } from "@/lib/set-quality";
 import { isGenuineFailure } from "@/lib/set-quality";
+import { rateSet, ratingLabel, ratingTone, setBreakdown } from "@/lib/stimulus";
 import { tapLight } from "@/lib/haptics";
 import { useSheet } from "@/lib/use-sheet";
 import { cn } from "@/lib/utils";
@@ -71,6 +72,8 @@ export function SetQualitySheet({
   }, [primaryKeys, allKeys]);
 
   const genuine = isGenuineFailure(value);
+  const rating = rateSet(value as Parameters<typeof rateSet>[0]);
+  const breakdown = setBreakdown(rating);
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/60" onClick={onClose}>
@@ -188,25 +191,59 @@ export function SetQualitySheet({
           <Scale value={value.form} onChange={(form) => onChange({ form })} labels={["broke down", "some drift", "clean"]} />
         </Section>
 
-        <div
-          className={cn(
-            "mb-2 rounded-xl border px-3 py-2.5 text-[0.72rem] font-semibold",
-            genuine
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-              : "border-border bg-surface-2 text-muted",
+        {/* The score these four answers add up to, and what moved it.
+            A bare number invites arguing with it; the breakdown makes it
+            checkable and shows which answer is holding it back. */}
+        <div className="mb-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-[0.65rem] font-bold uppercase tracking-wide text-faint">
+              Set score
+            </span>
+            <span className="flex items-baseline gap-1.5">
+              <span
+                className={cn(
+                  "font-display text-xl font-extrabold tabular-nums",
+                  ratingTone(rating.score),
+                )}
+              >
+                {rating.score ?? "–"}
+              </span>
+              <span className="text-[0.6rem] text-faint">
+                {rating.score == null ? "not rated" : `/100 · ${ratingLabel(rating.score)}`}
+              </span>
+            </span>
+          </div>
+
+          {breakdown.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {breakdown.map((b) => (
+                <div key={b.key} className="flex items-center gap-2">
+                  <span className="w-28 shrink-0 text-[0.58rem] text-muted">{b.label}</span>
+                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-surface-3">
+                    <div
+                      className="soma-bar h-full rounded-full bg-accent"
+                      style={{ width: `${b.pct}%` }}
+                    />
+                  </div>
+                  <span className="w-14 shrink-0 text-right text-[0.55rem] tabular-nums text-faint">
+                    {b.pct}% · {b.weight}w
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
-        >
-          {genuine ? (
-            <>True failure of {primaryKeys.map(label)[0] ?? "the target"} — this one counts fully.</>
-          ) : value.limiter === "synergist" ? (
-            <>
-              Logged as a hard set that did not take{" "}
-              {primaryKeys.map(label)[0] ?? "the target"} to failure. The stimulus goes to{" "}
-              {(value.limitedBy ?? []).map(label).join(" and ") || "whatever gave out"}.
-            </>
-          ) : (
-            <>Fill in what stopped the set to see how it counts.</>
-          )}
+
+          <p className="mt-2 text-[0.6rem] leading-snug text-faint">
+            {rating.score == null
+              ? "Answer any of the four above and a score appears. Unanswered questions are left out rather than counted as zero."
+              : genuine
+                ? `True failure of ${primaryKeys.map(label)[0] ?? "the target"} — this one counts fully.`
+                : value.limiter === "synergist"
+                  ? `The target did not fail, so the stimulus goes to ${
+                      (value.limitedBy ?? []).map(label).join(" and ") || "whatever gave out"
+                    }.`
+                  : "Closeness to failure carries the most weight, then which muscle failed, then technique, then burn."}
+          </p>
         </div>
       </div>
     </div>

@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { Check, ChevronDown, Pencil, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
+import { DecimalInput } from "@/components/ui/decimal-input";
+import { exerciseKey } from "@/lib/exercise-key";
 import { Card, CardTitle } from "@/components/ui/card";
 import {
-  allDates, buildTrainingLog, dayBest, formatSet, groupsOf,
-  type ExerciseLog, type LoggedSet,
+  allDates, dayBest, formatSet, groupsOf, type ExerciseLog, type LoggedSet,
 } from "@/lib/training-log";
+import { useTrainingLog } from "@/lib/use-training-log";
 import { rateAllExercises, ratingBreakdown, ratingLabel, ratingTone } from "@/lib/exercise-ratings";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -55,18 +57,9 @@ function topWeight(sets: LoggedSet[]): number {
 
 export function DatabaseView() {
   const history = useSoma((s) => s.history);
-  const nutrition = useSoma((s) => s.nutrition);
-
-  // Bodyweight lifts carry the body's own load, which lives in the nutrition log.
-  const bodyweights = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const [d, day] of Object.entries(nutrition || {})) {
-      if (day?.bodyWeight) out[d] = day.bodyWeight;
-    }
-    return out;
-  }, [nutrition]);
-
-  const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
+  // Shared with the charts and Ahead, so a correction made here reaches all of
+  // them rather than only this table.
+  const log = useTrainingLog();
   const groups = useMemo(() => groupsOf(log), [log]);
   const ratings = useMemo(() => rateAllExercises(history, log), [history, log]);
 
@@ -279,7 +272,8 @@ function ExerciseWindow({
           // written back. Imported spreadsheet history has no session behind
           // it, so it is shown but not offered for editing.
           const src = ex.sources?.[row.date];
-          const editing = editDate === row.date && !!src;
+          const imported = !src;
+          const editing = editDate === row.date;
           return (
             <div key={row.date} className="border-b border-border/40 px-3 py-2 last:border-0">
               <div className="mb-1 flex items-center gap-2">
@@ -301,24 +295,23 @@ function ExerciseWindow({
                 <span className="ml-auto text-[0.62rem] tabular-nums text-faint">
                   {Math.round(row.e1rm)}kg 1RM
                 </span>
-                {src && (
-                  <button
-                    type="button"
-                    aria-label={editing ? "Stop editing this day" : `Edit ${row.date}`}
-                    onClick={() => setEditDate(editing ? null : row.date)}
-                    className={cn("shrink-0 p-0.5", editing ? "text-accent-text" : "text-faint")}
-                  >
-                    {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  aria-label={editing ? "Stop editing this day" : `Edit ${row.date}`}
+                  onClick={() => setEditDate(editing ? null : row.date)}
+                  className={cn("shrink-0 p-0.5", editing ? "text-accent-text" : "text-faint")}
+                >
+                  {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
+                </button>
               </div>
 
-              {editing && src ? (
+              {editing ? (
                 <DayEditor
                   date={row.date}
-                  exIdx={src.exIdx}
+                  exIdx={src?.exIdx ?? null}
                   sets={row.sets}
                   exerciseName={ex.name}
+                  imported={imported}
                   onDone={() => setEditDate(null)}
                 />
               ) : (
@@ -353,79 +346,122 @@ function ExerciseWindow({
 }
 
 /**
- * Correcting a day that was logged in the app.
+ * Correcting a day, wherever it came from.
  *
  * The Database was read-only, so a set typed as 1000kg instead of 100kg stayed
- * wrong forever and dragged every chart, every personal best and every
- * "heaviest" badge along with it. The only workaround was to delete the whole
- * day and re-enter it.
+ * wrong forever and dragged every chart, personal best and "heaviest" badge
+ * along with it. The first pass only made days logged IN THE APP editable —
+ * which missed the point, because almost everything here is imported from the
+ * spreadsheet and that was still untouchable.
  *
- * Edits are written straight to the saved session and the session's totals are
- * rebuilt from its sets, so volume, calories, the muscle tally, the graphs and
- * the body map all move with the correction rather than keeping the old
- * numbers and disagreeing with the sets they were drawn from.
+ * So there are two write paths behind one identical UI:
+ *
+ *   app-logged — written straight to the saved session, whose totals are then
+ *     rebuilt from its sets, so volume, calories and the muscle tally move
+ *     with the correction.
+ *   imported — the seed is a shipped constant and cannot be written to, so the
+ *     correction is stored beside it as an override and applied when the log is
+ *     built. Reverting simply drops the override and the sheet's own figures
+ *     come back exactly, rather than being approximated.
  */
 function DayEditor({
-  date, exIdx, sets, exerciseName, onDone,
+  date, exIdx, sets, exerciseName, imported, onDone,
 }: {
   date: string;
-  exIdx: number;
+  /** Where to write, for a day the app owns. Null for an imported one. */
+  exIdx: number | null;
   sets: LoggedSet[];
   exerciseName: string;
+  imported: boolean;
   onDone: () => void;
 }) {
   const patchHistorySet = useSoma((s) => s.patchHistorySet);
   const removeHistorySet = useSoma((s) => s.removeHistorySet);
   const removeHistoryExercise = useSoma((s) => s.removeHistoryExercise);
+  const setImportedDay = useSoma((s) => s.setImportedDay);
+  const clearImportedOverride = useSoma((s) => s.clearImportedOverride);
+  const edited = useSoma(
+    (s) => s.logOverrides[exerciseKey(exerciseName)]?.[date] !== undefined,
+  );
+
+  /** Rewrite one field of one set, whichever store the day lives in. */
+  const patch = (i: number, field: "weight" | "reps", value: number) => {
+    if (!imported && exIdx != null) {
+      patchHistorySet(date, exIdx, sets[i]?.srcIdx ?? i, { [field]: value });
+      return;
+    }
+    const next = sets.map((s, j) => {
+      if (j !== i) return s;
+      // On a bodyweight lift the edited number is the added plate; the total
+      // load is the body plus that, and both are stored.
+      if (field === "weight" && s.bodyweight) {
+        const body = s.weight - (s.added ?? 0);
+        return { ...s, added: value, weight: body + value };
+      }
+      return { ...s, [field]: value };
+    });
+    setImportedDay(exerciseName, date, next);
+  };
+
+  const dropSet = (i: number) => {
+    if (!imported && exIdx != null) {
+      removeHistorySet(date, exIdx, sets[i]?.srcIdx ?? i);
+    } else {
+      const next = sets.filter((_, j) => j !== i);
+      setImportedDay(exerciseName, date, next.length ? next : null);
+    }
+    toast.success("Set removed");
+  };
+
+  const dropDay = () => {
+    if (!confirm(`Remove ${exerciseName} from ${date}?`)) return;
+    if (!imported && exIdx != null) removeHistoryExercise(date, exIdx);
+    else setImportedDay(exerciseName, date, null);
+    toast.success(`Removed ${exerciseName} from ${date}`);
+    onDone();
+  };
 
   return (
     <div className="soma-expand rounded-xl border border-accent/40 bg-surface-2 p-2">
-      <div className="mb-1.5 text-[0.58rem] font-bold uppercase tracking-wide text-faint">
-        Editing {date}
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <span className="text-[0.58rem] font-bold uppercase tracking-wide text-faint">
+          Editing {date}
+        </span>
+        <span className="text-[0.55rem] text-faint">
+          {imported ? (edited ? "imported · edited" : "imported") : "logged in the app"}
+        </span>
       </div>
 
       <div className="space-y-1">
         {sets.map((s, i) => {
-          // On a bodyweight lift the stored number is the added plate, not the
-          // total load — so that is what is edited, or a correction would be
-          // applied on top of the body's own weight.
           const stored = s.bodyweight ? (s.added ?? 0) : s.weight;
           return (
             <div key={i} className="flex items-center gap-1.5">
               <span className="w-8 shrink-0 text-[0.6rem] font-bold text-faint">#{i + 1}</span>
-              <input
-                type="number"
-                inputMode="decimal"
+              <DecimalInput
                 aria-label={`Set ${i + 1} weight`}
-                defaultValue={stored}
-                onBlur={(e) => {
-                  const v = e.target.value === "" ? "" : Number(e.target.value);
-                  if (v === stored) return;
-                  patchHistorySet(date, exIdx, s.srcIdx ?? i, { weight: v as number | "" });
+                className="h-8 w-full min-w-0 px-1 text-center text-[0.72rem]"
+                value={stored}
+                onValueChange={(n) => {
+                  if (n == null || n === stored) return;
+                  patch(i, "weight", n);
                 }}
-                className="h-8 w-full min-w-0 rounded-lg border border-border bg-surface px-1 text-center text-[0.72rem] font-semibold tabular-nums text-fg"
               />
               <span className="shrink-0 text-[0.6rem] text-faint">kg</span>
-              <input
-                type="number"
-                inputMode="numeric"
+              <DecimalInput
                 aria-label={`Set ${i + 1} reps`}
-                defaultValue={s.reps}
-                onBlur={(e) => {
-                  const v = e.target.value === "" ? "" : Number(e.target.value);
-                  if (v === s.reps) return;
-                  patchHistorySet(date, exIdx, s.srcIdx ?? i, { reps: v as number | "" });
+                className="h-8 w-full min-w-0 px-1 text-center text-[0.72rem]"
+                value={s.reps}
+                onValueChange={(n) => {
+                  if (n == null || n === s.reps) return;
+                  patch(i, "reps", n);
                 }}
-                className="h-8 w-full min-w-0 rounded-lg border border-border bg-surface px-1 text-center text-[0.72rem] font-semibold tabular-nums text-fg"
               />
               <span className="shrink-0 text-[0.6rem] text-faint">reps</span>
               <button
                 type="button"
                 aria-label={`Delete set ${i + 1}`}
-                onClick={() => {
-                  removeHistorySet(date, exIdx, s.srcIdx ?? i);
-                  toast.success("Set removed");
-                }}
+                onClick={() => dropSet(i)}
                 className="shrink-0 p-1 text-danger"
               >
                 <Trash2 className="size-3.5" />
@@ -438,16 +474,24 @@ function DayEditor({
       <div className="mt-2 flex gap-1.5">
         <button
           type="button"
-          onClick={() => {
-            if (!confirm(`Remove ${exerciseName} from the session on ${date}?`)) return;
-            removeHistoryExercise(date, exIdx);
-            toast.success(`Removed ${exerciseName} from ${date}`);
-            onDone();
-          }}
+          onClick={dropDay}
           className="h-8 flex-1 rounded-lg border border-danger/40 bg-surface text-[0.65rem] font-bold text-danger"
         >
-          Delete this exercise
+          Delete this day
         </button>
+        {imported && edited && (
+          <button
+            type="button"
+            onClick={() => {
+              clearImportedOverride(exerciseName, date);
+              toast.success("Restored the imported figures");
+              onDone();
+            }}
+            className="h-8 flex-1 rounded-lg border border-border bg-surface text-[0.65rem] font-bold text-muted"
+          >
+            Revert
+          </button>
+        )}
         <button
           type="button"
           onClick={onDone}
@@ -457,8 +501,8 @@ function DayEditor({
         </button>
       </div>
       <p className="mt-1.5 text-[0.55rem] leading-snug text-faint">
-        Saved as you leave each field. Every statistic and chart is recomputed from the
-        corrected sets.
+        Saved as you leave each field. Every statistic, chart and personal best is
+        recomputed from the corrected sets.
       </p>
     </div>
   );

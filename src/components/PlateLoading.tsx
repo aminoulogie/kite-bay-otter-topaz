@@ -48,6 +48,7 @@ function PlateRow({ plates, bar, unit }: { plates: Plate[]; bar: number; unit: s
           style={{ background: mapColor(p.color) }}
         >
           {p.weight}
+          {unit}
         </span>
       ))}
     </span>
@@ -95,7 +96,13 @@ export function PlateLoading({
           <Layers className="size-3.5" />
           Plates &amp; warm-up
         </span>
-        <span className="flex items-center gap-2">
+        <span className="flex min-w-0 items-center gap-2">
+          {/* Labelled. These were bare coloured numbers with no unit and no
+              hint that they are one side of the bar, which reads as noise
+              rather than as an instruction. */}
+          <span className="shrink-0 text-[0.55rem] font-bold uppercase tracking-wide text-faint">
+            per side
+          </span>
           <PlateRow plates={plates} bar={bar} unit={unit} />
           <span className={cn("text-faint transition-transform", open && "rotate-180")}>⌄</span>
         </span>
@@ -114,13 +121,22 @@ export function PlateLoading({
             </span>
           </div>
 
-          <div className="mb-3">
+          <div className="mb-2">
             <PlateRow plates={plates} bar={bar} unit={unit} />
           </div>
+          <p className="mb-3 text-[0.6rem] leading-snug text-faint">
+            Load these on <b className="text-muted">each end</b> of the {bar}
+            {unit} bar. Both sides together plus the bar make {targetWeight}
+            {unit}.
+          </p>
 
-          <div className="mb-1.5 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+          <div className="mb-1 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
             Warm-up ramp
           </div>
+          <p className="mb-1.5 text-[0.6rem] leading-snug text-faint">
+            Sets to do before the working weight, at 40 / 60 / 80% of it, rounded to
+            something you can actually load. A few reps each, not to failure.
+          </p>
           {ramp.map((r) => (
             <div
               key={r.pct}

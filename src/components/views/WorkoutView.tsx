@@ -5,6 +5,7 @@ import { PlateLoading } from "@/components/PlateLoading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { playChime, burstConfetti } from "@/lib/audio";
 import { computeBiologicalReadiness } from "@/lib/recovery";
@@ -12,6 +13,7 @@ import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
+import { rateExerciseInstance, rateSession, rateSet, ratingTone } from "@/lib/stimulus";
 import { tapLight, tapMedium, tapSuccess } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import type { SessionExercise } from "@/lib/types";
@@ -120,6 +122,9 @@ export function WorkoutView() {
     totalSets,
     totalSets ? failSum / totalSets : 3,
   );
+
+  // Live: it moves as sets are ticked and rated.
+  const sessionRating = rateSession(live);
 
   const db = allExercises();
   const filtered = db
@@ -350,7 +355,19 @@ export function WorkoutView() {
         <Stat label="Est. burn" value={`${cals} kcal`} />
         <Stat label={`Volume (${settings.unit})`} value={totalVol.toLocaleString()} />
         <Stat label="Sets done" value={String(totalSets)} />
-        <Stat label="Movements" value={String(live.exercises.length)} />
+        {/* The session's quality out of 100, built from every rated set. This
+            is the same number that becomes the effort share of the day score,
+            so Train and the calendar can no longer disagree about a workout. */}
+        <Stat
+          label="Session score"
+          value={sessionRating.score == null ? "–" : `${sessionRating.score}`}
+          tone={ratingTone(sessionRating.score)}
+          hint={
+            sessionRating.score == null
+              ? "rate a set"
+              : `${sessionRating.ratedSets}/${sessionRating.workingSets} sets rated`
+          }
+        />
       </div>
 
       <Card className="flex items-center justify-between gap-3">
@@ -586,7 +603,28 @@ export function WorkoutView() {
                   {ex.isAxial && <Badge tone="danger">Axial</Badge>}
                 </div>
               </div>
-              <div className="flex gap-1">
+              <div className="flex items-center gap-1">
+                {/* The exercise's own rating: the mean of its rated sets, nudged
+                    by the pump. Live, so it moves as you rate each set. */}
+                {(() => {
+                  const r = rateExerciseInstance(ex);
+                  if (r.score == null) return null;
+                  return (
+                    <div className="mr-1 shrink-0 text-right">
+                      <div
+                        className={cn(
+                          "font-display text-sm font-extrabold tabular-nums",
+                          ratingTone(r.score),
+                        )}
+                      >
+                        {r.score}
+                      </div>
+                      <div className="text-[0.5rem] leading-none text-faint">
+                        {r.ratedSets}/{r.workingSets} rated
+                      </div>
+                    </div>
+                  );
+                })()}
                 <Button size="icon" variant="ghost" onClick={() => cycleSuperset(exIdx)} aria-label="Superset">
                   <Link2 />
                 </Button>
@@ -638,11 +676,14 @@ export function WorkoutView() {
               </div>
             )}
 
-            <div className="grid grid-cols-[36px_1fr_1fr_1.3fr_36px_28px] items-center gap-1.5 text-[0.62rem] font-bold uppercase tracking-wide text-faint">
+            <div className="grid grid-cols-[32px_1fr_1fr_1.25fr_30px_32px_24px] items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
               <span className="text-center">Set</span>
               <span className="text-center">{settings.unit}</span>
               <span className="text-center">Reps</span>
               <span className="text-center">RPE</span>
+              {/* The score the four RPE answers add up to. It was collected and
+                  never shown, so the sheet felt like a form with no output. */}
+              <span className="text-center">Pts</span>
               <span />
               <span />
             </div>
@@ -653,7 +694,7 @@ export function WorkoutView() {
                 <div
                   key={sIdx}
                   className={cn(
-                    "grid grid-cols-[36px_1fr_1fr_1.3fr_36px_28px] items-center gap-1.5 rounded-xl p-1",
+                    "grid grid-cols-[32px_1fr_1fr_1.25fr_30px_32px_24px] items-center gap-1 rounded-xl p-1",
                     // A completed set acknowledges itself for half a second,
                     // so the tap has a visible consequence beyond a checkbox.
                     s.done && "soma-flash",
@@ -674,23 +715,15 @@ export function WorkoutView() {
                   >
                     {label}
                   </button>
-                  <Input
-                    type="number"
-                    inputMode="decimal"
-                    className="h-9 px-1 text-center"
+                  <SetNumberField
+                    label={`Set ${sIdx + 1} weight`}
                     value={s.weight}
-                    onChange={(e) =>
-                      updateSet(exIdx, sIdx, { weight: e.target.value === "" ? "" : Number(e.target.value) })
-                    }
+                    onCommit={(v) => updateSet(exIdx, sIdx, { weight: v })}
                   />
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    className="h-9 px-1 text-center"
+                  <SetNumberField
+                    label={`Set ${sIdx + 1} reps`}
                     value={s.reps}
-                    onChange={(e) =>
-                      updateSet(exIdx, sIdx, { reps: e.target.value === "" ? "" : Number(e.target.value) })
-                    }
+                    onCommit={(v) => updateSet(exIdx, sIdx, { reps: v })}
                   />
                   {/* Replaces the old 1-5 dropdown. That scale could not tell a
                       chest failure from a triceps failure on the same press, so
@@ -716,6 +749,22 @@ export function WorkoutView() {
                           ? (s.closeness === "nothing" || s.closeness === "forced" ? "hard" : "easy")
                           : "rate"}
                   </button>
+                  {/* What the answers worked out to, 0-100. Weighted towards
+                      how close the set got to failure — see lib/stimulus.ts. */}
+                  {(() => {
+                    const score = rateSet(s).score;
+                    return (
+                      <span
+                        className={cn(
+                          "text-center text-[0.7rem] font-extrabold tabular-nums",
+                          ratingTone(score),
+                        )}
+                        title={score == null ? "Rate the set to score it" : "Set score out of 100"}
+                      >
+                        {score ?? "–"}
+                      </span>
+                    );
+                  })()}
                   <button
                     type="button"
                     aria-label="Mark set done"
@@ -866,11 +915,67 @@ export function WorkoutView() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+/**
+ * A weight or rep field that survives a comma.
+ *
+ * `<input type="number">` parses against the browser locale and silently
+ * DISCARDS what it cannot read, so on a French keyboard "12,5" left the field
+ * holding nothing — the weight looked entered and saved as empty.
+ *
+ * The raw text has to live here rather than in the store, though. Pushing every
+ * keystroke through the parser and rendering the parsed number back would turn
+ * "12," into "12" the instant the comma was typed, making a decimal impossible
+ * to enter at all. So the field owns its text while it is being edited and
+ * re-syncs from the store the moment it is not.
+ */
+function SetNumberField({
+  value,
+  onCommit,
+  label,
+}: {
+  value: number | "";
+  onCommit: (value: number | "") => void;
+  label: string;
+}) {
+  const [raw, setRaw] = useState<string | null>(null);
+
+  return (
+    <DecimalInput
+      aria-label={label}
+      className="h-9 px-1 text-center"
+      value={raw ?? String(value ?? "")}
+      onValueChange={(parsed, text) => {
+        setRaw(text);
+        // An empty field is an empty value; a half-typed one ("12,") parses to
+        // null and is left alone until it becomes a number.
+        if (text.trim() === "") onCommit("");
+        else if (parsed != null) onCommit(parsed);
+      }}
+      onBlur={() => setRaw(null)}
+    />
+  );
+}
+
+function Stat({
+  label, value, tone, hint,
+}: {
+  label: string;
+  value: string;
+  tone?: string;
+  hint?: string;
+}) {
   return (
     <div className="rounded-2xl border border-border bg-surface-2 p-3">
       <div className="text-[0.62rem] font-bold uppercase tracking-wider text-faint">{label}</div>
-      <div className="mt-0.5 font-display text-xl font-extrabold tabular tracking-tight">{value}</div>
+      <div
+        className={cn(
+          "mt-0.5 font-display text-xl font-extrabold tabular tracking-tight",
+          tone,
+        )}
+      >
+        {value}
+      </div>
+      {hint && <div className="text-[0.55rem] leading-tight text-faint">{hint}</div>}
     </div>
   );
 }

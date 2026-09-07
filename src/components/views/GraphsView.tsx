@@ -5,12 +5,11 @@ import {
 } from "recharts";
 import { Card, CardTitle } from "@/components/ui/card";
 import {
-  buildTrainingLog, dayBest, estimated1RM, groupsOf, type ExerciseLog, type LoggedSet,
-  formatSet,
+  dayBest, estimated1RM, groupsOf, type ExerciseLog, type LoggedSet, formatSet,
 } from "@/lib/training-log";
+import { useTrainingLog } from "@/lib/use-training-log";
 import { microMuscleStrength } from "@/lib/micro-muscle";
 import { ZoomableChart, useChartZoom } from "@/components/ZoomableChart";
-import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 /**
@@ -52,17 +51,8 @@ function metricOf(sets: LoggedSet[], m: Metric): number {
 }
 
 export function GraphsView() {
-  const history = useSoma((s) => s.history);
-  const nutrition = useSoma((s) => s.nutrition);
   // Bodyweight lifts need the body's own load, which lives in the nutrition log.
-  const bodyweights = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const [d, day] of Object.entries(nutrition || {})) {
-      if (day?.bodyWeight) out[d] = day.bodyWeight;
-    }
-    return out;
-  }, [nutrition]);
-  const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
+  const log = useTrainingLog();
   const groups = useMemo(() => groupsOf(log), [log]);
 
   const [group, setGroup] = useState<string>("Chest");
@@ -351,16 +341,7 @@ export function GraphsView() {
  * ambiguous about which chart it applied to.
  */
 export function MicroMuscleView() {
-  const history = useSoma((s) => s.history);
-  const nutrition = useSoma((s) => s.nutrition);
-  const bodyweights = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const [d, day] of Object.entries(nutrition || {})) {
-      if (day?.bodyWeight) out[d] = day.bodyWeight;
-    }
-    return out;
-  }, [nutrition]);
-  const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
+  const log = useTrainingLog();
   const micro = useMemo(() => microMuscleStrength(log), [log]);
   return <MicroMusclePanel micro={micro} />;
 }

@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { toast } from "sonner";
 import { getPhoto } from "@/lib/habit-photos";
 import { scoreDay, type DayScore } from "@/lib/day-score";
+import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
+import { isRestSplit } from "@/lib/programs";
 import {
   addDays, isCovered, isoDate, loadPeriods, membershipStatus, periodFromDuration,
   periodFromEnd, savePeriods, type MembershipPeriod,
@@ -112,25 +114,28 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
     for (const date of cells) {
       if (!date || date > today) continue;
       const session = sessionsByDate.get(date) ?? null;
-      const day = nutrition[date];
-      const logged = (day?.items?.length ?? 0) > 0;
-      const totals = (day?.items ?? []).reduce(
-        (t, i) => ({ cals: t.cals + (i.cals || 0), p: t.p + (i.p || 0) }),
-        { cals: 0, p: 0 },
+      const projected = SomaIntelligenceEngine.getProgramProjectedDay(
+        new Date(date + "T12:00:00"),
+        settings.scheduleOverrides,
+        program,
       );
-      const s = scoreDay({
-        session,
-        previous: findPrevious(sessionsByDate, date),
-        protein: logged && day?.goals?.protein ? { grams: totals.p, target: day.goals.protein } : null,
-        calories: logged && day?.goals?.cals ? { kcal: totals.cals, target: day.goals.cals } : null,
-        sleepHours: day?.sleep?.hours ?? null,
-        creatineG: day?.creatine ?? null,
-      });
+      const s = scoreDay(
+        buildDayInputs({
+          date,
+          session,
+          previous: previousSameSplit(history, date),
+          nutrition,
+          // A rest day with no session is not a missed workout. Without this
+          // every programmed rest day scored as a failure to train.
+          isRestDay: !session && (projected.isRest || isRestSplit(projected.split)),
+          bodyweightKg: bodyweightOn(nutrition, date),
+        }),
+      );
       // Nothing tracked at all is not a zero-scoring day, it is an unscored one.
       if (s.tracked > 0) out.set(date, s.score);
     }
     return out;
-  }, [cells, sessionsByDate, nutrition, today]);
+  }, [cells, sessionsByDate, nutrition, today, history, settings.scheduleOverrides, program]);
 
   const shift = (delta: number) =>
     setCursor((c) => {
@@ -160,7 +165,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         aria-hidden
         onClick={onClose}
         className={cn(
-          "fixed inset-0 z-[56] bg-black/60 transition-opacity duration-200",
+          "fixed inset-0 z-[56] bg-black/60 transition-opacity duration-150",
           open ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       />
@@ -176,7 +181,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         aria-hidden={!open}
         className={cn(
           "fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong bg-bg pt-[max(12px,env(safe-area-inset-top))]",
-          "transition-transform duration-200 ease-out",
+          "transition-transform duration-150 ease-out",
           open ? "translate-x-0" : "translate-x-full",
         )}
       >
@@ -370,7 +375,17 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           date={selected}
           isToday={selected === today}
           session={sessionsByDate.get(selected) ?? null}
-          previous={findPrevious(sessionsByDate, selected)}
+          previous={previousSameSplit(history, selected)}
+          isRestDay={
+            !sessionsByDate.get(selected) &&
+            isRestSplit(
+              SomaIntelligenceEngine.getProgramProjectedDay(
+                new Date(selected + "T12:00:00"),
+                settings.scheduleOverrides,
+                program,
+              ).split,
+            )
+          }
           nutrition={nutrition}
           onBackToToday={() => setSelected(today)}
           onMoved={(to) => setSelected(to)}
@@ -396,15 +411,6 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   );
 }
 
-function findPrevious(map: Map<string, HistorySession>, date: string): HistorySession | null {
-  const cur = map.get(date);
-  if (!cur) return null;
-  const earlier = [...map.entries()]
-    .filter(([d, s]) => d < date && s.split === cur.split)
-    .sort((a, b) => (a[0] < b[0] ? 1 : -1));
-  return earlier[0]?.[1] ?? null;
-}
-
 // ------------------------------------------------------------------- day card
 
 /**
@@ -416,12 +422,13 @@ function findPrevious(map: Map<string, HistorySession>, date: string): HistorySe
  * just changes what this shows.
  */
 function DayCard({
-  date, isToday, session, previous, nutrition, onBackToToday, onMoved, onClosePanel,
+  date, isToday, session, previous, isRestDay, nutrition, onBackToToday, onMoved, onClosePanel,
 }: {
   date: string;
   isToday: boolean;
   session: HistorySession | null;
   previous: HistorySession | null;
+  isRestDay: boolean;
   nutrition: Record<string, NutritionDay>;
   onBackToToday: () => void;
   onMoved: (to: string) => void;
@@ -446,26 +453,23 @@ function DayCard({
     };
   }, [date]);
 
-  const day = nutrition[date];
-  const score: DayScore = useMemo(() => {
-    // Food only counts as logged if something was actually eaten that day; an
-    // empty day is "not logged", not zero calories.
-    const logged = (day?.items?.length ?? 0) > 0;
-    const totals = (day?.items ?? []).reduce(
-      (t, i) => ({ cals: t.cals + (i.cals || 0), p: t.p + (i.p || 0) }),
-      { cals: 0, p: 0 },
-    );
-    return scoreDay({
-      session,
-      previous,
-      protein: logged && day?.goals?.protein ? { grams: totals.p, target: day.goals.protein } : null,
-      calories: logged && day?.goals?.cals ? { kcal: totals.cals, target: day.goals.cals } : null,
-      // Sleep is not tracked anywhere in the app yet, so it stays unassessed
-      // rather than being invented as a zero.
-      sleepHours: null,
-      creatineG: day?.creatine ?? null,
-    });
-  }, [session, previous, day]);
+  // The same inputs the square above is scored from — see lib/day-inputs.ts.
+  // This used to build its own and pass sleepHours: null, so the card and the
+  // square disagreed about the same day.
+  const score: DayScore = useMemo(
+    () =>
+      scoreDay(
+        buildDayInputs({
+          date,
+          session,
+          previous,
+          nutrition,
+          isRestDay,
+          bodyweightKg: bodyweightOn(nutrition, date),
+        }),
+      ),
+    [date, session, previous, nutrition, isRestDay],
+  );
 
   return (
     // Docked, not fixed: it is part of the calendar column and takes at most

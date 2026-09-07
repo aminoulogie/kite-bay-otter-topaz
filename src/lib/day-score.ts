@@ -1,4 +1,4 @@
-import { isGenuineFailure, isHardSet } from "./set-quality.ts";
+import { rateSession } from "./stimulus.ts";
 import type { HistorySession } from "./types.ts";
 
 /**
@@ -107,14 +107,14 @@ function workoutLines(inp: DayInputs): ScoreLine[] {
 
   const completion = planned ? working.length / planned : 0;
 
-  // Effort is the biggest slice, and it only counts sets where the muscle
-  // being trained is the one that failed. A set the triceps ended is not
-  // chest reaching failure, however hard it felt.
-  const genuine = working.filter(isGenuineFailure).length;
-  const hard = working.filter(isHardSet).length;
-  const rated = working.filter((x) => x.limiter).length;
-  const effort = rated
-    ? (genuine + 0.4 * (hard - genuine)) / rated
+  // Effort is the biggest slice, and it is the session's own quality rating —
+  // the same 0-100 shown on the session, built from every set's closeness,
+  // limiter, form and burn. It used to be a second, cruder formula living only
+  // here, which meant the day score and the session rating could disagree
+  // about the same workout. One number now, computed in lib/stimulus.ts.
+  const quality = rateSession(s);
+  const effort = quality.score != null
+    ? quality.score / 100
     : working.length
       ? 0.5 // logged but unrated: assume middling rather than punish old data
       : 0;
@@ -156,8 +156,8 @@ function workoutLines(inp: DayInputs): ScoreLine[] {
       label: "Effort",
       earned: Math.round(effort * WORKOUT_WEIGHTS.effort * 10) / 10,
       possible: WORKOUT_WEIGHTS.effort,
-      detail: rated
-        ? `${genuine} true ${genuine === 1 ? "failure" : "failures"} of ${rated} rated`
+      detail: quality.score != null
+        ? `session quality ${quality.score}/100 from ${quality.ratedSets} rated ${quality.ratedSets === 1 ? "set" : "sets"}`
         : "sets not rated",
     },
     {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BodyHeatmap } from "@/components/BodyHeatmap";
 import { DatabaseView } from "@/components/views/DatabaseView";
+import { ExerciseRatings } from "@/components/ExerciseRatings";
 import { GraphsView, MicroMuscleView } from "@/components/views/GraphsView";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -56,7 +57,7 @@ export function InsightsView() {
       >
         <span
           aria-hidden
-          className="pointer-events-none absolute left-0 top-1 rounded-full bg-accent transition-[transform,width] duration-300 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
+          className="pointer-events-none absolute left-0 top-1 rounded-full bg-accent transition-[transform,width] duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
           style={{
             width: pill.w,
             height: "calc(100% - 0.5rem)",
@@ -197,6 +198,9 @@ function OverviewPanel() {
           <span className="text-warn">Legs {Math.round((leg / ppl) * 100)}%</span>
         </div>
       </Card>
+
+      {/* Last on the overview: it is a place to go looking, not a headline. */}
+      <ExerciseRatings />
     </>
   );
 }

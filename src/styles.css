@@ -60,6 +60,30 @@ html[data-soma-theme="light"] {
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+  /*
+   * Removes the ~300ms wait Safari holds before dispatching a tap while it
+   * decides whether a second tap is coming. `viewport-fit` and a non-zoomable
+   * layout usually suppress it, but not on every control, and a button that
+   * responds a third of a second late feels like the app is busy rather than
+   * like the tap missed. This is the single biggest win in perceived speed and
+   * it costs nothing — double-tap-to-zoom is not a gesture this app wants.
+   */
+  a,
+  button,
+  label,
+  select,
+  summary,
+  [role="button"],
+  [role="tab"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Momentum scrolling inside every pane that scrolls, not just the page. */
+  .soma-scroll,
+  [class*="overflow-y-auto"],
+  [class*="overflow-x-auto"] {
+    -webkit-overflow-scrolling: touch;
+  }
   * {
     box-sizing: border-box;
   }
@@ -136,9 +160,13 @@ html[data-soma-theme="light"] {
 :root {
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --dur-fast: 140ms;
-  --dur: 220ms;
-  --dur-slow: 340ms;
+  /* Halved. The old durations were tuned by eye on a desktop, where 220ms
+     reads as smooth; on a phone, mid-set, with a hand that has just put a bar
+     down, the same 220ms reads as the app thinking about it. Fast enough to
+     feel instant, slow enough to still show direction. */
+  --dur-fast: 70ms;
+  --dur: 120ms;
+  --dur-slow: 180ms;
 }
 
 /* Sheets rise rather than appear. */
@@ -221,17 +249,19 @@ button:not(:disabled):active,
   from { transform: translateY(6px); opacity: 0; }
   to   { transform: translateY(0);   opacity: 1; }
 }
-.soma-view { animation: soma-view-in 260ms var(--ease-out) backwards; }
+.soma-view { animation: soma-view-in 150ms var(--ease-out) backwards; }
 
 /* Cards arrive in sequence rather than all at once. Capped at six, because
    beyond that the last card is waiting on an animation nobody is watching. */
-.soma-stagger > * { animation: soma-rise 260ms var(--ease-out) backwards; }
+.soma-stagger > * { animation: soma-rise 150ms var(--ease-out) backwards; }
+/* Tightened with the durations: the last card used to arrive a fifth of a
+   second after the first, which is a visible wait for no information. */
 .soma-stagger > *:nth-child(1) { animation-delay: 0ms; }
-.soma-stagger > *:nth-child(2) { animation-delay: 40ms; }
-.soma-stagger > *:nth-child(3) { animation-delay: 80ms; }
-.soma-stagger > *:nth-child(4) { animation-delay: 120ms; }
-.soma-stagger > *:nth-child(5) { animation-delay: 160ms; }
-.soma-stagger > *:nth-child(n + 6) { animation-delay: 200ms; }
+.soma-stagger > *:nth-child(2) { animation-delay: 20ms; }
+.soma-stagger > *:nth-child(3) { animation-delay: 40ms; }
+.soma-stagger > *:nth-child(4) { animation-delay: 60ms; }
+.soma-stagger > *:nth-child(5) { animation-delay: 80ms; }
+.soma-stagger > *:nth-child(n + 6) { animation-delay: 100ms; }
 
 /* A number that changed draws the eye for a moment. */
 @keyframes soma-tick {
@@ -243,7 +273,7 @@ button:not(:disabled):active,
 /* Progress and rings move rather than jump. */
 [role="progressbar"] > *,
 .soma-bar {
-  transition: width 420ms var(--ease-out), background-color 220ms var(--ease-out);
+  transition: width 240ms var(--ease-out), background-color 120ms var(--ease-out);
 }
 
 /* A set marked done: the row acknowledges it. */
@@ -258,7 +288,7 @@ button:not(:disabled):active,
   from { opacity: 0; transform: translateY(-4px) scaleY(0.98); }
   to   { opacity: 1; transform: translateY(0)    scaleY(1); }
 }
-.soma-expand { animation: soma-expand 200ms var(--ease-out) backwards; transform-origin: top; }
+.soma-expand { animation: soma-expand 130ms var(--ease-out) backwards; transform-origin: top; }
 
 /* The active tab pill glides between positions instead of blinking. */
 .soma-pill { transition: background-color 200ms var(--ease-out), color 200ms var(--ease-out),

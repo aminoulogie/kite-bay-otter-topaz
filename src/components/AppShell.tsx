@@ -252,7 +252,7 @@ export function AppShell() {
               blink; a single element moving reads as the selection sliding. */}
           <span
             aria-hidden
-            className="pointer-events-none absolute left-0 top-1.5 rounded-full bg-accent shadow-glow transition-[transform,width] duration-300 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
+            className="pointer-events-none absolute left-0 top-1.5 rounded-full bg-accent shadow-glow transition-[transform,width] duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
             style={{
               width: pill.w,
               height: "calc(100% - 0.75rem)",

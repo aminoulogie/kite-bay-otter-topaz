@@ -1,4 +1,4 @@
-import { totalWaterMl } from "./hydration";
+import { totalWaterMl } from "./hydration.ts";
 import type { HistorySession, NutritionDay } from "./types";
 
 /**

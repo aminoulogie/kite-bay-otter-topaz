@@ -4,7 +4,7 @@ import {
   bodyweightEstimate, confidenceNote, leanMassNote, measurementEstimates,
   strengthEstimates, type TrendEstimate,
 } from "@/lib/estimates";
-import { buildTrainingLog } from "@/lib/training-log";
+import { useTrainingLog } from "@/lib/use-training-log";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -20,15 +20,8 @@ export function EstimatesView() {
   const nutrition = useSoma((s) => s.nutrition);
   const customGoals = useSoma((s) => s.settings.customGoals);
 
-  const bodyweights = useMemo(() => {
-    const out: Record<string, number> = {};
-    for (const [d, day] of Object.entries(nutrition || {})) {
-      if (day?.bodyWeight) out[d] = day.bodyWeight;
-    }
-    return out;
-  }, [nutrition]);
 
-  const log = useMemo(() => buildTrainingLog(history, bodyweights), [history, bodyweights]);
+  const log = useTrainingLog();
   const weight = useMemo(() => bodyweightEstimate(nutrition), [nutrition]);
   const strength = useMemo(() => strengthEstimates(log), [log]);
   const measures = useMemo(() => measurementEstimates(nutrition), [nutrition]);

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +62,25 @@ export function SettingsView() {
   useEffect(() => {
     void storageHealth().then(setHealth);
   }, [busy]);
+
+  /**
+   * Exercises matching what has been typed, or the whole catalogue when
+   * nothing has. Browsable rather than search-only: with an empty box you
+   * should still be able to see what is in there instead of guessing a name.
+   */
+  const exerciseMatches = useMemo(() => {
+    const q = addEx.trim().toLowerCase();
+    const all = allExercises();
+    if (!q) return all.slice(0, 60);
+    return all
+      .filter(
+        (e) =>
+          e.name.toLowerCase().includes(q) ||
+          (e.muscle || "").toLowerCase().includes(q) ||
+          (e.subTarget || "").toLowerCase().includes(q),
+      )
+      .slice(0, 40);
+  }, [addEx, allExercises]);
 
   const openEdit = (name: string) => {
     setEditing(name);
@@ -306,19 +325,18 @@ export function SettingsView() {
                 </div>
               ))}
             </div>
+            {/* A real list, not a <datalist>. Safari on iOS ignores datalist
+                entirely, so on the phone this app runs on the box offered no
+                suggestions at all and the only way in was to type a name from
+                memory, exactly. */}
             <div className="flex gap-2">
               <Input
-                list="ex-list"
                 value={addEx}
                 onChange={(e) => setAddEx(e.target.value)}
-                placeholder="Add exercise"
+                placeholder="Search an exercise to add"
               />
-              <datalist id="ex-list">
-                {allExercises().map((e) => (
-                  <option key={e.name} value={e.name} />
-                ))}
-              </datalist>
               <Button
+                disabled={!addEx.trim()}
                 onClick={() => {
                   if (!addEx.trim()) return;
                   setRtList([...rtList, { name: addEx.trim() }]);
@@ -327,6 +345,42 @@ export function SettingsView() {
               >
                 Add
               </Button>
+            </div>
+            <div className="mt-2 max-h-56 overflow-y-auto overscroll-contain rounded-xl border border-border">
+              {exerciseMatches.length === 0 ? (
+                <p className="px-3 py-3 text-center text-[0.7rem] text-faint">
+                  No exercise matches “{addEx}”. Add is still available — it saves the name
+                  as typed.
+                </p>
+              ) : (
+                exerciseMatches.map((e) => {
+                  const already = rtList.some((r) => r.name === e.name);
+                  return (
+                    <button
+                      key={e.name}
+                      type="button"
+                      onClick={() => {
+                        setRtList([...rtList, { name: e.name }]);
+                        setAddEx("");
+                      }}
+                      className="flex w-full items-center justify-between gap-2 border-b border-border px-3 py-2 text-left last:border-0 active:bg-surface-2"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-[0.75rem] font-bold">{e.name}</span>
+                        <span className="block truncate text-[0.6rem] text-faint">
+                          {e.muscle}
+                          {e.subTarget ? ` · ${e.subTarget}` : ""}
+                        </span>
+                      </span>
+                      {already && (
+                        <span className="shrink-0 text-[0.55rem] font-bold uppercase text-accent-text">
+                          added
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
             </div>
             <div className="mt-3 flex gap-2">
               <Button className="flex-1" onClick={() => setEditing(null)}>

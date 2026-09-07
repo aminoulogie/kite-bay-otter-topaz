@@ -36,6 +36,20 @@ export interface LoggedSet {
   srcIdx?: number;
 }
 
+/**
+ * A correction to the imported spreadsheet history.
+ *
+ * The seed is a shipped constant, so it cannot be edited in place — but almost
+ * everything the Database shows comes from it, which meant almost nothing in
+ * there could be corrected. An override is a per-exercise, per-date replacement
+ * stored with the user's own data and applied on top of the seed: a list of
+ * sets replaces that day, and null deletes it.
+ *
+ * Keyed by exerciseKey rather than by the raw name, matching how the seed and
+ * the app's own history are already merged.
+ */
+export type LogOverrides = Record<string, Record<string, LoggedSet[] | null>>;
+
 export interface ExerciseLog {
   name: string;
   key: string | null; // muscle key, matching the body map
@@ -49,6 +63,8 @@ export interface ExerciseLog {
    * index — is the address the store's editing actions take.
    */
   sources?: Record<string, { exIdx: number }>;
+  /** Dates whose sets came from the imported sheet, and so are edited as overrides. */
+  imported?: Record<string, true>;
 }
 
 interface Seed {
@@ -99,12 +115,19 @@ export function buildTrainingLog(
   history: Record<string, HistorySession>,
   /** date -> bodyweight in kg, so bodyweight lifts carry their real load */
   bodyweightByDate: Record<string, number> = {},
+  /** User corrections to the imported rows — see LogOverrides. */
+  overrides: LogOverrides = {},
 ): ExerciseLog[] {
   // Keyed on the shared form of the name, not the name itself — see
   // exerciseKey. Keying on the raw name is what split every exercise the two
   // vocabularies spell differently into two separate rows.
   const byKey = new Map<string, ExerciseLog>();
-  for (const e of fromSeed(bodyweightByDate)) byKey.set(exerciseKey(e.name), e);
+  for (const e of fromSeed(bodyweightByDate)) {
+    // Remembered before the app's own sessions are folded in, so a day present
+    // in both is correctly treated as the app's rather than the sheet's.
+    e.imported = Object.fromEntries(Object.keys(e.days).map((d) => [d, true as const]));
+    byKey.set(exerciseKey(e.name), e);
+  }
 
   // Keyed by the date history FILES the session under, not by re-deriving one
   // from its timestamp: a backfilled session was typed in on a different day
@@ -149,10 +172,29 @@ export function buildTrainingLog(
       });
       // Marks this day as one the app owns, and says where to write an edit.
       entry.sources = { ...(entry.sources ?? {}), [date]: { exIdx } };
+      if (entry.imported?.[date]) delete entry.imported[date];
     }
   }
 
-  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+  // Corrections last, so an edited or deleted imported day wins over the seed.
+  for (const [key, days] of Object.entries(overrides)) {
+    const entry = byKey.get(key);
+    if (!entry) continue;
+    for (const [date, sets] of Object.entries(days)) {
+      if (sets === null) {
+        delete entry.days[date];
+        if (entry.imported) delete entry.imported[date];
+        continue;
+      }
+      entry.days[date] = sets;
+      entry.imported = { ...(entry.imported ?? {}), [date]: true };
+    }
+  }
+
+  return [...byKey.values()]
+    // A row whose every day was deleted is not an exercise you have done.
+    .filter((e) => Object.keys(e.days).length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**

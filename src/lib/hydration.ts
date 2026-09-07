@@ -16,7 +16,7 @@
  *     the food log never fight over the same number.
  */
 
-import type { FoodItem, NutritionDay } from "./types";
+import type { FoodItem, NutritionDay } from "./types.ts";
 
 /**
  * Typical water content by percentage of weight, for foods where it is worth

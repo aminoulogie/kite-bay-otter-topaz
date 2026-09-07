@@ -28,6 +28,8 @@ import {
 } from "./programs";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 import { tallyMuscles } from "./set-quality";
+import { exerciseKey } from "./exercise-key";
+import type { LoggedSet, LogOverrides } from "./training-log";
 import { guessMuscles } from "./muscle-guess";
 import { resolveSplitName } from "./split-match";
 
@@ -137,6 +139,9 @@ export interface SomaStore {
   patchHistorySet: (date: string, exIdx: number, setIdx: number, patch: Partial<WorkoutSet>) => void;
   removeHistorySet: (date: string, exIdx: number, setIdx: number) => void;
   removeHistoryExercise: (date: string, exIdx: number) => void;
+  logOverrides: LogOverrides;
+  setImportedDay: (exerciseName: string, date: string, sets: LoggedSet[] | null) => void;
+  clearImportedOverride: (exerciseName: string, date: string) => void;
   routineFromSession: (date: string, name: string) => string | null;
   repeatSession: (date: string) => boolean;
   saveRoutine: (name: string, list: { name: string }[], original?: string) => string | null;
@@ -171,6 +176,7 @@ export const useSoma = create<SomaStore>()(
       habits: [],
       customExercises: [],
       customFoods: [],
+      logOverrides: {},
       programs: [],
       activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
@@ -988,6 +994,34 @@ export const useSoma = create<SomaStore>()(
        * error string on a name clash rather than silently overwriting a routine
        * you may still be following.
        */
+      /**
+       * Correct or delete a day of imported spreadsheet history.
+       *
+       * The seed is a shipped constant and cannot be written to, so the fix is
+       * stored beside it and applied on top when the log is built. Passing null
+       * deletes that day. Everything downstream — the Database, the charts, the
+       * micro-muscle index — is derived from buildTrainingLog, so all of it
+       * follows the correction with no extra wiring.
+       */
+      setImportedDay: (exerciseName, date, sets) => {
+        const key = exerciseKey(exerciseName);
+        const cur = get().logOverrides;
+        set({
+          logOverrides: { ...cur, [key]: { ...(cur[key] ?? {}), [date]: sets } },
+        });
+      },
+      /** Drop a correction, restoring whatever the sheet originally said. */
+      clearImportedOverride: (exerciseName, date) => {
+        const key = exerciseKey(exerciseName);
+        const cur = get().logOverrides;
+        if (!cur[key] || !(date in cur[key]!)) return;
+        const days = { ...cur[key] };
+        delete days[date];
+        const next = { ...cur };
+        if (Object.keys(days).length) next[key] = days;
+        else delete next[key];
+        set({ logOverrides: next });
+      },
       routineFromSession: (date, name) => {
         const session = get().history[date];
         if (!session) return "Nothing is logged on that day.";
@@ -1047,6 +1081,7 @@ export const useSoma = create<SomaStore>()(
             habits: get().habits,
             customExercises: get().customExercises,
             customFoods: get().customFoods,
+            logOverrides: get().logOverrides,
           },
           null,
           2,
@@ -1080,6 +1115,7 @@ export const useSoma = create<SomaStore>()(
               habits: data.habits || seedHabits(),
               customExercises: data.customExercises || [],
               customFoods: data.customFoods || [],
+              logOverrides: data.logOverrides || {},
               seeded: true,
             });
             return true;
@@ -1115,6 +1151,15 @@ export const useSoma = create<SomaStore>()(
             habits: [...byId.values()],
             customExercises: mergeByName(data.customExercises || [], cur.customExercises),
             customFoods: mergeByName(data.customFoods || [], cur.customFoods),
+            // Corrections merge per exercise, with the device's own winning —
+            // the same rule the rest of the restore follows.
+            logOverrides: (() => {
+              const out: LogOverrides = { ...(data.logOverrides || {}) };
+              for (const [k, days] of Object.entries(cur.logOverrides || {})) {
+                out[k] = { ...(out[k] ?? {}), ...days };
+              }
+              return out;
+            })(),
             seeded: true,
           });
           return true;
@@ -1131,6 +1176,7 @@ export const useSoma = create<SomaStore>()(
           habits: [],
           customExercises: [],
           customFoods: [],
+          logOverrides: {},
           live: defaultLive("Legs A (Quad / Squat Dominant)"),
         });
         get().ensureSeed();
@@ -1147,6 +1193,7 @@ export const useSoma = create<SomaStore>()(
         habits: s.habits,
         customExercises: s.customExercises,
         customFoods: s.customFoods,
+        logOverrides: s.logOverrides,
         live: s.live,
         activeDate: s.activeDate,
       }),
