@@ -103,6 +103,7 @@ export interface SomaStore {
   addWater: (ml: number) => void;
   setWater: (ml: number) => void;
   updateFood: (idx: number, item: FoodItem) => void;
+  moveFoodToMeal: (idx: number, meal: string) => void;
   addCustomFood: (food: FoodItem) => boolean;
   removeCustomFood: (name: string) => void;
   addCreatine: (g: number) => void;
@@ -616,6 +617,22 @@ export const useSoma = create<SomaStore>()(
        * Returns false on a name that already exists rather than creating a
        * second entry you cannot tell apart in the picker.
        */
+      /**
+       * File a logged item under a different meal.
+       *
+       * The meal is a property of the entry, so this is a one-field edit —
+       * but reaching it meant opening the portion sheet, tapping the meal and
+       * saving, for something that is really a drag from one section to
+       * another. Nothing else about the entry moves with it.
+       */
+      moveFoodToMeal: (idx, meal) => {
+        const k = get().activeDate;
+        const items = [...(get().nutrition[k]?.items || [])];
+        const item = items[idx];
+        if (!item || item.meal === meal) return;
+        items[idx] = { ...item, meal };
+        get().patchDay(k, { items });
+      },
       addCustomFood: (food) => {
         const name = food.name.trim();
         if (!name) return false;

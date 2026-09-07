@@ -89,6 +89,13 @@ export interface Goals {
   potassium: number;
   sodium: number;
   zinc: number;
+  vitA: number;
+  vitC: number;
+  vitD: number;
+  vitE: number;
+  vitB6: number;
+  vitB12: number;
+  folate: number;
 }
 
 export interface FoodItem {
@@ -106,6 +113,23 @@ export interface FoodItem {
   iron: number;
   magnesium: number;
   zinc: number;
+  /**
+   * Vitamins, per the same serving as everything else.
+   *
+   * Optional because most foods carry no figure and 0 has to keep meaning
+   * "not recorded" rather than "none present" — the minerals card already
+   * distinguishes the two and names the foods behind a gap.
+   *
+   * Units follow the labels: A and folate in micrograms, D and B12 in
+   * micrograms, C, E and B6 in milligrams.
+   */
+  vitA?: number;
+  vitC?: number;
+  vitD?: number;
+  vitE?: number;
+  vitB6?: number;
+  vitB12?: number;
+  folate?: number;
   meal: string;
   isBase?: boolean;
   usageCount?: number;

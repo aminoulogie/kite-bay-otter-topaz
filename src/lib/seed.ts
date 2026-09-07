@@ -195,6 +195,14 @@ function scaleFood(name: string, multiplier: number, meal: string): FoodItem | n
     iron: Math.round((base.iron || 0) * m * 10) / 10,
     magnesium: Math.round((base.magnesium || 0) * m),
     zinc: Math.round((base.zinc || 0) * m * 10) / 10,
+    // Vitamins scale with the portion like everything else. Without these the
+    // demo days reported "not recorded" for every vitamin while carrying full
+    // mineral figures, which reads as a gap in the app rather than in the seed.
+    ...Object.fromEntries(
+      (["vitA", "vitC", "vitD", "vitE", "vitB6", "vitB12", "folate"] as const)
+        .map((k) => [k, Math.round(((base as unknown as Record<string, number>)[k] || 0) * m * 10) / 10])
+        .filter(([, v]) => (v as number) > 0),
+    ),
     meal,
   };
 }

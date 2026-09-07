@@ -18,9 +18,14 @@ import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
 import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
 import { useSoma } from "@/lib/store";
+import { useLongPressMove } from "@/lib/use-long-press-move";
+import { tapLight, tapMedium } from "@/lib/haptics";
+import { cn } from "@/lib/utils";
 import type { FoodItem } from "@/lib/types";
 
-const MEALS = ["Breakfast", "Lunch", "Dinner", "Post-Workout", "Snacks"];
+// Pre-Workout was missing, so anything logged under it — including
+// everything the pre-workout card adds — was invisible in the diary.
+const MEALS = ["Breakfast", "Lunch", "Dinner", "Pre-Workout", "Post-Workout", "Snacks"];
 
 export function NutritionView() {
   const nutrition = useSoma((s) => s.nutrition);
@@ -35,6 +40,7 @@ export function NutritionView() {
   const updateFood = useSoma((s) => s.updateFood);
   const addCustomFood = useSoma((s) => s.addCustomFood);
   const rememberScannedFood = useSoma((s) => s.rememberScannedFood);
+  const moveFoodToMeal = useSoma((s) => s.moveFoodToMeal);
   const removeCustomFood = useSoma((s) => s.removeCustomFood);
   const settings = useSoma((s) => s.settings);
 
@@ -68,6 +74,13 @@ export function NutritionView() {
   useEffect(() => {
     ensureDay(activeDate);
   }, [activeDate, ensureDay]);
+
+  // Hold a logged food, drag it onto another meal card, let go.
+  const mealDrag = useLongPressMove<number>((idx, meal) => {
+    moveFoodToMeal(idx, meal);
+    tapMedium();
+    toast.success(`Moved to ${meal}`);
+  }, tapLight);
 
   const day = nutrition[activeDate] || {
     goals: { ...DEFAULT_GOALS },
@@ -104,27 +117,20 @@ export function NutritionView() {
     return showAll ? searchFoods(library, "", 200) : [];
   }, [library, query, showAll]);
 
-  const openPortion = (f: {
-    name: string; serving: number; unit: string; cals: number; p: number; c: number; f: number;
-    fiber?: number; sodium?: number; potassium?: number; calcium?: number; iron?: number;
-    magnesium?: number; zinc?: number; waterPct?: number;
-  }) => {
+  /**
+   * Open the portion sheet for a library food.
+   *
+   * The whole food is carried through rather than a hand-listed subset of its
+   * fields. Listing them is what silently dropped every vitamin: an orange
+   * juice with 50mg of vitamin C in the library arrived in the diary with
+   * none, because the field was not on the list — and the minerals card then
+   * honestly reported it as unrecorded.
+   */
+  const openPortion = (f: FoodItem) => {
     setPortion({
       mode: "add",
       meal,
-      item: {
-        name: f.name,
-        serving: f.serving || 100,
-        unit: f.unit || "g",
-        cals: f.cals, p: f.p, c: f.c, f: f.f,
-        fiber: f.fiber || 0,
-        sodium: f.sodium || 0, potassium: f.potassium || 0, calcium: f.calcium || 0,
-        iron: f.iron || 0, magnesium: f.magnesium || 0, zinc: f.zinc || 0,
-        // Carried from the library entry so a drink you have already told the
-        // app about does not need telling again every time you log it.
-        waterPct: f.waterPct,
-        meal,
-      },
+      item: { ...f, serving: f.serving || 100, unit: f.unit || "g", meal },
     });
     setQuery("");
   };
@@ -403,6 +409,14 @@ export function NutritionView() {
 
       <PreWorkoutCard />
 
+      {/* The gesture is invisible without this. */}
+      {items.length > 0 && (
+        <p className="-mb-1 px-1 text-[0.62rem] text-faint">
+          Tap a food to edit it. Press and hold, then drag it onto another meal to move it
+          there.
+        </p>
+      )}
+
       {MEALS.map((m) => {
         const group = items
           .map((it, idx) => ({ it, idx }))
@@ -410,8 +424,16 @@ export function NutritionView() {
         const cals = group.reduce((a, g) => a + g.it.cals, 0);
         const p = group.reduce((a, g) => a + g.it.p, 0);
         const open = openMeals.has(m);
+        const isTarget = mealDrag.over === m && mealDrag.dragging !== null;
         return (
-          <Card key={m}>
+          // A drop zone. Hold a food anywhere in the diary and drag it onto
+          // this card to move it here — the meal is one field, but reaching it
+          // meant opening the portion sheet and saving.
+          <Card
+            key={m}
+            data-drop-zone={m}
+            className={cn(isTarget && "border-accent bg-accent/10")}
+          >
             <button
               type="button"
               className="flex w-full items-center justify-between"
@@ -419,7 +441,11 @@ export function NutritionView() {
             >
               <span className="font-display text-sm font-bold">{m}</span>
               <span className="text-xs font-bold text-muted">
-                {Math.round(cals)} kcal · {Math.round(p)}g P
+                {isTarget ? (
+                  <span className="text-accent-text">Drop here</span>
+                ) : (
+                  `${Math.round(cals)} kcal · ${Math.round(p)}g P`
+                )}
               </span>
             </button>
             {open && (
@@ -429,6 +455,8 @@ export function NutritionView() {
                   <FoodRow
                     key={idx}
                     item={it}
+                    held={mealDrag.dragging === idx}
+                    dragHandlers={mealDrag.handlers(idx)}
                     onEdit={() => setPortion({ item: it, meal: m, mode: "edit", idx })}
                   />
                 ))}
@@ -531,14 +559,30 @@ function Macro({ label, used, goal, unit }: { label: string; used: number; goal:
   );
 }
 
-function FoodRow({ item, onEdit }: { item: FoodItem; onEdit: () => void }) {
+function FoodRow({
+  item, onEdit, held, dragHandlers,
+}: {
+  item: FoodItem;
+  onEdit: () => void;
+  held?: boolean;
+  dragHandlers?: { onPointerDown: (e: React.PointerEvent) => void };
+}) {
   // The whole row opens the editor: correcting a portion is far more common
-  // than deleting, and delete lives inside the editor anyway.
+  // than deleting, and delete lives inside the editor anyway. A press and hold
+  // picks it up instead, so a tap and a drag stay distinct.
   return (
     <button
       type="button"
       onClick={onEdit}
-      className="flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2 text-left"
+      {...dragHandlers}
+      // Vertical panning belongs to the page until the row is actually held.
+      style={{ touchAction: held ? "none" : "pan-y" }}
+      className={cn(
+        "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-[colors,transform]",
+        held
+          ? "scale-[1.02] border-accent bg-accent/15 shadow-lg"
+          : "border-border bg-surface-2",
+      )}
     >
       <div className="min-w-0">
         <div className="truncate text-sm font-bold">{item.name}</div>

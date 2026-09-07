@@ -24,6 +24,15 @@ const MICROS = [
   { key: "iron", goal: "iron", label: "Iron", unit: "mg" },
   { key: "magnesium", goal: "magnesium", label: "Magnesium", unit: "mg" },
   { key: "zinc", goal: "zinc", label: "Zinc", unit: "mg" },
+  // Vitamins follow the same rule as the minerals: a floor to clear, and
+  // silent when nothing in the day reported a figure.
+  { key: "vitA", goal: "vitA", label: "Vitamin A", unit: "µg" },
+  { key: "vitC", goal: "vitC", label: "Vitamin C", unit: "mg" },
+  { key: "vitD", goal: "vitD", label: "Vitamin D", unit: "µg" },
+  { key: "vitE", goal: "vitE", label: "Vitamin E", unit: "mg" },
+  { key: "vitB6", goal: "vitB6", label: "Vitamin B6", unit: "mg" },
+  { key: "vitB12", goal: "vitB12", label: "Vitamin B12", unit: "µg" },
+  { key: "folate", goal: "folate", label: "Folate", unit: "µg" },
 ] as const;
 
 export function MineralsCard() {
@@ -80,7 +89,7 @@ export function MineralsCard() {
 
   return (
     <Card>
-      <CardTitle>Minerals</CardTitle>
+      <CardTitle>Vitamins &amp; minerals</CardTitle>
       {!anyKnown ? (
         <>
           <p className="text-[0.68rem] leading-snug text-muted">

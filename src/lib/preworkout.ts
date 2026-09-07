@@ -172,14 +172,66 @@ export function checkPreWorkout(
  * suggestions are things already in their library rather than a generic list
  * of oats and bananas they may not have.
  */
+/**
+ * Which kinds of carbohydrate suit which window.
+ *
+ * Ranking on carbs-per-calorie alone puts table sugar and confectionery at the
+ * top of every window, because nothing beats pure sucrose on that measure. That
+ * is the right answer twenty minutes out and the wrong one ninety minutes out,
+ * where you want food with some substance to it rather than a spoon of sugar.
+ *
+ * So the window decides: further out, slower and more complete carbohydrate —
+ * grains, fruit, legumes, dairy. Closer in, fast and low-residue — fruit,
+ * juice, sweets — and grains become the thing still sitting there when you
+ * start. Negative numbers are penalties, and they are preferences rather than
+ * rules: a penalised food still appears, lower down.
+ */
+function groupFit(group: string | undefined, window: PreWindow): number {
+  const far = window.fromMin >= 60;
+  const table: Record<string, [far: number, near: number]> = {
+    Grains: [-120, 60],
+    Legumes: [-100, 90],
+    Fruit: [-60, -80],
+    Dairy: [-40, 40],
+    Drinks: [40, -90],
+    Sweets: [140, -40],
+    Algerian: [-40, 80],
+    Nuts: [120, 200],
+    Meat: [200, 300],
+    Fish: [200, 300],
+    Vegetables: [80, 80],
+  };
+  const pair = table[group ?? ""];
+  if (!pair) return 0;
+  return far ? pair[0] : pair[1];
+}
+
+/** Carbohydrate per 100g below which a food is not a carbohydrate source. */
+const MIN_CARB_DENSITY = 12;
+
+/** Groups nobody eats as pre-workout fuel, whatever the arithmetic says. */
+const NOT_FUEL = new Set(["Supplements", "Fats", "Fast food"]);
+const NOT_FUEL_NAME =
+  // Ingredients rather than foods: nobody eats 130g of cornstarch before a
+  // session, however well it scores on carbohydrate density.
+  /gum|chewing|lime|lemon|vinegar|harissa|mustard|ketchup|spice|yeast|stock|bouillon|sauce|cornstarch|flour|breadcrumb|bran\b|margarine/i;
+
 export function suggestFoods(library: FoodItem[], target: PreTarget, limit = 5): FoodItem[] {
   return library
-    .filter((f) => (f.c || 0) > 0)
+    // Density first, and per 100g rather than per calorie.
+    //
+    // Ranking purely by carbs-per-calorie is what put sugar-free chewing gum
+    // and 600g of lime at the top of this list: gum is mostly polyols and a
+    // lime is mostly water, so both score beautifully per calorie while being
+    // useless as fuel. A pre-workout carb source has to actually be dense in
+    // carbohydrate, and be something a person eats by the plate.
+    .filter((f) => (f.c || 0) >= MIN_CARB_DENSITY)
+    .filter((f) => !NOT_FUEL.has(f.group ?? "") && !NOT_FUEL_NAME.test(f.name))
     .filter((f) => (f.f || 0) <= target.maxFatG && (f.fiber || 0) <= target.maxFiberG)
     .map((f) => ({
       f,
-      // Carbs per calorie, so a food is judged on what it contributes rather
-      // than on how big a portion happens to be recorded.
+      // Among real carbohydrate sources, the leanest one wins: same carbs for
+      // fewer calories means less sitting in the stomach.
       score: (f.c || 0) / Math.max(1, f.cals || 1),
       // Ties broken towards food you actually reach for. Two foods with the
       // same carb density are not equally useful if you have only ever eaten
@@ -222,12 +274,17 @@ export function portionsFor(
   const need = Math.max(0, target.carbsG - alreadyEatenCarbsG);
   if (need <= 0) return [];
 
-  return suggestFoods(library, target, limit).map((food) => {
+  // Every plausible carbohydrate source, sized to the gap, then ranked on
+  // whether the portion is something a person would actually eat.
+  //
+  // Ranking the FOODS first and sizing them afterwards is what produced 450g
+  // of apple and 410g of quince: judged per calorie, watery fruit beats every
+  // staple, and the absurdity only appears once the portion is worked out. So
+  // the portion is worked out first and is itself the thing being judged.
+  const scored = suggestFoods(library, target, 200).map((food) => {
     const per = food.serving || 100;
     const carbsPerG = (food.c || 0) / per;
-    if (carbsPerG <= 0) {
-      return { food, grams: 0, carbsG: 0, proteinG: 0, cals: 0, overLimit: true };
-    }
+    if (carbsPerG <= 0) return null;
 
     const rawGrams = need / carbsPerG;
     // To the nearest 5g under 100, nearest 10g above: the precision a kitchen
@@ -237,8 +294,33 @@ export function portionsFor(
 
     const fatG = (food.f || 0) * scale;
     const fiberG = (food.fiber || 0) * scale;
+    const overLimit = fatG > target.maxFatG || fiberG > target.maxFiberG;
+
+    // A comfortable serving is roughly a handful to a plateful. Further from
+    // that band, less useful — 30g of anything is a nibble and 450g is a meal
+    // you will still be digesting.
+    const IDEAL_LOW = 50;
+    const IDEAL_HIGH = 250;
+    const distance =
+      grams < IDEAL_LOW ? IDEAL_LOW - grams : grams > IDEAL_HIGH ? grams - IDEAL_HIGH : 0;
 
     return {
+      food, grams, scale, fatG, fiberG, overLimit,
+      // Breaking the window's own limit is disqualifying rather than a
+      // tiebreak, so those sink below everything that fits.
+      rank:
+        distance +
+        groupFit(food.group, target.window) +
+        (overLimit ? 1000 : 0) -
+        (food.usageCount ?? 0) * 5,
+    };
+  });
+
+  return scored
+    .filter((x): x is NonNullable<typeof x> => x != null)
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, limit)
+    .map(({ food, grams, scale, overLimit }) => ({
       food,
       grams,
       carbsG: Math.round((food.c || 0) * scale),
@@ -247,7 +329,6 @@ export function portionsFor(
       // A food can pass the per-100g check and still break the ceiling once
       // scaled to the portion actually needed — that is the case worth warning
       // about, because it is invisible until the maths is done.
-      overLimit: fatG > target.maxFatG || fiberG > target.maxFiberG,
-    };
-  });
+      overLimit,
+    }));
 }

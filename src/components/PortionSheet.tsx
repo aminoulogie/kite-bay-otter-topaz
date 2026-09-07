@@ -7,7 +7,9 @@ import { looksLikeDrink, suggestWaterPct, waterMlFor } from "@/lib/hydration";
 import { cn } from "@/lib/utils";
 import type { FoodItem } from "@/lib/types";
 
-const MEALS = ["Breakfast", "Lunch", "Dinner", "Post-Workout", "Snacks"];
+// Pre-Workout was missing, so anything logged under it — including
+// everything the pre-workout card adds — was invisible in the diary.
+const MEALS = ["Breakfast", "Lunch", "Dinner", "Pre-Workout", "Post-Workout", "Snacks"];
 
 /**
  * Quick amounts, per unit.
@@ -70,9 +72,29 @@ export function scaleTo(
     c: round1(b.c * k),
     f: round1(b.f * k),
     fiber: round1((b.fiber || 0) * k),
-    sodium: round1((item.sodium || 0) * (item.serving ? grams / item.serving : 1)),
-    potassium: round1((item.potassium || 0) * (item.serving ? grams / item.serving : 1)),
+    // Every micronutrient scales with the portion, not just these two. Sodium
+    // and potassium were the only ones being re-scaled, so a 200g portion of a
+    // food reported its full calcium, iron and vitamin figures for 100g — the
+    // minerals card was reading half of what it showed.
+    ...scaleMicros(item, grams),
   };
+}
+
+/** The micronutrients, re-scaled from the item's own serving to `grams`. */
+const MICRO_KEYS = [
+  "sodium", "potassium", "calcium", "iron", "magnesium", "zinc",
+  "vitA", "vitC", "vitD", "vitE", "vitB6", "vitB12", "folate",
+] as const;
+
+function scaleMicros(item: FoodItem, grams: number): Partial<FoodItem> {
+  const factor = item.serving ? grams / item.serving : 1;
+  const out: Record<string, number> = {};
+  for (const key of MICRO_KEYS) {
+    const value = Number(item[key]);
+    if (!Number.isFinite(value) || value === 0) continue;
+    out[key] = round1(value * factor);
+  }
+  return out as Partial<FoodItem>;
 }
 
 /**
@@ -109,7 +131,7 @@ export function PortionSheet({
   // what the name suggests, which is right for juice and milk and zero for
   // everything the table has no basis for.
   const [waterPct, setWaterPct] = useState(() =>
-    String(item.waterPct ?? suggestWaterPct(item.name)),
+    String(item.waterPct ?? suggestWaterPct(item.name, item)),
   );
 
   const n = Number(grams);
@@ -153,7 +175,6 @@ export function PortionSheet({
             </div>
           </div>
           <Input
-            autoFocus
             type="number"
             inputMode="decimal"
             min={1}

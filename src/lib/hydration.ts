@@ -19,32 +19,71 @@
 import type { FoodItem, NutritionDay } from "./types.ts";
 
 /**
- * Typical water content by percentage of weight, for foods where it is worth
- * defaulting. Everything else starts at nothing rather than at a guess: an
- * invented figure that silently fills a third of the water target is worse
- * than no figure at all.
+ * Water content, worked out from the composition rather than guessed.
  *
- * Figures are the usual food-composition-table values, rounded — they vary by
- * brand, which is exactly why the field is editable per food.
+ * The first version of this was a table of hand-typed percentages keyed off the
+ * product name, and it was wrong in exactly the way a table of guesses is
+ * always wrong: chocolate milk was listed at 86% when its own label says
+ * otherwise. Candia Choco is 2.6g protein, 12.8g carbohydrate and 2.3g fat per
+ * 100 ml — that is 17.7g of dry matter, plus roughly 0.7g of minerals, so the
+ * water is about 82%, not 86%.
+ *
+ * Everything that is not protein, carbohydrate, fat, fibre or ash IS water. So
+ * the figure is derived from the macros the food already carries, which means
+ * it is right for whatever the food actually is and it corrects itself the
+ * moment you fix a label. Checked against known values: whole milk lands on
+ * 88%, orange juice on 88%, olive oil on 0%, sugar on 0%, white flour on 12%.
+ *
+ * ASH is the mineral fraction — the part left after everything else burns off.
+ * It is small and fairly consistent, so a single figure per family is close
+ * enough at the resolution this feeds (millilitres of water in a glass).
  */
-export const WATER_PCT_HINTS: { match: RegExp; pct: number; label: string }[] = [
-  { match: /\bwater\b|eau|ماء/, pct: 100, label: "Water" },
-  { match: /\btea\b|coffee|café|infusion/, pct: 99, label: "Tea / coffee" },
-  { match: /broth|bouillon|soup|soupe|chorba/, pct: 92, label: "Soup / broth" },
-  { match: /juice|jus|nectar|rouiba|orange|citron/, pct: 88, label: "Juice" },
-  { match: /milk|lait|حليب|candia|soummam/, pct: 88, label: "Milk" },
-  { match: /smoothie|shake|lassi|yaourt à boire/, pct: 80, label: "Smoothie / shake" },
-  { match: /soda|cola|limonade|energy drink/, pct: 89, label: "Soft drink" },
-  { match: /yogurt|yoghurt|yaourt|petit suisse|fromage blanc/, pct: 82, label: "Yoghurt" },
-];
 
-/** A sensible starting water percentage for a food, or 0 when there is no basis. */
-export function suggestWaterPct(name: string): number {
+/** Mineral content, g per 100g, by how the food behaves. */
+const ASH = {
+  dairy: 0.7,
+  juice: 0.4,
+  soda: 0.1,
+  plain: 0.1,
+  other: 0.8,
+} as const;
+
+function ashFor(name: string): number {
   const n = (name || "").toLowerCase();
-  for (const hint of WATER_PCT_HINTS) if (hint.match.test(n)) return hint.pct;
-  return 0;
+  if (/milk|lait|yog|yaourt|raib|lben|candia|soummam|kefir|ayran/.test(n)) return ASH.dairy;
+  if (/juice|jus|nectar|rouiba|ifruit|smoothie/.test(n)) return ASH.juice;
+  if (/soda|cola|limonade|energy|tonic/.test(n)) return ASH.soda;
+  if (/^water|eau$|ifri|sparkling|mineral/.test(n)) return ASH.plain;
+  return ASH.other;
 }
 
+export interface Macros {
+  name?: string;
+  p?: number;
+  c?: number;
+  f?: number;
+  fiber?: number;
+}
+
+/**
+ * Water as a percentage of weight, from the macros.
+ *
+ * Fibre is part of the carbohydrate figure on most labels, so it is not
+ * subtracted twice. Returns null when the food carries no macros at all —
+ * a supplement powder and a bottle of water both read as "0g of everything",
+ * and only one of them is water, so that case is answered by name below.
+ */
+export function waterPctFromMacros(food: Macros): number | null {
+  const p = Number(food.p) || 0;
+  const c = Number(food.c) || 0;
+  const f = Number(food.f) || 0;
+  if (p === 0 && c === 0 && f === 0) return null;
+  const dry = p + c + f + ashFor(food.name ?? "");
+  return Math.max(0, Math.min(100, Math.round(100 - dry)));
+}
+
+/** Foods that are essentially water and say nothing about it in their macros. */
+const PLAIN_WATER = /\bwater\b|^eau|eau minerale|sparkling|mineral water|ifri|\btea\b|the vert|green tea|black tea|coffee|cafe|espresso|infusion|tisane|ماء/i;
 /**
  * Whether a food is one you drink, which is what decides the default unit.
  *
@@ -65,6 +104,25 @@ export function looksLikeDrink(name: string, waterPct?: number): boolean {
  * anything dense — but for a drink, whose density is within a few percent of
  * water's, the error is far smaller than the error in the percentage itself.
  */
+/**
+ * The water percentage to offer for a food.
+ *
+ * Computed from its own macros where it has any, so it is right for the
+ * specific product rather than for a category — which is what the old
+ * name-keyed table got wrong. Anything that is not a drink starts at 0: an
+ * invented figure that quietly fills a third of the water target is worse than
+ * no figure at all, and the field is one tap away.
+ */
+export function suggestWaterPct(name: string, macros?: Macros): number {
+  if (macros) {
+    const derived = waterPctFromMacros({ ...macros, name });
+    if (derived != null) return looksLikeDrink(name, derived) ? derived : 0;
+  }
+  // Nothing to compute from: only the things that really are water say so.
+  if (!PLAIN_WATER.test(name || "")) return 0;
+  return /coffee|cafe|espresso|\btea\b|the vert|infusion|tisane/i.test(name) ? 99 : 100;
+}
+
 export function waterMlFor(grams: number, waterPct?: number): number {
   const pct = Math.max(0, Math.min(100, waterPct ?? 0));
   if (!pct || !(grams > 0)) return 0;

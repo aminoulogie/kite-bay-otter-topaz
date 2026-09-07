@@ -34,6 +34,13 @@ const FIELDS: { key: keyof FoodItem; label: string; unit: string }[] = [
   { key: "iron", label: "Iron", unit: "mg" },
   { key: "magnesium", label: "Magnesium", unit: "mg" },
   { key: "zinc", label: "Zinc", unit: "mg" },
+  { key: "vitA", label: "Vitamin A", unit: "µg" },
+  { key: "vitC", label: "Vitamin C", unit: "mg" },
+  { key: "vitD", label: "Vitamin D", unit: "µg" },
+  { key: "vitE", label: "Vitamin E", unit: "mg" },
+  { key: "vitB6", label: "Vitamin B6", unit: "mg" },
+  { key: "vitB12", label: "Vitamin B12", unit: "µg" },
+  { key: "folate", label: "Folate", unit: "µg" },
 ];
 
 export function FoodEditorSheet({
@@ -59,7 +66,7 @@ export function FoodEditorSheet({
         // "milk" is about 88% water whoever logged it. Offered rather than
         // written — it is only saved if the user presses Save.
         if (f.key === "waterPct") {
-          const guess = suggestWaterPct(food.name);
+          const guess = suggestWaterPct(food.name, food);
           return [f.key, guess ? String(guess) : ""];
         }
         return [f.key, ""];
