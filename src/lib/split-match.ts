@@ -15,6 +15,21 @@
 
 const norm = (s: string) => s.trim().toLowerCase();
 
+/**
+ * Labels that mean the same training day under a different vocabulary.
+ *
+ * "Lower" and "Legs" are the same session; which word a programme uses depends
+ * on whether it thinks in upper/lower or in push/pull/legs. Without this a
+ * PPL-UL programme had a Lower day that loaded nothing, because the routine it
+ * meant was filed under Legs.
+ */
+const SYNONYMS: Record<string, string[]> = {
+  lower: ["legs"],
+  legs: ["lower"],
+  upper: ["push", "pull"],
+  arms: ["pull", "push"],
+};
+
 /** The word a split is identified by: "Push B (…)" → "push". */
 function head(name: string): string {
   return norm(name).split(/[\s(/-]+/)[0] ?? "";
@@ -48,6 +63,14 @@ export function resolveSplitName(label: string, routineNames: string[]): string 
       .filter((n) => head(n) === wantHead)
       .sort((a, b) => a.length - b.length);
     if (sameHead.length) return sameHead[0]!;
+  }
+
+  // 4. A different word for the same day — Lower is Legs.
+  for (const alt of SYNONYMS[wantHead] ?? []) {
+    const match = routineNames
+      .filter((n) => head(n) === alt)
+      .sort((a, b) => a.length - b.length);
+    if (match.length) return match[0]!;
   }
 
   return null;
