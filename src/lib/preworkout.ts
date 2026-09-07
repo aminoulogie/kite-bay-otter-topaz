@@ -181,8 +181,12 @@ export function suggestFoods(library: FoodItem[], target: PreTarget, limit = 5):
       // Carbs per calorie, so a food is judged on what it contributes rather
       // than on how big a portion happens to be recorded.
       score: (f.c || 0) / Math.max(1, f.cals || 1),
+      // Ties broken towards food you actually reach for. Two foods with the
+      // same carb density are not equally useful if you have only ever eaten
+      // one of them.
+      used: f.usageCount || 0,
     }))
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => b.score - a.score || b.used - a.used)
     .slice(0, limit)
     .map((x) => x.f);
 }
@@ -211,7 +215,9 @@ export function portionsFor(
   library: FoodItem[],
   target: PreTarget,
   alreadyEatenCarbsG = 0,
-  limit = 4,
+  // The list scrolls inside a fixed window now, so a longer one costs no
+  // screen space and stops the answer being "these four foods or nothing".
+  limit = 12,
 ): Portion[] {
   const need = Math.max(0, target.carbsG - alreadyEatenCarbsG);
   if (need <= 0) return [];

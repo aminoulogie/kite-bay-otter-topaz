@@ -522,7 +522,15 @@ export const useSoma = create<SomaStore>()(
           (f) => f.name.toLowerCase() === name.toLowerCase(),
         );
         if (taken) return false;
-        set({ customFoods: [...get().customFoods, { ...food, name, serving: 100, unit: "g" }] });
+        set({
+          customFoods: [
+            ...get().customFoods,
+            // Stored per 100 of whatever it is measured in. The unit is kept
+            // rather than forced to grams, so a drink stays a drink and its
+            // portions are offered in millilitres.
+            { ...food, name, serving: 100, unit: food.unit === "ml" ? "ml" : "g" },
+          ],
+        });
         return true;
       },
       removeCustomFood: (name) => {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
+import { suggestWaterPct } from "@/lib/hydration";
 import { useSoma } from "@/lib/store";
 import type { FoodItem } from "@/lib/types";
 import { useSheet } from "@/lib/use-sheet";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 const FIELDS: { key: keyof FoodItem; label: string; unit: string }[] = [
   { key: "cals", label: "Calories", unit: "kcal" },
+  { key: "waterPct", label: "Water", unit: "% of weight" },
   { key: "p", label: "Protein", unit: "g" },
   { key: "c", label: "Carbs", unit: "g" },
   { key: "f", label: "Fat", unit: "g" },
@@ -47,9 +49,21 @@ export function FoodEditorSheet({
   const isEdited = useSoma((s) => s.isFoodEdited(food.name));
 
   const [name, setName] = useState(food.name);
+  const [unit, setUnit] = useState<"g" | "ml">(food.unit === "ml" ? "ml" : "g");
   const [draft, setDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      FIELDS.map((f) => [f.key, food[f.key] != null ? String(food[f.key]) : ""]),
+      FIELDS.map((f) => {
+        const stored = food[f.key];
+        if (stored != null) return [f.key, String(stored)];
+        // Water is the one field with a defensible default: a food called
+        // "milk" is about 88% water whoever logged it. Offered rather than
+        // written — it is only saved if the user presses Save.
+        if (f.key === "waterPct") {
+          const guess = suggestWaterPct(food.name);
+          return [f.key, guess ? String(guess) : ""];
+        }
+        return [f.key, ""];
+      }),
     ),
   );
 
@@ -87,6 +101,31 @@ export function FoodEditorSheet({
           <Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} />
         </label>
 
+        {/* Grams or millilitres, on the food rather than on every portion. A
+            drink logged in grams reads wrong on a carton that says 1 L. */}
+        <div className="mb-3">
+          <div className="mb-1 text-[0.62rem] font-bold uppercase tracking-wide text-faint">
+            Measured in
+          </div>
+          <div className="flex gap-1.5">
+            {(["g", "ml"] as const).map((u) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => setUnit(u)}
+                className={cn(
+                  "h-9 flex-1 rounded-xl border text-[0.72rem] font-bold transition-colors",
+                  unit === u
+                    ? "border-accent bg-accent text-accent-ink"
+                    : "border-border bg-surface-2 text-muted",
+                )}
+              >
+                {u === "g" ? "grams" : "millilitres"}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-2">
           {FIELDS.map((f) => (
             <label key={String(f.key)} className="text-[0.62rem] font-bold uppercase tracking-wide text-faint">
@@ -105,12 +144,14 @@ export function FoodEditorSheet({
           variant="primary"
           className="mt-3 w-full"
           onClick={() => {
-            const next: FoodItem = { ...food, name: name.trim() || food.name };
+            const next: FoodItem = { ...food, name: name.trim() || food.name, unit };
             for (const f of FIELDS) {
               const raw = (draft[f.key as string] ?? "").replace(",", ".");
               const n = raw.trim() === "" ? 0 : Number(raw);
               (next as unknown as Record<string, number>)[f.key as string] = Number.isFinite(n) ? n : 0;
             }
+            // Zero is "not a drink", not a percentage worth storing.
+            if (!next.waterPct) delete next.waterPct;
             upsertLibraryFood(next);
             onClose();
           }}

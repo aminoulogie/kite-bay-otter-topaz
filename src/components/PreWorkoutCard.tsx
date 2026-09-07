@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
+import { PortionSheet } from "@/components/PortionSheet";
 import {
   PRE_WINDOWS, checkPreWorkout, portionsFor, preTargets, type PreWindow,
 } from "@/lib/preworkout";
@@ -27,6 +28,16 @@ export function PreWorkoutCard() {
   const addFood = useSoma((s) => s.addFood);
 
   const [windowId, setWindowId] = useState<string>("snack");
+  /**
+   * The suggestion being sized, if any.
+   *
+   * Tapping a suggestion used to log the computed portion immediately, which
+   * assumed the answer to the only question that matters: how much you are
+   * actually going to eat. It now opens the same portion sheet the rest of the
+   * diary uses, pre-filled with the amount that closes the gap — so the figure
+   * is a starting point you can change rather than a decision made for you.
+   */
+  const [sizing, setSizing] = useState<{ item: FoodItem; grams: number } | null>(null);
   const win: PreWindow = PRE_WINDOWS.find((w) => w.id === windowId) ?? PRE_WINDOWS[1]!;
 
   const day = nutrition[activeDate];
@@ -123,28 +134,23 @@ export function PreWorkoutCard() {
 
       {portions.length > 0 && check.verdict !== "good" && (
         <div className="mt-3">
-          <div className="mb-1.5 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
-            Any one of these closes the gap
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <span className="text-[0.6rem] font-bold uppercase tracking-wide text-faint">
+              Any one of these closes the gap
+            </span>
+            <span className="text-[0.55rem] text-faint">tap to choose the amount</span>
           </div>
-          <div className="space-y-1">
+          {/* Scrolls inside a fixed window rather than growing down the page.
+              The list is worth being long — it is drawn from your own foods —
+              but a long one pushed the whole diary below the fold. */}
+          <div className="max-h-44 space-y-1 overflow-y-auto overscroll-contain rounded-xl border border-border bg-surface p-1">
             {portions.map((p) => (
-              // Tapping logs it straight into the Pre-Workout meal. Sending the
-              // user to the search box to re-find a food the app has just named
-              // is the kind of step that makes a feature go unused.
               <button
                 key={p.food.name}
                 type="button"
                 onClick={() => {
-                  const per = p.food.serving || 100;
-                  const scale = p.grams / per;
-                  const scaled = { ...p.food, meal: "Pre-Workout", serving: p.grams } as FoodItem;
-                  for (const k of ["cals", "p", "c", "f", "fiber", "sodium", "potassium", "calcium", "iron", "magnesium", "zinc"] as const) {
-                    (scaled as unknown as Record<string, number>)[k] =
-                      Math.round(((Number(p.food[k]) || 0) * scale) * 10) / 10;
-                  }
-                  addFood(scaled);
                   tapMedium();
-                  toast.success(`${p.grams}g ${p.food.name} logged`);
+                  setSizing({ item: { ...p.food, meal: "Pre-Workout" }, grams: p.grams });
                 }}
                 className={cn(
                   "flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left active:scale-[0.99]",
@@ -168,6 +174,24 @@ export function PreWorkoutCard() {
             </p>
           )}
         </div>
+      )}
+
+      {sizing && (
+        // The same sheet the diary uses everywhere else, so the amount, the
+        // unit, the water content and the meal are all editable before it is
+        // committed — and once it is, it lands in the day's totals like any
+        // other entry rather than in a pre-workout world of its own.
+        <PortionSheet
+          item={{ ...sizing.item, serving: sizing.grams }}
+          meal="Pre-Workout"
+          mode="add"
+          onClose={() => setSizing(null)}
+          onConfirm={(next) => {
+            addFood(next);
+            setSizing(null);
+            toast.success(`${next.serving}${next.unit} ${next.name} logged to Pre-Workout`);
+          }}
+        />
       )}
     </Card>
   );
