@@ -141,6 +141,7 @@ export interface SomaStore {
   resumeFinished: () => void;
   moveSession: (from: string, to: string) => string | null;
   deleteSession: (date: string) => void;
+  renameSession: (date: string, split: string) => void;
   patchHistorySet: (date: string, exIdx: number, setIdx: number, patch: Partial<WorkoutSet>) => void;
   removeHistorySet: (date: string, exIdx: number, setIdx: number) => void;
   removeHistoryExercise: (date: string, exIdx: number) => void;
@@ -1053,6 +1054,24 @@ export const useSoma = create<SomaStore>()(
           set({ live: { ...live, forDate: to } });
         }
         return null;
+      },
+      /**
+       * Rename what a saved session is called.
+       *
+       * The split is stamped from whatever the programme had scheduled that
+       * day, which is right only when you train what was planned. Train
+       * shoulders on a Legs day and the session is filed as "Legs B" forever,
+       * with no way to correct it short of deleting the day and re-entering
+       * every set.
+       *
+       * Only the label moves. The exercises, the sets and the muscle tally are
+       * the record of what happened and are not touched.
+       */
+      renameSession: (date, split) => {
+        const name = split.trim();
+        const session = get().history[date];
+        if (!session || !name || name === session.split) return;
+        set({ history: { ...get().history, [date]: { ...session, split: name } } });
       },
       deleteSession: (date) => {
         const history = { ...get().history };

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
 import { getPhoto } from "@/lib/habit-photos";
 import { scoreDay, type DayScore } from "@/lib/day-score";
@@ -435,6 +435,17 @@ function DayCard({
   onClosePanel: () => void;
 }) {
   const [photo, setPhoto] = useState<string | null>(null);
+  const renameSession = useSoma((s) => s.renameSession);
+  const [renaming, setRenaming] = useState(false);
+  const [splitDraft, setSplitDraft] = useState("");
+
+  const commitRename = () => {
+    const name = splitDraft.trim();
+    setRenaming(false);
+    if (!name || name === session?.split) return;
+    renameSession(date, name);
+    toast.success(`Renamed to ${name}`);
+  };
 
   useEffect(() => {
     let url: string | null = null;
@@ -518,9 +529,45 @@ function DayCard({
 
         {session ? (
           <div className="mb-3 rounded-2xl border border-border bg-surface-2 p-3">
-            <div className="text-[0.7rem] font-bold uppercase tracking-wide text-accent-text">
-              {session.split}
-            </div>
+            {/* Tap to rename. The split is stamped from whatever was scheduled
+                that day, which is wrong every time you train something else —
+                and it was the one field with no way to correct it. */}
+            {renaming ? (
+              <div className="mb-1.5 flex gap-1.5">
+                <input
+                  autoFocus
+                  value={splitDraft}
+                  onChange={(e) => setSplitDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename();
+                    if (e.key === "Escape") setRenaming(false);
+                  }}
+                  aria-label="Session name"
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-accent bg-surface px-2 text-[0.75rem] font-bold text-fg"
+                />
+                <button
+                  type="button"
+                  onClick={commitRename}
+                  className="h-9 shrink-0 rounded-lg bg-accent px-3 text-[0.7rem] font-extrabold text-accent-ink"
+                >
+                  Save
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setSplitDraft(session.split);
+                  setRenaming(true);
+                }}
+                className="mb-0.5 flex w-full items-center gap-1.5 text-left"
+              >
+                <span className="min-w-0 truncate text-[0.7rem] font-bold uppercase tracking-wide text-accent-text">
+                  {session.split}
+                </span>
+                <Pencil className="size-3 shrink-0 text-faint" />
+              </button>
+            )}
             <ul className="mt-1.5 space-y-0.5">
               {session.exercises.map((e) => {
                 const done = (e.sets ?? []).filter((s) => s.done).length;
