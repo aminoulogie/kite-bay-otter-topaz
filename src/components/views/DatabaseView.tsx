@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Pencil, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { Card, CardTitle } from "@/components/ui/card";
 import {
   allDates, buildTrainingLog, dayBest, formatSet, groupsOf,
@@ -165,7 +166,6 @@ export function DatabaseView() {
             </button>
 
             {open && (
-              // eslint-disable-next-line react/jsx-no-useless-fragment
               <ExerciseWindow
                 ex={ex}
                 best={best}
@@ -198,6 +198,10 @@ function ExerciseWindow({
   onSort: (s: SortBy) => void;
   rated?: { rating: import("@/lib/set-quality").Rating; usable: boolean };
 }) {
+  // Which day is open for editing, if any. One at a time: two open editors in
+  // a 42vh window is more chrome than data.
+  const [editDate, setEditDate] = useState<string | null>(null);
+
   const entries = useMemo(() => {
     const list = Object.entries(ex.days).map(([date, sets]) => ({
       date,
@@ -271,6 +275,11 @@ function ExerciseWindow({
           const tier = tierFor(best, row.e1rm);
           const t = TIERS[tier];
           const isHeaviest = row.top >= heaviest && heaviest > 0;
+          // Only days that came from a session logged in the app can be
+          // written back. Imported spreadsheet history has no session behind
+          // it, so it is shown but not offered for editing.
+          const src = ex.sources?.[row.date];
+          const editing = editDate === row.date && !!src;
           return (
             <div key={row.date} className="border-b border-border/40 px-3 py-2 last:border-0">
               <div className="mb-1 flex items-center gap-2">
@@ -292,18 +301,39 @@ function ExerciseWindow({
                 <span className="ml-auto text-[0.62rem] tabular-nums text-faint">
                   {Math.round(row.e1rm)}kg 1RM
                 </span>
-              </div>
-              {/* Units kept and reps spelled out: "80kg x 12", not "80x12". */}
-              <div className="flex flex-wrap gap-1">
-                {row.sets.map((s, i) => (
-                  <span
-                    key={i}
-                    className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[0.68rem] font-semibold tabular-nums"
+                {src && (
+                  <button
+                    type="button"
+                    aria-label={editing ? "Stop editing this day" : `Edit ${row.date}`}
+                    onClick={() => setEditDate(editing ? null : row.date)}
+                    className={cn("shrink-0 p-0.5", editing ? "text-accent-text" : "text-faint")}
                   >
-                    {formatSet(s)}
-                  </span>
-                ))}
+                    {editing ? <X className="size-3.5" /> : <Pencil className="size-3.5" />}
+                  </button>
+                )}
               </div>
+
+              {editing && src ? (
+                <DayEditor
+                  date={row.date}
+                  exIdx={src.exIdx}
+                  sets={row.sets}
+                  exerciseName={ex.name}
+                  onDone={() => setEditDate(null)}
+                />
+              ) : (
+                /* Units kept and reps spelled out: "80kg x 12", not "80x12". */
+                <div className="flex flex-wrap gap-1">
+                  {row.sets.map((s, i) => (
+                    <span
+                      key={i}
+                      className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[0.68rem] font-semibold tabular-nums"
+                    >
+                      {formatSet(s)}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
@@ -318,6 +348,118 @@ function ExerciseWindow({
         ))}
         <span className="text-[0.58rem] text-faint">scaled to this lift only</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Correcting a day that was logged in the app.
+ *
+ * The Database was read-only, so a set typed as 1000kg instead of 100kg stayed
+ * wrong forever and dragged every chart, every personal best and every
+ * "heaviest" badge along with it. The only workaround was to delete the whole
+ * day and re-enter it.
+ *
+ * Edits are written straight to the saved session and the session's totals are
+ * rebuilt from its sets, so volume, calories, the muscle tally, the graphs and
+ * the body map all move with the correction rather than keeping the old
+ * numbers and disagreeing with the sets they were drawn from.
+ */
+function DayEditor({
+  date, exIdx, sets, exerciseName, onDone,
+}: {
+  date: string;
+  exIdx: number;
+  sets: LoggedSet[];
+  exerciseName: string;
+  onDone: () => void;
+}) {
+  const patchHistorySet = useSoma((s) => s.patchHistorySet);
+  const removeHistorySet = useSoma((s) => s.removeHistorySet);
+  const removeHistoryExercise = useSoma((s) => s.removeHistoryExercise);
+
+  return (
+    <div className="soma-expand rounded-xl border border-accent/40 bg-surface-2 p-2">
+      <div className="mb-1.5 text-[0.58rem] font-bold uppercase tracking-wide text-faint">
+        Editing {date}
+      </div>
+
+      <div className="space-y-1">
+        {sets.map((s, i) => {
+          // On a bodyweight lift the stored number is the added plate, not the
+          // total load — so that is what is edited, or a correction would be
+          // applied on top of the body's own weight.
+          const stored = s.bodyweight ? (s.added ?? 0) : s.weight;
+          return (
+            <div key={i} className="flex items-center gap-1.5">
+              <span className="w-8 shrink-0 text-[0.6rem] font-bold text-faint">#{i + 1}</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                aria-label={`Set ${i + 1} weight`}
+                defaultValue={stored}
+                onBlur={(e) => {
+                  const v = e.target.value === "" ? "" : Number(e.target.value);
+                  if (v === stored) return;
+                  patchHistorySet(date, exIdx, s.srcIdx ?? i, { weight: v as number | "" });
+                }}
+                className="h-8 w-full min-w-0 rounded-lg border border-border bg-surface px-1 text-center text-[0.72rem] font-semibold tabular-nums text-fg"
+              />
+              <span className="shrink-0 text-[0.6rem] text-faint">kg</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                aria-label={`Set ${i + 1} reps`}
+                defaultValue={s.reps}
+                onBlur={(e) => {
+                  const v = e.target.value === "" ? "" : Number(e.target.value);
+                  if (v === s.reps) return;
+                  patchHistorySet(date, exIdx, s.srcIdx ?? i, { reps: v as number | "" });
+                }}
+                className="h-8 w-full min-w-0 rounded-lg border border-border bg-surface px-1 text-center text-[0.72rem] font-semibold tabular-nums text-fg"
+              />
+              <span className="shrink-0 text-[0.6rem] text-faint">reps</span>
+              <button
+                type="button"
+                aria-label={`Delete set ${i + 1}`}
+                onClick={() => {
+                  removeHistorySet(date, exIdx, s.srcIdx ?? i);
+                  toast.success("Set removed");
+                }}
+                className="shrink-0 p-1 text-danger"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-2 flex gap-1.5">
+        <button
+          type="button"
+          onClick={() => {
+            if (!confirm(`Remove ${exerciseName} from the session on ${date}?`)) return;
+            removeHistoryExercise(date, exIdx);
+            toast.success(`Removed ${exerciseName} from ${date}`);
+            onDone();
+          }}
+          className="h-8 flex-1 rounded-lg border border-danger/40 bg-surface text-[0.65rem] font-bold text-danger"
+        >
+          Delete this exercise
+        </button>
+        <button
+          type="button"
+          onClick={onDone}
+          className="flex h-8 flex-1 items-center justify-center gap-1 rounded-lg bg-accent text-[0.65rem] font-extrabold text-accent-ink"
+        >
+          <Check className="size-3.5" /> Done
+        </button>
+      </div>
+      <p className="mt-1.5 text-[0.55rem] leading-snug text-faint">
+        Saved as you leave each field. Every statistic and chart is recomputed from the
+        corrected sets.
+      </p>
     </div>
   );
 }

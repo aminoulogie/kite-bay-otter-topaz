@@ -27,6 +27,29 @@ prepareZXingModule({
 
 export interface ScanHandle {
   stop: () => void;
+  /**
+   * Nudge the camera to refocus, optionally on a point in the preview.
+   *
+   * A barcode held close is exactly the case a phone's continuous autofocus is
+   * worst at — it hunts, settles on the shelf behind, and the decode loop spins
+   * on a blurred frame forever. `x`/`y` are 0-1 within the video; where the
+   * platform ignores points of interest this still forces a refocus, which is
+   * most of the value.
+   *
+   * Resolves false when the camera exposes no focus control at all, so the UI
+   * can hide a button that would do nothing.
+   */
+  focus: (x?: number, y?: number) => Promise<boolean>;
+  /**
+   * Set the optical/digital zoom, where the camera has one.
+   *
+   * 0.5 asks for the ultra-wide lens and 1 for the main one; both are mapped
+   * onto whatever range this particular camera actually reports, because the
+   * numbers a phone exposes are not the numbers printed in its camera app.
+   */
+  setZoom: (level: number) => Promise<boolean>;
+  /** What this camera supports, so controls that would do nothing are not shown. */
+  capabilities: () => { focus: boolean; zoom: boolean };
 }
 
 // Retail formats first — a food barcode is nearly always EAN-13 or UPC-A.
@@ -54,6 +77,79 @@ export async function startScanner(
     stream?.getTracks().forEach((t) => t.stop());
   };
 
+  /**
+   * The camera controls, as they exist on THIS device.
+   *
+   * Every one of these is optional in the spec and absent on desktop Safari, so
+   * each is probed rather than assumed and every call is wrapped: an
+   * unsupported constraint rejects, and an unhandled rejection here would kill
+   * the scan loop over a button press.
+   */
+  const controls = () => {
+    const track = stream?.getVideoTracks()[0] ?? null;
+    const caps = (track?.getCapabilities?.() ?? {}) as MediaTrackCapabilities & {
+      focusMode?: string[];
+      pointsOfInterest?: unknown;
+      zoom?: { min: number; max: number; step?: number };
+    };
+    return { track, caps };
+  };
+
+  const focus: ScanHandle["focus"] = async (x, y) => {
+    const { track, caps } = controls();
+    if (!track) return false;
+    const modes = caps.focusMode ?? [];
+    const advanced: Record<string, unknown>[] = [];
+    if (x != null && y != null && "pointsOfInterest" in caps) {
+      advanced.push({ pointsOfInterest: [{ x, y }] });
+    }
+    // single-shot re-runs the search now; continuous is the fallback that at
+    // least kicks a camera that has given up mid-hunt.
+    const mode = modes.includes("single-shot")
+      ? "single-shot"
+      : modes.includes("continuous")
+        ? "continuous"
+        : null;
+    if (mode) advanced.push({ focusMode: mode });
+    if (!advanced.length) return false;
+    try {
+      await track.applyConstraints({ advanced } as unknown as MediaTrackConstraints);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const setZoom: ScanHandle["setZoom"] = async (level) => {
+    const { track, caps } = controls();
+    const range = caps.zoom;
+    if (!track || !range) return false;
+    // 1 is "no zoom", which is not always 1 in the camera's own units — some
+    // report a range starting at 100. Asking for 0.5 means the widest the
+    // camera will go, which is what the 0.5x button on a phone means.
+    const neutral = Math.max(range.min, Math.min(range.max, 1));
+    const want = level <= 0.5 ? range.min : neutral;
+    try {
+      // `zoom` and `focusMode` are real constraints that TypeScript's DOM lib
+      // does not model, so the cast goes through unknown rather than pretending
+      // the shapes overlap.
+      await track.applyConstraints({ advanced: [{ zoom: want }] } as unknown as MediaTrackConstraints);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const capabilities = () => {
+    const { caps } = controls();
+    return {
+      focus: !!(caps.focusMode?.length || "pointsOfInterest" in caps),
+      zoom: !!caps.zoom && caps.zoom.min < caps.zoom.max,
+    };
+  };
+
+  const handle: ScanHandle = { stop, focus, setZoom, capabilities };
+
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" } },
@@ -61,12 +157,12 @@ export async function startScanner(
     });
   } catch {
     onError("Camera unavailable — check permissions.");
-    return { stop };
+    return handle;
   }
 
   if (stopped) {
     stream.getTracks().forEach((t) => t.stop());
-    return { stop };
+    return handle;
   }
 
   video.srcObject = stream;
@@ -110,7 +206,7 @@ export async function startScanner(
   };
 
   void tick();
-  return { stop };
+  return handle;
 }
 
 export interface ProductHit {

@@ -26,6 +26,14 @@ export interface LoggedSet {
   bodyweight?: boolean;
   /** Extra plate hung on a bodyweight movement, if any. */
   added?: number;
+  /**
+   * Where in the saved session this set came from, so it can be edited.
+   *
+   * Only present for sets logged in the app. Imported spreadsheet history has
+   * no session behind it, and offering to edit a row that cannot be written
+   * back would be a button that silently does nothing.
+   */
+  srcIdx?: number;
 }
 
 export interface ExerciseLog {
@@ -35,6 +43,12 @@ export interface ExerciseLog {
   /** The body is the load; any logged number is an added plate. */
   bw?: boolean;
   days: Record<string, LoggedSet[]>; // ISO date -> that day's sets
+  /**
+   * For days that came from a session logged in the app: which entry of that
+   * session's `exercises` array this is. That pair — the date key and this
+   * index — is the address the store's editing actions take.
+   */
+  sources?: Record<string, { exIdx: number }>;
 }
 
 interface Seed {
@@ -92,12 +106,17 @@ export function buildTrainingLog(
   const byKey = new Map<string, ExerciseLog>();
   for (const e of fromSeed(bodyweightByDate)) byKey.set(exerciseKey(e.name), e);
 
-  for (const session of Object.values(history || {})) {
+  // Keyed by the date history FILES the session under, not by re-deriving one
+  // from its timestamp: a backfilled session was typed in on a different day
+  // from the one it records, and deriving the key moved it to the wrong day
+  // in every chart and in the whole Database tab.
+  for (const [date, session] of Object.entries(history || {})) {
     if (!session?.exercises?.length) continue;
-    const date = new Date(session.timestamp || Date.now()).toISOString().slice(0, 10);
 
-    for (const ex of session.exercises) {
-      const done = (ex.sets || []).filter((s) => s.done);
+    for (const [exIdx, ex] of session.exercises.entries()) {
+      const done = (ex.sets || [])
+        .map((set, srcIdx) => ({ set, srcIdx }))
+        .filter(({ set }) => set.done);
       if (!done.length) continue;
 
       const key = exerciseKey(ex.name);
@@ -118,15 +137,18 @@ export function buildTrainingLog(
       // real load is the body plus that. Falling back to the nearest known
       // bodyweight keeps older sessions from collapsing to zero.
       const bw = ex.isBW ? nearestBodyweight(bodyweightByDate, date) : 0;
-      entry.days[date] = done.map((s) => {
-        const added = Number(s.weight) || 0;
+      entry.days[date] = done.map(({ set, srcIdx }) => {
+        const added = Number(set.weight) || 0;
         return {
           weight: ex.isBW ? bw + added : added,
-          reps: Number(s.reps) || 0,
-          failure: Math.max(0, (Number(s.failure) || 3) - 3),
+          reps: Number(set.reps) || 0,
+          failure: Math.max(0, (Number(set.failure) || 3) - 3),
+          srcIdx,
           ...(ex.isBW ? { bodyweight: true, added } : {}),
         };
       });
+      // Marks this day as one the app owns, and says where to write an edit.
+      entry.sources = { ...(entry.sources ?? {}), [date]: { exIdx } };
     }
   }
 
