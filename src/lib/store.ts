@@ -25,6 +25,7 @@ import {
   defaultProgram, loadActiveId, loadPrograms, resolveActiveProgram, saveActiveId,
   savePrograms, type Program,
 } from "./programs";
+import { collectSideStores, restoreSideStores, type SideStores } from "./side-stores";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 import { tallyMuscles } from "./set-quality";
 import { SHIPPED_FOODS, composeLibrary } from "./foods";
@@ -154,6 +155,7 @@ export interface SomaStore {
   deleteRoutine: (name: string) => void;
   exportJson: () => string;
   importJson: (raw: string, mode?: "merge" | "replace") => boolean;
+  applySideStores: (incoming: unknown, mode: "merge" | "replace") => void;
   resetAll: () => void;
 }
 
@@ -1202,6 +1204,20 @@ export const useSoma = create<SomaStore>()(
         const removed = Array.from(new Set([...get().settings.customRoutinesRemoved, name]));
         get().patchSettings({ customRoutines: custom, customRoutinesRemoved: removed });
       },
+      /**
+       * Everything, so a backup written from it loses nothing.
+       *
+       * The four side stores are read from localStorage rather than from this
+       * store, because that is where they actually live — `programs` is
+       * mirrored here but only after hydratePrograms has run, and a backup
+       * taken before it did would have exported an empty list.
+       *
+       * `live` and `activeDate` ride along too. An unfinished session is not
+       * something a merge should ever bring back, and it will not: the merge
+       * below keeps the device's. But a replace onto a wiped phone should
+       * return the workout that was open when the last backup was taken,
+       * rather than dropping the user into an empty one.
+       */
       exportJson: () =>
         JSON.stringify(
           {
@@ -1212,6 +1228,9 @@ export const useSoma = create<SomaStore>()(
             customExercises: get().customExercises,
             customFoods: get().customFoods,
             logOverrides: get().logOverrides,
+            live: get().live,
+            activeDate: get().activeDate,
+            sideStores: collectSideStores(),
           },
           null,
           2,
@@ -1247,7 +1266,15 @@ export const useSoma = create<SomaStore>()(
               customFoods: data.customFoods || [],
               logOverrides: data.logOverrides || {},
               seeded: true,
+              // A backup from before these were exported has neither, and the
+              // device keeps whatever it is on rather than being emptied.
+              ...(data.live ? { live: data.live } : {}),
+              ...(data.activeDate ? { activeDate: data.activeDate } : {}),
             });
+            get().applySideStores(data.sideStores, "replace");
+            // The restored session was open on the day the backup was taken,
+            // which may be weeks ago. This is the repair that exists for it.
+            get().normalizeLive();
             return true;
           }
 
@@ -1292,10 +1319,27 @@ export const useSoma = create<SomaStore>()(
             })(),
             seeded: true,
           });
+          // `live` and `activeDate` are deliberately not merged: the device is
+          // mid-workout by definition, and replacing that with a session from
+          // an older snapshot would throw away sets being logged right now.
+          get().applySideStores(data.sideStores, "merge");
           return true;
         } catch {
           return false;
         }
+      },
+      /**
+       * Write a backup's side stores to disk and mirror the programmes here.
+       *
+       * Split out of importJson because programmes are the one side store the
+       * zustand copy also holds: without the mirror, the calendar would keep
+       * drawing the pre-restore rotation until the app was reopened.
+       */
+      applySideStores: (incoming, mode) => {
+        const next = restoreSideStores(incoming as SideStores | undefined, mode);
+        if (!next) return;
+        set({ programs: next.programs ?? [], activeProgramId: next.activeProgramId ?? null });
+        get().refreshScheduledDay();
       },
       resetAll: () => {
         set({

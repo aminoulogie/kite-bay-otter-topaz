@@ -3,22 +3,35 @@
  *
  * The app keeps everything on one device, so a backup file is the only thing
  * standing between a cleared Safari and years of training history. That makes
- * three things non-negotiable here:
+ * four things non-negotiable here:
  *
  *  1. It has to include habit photos. They live in IndexedDB rather than the
  *     zustand store, so a JSON dump of the store silently leaves them behind.
- *  2. Restoring has to reject a file that is not a SOMA backup. Replacing the
+ *  2. It has to include the stores that keep their own localStorage key —
+ *     programmes, saved meals, membership, supplements. See lib/side-stores.ts,
+ *     which is the list. The same trap as the photos, sprung four more times:
+ *     a file that restores every session and then loses the user's splits is
+ *     worse than one that admits it is partial, because nobody checks.
+ *  3. Restoring has to reject a file that is not a SOMA backup. Replacing the
  *     whole store on any parsed object means picking the wrong file wipes
  *     everything and reports success.
- *  3. Saving has to work inside an iOS home-screen app, where a synthesised
+ *  4. Saving has to work inside an iOS home-screen app, where a synthesised
  *     anchor download does nothing at all.
  */
 
 import { checksum } from "./checksum";
 import { allPhotos, putPhotoRecord, type HabitPhoto } from "./habit-photos";
+import { sideStoreCounts, type SideStores } from "./side-stores";
 
 export const BACKUP_FORMAT = "soma-backup";
-export const BACKUP_VERSION = 1;
+/**
+ * v2 adds `data.sideStores` — programmes, saved meals, membership periods and
+ * the supplement checklist, which keep their own localStorage keys and so were
+ * absent from every v1 file. v1 files still restore; they simply say nothing
+ * about those four, and a restore leaves whatever the device has alone rather
+ * than reading silence as "the user had none".
+ */
+export const BACKUP_VERSION = 2;
 
 export { checksum } from "./checksum";
 
@@ -49,6 +62,13 @@ export interface BackupSummary {
   photos: number;
   customExercises: number;
   customFoods: number;
+  /** Zero for a v1 file, which carried none of these. */
+  programs: number;
+  recipes: number;
+  membership: number;
+  supplements: number;
+  /** Whether the file has a sideStores section at all, v1 files being the ones without. */
+  hasSideStores: boolean;
 }
 
 const blobToDataUrl = (b: Blob) =>
@@ -135,6 +155,7 @@ export function parseBackup(raw: string): ParseResult {
 
   const d = b.data as Record<string, any>;
   const photos = Array.isArray(b.photos) ? b.photos : [];
+  const side = (d.sideStores ?? null) as SideStores | null;
   return {
     ok: true,
     backup: { ...(b as Backup), photos },
@@ -146,6 +167,8 @@ export function parseBackup(raw: string): ParseResult {
       photos: photos.length,
       customExercises: Array.isArray(d.customExercises) ? d.customExercises.length : 0,
       customFoods: Array.isArray(d.customFoods) ? d.customFoods.length : 0,
+      ...sideStoreCounts(side),
+      hasSideStores: !!side && typeof side === "object",
     },
   };
 }

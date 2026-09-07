@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import {
   type Recipe, type RecipeIngredient,
 } from "@/lib/recipes";
 import { composeLibrary } from "@/lib/foods";
+import { useSideStoreRevision } from "@/lib/use-side-stores";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,13 @@ export function MealBuilder({ meal }: { meal: string }) {
   const [recipes, setRecipes] = useState<Recipe[]>(() => loadRecipes());
   const [editing, setEditing] = useState<Recipe | null>(null);
   const [query, setQuery] = useState("");
+
+  // Same as the calendar's membership: a restore writes soma-recipes directly,
+  // and this state would otherwise keep serving what was there before it.
+  const sideRev = useSideStoreRevision();
+  useEffect(() => {
+    if (sideRev) setRecipes(loadRecipes());
+  }, [sideRev]);
 
   const persist = (next: Recipe[]) => {
     setRecipes(next);

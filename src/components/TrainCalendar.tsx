@@ -10,6 +10,7 @@ import {
   periodFromEnd, savePeriods, type MembershipPeriod,
 } from "@/lib/membership";
 import { SomaIntelligenceEngine } from "@/lib/soma";
+import { useSideStoreRevision } from "@/lib/use-side-stores";
 import { useSwipeToClose } from "@/lib/use-edge-swipe";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import type { HistorySession, NutritionDay } from "@/lib/types";
@@ -75,6 +76,13 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   const [selected, setSelected] = useState<string>(today);
   const [periods, setPeriods] = useState<MembershipPeriod[]>(() => loadPeriods());
   const [renewing, setRenewing] = useState(false);
+
+  // Membership lives in its own localStorage key, so a restore rewrites it
+  // from underneath this state. Re-read rather than showing the old bands.
+  const sideRev = useSideStoreRevision();
+  useEffect(() => {
+    if (sideRev) setPeriods(loadPeriods());
+  }, [sideRev]);
 
   const status = useMemo(() => membershipStatus(periods, today), [periods, today]);
 

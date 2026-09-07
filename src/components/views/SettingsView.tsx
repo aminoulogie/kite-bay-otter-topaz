@@ -129,8 +129,11 @@ export function SettingsView() {
           return;
         }
         const n = await restorePhotos(result.backup.photos);
+        const extras = result.summary.hasSideStores
+          ? `, ${plural(result.summary.programs, "programme", "programmes")}`
+          : "";
         toast.success(
-          `Restored ${result.summary.sessions} sessions and ${n} photo${n === 1 ? "" : "s"}`,
+          `Restored ${result.summary.sessions} sessions${extras} and ${n} photo${n === 1 ? "" : "s"}`,
         );
       },
     });
@@ -475,6 +478,11 @@ export function SettingsView() {
               : "Your last backup is " + sinceBackup + " days old."}
           </p>
         )}
+        <p className="mb-2 text-[0.7rem] leading-relaxed text-faint">
+          A backup holds everything: every session and correction, all nutrition, water and
+          creatine, habits and their photos at full size, your foods and scanned barcodes, your
+          programmes and weekday splits, saved meals, membership periods and supplements.
+        </p>
         <div className="flex flex-col gap-2">
           <Button variant="primary" disabled={busy} onClick={() => void download()}>
             {busy ? "Preparing…" : "Save backup"}
@@ -706,6 +714,30 @@ export function SettingsView() {
               <Stat label="Habits" value={pending.summary.habits} />
               <Stat label="Photos" value={pending.summary.photos} />
             </div>
+            {/* Named rather than counted, because the point of showing them is
+                that they are IN the file at all — every backup written before
+                v2 left all four out. */}
+            <p className="text-[0.7rem] leading-relaxed text-faint">
+              Also inside: {plural(pending.summary.customFoods, "food", "foods")},{" "}
+              {plural(pending.summary.customExercises, "custom exercise", "custom exercises")}
+              {pending.summary.hasSideStores ? (
+                <>
+                  , {plural(pending.summary.programs, "programme", "programmes")},{" "}
+                  {plural(pending.summary.recipes, "saved meal", "saved meals")},{" "}
+                  {plural(pending.summary.membership, "membership period", "membership periods")}{" "}
+                  and {plural(pending.summary.supplements, "supplement", "supplements")}.
+                </>
+              ) : (
+                "."
+              )}
+            </p>
+            {!pending.summary.hasSideStores && (
+              <p className="rounded-xl border border-warn/30 bg-warn/10 p-2.5 text-[0.7rem] font-semibold text-warn">
+                This file was saved before programmes, saved meals, membership and supplements
+                were included. Those four are left exactly as they are on this phone — even by
+                Replace, which will not clear what the file cannot restore.
+              </p>
+            )}
             <div className="flex gap-2">
               <Button className="flex-1" onClick={() => setPending(null)}>
                 Cancel
@@ -751,6 +783,11 @@ export function SettingsView() {
       <Badge className="mx-auto flex w-fit">v5.1</Badge>
     </div>
   );
+}
+
+/** "1 programme", "2 programmes" — English rather than "1 programmes". */
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

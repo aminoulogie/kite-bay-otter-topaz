@@ -1,4 +1,4 @@
-import type { FoodItem } from "./types";
+import type { FoodItem } from "./types.ts";
 
 /**
  * Meals built from ingredients.

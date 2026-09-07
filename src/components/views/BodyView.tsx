@@ -17,6 +17,7 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import {
   EVIDENCE_LABEL, EVIDENCE_TONE, SUPPLEMENTS, loadTaken, saveTaken,
 } from "@/lib/supplements";
+import { useSideStoreRevision } from "@/lib/use-side-stores";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -405,6 +406,10 @@ function MeasurePanel() {
  */
 function SupplementsPanel() {
   const [taken, setTaken] = useState<string[]>(() => loadTaken());
+  const sideRev = useSideStoreRevision();
+  useEffect(() => {
+    if (sideRev) setTaken(loadTaken());
+  }, [sideRev]);
   const toggle = (id: string) => {
     const next = taken.includes(id) ? taken.filter((x) => x !== id) : [...taken, id];
     setTaken(next);
