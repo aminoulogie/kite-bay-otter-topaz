@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   BASE_EXERCISE_DB,
-  BASE_FOOD_LIBRARY,
   DEFAULT_GOALS,
   ROUTINE_PRESETS,
   SomaIntelligenceEngine,
@@ -28,6 +27,7 @@ import {
 } from "./programs";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 import { tallyMuscles } from "./set-quality";
+import { SHIPPED_FOODS, composeLibrary } from "./foods";
 import { exerciseKey } from "./exercise-key";
 import type { LoggedSet, LogOverrides } from "./training-log";
 import { guessMuscles } from "./muscle-guess";
@@ -84,6 +84,10 @@ export interface SomaStore {
   refreshScheduledDay: () => void;
   purgeNutritionBefore: (cutoff: string) => number;
   upsertLibraryFood: (food: FoodItem) => void;
+  foodLibrary: () => FoodItem[];
+  findFoodByBarcode: (code: string) => FoodItem | null;
+  rememberScannedFood: (food: FoodItem) => void;
+  importFoods: (foods: FoodItem[]) => { added: number; updated: number };
   isFoodEdited: (name: string) => boolean;
   clearSeededHabitHistory: () => number;
   normalizeLive: () => void;
@@ -310,9 +314,7 @@ export const useSoma = create<SomaStore>()(
        * Anything the user edited themselves wins — their version is kept.
        */
       mergeCustomFoods: () => {
-        const have = new Set(
-          [...BASE_FOOD_LIBRARY, ...get().customFoods].map((f) => f.name.trim().toLowerCase()),
-        );
+        const have = new Set(get().foodLibrary().map((f) => f.name.trim().toLowerCase()));
         const missing = (CUSTOM_FOOD_SEED as FoodItem[]).filter(
           (f) => !have.has(f.name.trim().toLowerCase()),
         );
@@ -377,10 +379,102 @@ export const useSoma = create<SomaStore>()(
         const rest = get().customFoods.filter((f) => f.name.trim().toLowerCase() !== key);
         set({ customFoods: [...rest, { ...food, isBase: false }] });
       },
+      /**
+       * The whole library: shipped foods first, the user's own after, so an
+       * edited food replaces the one it overrides instead of appearing twice.
+       */
+      foodLibrary: () => composeLibrary(get().customFoods),
+      /**
+       * A food already known by this barcode.
+       *
+       * Checked before the network, which is what makes a second scan instant
+       * and — more importantly — makes it work at all in a shop with no signal.
+       */
+      findFoodByBarcode: (code) => {
+        const wanted = String(code ?? "").replace(/\D/g, "");
+        if (!wanted) return null;
+        return get().foodLibrary().find((f) => f.barcode === wanted) ?? null;
+      },
+      /**
+       * Keep a scanned product.
+       *
+       * Every scan used to be thrown away after logging the portion, so the
+       * same yoghurt cost a network round trip every single morning and was
+       * unfindable by name. Saving it builds a real branded library out of what
+       * is actually in your kitchen — with the barcode the scanner read, which
+       * is the only barcode worth storing.
+       *
+       * An existing entry for that code is updated rather than duplicated, but
+       * a name the user has since corrected is kept: their edit is newer than
+       * whatever the database says.
+       */
+      rememberScannedFood: (food) => {
+        const code = String(food.barcode ?? "").replace(/\D/g, "");
+        if (!code) return;
+        const customs = get().customFoods;
+        const existing = customs.find((f) => f.barcode === code);
+        if (existing) {
+          set({
+            customFoods: customs.map((f) =>
+              f.barcode === code ? { ...food, name: existing.name, barcode: code } : f,
+            ),
+          });
+          return;
+        }
+        // Never shadow a shipped food by name; the scan is the newer, more
+        // specific record, so it takes a name that says so.
+        const taken = new Set(get().foodLibrary().map((f) => f.name.trim().toLowerCase()));
+        let name = food.name.trim() || `Item ${code}`;
+        if (taken.has(name.toLowerCase())) name = `${name} (${code.slice(-4)})`;
+        set({
+          customFoods: [...customs, { ...food, name, barcode: code, serving: 100, meal: "" }],
+        });
+      },
+      /**
+       * Load a sheet of foods in one go.
+       *
+       * Matched on barcode first and name second: a re-import of an updated
+       * sheet should correct the rows it already has rather than doubling the
+       * library. Returns both counts so the result can be stated honestly
+       * instead of claiming everything was new.
+       */
+      importFoods: (foods) => {
+        const customs = [...get().customFoods];
+        const byCode = new Map<string, number>();
+        const byName = new Map<string, number>();
+        customs.forEach((f, i) => {
+          if (f.barcode) byCode.set(f.barcode, i);
+          byName.set(f.name.trim().toLowerCase(), i);
+        });
+
+        let added = 0;
+        let updated = 0;
+
+        for (const food of foods) {
+          const name = food.name.trim();
+          if (!name) continue;
+          const at =
+            (food.barcode ? byCode.get(food.barcode) : undefined) ??
+            byName.get(name.toLowerCase());
+          if (at != null) {
+            customs[at] = { ...customs[at]!, ...food, name: customs[at]!.name };
+            updated += 1;
+            continue;
+          }
+          customs.push(food);
+          const i = customs.length - 1;
+          if (food.barcode) byCode.set(food.barcode, i);
+          byName.set(name.toLowerCase(), i);
+          added += 1;
+        }
+
+        set({ customFoods: customs });
+        return { added, updated };
+      },
       /** Whether a base food has been overridden, so the UI can say so. */
       isFoodEdited: (name) => {
         const key = name.trim().toLowerCase();
-        const base = BASE_FOOD_LIBRARY.some((f) => f.name.trim().toLowerCase() === key);
+        const base = SHIPPED_FOODS.some((f) => f.name.trim().toLowerCase() === key);
         return base && get().customFoods.some((f) => f.name.trim().toLowerCase() === key);
       },
       /**
@@ -525,9 +619,9 @@ export const useSoma = create<SomaStore>()(
       addCustomFood: (food) => {
         const name = food.name.trim();
         if (!name) return false;
-        const taken = [...BASE_FOOD_LIBRARY, ...get().customFoods].some(
-          (f) => f.name.toLowerCase() === name.toLowerCase(),
-        );
+        const taken = get()
+          .foodLibrary()
+          .some((f) => f.name.toLowerCase() === name.toLowerCase());
         if (taken) return false;
         set({
           customFoods: [

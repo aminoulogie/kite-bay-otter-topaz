@@ -9,9 +9,8 @@ import {
   loadRecipes, perServing, recipeAsFood, recipeTotals, saveRecipes,
   type Recipe, type RecipeIngredient,
 } from "@/lib/recipes";
-import { BASE_FOOD_LIBRARY } from "@/lib/soma";
+import { composeLibrary } from "@/lib/foods";
 import { useSoma } from "@/lib/store";
-import type { FoodItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -29,12 +28,7 @@ export function MealBuilder({ meal }: { meal: string }) {
   const customFoods = useSoma((s) => s.customFoods);
   const addFood = useSoma((s) => s.addFood);
 
-  const library = useMemo(() => {
-    const byName = new Map<string, FoodItem>();
-    for (const f of BASE_FOOD_LIBRARY as unknown as FoodItem[]) byName.set(f.name.toLowerCase(), f);
-    for (const f of customFoods) byName.set(f.name.toLowerCase(), f);
-    return [...byName.values()];
-  }, [customFoods]);
+  const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
 
   const [recipes, setRecipes] = useState<Recipe[]>(() => loadRecipes());
   const [editing, setEditing] = useState<Recipe | null>(null);

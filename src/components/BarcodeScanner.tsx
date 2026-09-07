@@ -6,6 +6,7 @@ import { tapLight } from "@/lib/haptics";
 import { useSheet } from "@/lib/use-sheet";
 import { cn } from "@/lib/utils";
 import { lookupBarcode, startScanner, type ProductHit, type ScanHandle } from "@/lib/barcode";
+import { useSoma } from "@/lib/store";
 
 /**
  * Scanning a barcode, as a widget rather than a takeover.
@@ -34,6 +35,7 @@ export function BarcodeScanner({
   onClose: () => void;
 }) {
   const sheetRef = useSheet(onClose);
+  const findFoodByBarcode = useSoma((s) => s.findFoodByBarcode);
   const videoRef = useRef<HTMLVideoElement>(null);
   const handleRef = useRef<ScanHandle | null>(null);
   const [status, setStatus] = useState("Starting camera…");
@@ -45,9 +47,30 @@ export function BarcodeScanner({
 
   const resolve = async (code: string) => {
     setStatus(`Looking up ${code}…`);
-    const { hit, offline } = await lookupBarcode(code);
+    // Your own library first. A product you have scanned before, or imported
+    // from a sheet, resolves with no network at all — which is the difference
+    // between the scanner working in a supermarket basement and not.
+    const { hit, offline, cached } = await lookupBarcode(code, (c) => {
+      const food = findFoodByBarcode(c);
+      if (!food) return null;
+      return {
+        name: food.name,
+        cals: food.cals, p: food.p, c: food.c, f: food.f, fiber: food.fiber,
+        sodium: food.sodium, calcium: food.calcium, iron: food.iron,
+        potassium: food.potassium,
+        serving: food.serving || 100,
+        source: "your library",
+        barcode: c,
+        needsMacros: false,
+      };
+    });
     if (offline) {
       setStatus("Offline — connect to look this up, or add it by hand.");
+      return;
+    }
+    if (cached && hit) {
+      setStatus(`${hit.name} — already in your library`);
+      onFound(hit);
       return;
     }
     if (!hit) {

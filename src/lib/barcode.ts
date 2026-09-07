@@ -224,6 +224,8 @@ export interface ProductHit {
   serving: number;
   /** Which database answered, so a wrong entry can be traced. */
   source?: string;
+  /** The code this was found by — the only barcode worth storing. */
+  barcode?: string;
   needsMacros: boolean;
 }
 
@@ -360,7 +362,16 @@ function isEmpty(hit: ProductHit): boolean {
  */
 export async function lookupBarcode(
   code: string,
-): Promise<{ hit: ProductHit | null; offline: boolean }> {
+  /**
+   * A product already known by this code. Checked before the network, which is
+   * what makes a repeat scan instant and — the case that actually matters —
+   * makes it work in a shop with no signal.
+   */
+  known?: (code: string) => ProductHit | null,
+): Promise<{ hit: ProductHit | null; offline: boolean; cached?: boolean }> {
+  const local = known?.(code) ?? null;
+  if (local) return { hit: local, offline: false, cached: true };
+
   if (!navigator.onLine) return { hit: null, offline: true };
 
   let fallback: ProductHit | null = null;
@@ -369,8 +380,9 @@ export async function lookupBarcode(
     try {
       const res = await fetch(src.url(code), { headers: { Accept: "application/json" } });
       if (!res.ok) continue;
-      const hit = src.parse(await res.json(), code);
-      if (!hit) continue;
+      const parsed = src.parse(await res.json(), code);
+      if (!parsed) continue;
+      const hit = { ...parsed, barcode: code };
       if (!isEmpty(hit)) return { hit, offline: false };
       // Keep the name, keep looking for the numbers.
       fallback ??= { ...hit, needsMacros: true };

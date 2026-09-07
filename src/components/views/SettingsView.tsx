@@ -13,6 +13,9 @@ import {
 } from "@/lib/storage-health";
 import { ProgramBuilder } from "@/components/ProgramBuilder";
 import { allCsv } from "@/lib/csv-export";
+import {
+  looksLikeCsv, parseFoodCsv, rowToFood, toCsvUrl, type ParsedRow,
+} from "@/lib/food-import";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -504,6 +507,8 @@ export function SettingsView() {
         </div>
       </Card>
 
+      <FoodImportCard />
+
       <Card>
         <CardTitle>Export as CSV</CardTitle>
         <p className="mb-3 text-xs text-muted">
@@ -790,5 +795,150 @@ function Stat({ label, value }: { label: string; value: number }) {
       <div className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">{label}</div>
       <div className="tabular font-display text-lg font-extrabold">{value}</div>
     </div>
+  );
+}
+
+/**
+ * Loading a spreadsheet of foods into the library.
+ *
+ * The honest route to a large branded catalogue. Real barcodes and real label
+ * figures have to come from a source that knows them — a shop's own sheet does
+ * — and once imported they live on the device, so scanning one works offline
+ * and instantly.
+ */
+function FoodImportCard() {
+  const importFoods = useSoma((s) => s.importFoods);
+  const customFoods = useSoma((s) => s.customFoods);
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<{ rows: ParsedRow[]; unmapped: string[]; skipped: number } | null>(null);
+
+  const withBarcodes = customFoods.filter((f) => f.barcode).length;
+
+  const load = (text: string) => {
+    if (!looksLikeCsv(text)) {
+      toast.error("That came back as a web page, not a sheet. Share it with anyone-with-the-link first.");
+      return;
+    }
+    const parsed = parseFoodCsv(text);
+    if (!parsed.rows.length) {
+      toast.error("No rows found. The first line should be the column headings.");
+      return;
+    }
+    setPreview(parsed);
+  };
+
+  const fetchSheet = async () => {
+    const target = toCsvUrl(url);
+    if (!target) {
+      toast.error("Paste a Google Sheets link, or any URL that serves a CSV.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(target);
+      if (!res.ok) throw new Error(String(res.status));
+      load(await res.text());
+    } catch {
+      toast.error("Could not fetch that sheet. Check it is shared with anyone with the link.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardTitle>Import foods from a sheet</CardTitle>
+      <p className="mb-3 text-xs leading-snug text-muted">
+        Paste a published Google Sheet or pick a CSV, and every row joins your food
+        library — with its barcode, so scanning it later works offline. Columns are
+        matched by heading in English or French: <b className="text-fg">name</b>,{" "}
+        <b className="text-fg">barcode</b>, kcal, protein, carbs, fat, fibre, water%.
+        Values are per 100g unless a <b className="text-fg">serving</b> column says
+        otherwise.
+      </p>
+
+      <Input
+        className="mb-2"
+        placeholder="https://docs.google.com/spreadsheets/…"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+      />
+      <div className="flex gap-2">
+        <Button className="flex-1" variant="primary" disabled={busy || !url.trim()} onClick={() => void fetchSheet()}>
+          {busy ? "Fetching…" : "Load sheet"}
+        </Button>
+        <label className="flex h-11 flex-1 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-2 text-sm font-semibold">
+          Pick a CSV
+          <input
+            type="file"
+            accept=".csv,text/csv,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void file.text().then(load);
+            }}
+          />
+        </label>
+      </div>
+
+      {withBarcodes > 0 && (
+        <p className="mt-2 text-[0.65rem] text-faint">
+          {withBarcodes} {withBarcodes === 1 ? "food" : "foods"} in your library already
+          carry a barcode and resolve without a connection.
+        </p>
+      )}
+
+      {preview && (
+        <div className="mt-3 rounded-xl border border-accent/40 bg-surface-2 p-3">
+          <div className="mb-1 text-sm font-bold">
+            {preview.rows.length} {preview.rows.length === 1 ? "row" : "rows"} ready
+          </div>
+          <div className="mb-2 text-[0.68rem] leading-snug text-muted">
+            {preview.rows.filter((r) => r.barcode).length} with a barcode ·{" "}
+            {preview.rows.filter((r) => r.cals != null).length} with calories
+            {preview.skipped > 0 && ` · ${preview.skipped} skipped for having no name`}
+          </div>
+          {preview.unmapped.length > 0 && (
+            <p className="mb-2 text-[0.62rem] leading-snug text-warn">
+              Columns not recognised and ignored: {preview.unmapped.slice(0, 6).join(", ")}
+              {preview.unmapped.length > 6 && ` and ${preview.unmapped.length - 6} more`}.
+            </p>
+          )}
+          <div className="mb-2 max-h-32 overflow-y-auto rounded-lg border border-border bg-surface">
+            {preview.rows.slice(0, 25).map((r, i) => (
+              <div key={i} className="flex items-center justify-between gap-2 border-b border-border px-2 py-1 last:border-0">
+                <span className="min-w-0 truncate text-[0.68rem] font-semibold">{r.name}</span>
+                <span className="shrink-0 text-[0.6rem] tabular-nums text-faint">
+                  {r.cals ?? "–"} kcal{r.barcode ? " · scan" : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Button className="flex-1" onClick={() => setPreview(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              className="flex-[1.4]"
+              onClick={() => {
+                const { added, updated } = importFoods(preview.rows.map(rowToFood));
+                setPreview(null);
+                setUrl("");
+                toast.success(
+                  updated
+                    ? `Added ${added}, updated ${updated}`
+                    : `Added ${added} ${added === 1 ? "food" : "foods"}`,
+                );
+              }}
+            >
+              Add to library
+            </Button>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }

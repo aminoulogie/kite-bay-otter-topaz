@@ -15,7 +15,8 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
-import { BASE_FOOD_LIBRARY, DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
+import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
+import { composeLibrary, searchFoods } from "@/lib/foods";
 import { useSoma } from "@/lib/store";
 import type { FoodItem } from "@/lib/types";
 
@@ -33,6 +34,7 @@ export function NutritionView() {
   const setWater = useSoma((s) => s.setWater);
   const updateFood = useSoma((s) => s.updateFood);
   const addCustomFood = useSoma((s) => s.addCustomFood);
+  const rememberScannedFood = useSoma((s) => s.rememberScannedFood);
   const removeCustomFood = useSoma((s) => s.removeCustomFood);
   const settings = useSoma((s) => s.settings);
 
@@ -94,16 +96,13 @@ export function NutritionView() {
 
   // Base first, customs after, deduplicated by name so an edited base food is
   // replaced by the edit rather than appearing twice.
-  const library = useMemo(() => {
-    const byName = new Map<string, (typeof BASE_FOOD_LIBRARY)[number]>();
-    for (const f of BASE_FOOD_LIBRARY) byName.set(f.name.trim().toLowerCase(), f);
-    for (const f of customFoods) byName.set(f.name.trim().toLowerCase(), f as never);
-    return [...byName.values()];
-  }, [customFoods]);
-  const matches = library.filter((f) =>
-    f.name.toLowerCase().includes(query.toLowerCase()),
-  );
-  const hits = query ? matches.slice(0, 8) : showAll ? matches : [];
+  const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
+  // Accent-insensitive, group-aware, and ordered by how well it matches — a
+  // five-hundred-food library needs a real search, not a substring test.
+  const hits = useMemo(() => {
+    if (query) return searchFoods(library, query, 25);
+    return showAll ? searchFoods(library, "", 200) : [];
+  }, [library, query, showAll]);
 
   const openPortion = (f: {
     name: string; serving: number; unit: string; cals: number; p: number; c: number; f: number;
@@ -475,18 +474,27 @@ export function NutritionView() {
         <BarcodeScanner
           onClose={() => setScanning(false)}
           onFound={(hit) => {
-            // Open Food Facts reports per 100g; ask how much was actually eaten
-            // rather than assuming the whole reference portion.
-            setPortion({
-              mode: "add",
+            const item: FoodItem = {
+              name: hit.name,
+              serving: hit.serving || 100,
+              unit: "g",
+              cals: hit.cals, p: hit.p, c: hit.c, f: hit.f, fiber: hit.fiber,
+              sodium: hit.sodium ?? 0, potassium: hit.potassium ?? 0,
+              calcium: hit.calcium ?? 0, iron: hit.iron ?? 0,
+              magnesium: 0, zinc: 0,
               meal,
-              item: {
-                name: hit.name, serving: hit.serving || 100, unit: "g",
-                cals: hit.cals, p: hit.p, c: hit.c, f: hit.f, fiber: hit.fiber,
-                sodium: 0, potassium: 0, calcium: 0, iron: 0, magnesium: 0, zinc: 0,
-                meal,
-              },
-            });
+              barcode: hit.barcode,
+              per100: { cals: hit.cals, p: hit.p, c: hit.c, f: hit.f, fiber: hit.fiber },
+            };
+            // Kept, not just logged. Every scan used to be discarded after the
+            // portion was added, so the same yoghurt cost a lookup every
+            // morning and could never be found by name. This is what builds a
+            // real branded library — with the barcode the scanner actually
+            // read, so the next scan is instant and works with no signal.
+            rememberScannedFood(item);
+            // Reported per 100g, so ask how much was eaten rather than assuming
+            // the whole reference portion.
+            setPortion({ mode: "add", meal, item });
             setScanning(false);
           }}
         />

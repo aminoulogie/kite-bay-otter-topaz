@@ -134,6 +134,16 @@ export interface FoodItem {
    * has to recompute one from the other.
    */
   waterPct?: number;
+  /**
+   * The product's real barcode, for anything that has one.
+   *
+   * Only ever set from a source that actually knows it — a scan, or an
+   * imported sheet. Never invented: a wrong barcode does not merely fail to
+   * find the product, it can find the wrong one and log its calories.
+   */
+  barcode?: string;
+  /** Shipped grouping — Meat, Dairy, Algerian… — for filtering the picker. */
+  group?: string;
 }
 
 export interface SleepLog {

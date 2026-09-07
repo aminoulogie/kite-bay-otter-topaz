@@ -4,7 +4,7 @@ import { PortionSheet } from "@/components/PortionSheet";
 import {
   PRE_WINDOWS, checkPreWorkout, portionsFor, preTargets, type PreWindow,
 } from "@/lib/preworkout";
-import { BASE_FOOD_LIBRARY } from "@/lib/soma";
+import { composeLibrary } from "@/lib/foods";
 import { useSoma } from "@/lib/store";
 import type { FoodItem } from "@/lib/types";
 import { toast } from "sonner";
@@ -57,7 +57,7 @@ export function PreWorkoutCard() {
   const portions = useMemo(
     () =>
       portionsFor(
-        [...BASE_FOOD_LIBRARY, ...customFoods] as FoodItem[],
+        composeLibrary(customFoods),
         target,
         check.carbsG,
       ),
