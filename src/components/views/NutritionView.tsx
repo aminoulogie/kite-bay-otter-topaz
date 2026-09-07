@@ -14,6 +14,7 @@ import { NutritionGraphs } from "@/components/NutritionGraphs";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
 import { BASE_FOOD_LIBRARY, DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import type { FoodItem } from "@/lib/types";
@@ -46,10 +47,12 @@ export function NutritionView() {
       if (!next.delete(m)) next.add(m);
       return next;
     });
-  const [custom, setCustom] = useState({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
+  const [custom, setCustom] = useState({
+    name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100, waterPct: 0,
+  });
   // The raw text is kept beside the parsed numbers so a value mid-typing —
   // "12," on the way to "12,5" — is not erased on every keystroke.
-  const [customRaw, setCustomRaw] = useState({ cals: "", p: "", c: "", f: "" });
+  const [customRaw, setCustomRaw] = useState({ cals: "", p: "", c: "", f: "", waterPct: "" });
   const [scanning, setScanning] = useState(false);
   // The library is browsable, not search-only: with nothing typed you should
   // still be able to see what is in there rather than having to guess a name.
@@ -105,7 +108,7 @@ export function NutritionView() {
   const openPortion = (f: {
     name: string; serving: number; unit: string; cals: number; p: number; c: number; f: number;
     fiber?: number; sodium?: number; potassium?: number; calcium?: number; iron?: number;
-    magnesium?: number; zinc?: number;
+    magnesium?: number; zinc?: number; waterPct?: number;
   }) => {
     setPortion({
       mode: "add",
@@ -118,13 +121,20 @@ export function NutritionView() {
         fiber: f.fiber || 0,
         sodium: f.sodium || 0, potassium: f.potassium || 0, calcium: f.calcium || 0,
         iron: f.iron || 0, magnesium: f.magnesium || 0, zinc: f.zinc || 0,
+        // Carried from the library entry so a drink you have already told the
+        // app about does not need telling again every time you log it.
+        waterPct: f.waterPct,
         meal,
       },
     });
     setQuery("");
   };
 
-  const waterPct = Math.min(100, Math.round(((day.water || 0) / (goals.water || 3500)) * 100));
+  // Water drunk as water, plus the water that arrived in drinks. Read through
+  // the helper rather than off `day.water`, or the ring disagrees with the log.
+  const fromFood = foodWaterMl(day);
+  const water = totalWaterMl(day);
+  const waterPct = Math.min(100, Math.round((water / (goals.water || 3500)) * 100));
 
   return (
     <div className="space-y-3 pb-4">
@@ -162,10 +172,16 @@ export function NutritionView() {
         <CardTitle>
           <span>Water</span>
           <span className="tabular text-sm font-bold text-accent-text">
-            {day.water || 0} / {goals.water} ml
+            {water} / {goals.water} ml
           </span>
         </CardTitle>
         <Progress value={waterPct} barClassName="bg-info" />
+        {fromFood > 0 && (
+          <p className="mt-1.5 text-[0.65rem] text-muted">
+            {fromFood} ml of that came from what you drank — juice, milk and anything else
+            logged with a water content.
+          </p>
+        )}
         <div className="mt-3 flex flex-wrap gap-2">
           <Button className="flex-1" onClick={() => addWater(250)}>
             +250 ml
@@ -183,7 +199,11 @@ export function NutritionView() {
             disabled={!day.water}
             onClick={() => {
               setWater(0);
-              toast.success("Water reset");
+              toast.success(
+                fromFood > 0
+                  ? `Reset — ${fromFood} ml from drinks stays, remove those in the meal list`
+                  : "Water reset",
+              );
             }}
           >
             Reset
@@ -311,6 +331,17 @@ export function NutritionView() {
                 setCustom({ ...custom, f: n ?? 0 });
               }}
             />
+            {/* Only asked for once, on the food itself, rather than every time
+                a portion is logged. */}
+            <DecimalInput
+              className="col-span-2"
+              placeholder="Water % — 88 for juice or milk, blank for solids"
+              value={customRaw.waterPct}
+              onValueChange={(n, raw) => {
+                setCustomRaw({ ...customRaw, waterPct: raw });
+                setCustom({ ...custom, waterPct: Math.max(0, Math.min(100, n ?? 0)) });
+              }}
+            />
           </div>
           <Button
             variant="primary"
@@ -322,10 +353,13 @@ export function NutritionView() {
                 return;
               }
               const food: FoodItem = {
-                name, serving: 100, unit: "g",
+                name,
+                serving: 100,
+                unit: custom.waterPct >= 80 ? "ml" : "g",
                 cals: custom.cals, p: custom.p, c: custom.c, f: custom.f,
                 fiber: 0, sodium: 0, potassium: 0, calcium: 0, iron: 0, magnesium: 0, zinc: 0,
                 meal,
+                waterPct: custom.waterPct || undefined,
                 per100: { cals: custom.cals, p: custom.p, c: custom.c, f: custom.f, fiber: 0 },
               };
               if (!addCustomFood(food)) {
@@ -333,8 +367,8 @@ export function NutritionView() {
                 return;
               }
               toast.success(`Saved ${name}`);
-              setCustom({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100 });
-              setCustomRaw({ cals: "", p: "", c: "", f: "" });
+              setCustom({ name: "", cals: 0, p: 0, c: 0, f: 0, serving: 100, waterPct: 0 });
+              setCustomRaw({ cals: "", p: "", c: "", f: "", waterPct: "" });
               // Straight into the portion sheet, since you almost always
               // create a food because you are about to eat it.
               setPortion({ mode: "add", meal, item: food });
@@ -503,6 +537,7 @@ function FoodRow({ item, onEdit }: { item: FoodItem; onEdit: () => void }) {
         <div className="text-[0.7rem] text-faint">
           {item.serving}
           {item.unit} · {Math.round(item.cals)} kcal · {item.p}p {item.c}c {item.f}f
+          {item.waterMl ? <span className="text-info"> · {item.waterMl} ml water</span> : null}
         </div>
       </div>
       <Pencil className="size-4 shrink-0 text-faint" />

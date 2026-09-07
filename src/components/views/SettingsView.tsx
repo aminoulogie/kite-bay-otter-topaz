@@ -494,8 +494,43 @@ export function SettingsView() {
           . This decides the calendar, the split Train opens on, and what Ahead projects
           against.
         </p>
+        {/* The week, in Settings, without opening the builder. The card used to
+            describe the programme in the abstract — "6-day cycle" — and say
+            nothing about which day is which. */}
+        <div className="mb-3 grid grid-cols-7 gap-1">
+          {Array.from({ length: 7 }, (_, i) => {
+            const d = new Date();
+            d.setDate(d.getDate() + i);
+            const proj = SomaIntelligenceEngine.getProgramProjectedDay(
+              d,
+              settings.scheduleOverrides,
+              activeProgram,
+            );
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "rounded-lg border px-0.5 py-1 text-center",
+                  i === 0 ? "border-accent bg-accent/10" : "border-border bg-surface-2",
+                )}
+              >
+                <div className="text-[0.52rem] font-bold uppercase text-faint">
+                  {d.toLocaleDateString(undefined, { weekday: "short" })}
+                </div>
+                <div
+                  className={cn(
+                    "mt-0.5 truncate text-[0.55rem] font-extrabold uppercase",
+                    proj.isRest ? "text-faint" : "text-accent-text",
+                  )}
+                >
+                  {proj.isRest ? "REST" : (proj.split.split(/[\s(]/)[0] ?? "").slice(0, 5)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
         <Button variant="primary" className="w-full" onClick={() => setProgramsOpen(true)}>
-          Change programme
+          Change programme, or move a day
         </Button>
       </Card>
 

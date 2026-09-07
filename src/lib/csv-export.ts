@@ -1,3 +1,4 @@
+import { totalWaterMl } from "./hydration";
 import type { HistorySession, NutritionDay } from "./types";
 
 /**
@@ -106,7 +107,9 @@ export function dailyCsv(nutrition: Record<string, NutritionDay>): CsvFile {
       logged ? Math.round(t.p) : "",
       logged ? Math.round(t.c) : "",
       logged ? Math.round(t.f) : "",
-      d.water ?? "",
+      // The exported figure is the one the app shows: water drunk as water plus
+      // the water that came in drinks.
+      totalWaterMl(d),
       d.creatine ?? "",
       d.sleep?.hours ?? "",
       d.sleep?.quality ?? "",

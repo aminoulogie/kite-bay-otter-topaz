@@ -42,6 +42,7 @@ def patch_bundles(assets: pathlib.Path, base: str) -> None:
     basepath_hit = False
     ssr_guard_hit = False
     asset_href_hit = False
+    public_href_hit = False
 
     for p in assets.glob("*.js"):
         text = p.read_text(encoding="utf-8")
@@ -82,9 +83,24 @@ def patch_bundles(assets: pathlib.Path, base: str) -> None:
             )
             if n_href:
                 asset_href_hit = True
+
+            # The same bug in the root route's other three head links: the
+            # favicon, the manifest and the apple-touch icon are all emitted
+            # root-relative and injected at runtime, so on Pages each one 404s
+            # on every load. Unlike the stylesheet these have no correctly-based
+            # twin in the shell to mask it — the tab shows no icon and the
+            # manifest the install prompt reads is simply missing.
+            patched, n_pub = re.subn(
+                r"([\"'`])/(favicon\.svg|__grok/[\w./-]+)\1",
+                lambda m: f"{m.group(1)}{base}/{m.group(2)}{m.group(1)}",
+                patched,
+            )
+            if n_pub:
+                public_href_hit = True
         else:
             # Served from the webview root, so root-relative is already right.
             asset_href_hit = True
+            public_href_hit = True
 
         if patched != text:
             p.write_text(patched, encoding="utf-8")
@@ -101,6 +117,12 @@ def patch_bundles(assets: pathlib.Path, base: str) -> None:
             "FATAL: no root-relative /assets/ href found to re-base. The root route "
             "injects the stylesheet itself, so a miss means a 404 on every page load "
             f"instead of {base}/assets/. Check how Vite emitted the ?url import."
+        )
+    if not public_href_hit:
+        raise SystemExit(
+            "FATAL: no root-relative /favicon.svg or /__grok/ href found to re-base. The "
+            "root route injects all three itself, so a miss means the tab icon and the "
+            f"install manifest 404 on every load instead of resolving under {base}/."
         )
     if not ssr_guard_hit:
         raise SystemExit(

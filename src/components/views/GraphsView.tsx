@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
-  CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  CartesianGrid, Line, LineChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip,
+  XAxis, YAxis,
 } from "recharts";
 import { Card, CardTitle } from "@/components/ui/card";
 import {
@@ -222,7 +223,7 @@ export function GraphsView() {
             zoomed={zoom.zoomed}
           >
             <ResponsiveContainer>
-              <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+              <LineChart data={data} margin={{ top: 8, right: 10, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="t"
@@ -238,9 +239,13 @@ export function GraphsView() {
                 <YAxis
                   domain={[zoom.state.y.min, zoom.state.y.max]}
                   allowDataOverflow
+                  // Kilos to one decimal at most. An estimated 1RM is a
+                  // computed number, so unrounded it produced labels wide
+                  // enough to need a gutter this chart does not have.
+                  tickFormatter={(v: number) => String(Math.round(v * 10) / 10)}
                   tick={{ fontSize: 10, fill: "var(--color-muted)" }}
                   stroke="var(--color-border)"
-                  width={44}
+                  width={38}
                 />
                 <Tooltip
                   contentStyle={{
@@ -484,13 +489,23 @@ function MicroChart({ m }: { m: ReturnType<typeof microMuscleStrength>[number] }
     return ts.length ? { min: Math.min(...ts), max: Math.max(...ts) } : { min: 0, max: 1 };
   }, [points]);
 
+  /**
+   * The index range to draw, padded and rounded to whole numbers.
+   *
+   * Rounded on purpose: the index is a computed average, so an unrounded
+   * domain gave ticks like 97.43 and 118.61 — five significant figures in a
+   * 40px gutter, which is why the axis was unreadable. The baseline of 100 is
+   * always inside the range, because "up or down from where you started" is
+   * the only question this chart answers and a range that excludes 100 hides
+   * the answer.
+   */
   const fullY = useMemo(() => {
     const vs = points.map((p) => p.index);
-    if (!vs.length) return { min: 0, max: 1 };
-    const lo = Math.min(...vs);
-    const hi = Math.max(...vs);
-    const pad = Math.max(2, (hi - lo) * 0.1);
-    return { min: lo - pad, max: hi + pad };
+    if (!vs.length) return { min: 90, max: 110 };
+    const lo = Math.min(100, ...vs);
+    const hi = Math.max(100, ...vs);
+    const pad = Math.max(4, (hi - lo) * 0.12);
+    return { min: Math.floor(lo - pad), max: Math.ceil(hi + pad) };
   }, [points]);
 
   const zoom = useChartZoom(fullX, fullY);
@@ -507,7 +522,10 @@ function MicroChart({ m }: { m: ReturnType<typeof microMuscleStrength>[number] }
         zoomed={zoom.zoomed}
       >
         <ResponsiveContainer>
-          <LineChart data={points} margin={{ top: 6, right: 8, bottom: 0, left: -18 }}>
+          {/* No negative left margin. It was -18 with a 40px axis, which slid
+              the tick labels 18px off the left edge of the chart and clipped
+              them — the axis was drawn, it just could not be read. */}
+          <LineChart data={points} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="t"
@@ -523,9 +541,21 @@ function MicroChart({ m }: { m: ReturnType<typeof microMuscleStrength>[number] }
             <YAxis
               domain={[zoom.state.y.min, zoom.state.y.max]}
               allowDataOverflow
+              // Whole numbers, and few of them: this is an index around 100, so
+              // "104" says everything "103.87" does in half the width.
+              tickCount={4}
+              tickFormatter={(v: number) => String(Math.round(v))}
               tick={{ fontSize: 9, fill: "var(--color-muted)" }}
               stroke="var(--color-border)"
-              width={40}
+              width={30}
+            />
+            {/* Where the muscle started. Every reading on this chart is relative
+                to it, so it belongs on the chart rather than in the caption. */}
+            <ReferenceLine
+              y={100}
+              stroke="var(--color-border-strong)"
+              strokeDasharray="4 4"
+              ifOverflow="hidden"
             />
             <Tooltip
               contentStyle={{

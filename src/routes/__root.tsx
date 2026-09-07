@@ -18,6 +18,9 @@ export const Route = createRootRoute({
       },
     ],
     links: [
+      // Root-relative on purpose, and rebased at staging time alongside the
+      // stylesheet — see scripts/stage_static.py. These are correct as written
+      // in dev and in the native webview, both of which serve from the root.
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "stylesheet", href: appCss },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
