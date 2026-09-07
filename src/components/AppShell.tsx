@@ -3,6 +3,7 @@ import { Activity, CalendarDays, Dumbbell, LineChart, PanelLeft, Settings as Set
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
+import { NUTRITION_KEEP_FROM } from "@/lib/seed";
 import { requestPersistence } from "@/lib/storage-health";
 import { TrainCalendar } from "@/components/TrainCalendar";
 import { useEdgeSwipe, useRightEdgeSwipe } from "@/lib/use-edge-swipe";
@@ -92,6 +93,11 @@ export function AppShell() {
       // seed later still reach an app that was seeded long ago.
       mergeCustomFoods();
       hydratePrograms();
+      // Before refreshScheduledDay, not after: normalizeLive is what throws
+      // away a sheet left over from another day, and refreshScheduledDay
+      // refuses to touch a finished one — so in the other order yesterday's
+      // saved session survived the boot and became today's Train screen.
+      normalizeLive();
       // Programmes load after the store rehydrates, so an untouched session
       // restored from a previous launch can still be carrying the split it was
       // created under. Re-derive once they are in — this only replaces a
@@ -101,9 +107,12 @@ export function AppShell() {
       // it to home-screen apps and usually refuses a plain tab; either way the
       // answer is informational, so nothing here depends on it.
       void requestPersistence();
-      // Runs after rehydrate: a restored session can carry a clock that has
-      // been running since the day it was opened.
-      normalizeLive();
+      // A one-time cleanup, recorded in settings so it never runs twice.
+      const purgedAt = useSoma.getState().settings.nutritionPurgedBefore;
+      if (purgedAt !== NUTRITION_KEEP_FROM) {
+        const gone = useSoma.getState().purgeNutritionBefore(NUTRITION_KEEP_FROM);
+        if (gone) toast(`Cleared ${gone} nutrition days from before September`);
+      }
       markHydrated();
       setReady(true);
     });

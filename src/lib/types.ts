@@ -115,6 +115,25 @@ export interface FoodItem {
    * rounding on already-rounded numbers.
    */
   per100?: { cals: number; p: number; c: number; f: number; fiber: number };
+  /**
+   * How much of this portion is water, in millilitres.
+   *
+   * Drinks are food AND hydration: a litre of orange juice is roughly 880 ml
+   * of water, and leaving that out of the day meant drinking a litre of juice
+   * counted for nothing against the water target. Stored on the logged item
+   * rather than added to `day.water`, so editing the portion or deleting the
+   * item takes its water with it instead of stranding millilitres nobody can
+   * find.
+   */
+  waterMl?: number;
+  /**
+   * Percent of the food that is water, 0-100, from the library entry.
+   *
+   * Kept alongside `waterMl` because the millilitres are a property of the
+   * portion and the percentage is a property of the food — re-sizing a portion
+   * has to recompute one from the other.
+   */
+  waterPct?: number;
 }
 
 export interface SleepLog {
@@ -172,11 +191,31 @@ export interface Settings {
   scheduleOverrides: Record<string, string>;
   customRoutines: Record<string, { name: string }[]>;
   customRoutinesRemoved: string[];
+  /**
+   * The cutoff of the one-time nutrition purge that has already run.
+   *
+   * Stored rather than run on every boot: the purge deletes days, so it must
+   * happen exactly once. Holding the date it ran with also means raising the
+   * cutoff later re-runs it, and lowering it never resurrects anything —
+   * deleted is deleted.
+   */
+  nutritionPurgedBefore?: string;
 }
 
 export interface LiveSession {
   /** When the session object was created — not what the timer measures. */
   startTime: number;
+  /**
+   * The calendar day this sheet belongs to.
+   *
+   * `live` is persisted, so without this a session finished yesterday came
+   * back this morning as today's screen — the summary of yesterday's workout,
+   * with no way to start today's beyond adding an exercise by hand. Compared
+   * against today on every boot; a mismatch means the sheet is stale and is
+   * replaced. Optional only because installs from before this existed have
+   * none, and an absent value is treated as "unknown, so refresh it".
+   */
+  date?: string;
   /**
    * When the first set was actually completed. The workout clock runs from
    * here, so time spent with the tab open before training does not count and

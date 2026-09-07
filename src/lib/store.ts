@@ -28,6 +28,8 @@ import {
 } from "./programs";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 import { tallyMuscles } from "./set-quality";
+import { guessMuscles } from "./muscle-guess";
+import { resolveSplitName } from "./split-match";
 
 function emptyDay(weight = 78): NutritionDay {
   return {
@@ -78,6 +80,7 @@ export interface SomaStore {
   setPrograms: (programs: Program[]) => void;
   setActiveProgram: (id: string) => void;
   refreshScheduledDay: () => void;
+  purgeNutritionBefore: (cutoff: string) => number;
   upsertLibraryFood: (food: FoodItem) => void;
   isFoodEdited: (name: string) => boolean;
   clearSeededHabitHistory: () => number;
@@ -128,6 +131,13 @@ export interface SomaStore {
   resetLive: () => void;
   startBackfill: (date: string, split?: string) => void;
   resumeFinished: () => void;
+  moveSession: (from: string, to: string) => string | null;
+  deleteSession: (date: string) => void;
+  patchHistorySet: (date: string, exIdx: number, setIdx: number, patch: Partial<WorkoutSet>) => void;
+  removeHistorySet: (date: string, exIdx: number, setIdx: number) => void;
+  removeHistoryExercise: (date: string, exIdx: number) => void;
+  routineFromSession: (date: string, name: string) => string | null;
+  repeatSession: (date: string) => boolean;
   saveRoutine: (name: string, list: { name: string }[], original?: string) => string | null;
   deleteRoutine: (name: string) => void;
   exportJson: () => string;
@@ -205,12 +215,10 @@ export const useSoma = create<SomaStore>()(
 
         set({ activeDate: today });
         get().ensureDay(today);
-        set({
-          live: {
-            ...defaultLive(live.split),
-            split: live.split,
-          },
-        });
+        set({ live: defaultLive(live.split, today) });
+        // The new day has its own programmed split; carrying yesterday's label
+        // over was only ever a placeholder.
+        get().refreshScheduledDay();
         return true;
       },
 
@@ -222,7 +230,33 @@ export const useSoma = create<SomaStore>()(
         const today = getLocalDateKey(new Date());
         if (get().activeDate !== today) set({ activeDate: today });
 
-        const live = get().live;
+        let live = get().live;
+
+        /**
+         * A sheet from another day is not today's sheet.
+         *
+         * `live` is persisted, so yesterday's finished session came back this
+         * morning as the Train screen: a read-only summary of yesterday's
+         * workout, with the split, the sets and the RPE buttons all belonging
+         * to a day that was already saved. Nothing could be rated because
+         * nothing on screen was today's, and the only way out was to add an
+         * exercise by hand — which clears `finished` as a side effect and made
+         * the bug look like "it only works if I add one myself".
+         *
+         * Nothing is lost by replacing it: a finished session is already in
+         * history under its own date, and an unfinished one with work in it is
+         * saved by rollDayIfNeeded before this ever runs. A day being
+         * backfilled names its own date and is left alone.
+         */
+        const belongsTo = live.forDate ?? live.date;
+        if (belongsTo !== today) {
+          const hasWork = live.exercises.some((ex) => ex.sets.some((st) => st.done));
+          if (!live.forDate && (live.finished || !hasWork)) {
+            live = defaultLive(live.split, today);
+            set({ live });
+          }
+        }
+
         if (live.finished) return;
 
         const hasDone = live.exercises.some((ex) => ex.sets.some((s) => s.done));
@@ -398,6 +432,28 @@ export const useSoma = create<SomaStore>()(
           if (!proj.isRest) get().loadSplit(proj.split);
         }
       },
+      /**
+       * Drop every nutrition day before a cutoff, once.
+       *
+       * Asked for directly: the diary was full of demo days generated six weeks
+       * back from whenever the app was first opened, and a log that invents
+       * meals is worse than an empty one. Destructive by design and therefore
+       * recorded — `nutritionPurgedBefore` holds the cutoff already applied, so
+       * this runs once rather than on every boot, and re-running it with the
+       * same cutoff is a no-op. Returns how many days went.
+       */
+      purgeNutritionBefore: (cutoff) => {
+        const nutrition = { ...get().nutrition };
+        let removed = 0;
+        for (const key of Object.keys(nutrition)) {
+          if (key >= cutoff) continue;
+          delete nutrition[key];
+          removed += 1;
+        }
+        if (removed) set({ nutrition });
+        get().patchSettings({ nutritionPurgedBefore: cutoff });
+        return removed;
+      },
       setTab: (tab) => set({ tab }),
       setActiveDate: (d) => set({ activeDate: d }),
       patchSettings: (p) => set({ settings: { ...get().settings, ...p } }),
@@ -550,14 +606,28 @@ export const useSoma = create<SomaStore>()(
         return top;
       },
 
+      /**
+       * Fill the sheet with a routine's exercises.
+       *
+       * The name is resolved rather than looked up: a programme day is a label
+       * ("Push"), a routine is a full title ("Push B (Hypertrophy & Long Muscle
+       * Length)"), and an exact lookup between the two returned nothing — so
+       * every programme built from a template opened Train on an empty session
+       * with nothing to log and nothing to rate. See lib/split-match.ts.
+       */
       loadSplit: (name) => {
         get().snapshot();
-        const list = get().routines()[name] || [];
+        const routines = get().routines();
+        const resolved = resolveSplitName(name, Object.keys(routines)) ?? name;
+        const list = routines[resolved] || [];
         const db = get().allExercises();
         const exercises = list.map((item) => makeSessionEx(item.name, db, get()));
         set({
           live: {
             ...get().live,
+            // The label the user chose is kept, not the routine it resolved to:
+            // the calendar and the programme both speak in labels, and swapping
+            // one for the other mid-session would make them disagree.
             split: name,
             exercises,
             finished: null,
@@ -807,6 +877,120 @@ export const useSoma = create<SomaStore>()(
       },
       resumeFinished: () => set({ live: { ...get().live, finished: null } }),
 
+      /**
+       * File a saved session under a different date.
+       *
+       * A session logged on the wrong day was previously unfixable: history is
+       * keyed by date, and the only way to correct it was to delete the day and
+       * re-enter every set. Refuses to overwrite a day that already holds a
+       * session — silently replacing one workout with another is not a
+       * correction, it is a second mistake — and returns the reason so the
+       * caller can say what happened.
+       *
+       * The timestamp moves with it, keeping the time of day, so anything that
+       * orders by timestamp stays in step with the key.
+       */
+      moveSession: (from, to) => {
+        if (from === to) return null;
+        const history = { ...get().history };
+        const session = history[from];
+        if (!session) return "Nothing is logged on that day.";
+        if (history[to]) return `${to} already has a session logged.`;
+        const at = new Date(session.timestamp || Date.now());
+        const [y, m, d] = to.split("-").map(Number);
+        const moved = new Date(y!, (m ?? 1) - 1, d ?? 1, at.getHours(), at.getMinutes(), at.getSeconds());
+        delete history[from];
+        history[to] = { ...session, timestamp: moved.getTime() };
+        set({ history });
+        // The live sheet may be showing the session that just moved.
+        const live = get().live;
+        if (live.finished && live.forDate === from) {
+          set({ live: { ...live, forDate: to } });
+        }
+        return null;
+      },
+      deleteSession: (date) => {
+        const history = { ...get().history };
+        if (!history[date]) return;
+        delete history[date];
+        set({ history });
+      },
+      /**
+       * Correct one set inside a saved session.
+       *
+       * Everything downstream — volume, calories, the muscle tally, every chart
+       * — is derived from the session's own totals, so the session is recomputed
+       * rather than patched: editing a weight and leaving `totalVol` alone would
+       * make the graphs disagree with the sets they were drawn from.
+       */
+      patchHistorySet: (date, exIdx, setIdx, patch) => {
+        const session = get().history[date];
+        if (!session) return;
+        const exercises = session.exercises.map((ex, i) =>
+          i !== exIdx
+            ? ex
+            : { ...ex, sets: ex.sets.map((st, j) => (j === setIdx ? { ...st, ...patch } : st)) },
+        );
+        set({ history: { ...get().history, [date]: recomputeSession(session, exercises) } });
+      },
+      removeHistorySet: (date, exIdx, setIdx) => {
+        const session = get().history[date];
+        if (!session) return;
+        const exercises = session.exercises
+          .map((ex, i) => (i !== exIdx ? ex : { ...ex, sets: ex.sets.filter((_, j) => j !== setIdx) }))
+          // An exercise with no sets left is not a record of anything.
+          .filter((ex) => ex.sets.length > 0);
+        set({ history: { ...get().history, [date]: recomputeSession(session, exercises) } });
+      },
+      removeHistoryExercise: (date, exIdx) => {
+        const session = get().history[date];
+        if (!session) return;
+        const exercises = session.exercises.filter((_, i) => i !== exIdx);
+        if (!exercises.length) {
+          get().deleteSession(date);
+          return;
+        }
+        set({ history: { ...get().history, [date]: recomputeSession(session, exercises) } });
+      },
+      /**
+       * Save a day that was actually trained as a reusable routine.
+       *
+       * Routines could only be built by hand, exercise by exercise, which is odd
+       * given the app already holds the exact list you just trained. Returns an
+       * error string on a name clash rather than silently overwriting a routine
+       * you may still be following.
+       */
+      routineFromSession: (date, name) => {
+        const session = get().history[date];
+        if (!session) return "Nothing is logged on that day.";
+        const list = session.exercises.map((ex) => ({ name: ex.name }));
+        if (!list.length) return "That day has no exercises to save.";
+        return get().saveRoutine(name, list);
+      },
+      /**
+       * Load a past day's exercises into today's sheet.
+       *
+       * The weights come back empty rather than copied: they are re-derived by
+       * makeSessionEx from what was actually lifted, which is what progressive
+       * overload is for. Refuses while a session with completed sets is open,
+       * for the same reason startBackfill does.
+       */
+      repeatSession: (date) => {
+        const session = get().history[date];
+        if (!session) return false;
+        const live = get().live;
+        const hasWork = live.exercises.some((ex) => ex.sets.some((st) => st.done));
+        if (hasWork && !live.finished) return false;
+        const db = get().allExercises();
+        const today = getLocalDateKey(new Date());
+        const exercises = session.exercises.map((ex) => makeSessionEx(ex.name, db, get()));
+        set({
+          live: { ...defaultLive(session.split, today), exercises },
+          activeDate: today,
+        });
+        return true;
+      },
+
       saveRoutine: (name, list, original) => {
         const merged = get().routines();
         const check = SomaIntelligenceEngine.validateRoutineName(name, merged, original ?? null);
@@ -942,12 +1126,53 @@ export const useSoma = create<SomaStore>()(
   ),
 );
 
+/**
+ * Rebuild a saved session's totals from its exercises.
+ *
+ * Every statistic and every chart reads the stored totals rather than the sets,
+ * so an edited set has to bring the totals with it — otherwise the Database tab
+ * shows the corrected number while the graphs keep drawing the old one, which
+ * is a worse state than not being able to edit at all.
+ */
+function recomputeSession(session: HistorySession, exercises: SessionExercise[]): HistorySession {
+  let totalVol = 0;
+  let totalSets = 0;
+  let axialVol = 0;
+  for (const ex of exercises) {
+    for (const st of ex.sets) {
+      if (!st.done || st.type === "warmup") continue;
+      totalSets += 1;
+      const vol = SomaIntelligenceEngine.calculateWorkVolume(
+        Number(st.weight) || 0,
+        Number(st.reps) || 0,
+        ex.isBW,
+      );
+      totalVol += vol;
+      if (ex.isAxial) axialVol += vol;
+    }
+  }
+  return {
+    ...session,
+    exercises,
+    totalVol,
+    totalSets,
+    axialVol,
+    muscles: tallyMuscles(exercises),
+  };
+}
+
 function makeSessionEx(name: string, db: ExerciseDef[], store: SomaStore): SessionExercise {
-  const data = db.find((e) => e.name === name) || {
+  const known = db.find((e) => e.name === name);
+  // An exercise the database does not have still trains something. The stub
+  // used to carry an empty targetKeys, which left the set-rating sheet with no
+  // muscles to offer, recovery with nothing to charge the work to, and the body
+  // map cold after a session that plainly happened.
+  const guess = known ? null : guessMuscles(name);
+  const data = known ?? {
     name,
-    muscle: "Custom",
-    subTarget: "",
-    targetKeys: [] as string[],
+    muscle: guess!.muscle,
+    subTarget: guess!.subTarget,
+    targetKeys: guess!.targetKeys,
     position: "",
     risk: "Low",
     tier: "Custom",

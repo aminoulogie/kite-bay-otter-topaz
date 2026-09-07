@@ -20,6 +20,16 @@ import type {
 
 const TODAY = new Date();
 
+/**
+ * The earliest day nutrition is kept for.
+ *
+ * The log was full of demo days generated six weeks back from whenever the app
+ * was first opened, which read as real history nobody had eaten. Everything
+ * before this date is dropped once, on request, and the seed no longer writes
+ * days earlier than it — so the diary starts where the real logging did.
+ */
+export const NUTRITION_KEEP_FROM = "2026-09-01";
+
 function dateKeyOffset(days: number): string {
   const d = new Date(TODAY);
   d.setDate(d.getDate() + days);
@@ -194,6 +204,8 @@ export function seedNutrition(): Record<string, NutritionDay> {
   const goals: Goals = { ...DEFAULT_GOALS, cals: 2300, protein: 165 };
   for (let daysAgo = 42; daysAgo >= 0; daysAgo--) {
     const key = dateKeyOffset(-daysAgo);
+    // Never seed a day the purge would immediately delete again.
+    if (key < NUTRITION_KEEP_FROM) continue;
     const d = parseLocalDateKey(key);
     const skipFood = daysAgo === 2 || daysAgo === 11;
     const items: FoodItem[] = [];
@@ -284,9 +296,14 @@ export function defaultSettings(): Settings {
   };
 }
 
-export function defaultLive(split: string) {
+export function defaultLive(split: string, date?: string) {
   return {
     startTime: Date.now(),
+    // Stamped at creation so a sheet restored from storage can be told apart
+    // from one belonging to today. Defaults to today rather than being left
+    // out: an undated sheet is treated as stale and thrown away, and a sheet
+    // created right now is not stale.
+    date: date ?? getLocalDateKey(new Date()),
     firstSetAt: null,
     split,
     exercises: [] as SessionExercise[],

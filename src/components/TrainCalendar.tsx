@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { toast } from "sonner";
 import { getPhoto } from "@/lib/habit-photos";
 import { scoreDay, type DayScore } from "@/lib/day-score";
 import {
@@ -7,6 +8,7 @@ import {
   periodFromEnd, savePeriods, type MembershipPeriod,
 } from "@/lib/membership";
 import { SomaIntelligenceEngine } from "@/lib/soma";
+import { useSwipeToClose } from "@/lib/use-edge-swipe";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import type { HistorySession, NutritionDay } from "@/lib/types";
 import { useSheet } from "@/lib/use-sheet";
@@ -48,6 +50,10 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   // Passing `open`: this sheet stays mounted so it can slide both ways, so it
   // must only hold the scroll lock while it is actually showing.
   const sheetRef = useSheet(onClose, open);
+  // Swiping right sends it back off the right edge it came in from. The month
+  // grid opts out below, because a horizontal swipe there already means
+  // "previous / next month".
+  const swipeRef = useSwipeToClose(onClose, "right", open);
   const history = useSoma((s) => s.history);
   const habits = useSoma((s) => s.habits);
   const nutrition = useSoma((s) => s.nutrition);
@@ -70,11 +76,20 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
 
   const status = useMemo(() => membershipStatus(periods, today), [periods, today]);
 
+  /**
+   * Sessions by the date they are FILED under, not by their timestamp.
+   *
+   * History is already keyed by day. Re-deriving the key from `timestamp`
+   * moved every backfilled session to the day it was typed in rather than the
+   * day it was trained, so filling in a missed Tuesday made it appear on the
+   * Saturday you filled it in — and a session moved to another date snapped
+   * straight back.
+   */
   const sessionsByDate = useMemo(() => {
     const m = new Map<string, HistorySession>();
-    for (const s of Object.values(history || {})) {
-      if (!s?.timestamp) continue;
-      m.set(isoDate(new Date(s.timestamp)), s);
+    for (const [date, s] of Object.entries(history || {})) {
+      if (!s) continue;
+      m.set(date, s);
     }
     return m;
   }, [history]);
@@ -194,24 +209,32 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           flex child refuses to go below its content height and the column
           overflows the screen instead of scrolling inside it. */}
       <div
+        ref={swipeRef}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
-        onTouchStart={(e) => {
-          const t = e.touches[0];
-          touch.current = t ? { x: t.clientX, y: t.clientY } : null;
-        }}
-        onTouchEnd={(e) => {
-          const start = touch.current;
-          const t = e.changedTouches[0];
-          touch.current = null;
-          if (!start || !t) return;
-          const dx = t.clientX - start.x;
-          const dy = t.clientY - start.y;
-          // Must be a decisive horizontal move, and more horizontal than
-          // vertical, or scrolling the month would change it.
-          if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-          shift(dx < 0 ? 1 : -1);
-        }}
       >
+        {/* The month-changing swipe lives on the grid alone, and the grid opts
+            out of swipe-to-close. Both gestures are horizontal, so sharing an
+            area meant one of them had to lose; scoping each to where it makes
+            sense lets both work. */}
+        <div
+          data-no-swipe-close
+          onTouchStart={(e) => {
+            const t = e.touches[0];
+            touch.current = t ? { x: t.clientX, y: t.clientY } : null;
+          }}
+          onTouchEnd={(e) => {
+            const start = touch.current;
+            const t = e.changedTouches[0];
+            touch.current = null;
+            if (!start || !t) return;
+            const dx = t.clientX - start.x;
+            const dy = t.clientY - start.y;
+            // Must be a decisive horizontal move, and more horizontal than
+            // vertical, or scrolling the month would change it.
+            if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+            shift(dx < 0 ? 1 : -1);
+          }}
+        >
         <div className="mb-1 grid grid-cols-7 gap-1">
           {WEEKDAYS.map((d, i) => (
             <div key={i} className="py-1 text-center text-[0.6rem] font-bold uppercase text-faint">
@@ -318,6 +341,8 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           })}
         </div>
 
+        </div>
+
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[0.65rem] text-muted">
           <span className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-emerald-500" /> trained
@@ -348,6 +373,8 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           previous={findPrevious(sessionsByDate, selected)}
           nutrition={nutrition}
           onBackToToday={() => setSelected(today)}
+          onMoved={(to) => setSelected(to)}
+          onClosePanel={onClose}
         />
       </div>
 
@@ -389,7 +416,7 @@ function findPrevious(map: Map<string, HistorySession>, date: string): HistorySe
  * just changes what this shows.
  */
 function DayCard({
-  date, isToday, session, previous, nutrition, onBackToToday,
+  date, isToday, session, previous, nutrition, onBackToToday, onMoved, onClosePanel,
 }: {
   date: string;
   isToday: boolean;
@@ -397,6 +424,8 @@ function DayCard({
   previous: HistorySession | null;
   nutrition: Record<string, NutritionDay>;
   onBackToToday: () => void;
+  onMoved: (to: string) => void;
+  onClosePanel: () => void;
 }) {
   const [photo, setPhoto] = useState<string | null>(null);
 
@@ -506,6 +535,10 @@ function DayCard({
           </p>
         )}
 
+        {session && (
+          <DayActions date={date} session={session} onMoved={onMoved} onClosePanel={onClosePanel} />
+        )}
+
         <div className="space-y-1">
           {score.lines.map((l) => (
             <div
@@ -535,6 +568,196 @@ function DayCard({
           </p>
         )}
     </div>
+  );
+}
+
+// -------------------------------------------------------------- day actions
+
+/**
+ * What you can do with a day that was actually trained.
+ *
+ * The calendar could only ever be read. A session filed on the wrong date had
+ * to be re-entered set by set, a day worth repeating had to be rebuilt by hand,
+ * and the exact list of exercises you had just done could not become a routine
+ * even though the app was already holding it.
+ *
+ * Deliberately four small buttons under the session rather than a menu: these
+ * are the things you reach for while looking at a day, and a menu would hide
+ * all of them behind a tap that says nothing about what is inside.
+ */
+function DayActions({
+  date, session, onMoved, onClosePanel,
+}: {
+  date: string;
+  session: HistorySession;
+  onMoved: (to: string) => void;
+  onClosePanel: () => void;
+}) {
+  const moveSession = useSoma((s) => s.moveSession);
+  const deleteSession = useSoma((s) => s.deleteSession);
+  const routineFromSession = useSoma((s) => s.routineFromSession);
+  const repeatSession = useSoma((s) => s.repeatSession);
+  const setTab = useSoma((s) => s.setTab);
+
+  const [naming, setNaming] = useState(false);
+  const [routineName, setRoutineName] = useState(() => session.split);
+  const [moving, setMoving] = useState(false);
+  const [target, setTarget] = useState(date);
+
+  return (
+    <div className="mb-3 rounded-2xl border border-border bg-surface-2 p-2.5">
+      <div className="mb-2 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
+        This session
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <ActionButton
+          label="Save as routine"
+          hint="reuse these exercises"
+          onClick={() => {
+            setRoutineName(session.split);
+            setNaming(true);
+            setMoving(false);
+          }}
+        />
+        <ActionButton
+          label="Repeat today"
+          hint="load it into Train"
+          onClick={() => {
+            if (!repeatSession(date)) {
+              toast.error("Finish or clear the session in progress first.");
+              return;
+            }
+            setTab("workout");
+            onClosePanel();
+            toast.success(`Loaded ${session.split} into today`);
+          }}
+        />
+        <ActionButton
+          label="Move to another day"
+          hint="logged on the wrong date"
+          onClick={() => {
+            setTarget(date);
+            setMoving(true);
+            setNaming(false);
+          }}
+        />
+        <ActionButton
+          label="Delete session"
+          danger
+          hint="cannot be undone"
+          onClick={() => {
+            if (!confirm(`Delete the ${session.split} session logged on ${date}?`)) return;
+            deleteSession(date);
+            toast.success(`Deleted the session on ${date}`);
+          }}
+        />
+      </div>
+
+      {naming && (
+        <div className="mt-2 space-y-1.5">
+          <input
+            autoFocus
+            value={routineName}
+            onChange={(e) => setRoutineName(e.target.value)}
+            placeholder="Name this routine"
+            className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-[0.75rem] font-semibold text-fg"
+          />
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => setNaming(false)}
+              className="h-9 flex-1 rounded-xl border border-border bg-surface text-[0.7rem] font-bold text-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const err = routineFromSession(date, routineName.trim());
+                if (err) {
+                  toast.error(err);
+                  return;
+                }
+                setNaming(false);
+                toast.success(`Saved "${routineName.trim()}" — it is now a routine you can load or schedule`);
+              }}
+              className="h-9 flex-[1.4] rounded-xl bg-accent text-[0.7rem] font-extrabold text-accent-ink"
+            >
+              Save routine
+            </button>
+          </div>
+          <p className="text-[0.58rem] leading-snug text-faint">
+            Saved routines appear under Load split on Train, and can be assigned to a
+            weekday in Setup → Training programme.
+          </p>
+        </div>
+      )}
+
+      {moving && (
+        <div className="mt-2 space-y-1.5">
+          <input
+            type="date"
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            className="h-10 w-full rounded-xl border border-border bg-surface px-3 text-[0.75rem] font-semibold text-fg"
+          />
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={() => setMoving(false)}
+              className="h-9 flex-1 rounded-xl border border-border bg-surface text-[0.7rem] font-bold text-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const err = moveSession(date, target);
+                if (err) {
+                  toast.error(err);
+                  return;
+                }
+                setMoving(false);
+                onMoved(target);
+                toast.success(`Moved to ${target}`);
+              }}
+              className="h-9 flex-[1.4] rounded-xl bg-accent text-[0.7rem] font-extrabold text-accent-ink"
+            >
+              Move session
+            </button>
+          </div>
+          <p className="text-[0.58rem] leading-snug text-faint">
+            Every statistic follows the session to its new date. A day that already has a
+            session logged is refused rather than overwritten.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionButton({
+  label, hint, onClick, danger,
+}: {
+  label: string;
+  hint: string;
+  onClick: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-xl border px-2.5 py-2 text-left active:bg-surface-3",
+        danger ? "border-danger/40 bg-surface" : "border-border bg-surface",
+      )}
+    >
+      <div className={cn("text-[0.68rem] font-bold", danger ? "text-danger" : "text-fg")}>
+        {label}
+      </div>
+      <div className="mt-0.5 text-[0.55rem] leading-tight text-faint">{hint}</div>
+    </button>
   );
 }
 

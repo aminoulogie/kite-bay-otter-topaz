@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { CalendarDays, Dumbbell, Flame, Moon, X } from "lucide-react";
 import { getLocalDateKey } from "@/lib/soma";
+import { useSwipeToClose } from "@/lib/use-edge-swipe";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -10,13 +11,25 @@ import { cn } from "@/lib/utils";
  * A day counts as logged if it has a session, any food, or a sleep entry —
  * an empty day the store happened to instantiate is not history, and listing
  * those would bury the days that matter.
+ *
+ * Today is the exception and is ALWAYS listed, empty or not. It was being
+ * filtered out by exactly the same rule: first thing in the morning nothing is
+ * logged yet, so the day you are actually on was missing from the list of
+ * days — and having jumped to an older one there was no row to get back to.
+ * The day being viewed is kept for the same reason.
  */
-function useLoggedDates() {
+function useLoggedDates(alwaysShow: string[]) {
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
+  const keep = alwaysShow.join("|");
 
   return useMemo(() => {
-    const dates = new Set<string>([...Object.keys(history), ...Object.keys(nutrition)]);
+    const pinned = new Set(keep.split("|").filter(Boolean));
+    const dates = new Set<string>([
+      ...Object.keys(history),
+      ...Object.keys(nutrition),
+      ...pinned,
+    ]);
     const rows = [];
 
     for (const date of dates) {
@@ -24,26 +37,31 @@ function useLoggedDates() {
       const day = nutrition[date];
       const cals = (day?.items ?? []).reduce((a, i) => a + (i.cals || 0), 0);
       const sleep = day?.sleep?.hours ?? 0;
-      if (!session && cals <= 0 && !sleep) continue;
+      const empty = !session && cals <= 0 && !sleep;
+      if (empty && !pinned.has(date)) continue;
       rows.push({
         date,
         split: session?.split ?? null,
         sets: session?.totalSets ?? 0,
         cals: Math.round(cals),
         sleep,
+        empty,
       });
     }
 
     rows.sort((a, b) => b.date.localeCompare(a.date));
     return rows;
-  }, [history, nutrition]);
+  }, [history, nutrition, keep]);
 }
 
 export function DateDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const rows = useLoggedDates();
+  // Swiping left puts it back where it came from — the reverse of the swipe
+  // that opened it. Without this the gesture only worked in one direction.
+  const panelRef = useSwipeToClose(onClose, "left", open);
   const activeDate = useSoma((s) => s.activeDate);
   const setActiveDate = useSoma((s) => s.setActiveDate);
   const today = getLocalDateKey();
+  const rows = useLoggedDates([today, activeDate]);
 
   // Escape closes, and the page behind must not scroll while it is open.
   useEffect(() => {
@@ -69,6 +87,7 @@ export function DateDrawer({ open, onClose }: { open: boolean; onClose: () => vo
         aria-hidden="true"
       />
       <aside
+        ref={panelRef}
         className={cn(
           "fixed inset-y-0 left-0 z-[71] flex w-[82%] max-w-xs flex-col border-r border-border-strong bg-bg transition-transform duration-200 ease-out",
           open ? "translate-x-0" : "-translate-x-full",
@@ -119,7 +138,15 @@ export function DateDrawer({ open, onClose }: { open: boolean; onClose: () => vo
                   </span>
                 )}
               </div>
+              <div className="text-[0.6rem] font-semibold uppercase tracking-wider text-faint">
+                {new Date(r.date + "T00:00:00").toLocaleDateString(undefined, {
+                  weekday: "long",
+                })}
+              </div>
               {r.split && <div className="mt-0.5 truncate text-[0.7rem] text-muted">{r.split}</div>}
+              {r.empty && (
+                <div className="mt-0.5 text-[0.7rem] text-faint">Nothing logged yet</div>
+              )}
               <div className="mt-1.5 flex flex-wrap gap-2 text-[0.65rem] font-semibold text-faint">
                 {r.sets > 0 && (
                   <span className="flex items-center gap-1">

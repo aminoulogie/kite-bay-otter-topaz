@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 /**
  * Opens on a rightward swipe that STARTS near the left edge.
@@ -92,4 +92,66 @@ export function useRightEdgeSwipe(onOpen: () => void, enabled = true, edge = 28)
       window.removeEventListener("touchend", onEnd);
     };
   }, [onOpen, enabled, edge]);
+}
+
+/**
+ * Closing an open panel by swiping it back the way it came.
+ *
+ * The two hooks above only ever OPEN. A panel you can swipe open but not swipe
+ * shut is a gesture that works in one direction only, which reads as broken —
+ * you reach for the reverse of the thing you just did and nothing happens.
+ *
+ * Bound to the panel element rather than the window, and only while it is open,
+ * so it cannot fire on the page underneath. `direction` is the way the panel
+ * has to travel to leave: "left" for the drawer on the left edge, "right" for
+ * the calendar on the right.
+ *
+ * Anything inside that scrolls horizontally opts out with
+ * `data-no-swipe-close`, so dragging such a strip never dismisses the panel
+ * around it.
+ */
+export function useSwipeToClose(
+  onClose: () => void,
+  direction: "left" | "right",
+  open: boolean,
+) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !open) return;
+
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    const onStart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      // A horizontally scrollable child owns its own gestures.
+      tracking = !(e.target as Element | null)?.closest?.("[data-no-swipe-close]");
+      startX = t.clientX;
+      startY = t.clientY;
+    };
+
+    const onEnd = (e: TouchEvent) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      // Positive means travel in the closing direction.
+      const dx = direction === "left" ? startX - t.clientX : t.clientX - startX;
+      const dy = Math.abs(t.clientY - startY);
+      if (dx > 60 && dx > dy * 1.5) onClose();
+    };
+
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchend", onEnd);
+    };
+  }, [onClose, direction, open]);
+
+  return ref;
 }
