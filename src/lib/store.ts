@@ -130,6 +130,7 @@ export interface SomaStore {
   saveWorkout: () => HistorySession | null;
   resetLive: () => void;
   startBackfill: (date: string, split?: string) => void;
+  setLiveDate: (date: string) => void;
   resumeFinished: () => void;
   moveSession: (from: string, to: string) => string | null;
   deleteSession: (date: string) => void;
@@ -874,6 +875,25 @@ export const useSoma = create<SomaStore>()(
           get().loadSplit(split ?? proj.split);
           set({ live: { ...get().live, forDate: date } });
         }
+      },
+      /**
+       * File the session in progress under a different day.
+       *
+       * The clock decides the date by default, which is right for a workout
+       * logged as it happens and wrong for one typed up afterwards — train in
+       * the evening, log it after midnight, and it lands on the wrong day with
+       * no way to say otherwise short of saving it and moving it again.
+       *
+       * Setting it to today clears the override rather than pinning it, so a
+       * session that runs past midnight still files itself by when work
+       * started.
+       */
+      setLiveDate: (date) => {
+        const today = getLocalDateKey(new Date());
+        set({
+          live: { ...get().live, forDate: date === today ? undefined : date },
+          activeDate: date,
+        });
       },
       resetLive: () => {
         const proj = SomaIntelligenceEngine.getProgramProjectedDay(

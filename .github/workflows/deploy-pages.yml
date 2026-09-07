@@ -2,7 +2,13 @@ name: Deploy Pages PWA
 
 on:
   push:
-    branches: [main]
+    # The feature branch publishes too, so the web app can be opened and
+    # installed from a phone before any of it goes near an IPA. Pages hosts one
+    # site, so whichever branch pushed last is what the link serves — which is
+    # the point while a branch is the thing being tested.
+    branches:
+      - main
+      - claude/workout-app-bugs-features-amne9r
   workflow_dispatch:
 
 permissions:

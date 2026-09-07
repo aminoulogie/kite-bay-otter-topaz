@@ -62,6 +62,7 @@ export function WorkoutView() {
   const allExercises = useSoma((s) => s.allExercises);
   const logReadiness = useSoma((s) => s.logReadiness);
   const setActiveDate = useSoma((s) => s.setActiveDate);
+  const setLiveDate = useSoma((s) => s.setLiveDate);
   const rootRef = useRef<HTMLDivElement>(null);
   const routines = routinesFn();
 
@@ -294,11 +295,38 @@ export function WorkoutView() {
           {/* min-w-0 lets a long split name wrap instead of forcing the row
               wider than the card and squeezing the badge beside it. */}
           <div className="min-w-0 flex-1">
-            <Badge tone="accent">Scheduled · {activeDate}</Badge>
+            <Badge tone="accent">
+              {live.forDate ? `Logging ${live.forDate}` : `Scheduled · ${activeDate}`}
+            </Badge>
             <h1 className="mt-2 font-display text-xl font-extrabold tracking-tight">{live.split}</h1>
             <p className="mt-1 text-xs text-muted">
               {proj.phase} · {proj.repScheme}
             </p>
+            {/* Which day this session is filed under, changeable before it is
+                saved. The clock is right for a workout logged as it happens and
+                wrong for one typed up the morning after — and once saved, the
+                only fix was to delete the day and re-enter every set. */}
+            <label className="mt-2 flex items-center gap-1.5 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
+              Log as
+              <input
+                type="date"
+                value={live.forDate ?? todayKey}
+                max={todayKey}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setLiveDate(e.target.value);
+                }}
+                className="h-8 rounded-lg border border-border bg-surface-2 px-2 text-[0.7rem] font-semibold normal-case tracking-normal text-fg"
+              />
+            </label>
+            {/* Saving writes one session per day, so filing onto an occupied
+                day replaces what is there. Said before the tap, not after. */}
+            {live.forDate && history[live.forDate] && (
+              <p className="mt-1 text-[0.6rem] font-bold leading-snug text-warn">
+                {live.forDate} already has {history[live.forDate]!.split} logged. Saving
+                replaces it.
+              </p>
+            )}
           </div>
           <Badge tone={proj.isDeload ? "warn" : "muted"}>{proj.phaseBadge}</Badge>
         </div>
@@ -378,9 +406,18 @@ export function WorkoutView() {
           variant="primary"
           className="flex-1"
           onClick={() => {
+            const clash = live.forDate ? history[live.forDate] : null;
+            if (
+              clash &&
+              !confirm(
+                `${live.forDate} already has ${clash.split} logged. Saving replaces it. Continue?`,
+              )
+            ) {
+              return;
+            }
             const saved = saveWorkout();
             if (!saved) toast.error("Tick at least one working set first");
-            else toast.success("Session saved");
+            else toast.success(`Session saved to ${live.forDate ?? todayKey}`);
           }}
         >
           Save log

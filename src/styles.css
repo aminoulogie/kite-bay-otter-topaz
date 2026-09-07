@@ -159,9 +159,29 @@ html[data-soma-theme="light"] {
   100% { transform: scale(1); }
 }
 
-.soma-sheet { animation: soma-sheet-in var(--dur) var(--ease-out) both; }
-.soma-rise  { animation: soma-rise var(--dur) var(--ease-out) both; }
-.soma-pop   { animation: soma-pop var(--dur-slow) var(--ease-spring) both; }
+/* ---------------------------------------------------------------------------
+   Fill mode is `backwards`, never `both`, on every animation whose keyframes
+   carry a transform.
+
+   `both` holds the final keyframe after the animation ends, and the final
+   keyframe of an entrance animation is `translateY(0)` — which computes to
+   `matrix(1, 0, 0, 1, 0, 0)`, not `none`. Any transform other than `none` makes
+   the element a containing block for `position: fixed` descendants, so every
+   overlay rendered inside an animated element was positioned against that
+   element's box instead of the viewport.
+
+   That is what made the set-rating sheet unreachable: <main> kept a transform
+   forever, so a sheet pinned to the bottom of the "screen" was pinned to the
+   bottom of the whole scrolling page — roughly 1900px down, dimming the view
+   with its backdrop while the sheet itself sat far below the fold. It looked
+   like the button opened something empty.
+
+   `backwards` still holds the FIRST keyframe through any delay, which is the
+   half the stagger actually needs, and leaves no transform behind afterwards.
+--------------------------------------------------------------------------- */
+.soma-sheet { animation: soma-sheet-in var(--dur) var(--ease-out) backwards; }
+.soma-rise  { animation: soma-rise var(--dur) var(--ease-out) backwards; }
+.soma-pop   { animation: soma-pop var(--dur-slow) var(--ease-spring) backwards; }
 
 /* Anything tappable answers immediately, before any state has changed. */
 button:not(:disabled),
@@ -201,11 +221,11 @@ button:not(:disabled):active,
   from { transform: translateY(6px); opacity: 0; }
   to   { transform: translateY(0);   opacity: 1; }
 }
-.soma-view { animation: soma-view-in 260ms var(--ease-out) both; }
+.soma-view { animation: soma-view-in 260ms var(--ease-out) backwards; }
 
 /* Cards arrive in sequence rather than all at once. Capped at six, because
    beyond that the last card is waiting on an animation nobody is watching. */
-.soma-stagger > * { animation: soma-rise 260ms var(--ease-out) both; }
+.soma-stagger > * { animation: soma-rise 260ms var(--ease-out) backwards; }
 .soma-stagger > *:nth-child(1) { animation-delay: 0ms; }
 .soma-stagger > *:nth-child(2) { animation-delay: 40ms; }
 .soma-stagger > *:nth-child(3) { animation-delay: 80ms; }
@@ -238,7 +258,7 @@ button:not(:disabled):active,
   from { opacity: 0; transform: translateY(-4px) scaleY(0.98); }
   to   { opacity: 1; transform: translateY(0)    scaleY(1); }
 }
-.soma-expand { animation: soma-expand 200ms var(--ease-out) both; transform-origin: top; }
+.soma-expand { animation: soma-expand 200ms var(--ease-out) backwards; transform-origin: top; }
 
 /* The active tab pill glides between positions instead of blinking. */
 .soma-pill { transition: background-color 200ms var(--ease-out), color 200ms var(--ease-out),
