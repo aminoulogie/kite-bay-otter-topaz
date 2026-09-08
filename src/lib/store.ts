@@ -101,6 +101,7 @@ export interface SomaStore {
   patchDay: (key: string, patch: Partial<NutritionDay>) => void;
   addFood: (item: FoodItem) => void;
   removeFood: (idx: number) => void;
+  restoreFood: (idx: number, item: FoodItem, date?: string) => void;
   addWater: (ml: number) => void;
   setWater: (ml: number) => void;
   updateFood: (idx: number, item: FoodItem) => void;
@@ -595,6 +596,24 @@ export const useSoma = create<SomaStore>()(
         const day = get().nutrition[k];
         if (!day) return;
         get().patchDay(k, { items: day.items.filter((_, i) => i !== idx) });
+      },
+      /**
+       * Put a deleted food back where it was.
+       *
+       * Undo re-adding it would append to the end, so undoing a swipe would
+       * silently reorder the meal — the food comes back, but not where it was,
+       * and the user is left wondering whether anything else moved. Splicing at
+       * the original index makes undo mean undo.
+       *
+       * The day is pinned as well as the index: a delete on Sunday undone after
+       * the diary has moved to Monday must not push Sunday's food into Monday.
+       */
+      restoreFood: (idx, item, date) => {
+        const k = date ?? get().activeDate;
+        get().ensureDay(k);
+        const items = [...(get().nutrition[k]?.items ?? [])];
+        items.splice(Math.max(0, Math.min(idx, items.length)), 0, item);
+        get().patchDay(k, { items });
       },
       addWater: (ml) => {
         const k = get().activeDate;

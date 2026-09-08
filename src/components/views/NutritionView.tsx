@@ -19,6 +19,7 @@ import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
 import { useSoma } from "@/lib/store";
 import { useLongPressMove } from "@/lib/use-long-press-move";
+import { SwipeRow } from "@/components/SwipeRow";
 import { tapLight, tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import type { FoodItem } from "@/lib/types";
@@ -35,6 +36,7 @@ export function NutritionView() {
   const ensureDay = useSoma((s) => s.ensureDay);
   const addFood = useSoma((s) => s.addFood);
   const removeFood = useSoma((s) => s.removeFood);
+  const restoreFood = useSoma((s) => s.restoreFood);
   const addWater = useSoma((s) => s.addWater);
   const setWater = useSoma((s) => s.setWater);
   const updateFood = useSoma((s) => s.updateFood);
@@ -76,6 +78,27 @@ export function NutritionView() {
   }, [activeDate, ensureDay]);
 
   // Hold a logged food, drag it onto another meal card, let go.
+  /** Only one row shows its Delete at a time, so a stray tap cannot hit a
+      button left open behind a row the user has stopped looking at. */
+  const [swipedRow, setSwipedRow] = useState<string | null>(null);
+
+  /**
+   * Delete a food, and mean it only if the user does nothing.
+   *
+   * A swipe is a much cheaper gesture than opening the sheet and pressing the
+   * bin was, which is the point of it and also the risk: the same flick that
+   * scrolls the diary now destroys a row. So every swipe delete is undoable
+   * for as long as the toast is up, and it comes back at the index it left
+   * rather than at the bottom of the meal.
+   */
+  const deleteFood = (idx: number, item: FoodItem) => {
+    const date = activeDate;
+    removeFood(idx);
+    toast.success(`Removed ${item.name}`, {
+      action: { label: "Undo", onClick: () => restoreFood(idx, item, date) },
+    });
+  };
+
   const mealDrag = useLongPressMove<number>((idx, meal) => {
     moveFoodToMeal(idx, meal);
     tapMedium();
@@ -412,8 +435,8 @@ export function NutritionView() {
       {/* The gesture is invisible without this. */}
       {items.length > 0 && (
         <p className="-mb-1 px-1 text-[0.62rem] text-faint">
-          Tap a food to edit it. Press and hold, then drag it onto another meal to move it
-          there.
+          Tap a food to edit it. Swipe left to delete. Press and hold, then drag it onto
+          another meal to move it there.
         </p>
       )}
 
@@ -452,13 +475,23 @@ export function NutritionView() {
               <div className="mt-3 space-y-1.5">
                 {group.length === 0 && <div className="py-2 text-center text-xs text-faint">Nothing logged</div>}
                 {group.map(({ it, idx }) => (
-                  <FoodRow
+                  <SwipeRow
                     key={idx}
-                    item={it}
-                    held={mealDrag.dragging === idx}
-                    dragHandlers={mealDrag.handlers(idx)}
-                    onEdit={() => setPortion({ item: it, meal: m, mode: "edit", idx })}
-                  />
+                    id={String(idx)}
+                    openId={swipedRow}
+                    setOpenId={setSwipedRow}
+                    // While a row is held for a drag it belongs to that
+                    // gesture; two meanings for one finger is one too many.
+                    disabled={mealDrag.dragging !== null}
+                    onDelete={() => deleteFood(idx, it)}
+                  >
+                    <FoodRow
+                      item={it}
+                      held={mealDrag.dragging === idx}
+                      dragHandlers={mealDrag.handlers(idx)}
+                      onEdit={() => setPortion({ item: it, meal: m, mode: "edit", idx })}
+                    />
+                  </SwipeRow>
                 ))}
               </div>
             )}
