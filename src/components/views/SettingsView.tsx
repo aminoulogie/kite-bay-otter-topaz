@@ -414,8 +414,8 @@ export function SettingsView() {
       <Card>
         <CardTitle>Data</CardTitle>
         <p className="mb-3 text-xs text-muted">
-          Everything lives on this device only. A backup includes your logs, habits and
-          habit photos — it is the only copy if this phone is lost or Safari clears its data.
+          Everything lives on this device only, so a backup is the only copy if this phone
+          is lost or Safari clears its data.
         </p>
 
         <div className="mb-3 grid gap-1.5 rounded-xl border border-border bg-surface-2 p-3 text-xs">
