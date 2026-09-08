@@ -78,8 +78,24 @@ export function HabitPhotoCalendar({ habit, onClose }: { habit: Habit; onClose: 
   const inMonth = [...urls.keys()].filter((k) => k.startsWith(year + "-" + pad(month + 1))).length;
 
   return (
-    <div className="fixed inset-0 z-[58] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-4 pb-3">
+    // A centred sheet rather than a whole screen. Taking over the display for a
+    // month grid loses the habit list behind it, so closing it is the only way
+    // back to what you were doing — and the grid never needed the room.
+    //
+    // DaySheet is a SIBLING of this, not a child. It is position:fixed, and the
+    // card below both clips its overflow and carries an entry animation — an
+    // ancestor transform makes itself the containing block for fixed children,
+    // which is exactly how the RPE sheet ended up rendering off-screen once.
+    <>
+    <div
+      className="soma-sheet fixed inset-0 z-[58] flex items-end justify-center bg-bg/85 p-4 sm:items-center"
+      onClick={(e) => {
+        // Tapping the dimmed area closes it, the way every other sheet here does.
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <div className="truncate font-display text-sm font-extrabold">{habit.name}</div>
           <div className="text-[0.65rem] font-bold uppercase tracking-wider text-faint">
@@ -91,7 +107,7 @@ export function HabitPhotoCalendar({ habit, onClose }: { habit: Habit; onClose: 
         </button>
       </div>
 
-      <div className="soma-scroll flex-1 overflow-y-auto px-4 pb-8 pt-3">
+      <div className="soma-scroll flex-1 overflow-y-auto px-4 pb-5 pt-3">
         <div className="mb-3 flex items-center justify-between">
           <Button size="icon" variant="ghost" onClick={() => shift(-1)} aria-label="Previous month">
             <ChevronLeft />
@@ -170,6 +186,8 @@ export function HabitPhotoCalendar({ habit, onClose }: { habit: Habit; onClose: 
         </div>
       </div>
 
+      </div>
+    </div>
       {openDate && (
         <DaySheet
           habitId={habit.id}
@@ -181,7 +199,7 @@ export function HabitPhotoCalendar({ habit, onClose }: { habit: Habit; onClose: 
           onClose={() => setOpenDate(null)}
         />
       )}
-    </div>
+    </>
   );
 }
 

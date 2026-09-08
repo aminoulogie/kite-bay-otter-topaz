@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { formatRest, restProgress, secondsLeft } from "@/lib/rest-timer";
+import { useRestTimer } from "@/lib/use-rest-timer";
 import { Check, Link2, Plus, Redo2, Search, Timer, Trash2, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
 import { PlateLoading } from "@/components/PlateLoading";
@@ -80,10 +82,23 @@ export function WorkoutView() {
   const [soreness, setSoreness] = useState(3);
   const [stress, setStress] = useState(3);
 
+  // Ticks only while a rest is running, and — the part that was missing — fires
+  // a chime, a buzz and a notification the moment it lands, including when that
+  // moment happened with the screen off and the app frozen.
+  const { now: restNow } = useRestTimer(live.restEndsAt, () =>
+    toast.success("Rest over — next set."),
+  );
+
+  // The session clock is a separate concern from the rest timer and outlives
+  // it, but it only has to run once a set has actually been ticked — before
+  // that it reads 00:00 by definition, and an idle Train tab should not be
+  // re-rendering every second all day.
+  const sessionRunning = live.firstSetAt != null;
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 250);
+    if (!sessionRunning) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [sessionRunning]);
 
   const proj = SomaIntelligenceEngine.getProgramProjectedDay(
     new Date(),
@@ -100,8 +115,8 @@ export function WorkoutView() {
   const elapsed = live.firstSetAt ? Math.max(0, Math.floor((now - live.firstSetAt) / 1000)) : 0;
   const em = Math.floor(elapsed / 60);
   const es = elapsed % 60;
-  const restLeft = live.restEndsAt ? Math.max(0, Math.ceil((live.restEndsAt - now) / 1000)) : 0;
-  const restPct = live.restTotal ? restLeft / live.restTotal : 0;
+  const restLeft = secondsLeft(live.restEndsAt, restNow);
+  const restPct = restProgress(live.restEndsAt, live.restTotal ?? 0, restNow);
 
   let totalVol = 0;
   let totalSets = 0;
@@ -388,7 +403,7 @@ export function WorkoutView() {
               />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center tabular text-xs font-bold">
-              {restLeft}s
+              {restLeft >= 60 ? formatRest(restLeft) : `${restLeft}s`}
             </div>
           </div>
           <div>
