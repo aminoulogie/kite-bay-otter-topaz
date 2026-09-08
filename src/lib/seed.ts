@@ -287,6 +287,7 @@ export function seedHabits(): Habit[] {
 export function defaultSettings(): Settings {
   return {
     unit: "kg",
+    currency: "DZD",
     barWeight: 20,
     restDefault: 90,
     autoRest: true,

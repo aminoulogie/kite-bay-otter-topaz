@@ -2,6 +2,12 @@ export type SetType = "normal" | "dropset" | "warmup";
 export type Unit = "kg" | "lb";
 export type ThemePref = "dark" | "light" | "system";
 export type TabId =
+  // Left of the dashboard: the rest of what gets tracked.
+  | "mind"
+  | "money"
+  // The middle, and where the app opens.
+  | "dashboard"
+  // Right of it: the body.
   | "workout"
   | "nutrition"
   | "habits"
@@ -211,6 +217,8 @@ export interface Settings {
    */
   customGoals?: Partial<Goals>;
   unit: Unit;
+  /** What money is counted in. Defaults to the dinar; free text, not a list. */
+  currency?: string;
   barWeight: number;
   restDefault: number;
   autoRest: boolean;
@@ -285,4 +293,39 @@ export interface ExerciseDef {
   tier: string;
   isAxial: boolean;
   isBW: boolean;
+}
+
+/**
+ * Money and mind, logged the same way training is: one dated entry at a time.
+ *
+ * Both live in the main store rather than in their own localStorage key, which
+ * is what the side-stores work established as the rule — anything with its own
+ * key has to be remembered separately at backup time, and four things had
+ * already been forgotten that way.
+ */
+export interface LedgerEntry {
+  id: string;
+  /** Local date key, the same shape every other log uses. */
+  date: string;
+  /** Negative amounts are not allowed; the kind carries the direction. */
+  kind: "spend" | "income";
+  amount: number;
+  category: string;
+  note?: string;
+}
+
+export interface MindEntry {
+  id: string;
+  date: string;
+  kind: "book" | "article" | "language" | "idea";
+  title: string;
+  /** Minutes spent, pages read, words learned — whatever the kind counts. */
+  count?: number;
+  /**
+   * What you took from it.
+   *
+   * Required in the UI for an article on purpose: one you cannot summarise in
+   * a line is one you skimmed, and logging it as "read" is lying to yourself.
+   */
+  takeaway?: string;
 }

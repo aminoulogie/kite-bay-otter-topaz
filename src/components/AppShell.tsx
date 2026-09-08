@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, CalendarDays, Dumbbell, LineChart, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, Utensils } from "lucide-react";
+import { Activity, BrainCircuit, CalendarDays, Dumbbell, LayoutGrid, LineChart, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
@@ -18,16 +18,31 @@ import { accentInk, accentText, normalizeAccent, resolveTheme } from "@/lib/soma
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { TabId } from "@/lib/types";
+import { TAB_ORDER, tabAt } from "@/lib/tab-order";
+import { useTabSwipe } from "@/lib/use-tab-swipe";
+import { DashboardView } from "@/components/views/DashboardView";
+import { MoneyView } from "@/components/views/MoneyView";
+import { MindView } from "@/components/views/MindView";
 
-const TABS: { id: TabId; label: string; icon: typeof Dumbbell }[] = [
-  { id: "workout", label: "Train", icon: Dumbbell },
-  { id: "nutrition", label: "Fuel", icon: Utensils },
-  { id: "habits", label: "Habits", icon: Target },
-  { id: "body", label: "Body", icon: Activity },
-  { id: "insights", label: "Stats", icon: TrendingUp },
-  { id: "estimates", label: "Ahead", icon: LineChart },
-  { id: "settings", label: "Setup", icon: SettingsIcon },
-];
+/**
+ * The dock, drawn in TAB_ORDER so it can never disagree with the direction a
+ * swipe moves. Anything added here has to be added there too, and the order
+ * test fails if the two drift apart.
+ */
+const TAB_META: Record<TabId, { label: string; icon: typeof Dumbbell }> = {
+  mind: { label: "Mind", icon: BrainCircuit },
+  money: { label: "Money", icon: Wallet },
+  dashboard: { label: "Home", icon: LayoutGrid },
+  workout: { label: "Train", icon: Dumbbell },
+  nutrition: { label: "Fuel", icon: Utensils },
+  habits: { label: "Habits", icon: Target },
+  body: { label: "Body", icon: Activity },
+  insights: { label: "Stats", icon: TrendingUp },
+  estimates: { label: "Ahead", icon: LineChart },
+  settings: { label: "Setup", icon: SettingsIcon },
+};
+
+const TABS = TAB_ORDER.map((id) => ({ id, ...TAB_META[id] }));
 
 export function AppShell() {
   const [ready, setReady] = useState(false);
@@ -74,6 +89,20 @@ export function AppShell() {
     40,
   );
   const setTab = useSoma((s) => s.setTab);
+
+  // Swiping the page sideways walks TAB_ORDER. Disabled while the drawer or
+  // the calendar is open — a gesture inside a panel must not change what is
+  // behind it — and it stands down inside scrollers and modals on its own.
+  useTabSwipe(
+    useCallback(
+      (step: number) => {
+        const next = tabAt(useSoma.getState().tab, step);
+        if (next) setTab(next);
+      },
+      [setTab],
+    ),
+    ready && !drawerOpen && !calendarOpen,
+  );
   const settings = useSoma((s) => s.settings);
   const activeDate = useSoma((s) => s.activeDate);
   const setActiveDate = useSoma((s) => s.setActiveDate);
@@ -230,6 +259,9 @@ export function AppShell() {
       <DateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
 
       <main key={tab} className="soma-scroll px-4 pt-4 soma-view soma-stagger">
+        {tab === "dashboard" && <DashboardView />}
+        {tab === "money" && <MoneyView />}
+        {tab === "mind" && <MindView />}
         {tab === "workout" && <WorkoutView />}
         {tab === "nutrition" && <NutritionView />}
         {tab === "habits" && <HabitsView />}
@@ -245,6 +277,7 @@ export function AppShell() {
             made them fit. snap-x keeps a tab from ending up half off-screen. */}
         <div
           ref={dockRef}
+          data-no-swipe-nav
           className="pointer-events-auto relative flex w-full max-w-lg snap-x items-center gap-1 overflow-x-auto rounded-full border border-border-strong bg-dock p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {/* One pill that travels, rather than each tab painting its own

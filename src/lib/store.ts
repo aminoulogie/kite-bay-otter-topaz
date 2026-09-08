@@ -17,6 +17,8 @@ import type {
   NutritionDay,
   SessionExercise,
   Settings,
+  LedgerEntry,
+  MindEntry,
   TabId,
   WorkoutSet,
 } from "./types";
@@ -33,6 +35,7 @@ import { exerciseKey } from "./exercise-key";
 import type { LoggedSet, LogOverrides } from "./training-log";
 import { guessMuscles } from "./muscle-guess";
 import { resolveSplitName } from "./split-match";
+import { HOME_TAB } from "./tab-order";
 
 function emptyDay(weight = 78): NutritionDay {
   return {
@@ -154,6 +157,17 @@ export interface SomaStore {
   repeatSession: (date: string) => boolean;
   saveRoutine: (name: string, list: { name: string }[], original?: string) => string | null;
   deleteRoutine: (name: string) => void;
+  /** Money and mind, both dated logs, both persisted with everything else. */
+  ledger: LedgerEntry[];
+  mind: MindEntry[];
+  addLedger: (e: Omit<LedgerEntry, "id">) => void;
+  updateLedger: (id: string, patch: Partial<LedgerEntry>) => void;
+  removeLedger: (id: string) => void;
+  restoreLedger: (index: number, entry: LedgerEntry) => void;
+  addMind: (e: Omit<MindEntry, "id">) => void;
+  updateMind: (id: string, patch: Partial<MindEntry>) => void;
+  removeMind: (id: string) => void;
+  restoreMind: (index: number, entry: MindEntry) => void;
   exportJson: () => string;
   importJson: (raw: string, mode?: "merge" | "replace") => boolean;
   applySideStores: (incoming: unknown, mode: "merge" | "replace") => void;
@@ -172,6 +186,19 @@ export interface SomaStore {
  */
 export const BUILT_IN_PROGRAM = defaultProgram(ROTATION_SEQUENCE);
 
+/** A short unique id; crypto.randomUUID is not in every WebView this runs in. */
+function newId(): string {
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Fold two id-keyed lists together, with `mine` winning a collision. */
+function mergeById<T extends { id: string }>(incoming: T[], mine: T[]): T[] {
+  const out = new Map<string, T>();
+  for (const x of incoming) out.set(x.id, x);
+  for (const x of mine) out.set(x.id, x);
+  return [...out.values()];
+}
+
 const SUPERSETS = ["", "A", "B", "C", "D"];
 
 export const useSoma = create<SomaStore>()(
@@ -186,11 +213,15 @@ export const useSoma = create<SomaStore>()(
       customExercises: [],
       customFoods: [],
       logOverrides: {},
+      ledger: [],
+      mind: [],
       programs: [],
       activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
       activeDate: getLocalDateKey(new Date()),
-      tab: "workout",
+      // Opens on the dashboard: the middle of TAB_ORDER, so either side is
+      // one swipe away and neither is privileged by being where the app starts.
+      tab: HOME_TAB,
 
       markHydrated: () => set({ hydrated: true }),
       /**
@@ -1224,6 +1255,34 @@ export const useSoma = create<SomaStore>()(
         get().patchSettings({ customRoutines: custom, customRoutinesRemoved: removed });
       },
       /**
+       * A new id per entry rather than an index.
+       *
+       * Indices shift the moment anything above is deleted, and both of these
+       * lists are edited from a filtered view — the month you are looking at,
+       * not the whole ledger — so an index into the visible rows means nothing
+       * to the store holding all of them.
+       */
+      addLedger: (e) =>
+        set({ ledger: [...get().ledger, { ...e, id: newId() }] }),
+      updateLedger: (id, patch) =>
+        set({ ledger: get().ledger.map((x) => (x.id === id ? { ...x, ...patch } : x)) }),
+      removeLedger: (id) => set({ ledger: get().ledger.filter((x) => x.id !== id) }),
+      restoreLedger: (index, entry) => {
+        const next = [...get().ledger];
+        next.splice(Math.max(0, Math.min(index, next.length)), 0, entry);
+        set({ ledger: next });
+      },
+
+      addMind: (e) => set({ mind: [...get().mind, { ...e, id: newId() }] }),
+      updateMind: (id, patch) =>
+        set({ mind: get().mind.map((x) => (x.id === id ? { ...x, ...patch } : x)) }),
+      removeMind: (id) => set({ mind: get().mind.filter((x) => x.id !== id) }),
+      restoreMind: (index, entry) => {
+        const next = [...get().mind];
+        next.splice(Math.max(0, Math.min(index, next.length)), 0, entry);
+        set({ mind: next });
+      },
+      /**
        * Everything, so a backup written from it loses nothing.
        *
        * The four side stores are read from localStorage rather than from this
@@ -1247,6 +1306,8 @@ export const useSoma = create<SomaStore>()(
             customExercises: get().customExercises,
             customFoods: get().customFoods,
             logOverrides: get().logOverrides,
+            ledger: get().ledger,
+            mind: get().mind,
             live: get().live,
             activeDate: get().activeDate,
             sideStores: collectSideStores(),
@@ -1284,6 +1345,8 @@ export const useSoma = create<SomaStore>()(
               customExercises: data.customExercises || [],
               customFoods: data.customFoods || [],
               logOverrides: data.logOverrides || {},
+              ledger: data.ledger || [],
+              mind: data.mind || [],
               seeded: true,
               // A backup from before these were exported has neither, and the
               // device keeps whatever it is on rather than being emptied.
@@ -1336,6 +1399,10 @@ export const useSoma = create<SomaStore>()(
               }
               return out;
             })(),
+            // Merged by id, the device winning a conflict — the same rule the
+            // rest of the restore follows.
+            ledger: mergeById(data.ledger || [], cur.ledger),
+            mind: mergeById(data.mind || [], cur.mind),
             seeded: true,
           });
           // `live` and `activeDate` are deliberately not merged: the device is
@@ -1387,6 +1454,8 @@ export const useSoma = create<SomaStore>()(
         customExercises: s.customExercises,
         customFoods: s.customFoods,
         logOverrides: s.logOverrides,
+        ledger: s.ledger,
+        mind: s.mind,
         live: s.live,
         activeDate: s.activeDate,
       }),
