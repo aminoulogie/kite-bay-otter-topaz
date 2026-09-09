@@ -222,6 +222,8 @@ export interface Settings {
   currency?: string;
   /** Monthly spending budget. Unset means the Money tab reports without judging. */
   monthlyBudget?: number;
+  /** Spending categories. Unset means the shipped defaults. */
+  spendCategories?: string[];
   barWeight: number;
   restDefault: number;
   autoRest: boolean;

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  budgetState, costPerSession, daysInMonth, inMonth, monthOf, shiftMonth, totals,
+  DEFAULT_CATEGORIES, budgetState, categoriesFor, costPerSession, daysInMonth, inMonth,
+  monthOf, shiftMonth, totals,
 } from "./money.ts";
 import type { LedgerEntry } from "./types.ts";
 
@@ -116,4 +117,29 @@ test("months have the right number of days, February included", () => {
   assert.equal(daysInMonth("2024-02"), 29);
   assert.equal(daysInMonth("2026-09"), 30);
   assert.equal(daysInMonth("2026-12"), 31);
+});
+
+test("with nothing configured, the defaults are offered", () => {
+  assert.deepEqual(categoriesFor(undefined, []), DEFAULT_CATEGORIES);
+  assert.deepEqual(categoriesFor([], []), DEFAULT_CATEGORIES);
+});
+
+test("a configured list replaces the defaults", () => {
+  assert.deepEqual(categoriesFor(["Taxi", "Coffee"], []), ["Taxi", "Coffee"]);
+});
+
+test("removing a category does not orphan the entries filed under it", () => {
+  // Three months of "Fun" must keep their label, and the label must keep
+  // appearing while anything still wears it.
+  const entries = [
+    e({ id: "1", category: "Fun" }),
+    e({ id: "2", category: "Taxi" }),
+    e({ id: "3", category: "Fun" }),
+  ];
+  assert.deepEqual(categoriesFor(["Taxi", "Coffee"], entries), ["Taxi", "Coffee", "Fun"]);
+});
+
+test("income has no category, so it contributes none", () => {
+  const entries = [e({ id: "1", kind: "income", amount: 900, category: "Salary" })];
+  assert.deepEqual(categoriesFor(["Taxi"], entries), ["Taxi"]);
 });

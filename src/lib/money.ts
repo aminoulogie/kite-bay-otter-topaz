@@ -8,10 +8,39 @@
 
 import type { LedgerEntry } from "./types.ts";
 
-export const CATEGORIES = [
+/**
+ * The categories to start from.
+ *
+ * A default rather than a fixed list: which categories matter is a fact about
+ * a person's life, not about the app, and mine are guesses. They can be added
+ * to and removed in Settings, and a category still in use cannot be removed
+ * out from under its entries.
+ */
+export const DEFAULT_CATEGORIES = [
   "Food", "Gym", "Transport", "Supplements", "Rent", "Bills",
   "Clothes", "Health", "Fun", "Other",
-] as const;
+];
+
+/**
+ * The categories to offer: the user's own if they have set any, plus anything
+ * their existing entries already use.
+ *
+ * That second half matters after an edit. Removing "Fun" from the list must
+ * not orphan three months of entries filed under it — they keep their label,
+ * and the label keeps appearing while anything wears it.
+ */
+export function categoriesFor(custom: string[] | undefined, entries: LedgerEntry[]): string[] {
+  const base = custom?.length ? custom : DEFAULT_CATEGORIES;
+  const seen = new Set(base);
+  const extra: string[] = [];
+  for (const e of entries) {
+    const c = (e.category || "").trim();
+    if (!c || e.kind === "income" || seen.has(c)) continue;
+    seen.add(c);
+    extra.push(c);
+  }
+  return [...base, ...extra.sort()];
+}
 
 /** The YYYY-MM a date key belongs to. */
 export function monthOf(date: string): string {

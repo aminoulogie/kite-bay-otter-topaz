@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import {
-  CATEGORIES, budgetState, costPerSession, daysInMonth, inMonth, monthOf, shiftMonth, totals,
+  budgetState, categoriesFor, costPerSession, daysInMonth, inMonth, monthOf, shiftMonth, totals,
 } from "@/lib/money";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -33,10 +33,16 @@ export function MoneyView() {
   const today = getLocalDateKey(new Date());
   const [month, setMonth] = useState(() => monthOf(today));
   const [amount, setAmount] = useState("");
-  const [category, setCategory] = useState<string>(CATEGORIES[0]);
+  const [category, setCategory] = useState<string>("Food");
+  const [newCategory, setNewCategory] = useState("");
   const [kind, setKind] = useState<"spend" | "income">("spend");
   const [note, setNote] = useState("");
   const [swiped, setSwiped] = useState<string | null>(null);
+
+  const categories = useMemo(
+    () => categoriesFor(settings.spendCategories, ledger),
+    [settings.spendCategories, ledger],
+  );
 
   const rows = useMemo(
     () => inMonth(ledger, month).sort((a, b) => (a.date < b.date ? 1 : -1)),
@@ -201,7 +207,7 @@ export function MoneyView() {
         </div>
         {kind === "spend" && (
           <div className="mb-2 flex flex-wrap gap-1.5">
-            {CATEGORIES.map((c) => (
+            {categories.map((c) => (
               <button
                 key={c}
                 type="button"
@@ -301,6 +307,63 @@ export function MoneyView() {
             aria-label="Currency"
             onBlur={(e) => patchSettings({ currency: e.target.value.trim() || "DZD" })}
           />
+        </div>
+
+        <div className="mt-3">
+          <div className="mb-1 text-xs font-bold text-muted">Categories</div>
+          <p className="mb-2 text-[0.68rem] leading-snug text-faint">
+            The shipped ones are guesses. Remove what you never use and add what you do —
+            entries already filed under a removed category keep their label.
+          </p>
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {categories.map((c) => {
+              const inUse = ledger.some((e) => e.kind !== "income" && e.category === c);
+              return (
+                <span
+                  key={c}
+                  className="flex h-8 items-center gap-1.5 rounded-full bg-surface-2 pl-3 pr-1.5 text-xs font-bold text-muted"
+                >
+                  {c}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${c}`}
+                    // A category still on entries cannot be removed from the
+                    // list here, because it would come straight back from
+                    // categoriesFor and look like the tap did nothing.
+                    disabled={inUse}
+                    onClick={() =>
+                      patchSettings({ spendCategories: categories.filter((x) => x !== c) })
+                    }
+                    className="grid size-5 place-items-center rounded-full text-faint disabled:opacity-25"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Add a category"
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+            />
+            <Button
+              onClick={() => {
+                const name = newCategory.trim();
+                if (!name) return;
+                if (categories.some((c) => c.toLowerCase() === name.toLowerCase())) {
+                  toast.error("Already there.");
+                  return;
+                }
+                patchSettings({ spendCategories: [...categories, name] });
+                setNewCategory("");
+              }}
+              aria-label="Add category"
+            >
+              <Plus className="size-4" />
+            </Button>
+          </div>
         </div>
       </Card>
 

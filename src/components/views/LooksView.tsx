@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
+import { parseAether, scanTitle } from "@/lib/aether-import";
 import { agoLabel } from "@/lib/last-time";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -101,6 +102,68 @@ export function LooksView() {
         >
           <Scan className="size-4" /> Open Aether <ArrowUpRight className="size-3.5" />
         </Button>
+      </Card>
+
+      <Card>
+        <CardTitle>Import from Aether</CardTitle>
+        <p className="mb-2 text-[0.7rem] leading-snug text-faint">
+          Pick a JSON export and a run of scans lands here at once, instead of retyping two
+          numbers off another screen. A row with a date but no reading is skipped rather
+          than imported blank, and a reading outside its range is refused rather than
+          clamped — a CVA of 400° is a unit error, not a posture.
+        </p>
+        <label className="flex h-11 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-2 text-sm font-semibold">
+          Choose export file
+          <input
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              void file.text().then((raw) => {
+                const parsed = parseAether(raw);
+                if (parsed.reason) {
+                  toast.error(parsed.reason);
+                  return;
+                }
+                // Existing dates are left alone: an import must not overwrite a
+                // reading already recorded, only fill the days without one.
+                const have = new Set(scans.map((sc) => sc.date));
+                let added = 0;
+                for (const scan of parsed.scans) {
+                  if (have.has(scan.date)) continue;
+                  addMind({ date: scan.date, kind: "idea", title: scanTitle(scan) });
+                  have.add(scan.date);
+                  added++;
+                }
+                const skipped = parsed.skipped + (parsed.scans.length - added);
+                toast.success(
+                  `Imported ${added} scan${added === 1 ? "" : "s"}` +
+                    (skipped ? ` · ${skipped} skipped or already here` : ""),
+                );
+              });
+            }}
+          />
+        </label>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[0.68rem] font-bold text-accent-text">
+            What the file has to look like
+          </summary>
+          <pre className="mt-1.5 overflow-x-auto rounded-xl border border-border bg-surface-2 p-2.5 text-[0.6rem] leading-relaxed text-muted">
+{`{ "scans": [
+    { "date": "2026-09-08",
+      "evenness": 94.2,   // or "alpha": 0.058
+      "cva": 52.4 }
+] }`}
+          </pre>
+          <p className="mt-1 text-[0.65rem] leading-snug text-faint">
+            A bare array works too, as does a wrapper with the list under
+            &quot;data&quot;. Aether needs an exporter written on its side that emits this —
+            it does not have one yet.
+          </p>
+        </details>
       </Card>
 
       <Card>

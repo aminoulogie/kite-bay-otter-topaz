@@ -4,6 +4,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
 import { ratingTone } from "@/lib/stimulus";
 import { scoreDay } from "@/lib/day-score";
+import { MIN_PAIRS, shortfall, strongestFinding, type Series } from "@/lib/correlate";
 import { totalWaterMl } from "@/lib/hydration";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -29,6 +30,8 @@ export function DashboardView() {
   const activeDate = useSoma((s) => s.activeDate);
   const setTab = useSoma((s) => s.setTab);
   const live = useSoma((s) => s.live);
+  const ledger = useSoma((s) => s.ledger);
+  const mind = useSoma((s) => s.mind);
 
   const today = getLocalDateKey(new Date());
   const date = activeDate || today;
@@ -44,6 +47,46 @@ export function DashboardView() {
       }),
     );
   }, [history, nutrition, date]);
+
+  /**
+   * The five things worth comparing, each as a date-keyed series.
+   *
+   * A date absent means not logged, never zero — see lib/correlate.ts, where
+   * pairing against a missing figure is the specific mistake being avoided.
+   */
+  const finding = useMemo(() => {
+    const sessionScore = new Map<string, number>();
+    for (const [d, sess] of Object.entries(history)) {
+      const totals = sess?.totalVol;
+      if (typeof totals === "number" && totals > 0) sessionScore.set(d, totals);
+    }
+
+    const sleep = new Map<string, number>();
+    const calories = new Map<string, number>();
+    for (const [d, nd] of Object.entries(nutrition)) {
+      if (nd?.sleep?.hours != null) sleep.set(d, nd.sleep.hours);
+      const kcal = (nd?.items ?? []).reduce((a, i) => a + i.cals, 0);
+      if (kcal > 0) calories.set(d, kcal);
+    }
+
+    const spend = new Map<string, number>();
+    for (const e of ledger) {
+      if (e.kind === "income") continue;
+      spend.set(e.date, (spend.get(e.date) ?? 0) + Math.abs(Number(e.amount) || 0));
+    }
+
+    const reading = new Map<string, number>();
+    for (const m of mind) reading.set(m.date, (reading.get(m.date) ?? 0) + 1);
+
+    const series: Series[] = [
+      { label: "Training volume", values: sessionScore },
+      { label: "Sleep", values: sleep },
+      { label: "Calories", values: calories },
+      { label: "Spending", values: spend },
+      { label: "Reading", values: reading },
+    ];
+    return { found: strongestFinding(series), short: shortfall(series) };
+  }, [history, nutrition, ledger, mind]);
 
   const day = nutrition[date];
   const kcal = Math.round((day?.items ?? []).reduce((a, i) => a + i.cals, 0));
@@ -121,9 +164,28 @@ export function DashboardView() {
         </Card>
       )}
 
+      <Card>
+        <CardTitle>Across everything</CardTitle>
+        {finding.found ? (
+          <>
+            <p className="text-sm font-bold leading-snug">{finding.found.text}</p>
+            <p className="mt-1 text-[0.68rem] leading-snug text-faint">
+              Correlation {finding.found.r.toFixed(2)} over {finding.found.n} days where both
+              were logged. Things moving together is not one causing the other — a bad week
+              usually moves several of these at once.
+            </p>
+          </>
+        ) : (
+          <p className="text-xs leading-snug text-faint">
+            {finding.short > 0
+              ? `Nothing to say yet. This needs ${MIN_PAIRS} days with two of these logged together — about ${finding.short} more.`
+              : "Nothing has moved together strongly enough to be worth a sentence."}
+          </p>
+        )}
+      </Card>
+
       <p className="px-1 text-center text-[0.7rem] leading-relaxed text-faint">
-        Swipe left and right to move between tabs. Money and Mind are being built to the
-        left of this one.
+        Swipe left and right to move between tabs.
       </p>
     </div>
   );
