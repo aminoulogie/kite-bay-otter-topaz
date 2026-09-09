@@ -20,18 +20,24 @@
  */
 
 import { checksum } from "./checksum";
-import { allPhotos, putPhotoRecord, type HabitPhoto } from "./habit-photos";
+import {
+  allPhotos, allScanImages, putPhotoRecord, saveScanImage, type HabitPhoto,
+} from "./habit-photos";
 import { sideStoreCounts, type SideStores } from "./side-stores";
 
 export const BACKUP_FORMAT = "soma-backup";
 /**
+ * v3 adds `scanImages` — the photographs behind a Face File, which live in
+ * IndexedDB like the habit photos and would be left behind by a store dump
+ * for exactly the same reason.
+ *
  * v2 adds `data.sideStores` — programmes, saved meals, membership periods and
  * the supplement checklist, which keep their own localStorage keys and so were
  * absent from every v1 file. v1 files still restore; they simply say nothing
  * about those four, and a restore leaves whatever the device has alone rather
  * than reading silence as "the user had none".
  */
-export const BACKUP_VERSION = 2;
+export const BACKUP_VERSION = 3;
 
 export { checksum } from "./checksum";
 
@@ -44,6 +50,11 @@ export interface BackupPhoto {
   ts: number;
 }
 
+export interface ScanImage {
+  id: string;
+  dataUrl: string;
+}
+
 export interface Backup {
   format: typeof BACKUP_FORMAT;
   /** Absent on files written before checksums existed; those still restore. */
@@ -52,6 +63,8 @@ export interface Backup {
   exportedAt: string;
   data: Record<string, unknown>;
   photos: BackupPhoto[];
+  /** Absent on v1 and v2 files. */
+  scanImages?: ScanImage[];
 }
 
 export interface BackupSummary {
@@ -93,7 +106,8 @@ export async function buildBackup(data: Record<string, unknown>): Promise<Backup
       display: await blobToDataUrl(p.display),
     });
   }
-  const body = { data, photos };
+  const scanImages = await allScanImages();
+  const body = { data, photos, scanImages };
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -139,7 +153,14 @@ export function parseBackup(raw: string): ParseResult {
   // half-imported. Older files carry no checksum and are still accepted —
   // refusing them would strand every backup taken before this existed.
   if (typeof b.checksum === "string") {
-    const actual = checksum(JSON.stringify({ data: b.data, photos: b.photos }));
+    const actual = checksum(
+      JSON.stringify(
+        // Older files were summed over two fields, not three. Including an
+        // absent scanImages would change the hash and reject every v2 backup.
+        b.scanImages ? { data: b.data, photos: b.photos, scanImages: b.scanImages }
+                     : { data: b.data, photos: b.photos },
+      ),
+    );
     if (actual !== b.checksum) {
       return {
         ok: false,
@@ -171,6 +192,20 @@ export function parseBackup(raw: string): ParseResult {
       hasSideStores: !!side && typeof side === "object",
     },
   };
+}
+
+/** Writes scan images back into IndexedDB. */
+export async function restoreScanImages(images: ScanImage[] | undefined): Promise<number> {
+  let n = 0;
+  for (const img of images ?? []) {
+    try {
+      await saveScanImage(img.id, img.dataUrl);
+      n++;
+    } catch {
+      // One unreadable image must not abort the rest of the restore.
+    }
+  }
+  return n;
 }
 
 /** Writes the photo half of a backup back into IndexedDB. */

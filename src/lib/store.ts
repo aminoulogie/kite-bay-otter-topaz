@@ -36,6 +36,7 @@ import type { LoggedSet, LogOverrides } from "./training-log";
 import { guessMuscles } from "./muscle-guess";
 import { resolveSplitName } from "./split-match";
 import { HOME_TAB } from "./tab-order";
+import type { ScanRecord } from "./aether/scan-store";
 
 function emptyDay(weight = 78): NutritionDay {
   return {
@@ -165,6 +166,17 @@ export interface SomaStore {
    */
   dayNotes: Record<string, string>;
   setDayNote: (date: string, note: string) => void;
+  /**
+   * Face and posture scans, analysis and all.
+   *
+   * In the main store rather than a side key, so they are in the backup by
+   * construction — the rule the side-stores work established after four things
+   * had already been forgotten that way.
+   */
+  scans: ScanRecord[];
+  addScan: (scan: ScanRecord) => void;
+  removeScan: (id: string) => void;
+  restoreScan: (index: number, scan: ScanRecord) => void;
   /** Money and mind, both dated logs, both persisted with everything else. */
   ledger: LedgerEntry[];
   mind: MindEntry[];
@@ -222,6 +234,7 @@ export const useSoma = create<SomaStore>()(
       customFoods: [],
       logOverrides: {},
       dayNotes: {},
+      scans: [],
       ledger: [],
       mind: [],
       programs: [],
@@ -1311,6 +1324,13 @@ export const useSoma = create<SomaStore>()(
         else delete next[date];
         set({ dayNotes: next });
       },
+      addScan: (scan) => set({ scans: [...get().scans, scan] }),
+      removeScan: (id) => set({ scans: get().scans.filter((x) => x.id !== id) }),
+      restoreScan: (index, scan) => {
+        const next = [...get().scans];
+        next.splice(Math.max(0, Math.min(index, next.length)), 0, scan);
+        set({ scans: next });
+      },
       addLedger: (e) =>
         set({ ledger: [...get().ledger, { ...e, id: newId() }] }),
       updateLedger: (id, patch) =>
@@ -1356,6 +1376,7 @@ export const useSoma = create<SomaStore>()(
             customFoods: get().customFoods,
             logOverrides: get().logOverrides,
             dayNotes: get().dayNotes,
+            scans: get().scans,
             ledger: get().ledger,
             mind: get().mind,
             live: get().live,
@@ -1396,6 +1417,7 @@ export const useSoma = create<SomaStore>()(
               customFoods: data.customFoods || [],
               logOverrides: data.logOverrides || {},
               dayNotes: data.dayNotes || {},
+              scans: data.scans || [],
               ledger: data.ledger || [],
               mind: data.mind || [],
               seeded: true,
@@ -1454,6 +1476,7 @@ export const useSoma = create<SomaStore>()(
             // rest of the restore follows.
             // Incoming notes fill gaps; a note on the device is the newer edit.
             dayNotes: { ...(data.dayNotes || {}), ...cur.dayNotes },
+            scans: mergeById(data.scans || [], cur.scans),
             ledger: mergeById(data.ledger || [], cur.ledger),
             mind: mergeById(data.mind || [], cur.mind),
             seeded: true,
@@ -1508,6 +1531,7 @@ export const useSoma = create<SomaStore>()(
         customFoods: s.customFoods,
         logOverrides: s.logOverrides,
         dayNotes: s.dayNotes,
+        scans: s.scans,
         ledger: s.ledger,
         mind: s.mind,
         live: s.live,

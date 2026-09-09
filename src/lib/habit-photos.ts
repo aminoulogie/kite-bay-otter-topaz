@@ -12,8 +12,17 @@
  */
 
 const DB_NAME = "soma-habit-photos";
-const DB_VERSION = 1;
+/**
+ * v2 adds the scan store. A SECOND object store in the same database rather
+ * than a second database, deliberately: the backup coverage test asserts the
+ * app opens exactly one IndexedDB, because a second one is a second thing to
+ * remember at backup time and that is precisely how four localStorage keys
+ * went missing from every backup for months.
+ */
+const DB_VERSION = 2;
 const STORE = "photos";
+/** Face and posture captures, as data URLs keyed by scan id. */
+const SCAN_STORE = "scans";
 
 const THUMB_PX = 320;
 const DISPLAY_PX = 1080;
@@ -39,6 +48,12 @@ function open(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains(SCAN_STORE)) {
+        // Keyed externally rather than by a field: a scan image is a bare
+        // string, and wrapping it in a record to carry its own key would mean
+        // migrating anything already stored.
+        db.createObjectStore(SCAN_STORE);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -176,4 +191,57 @@ export class ObjectUrlPool {
     for (const u of this.urls) URL.revokeObjectURL(u);
     this.urls = [];
   }
+}
+
+
+/**
+ * Scan images: the actual photographs behind a Face File.
+ *
+ * Stored as data URLs rather than Blobs, which is how the analyser receives
+ * them and how they go into a backup — converting on every read and write to
+ * save a third of the bytes would cost more than it saves for a handful of
+ * images kept per month.
+ */
+function scanTx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return open().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const t = db.transaction(SCAN_STORE, mode);
+        const req = run(t.objectStore(SCAN_STORE));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
+      }),
+  );
+}
+
+export async function saveScanImage(id: string, dataUrl: string): Promise<void> {
+  if (!id || !dataUrl) return;
+  await scanTx("readwrite", (s) => s.put(dataUrl, id));
+}
+
+export async function loadScanImage(id: string): Promise<string | null> {
+  if (!id) return null;
+  const row = await scanTx<string | undefined>("readonly", (s) => s.get(id));
+  return row ?? null;
+}
+
+export async function deleteScanImage(id: string): Promise<void> {
+  await scanTx("readwrite", (s) => s.delete(id));
+}
+
+/** Every scan image, for the backup. */
+export async function allScanImages(): Promise<{ id: string; dataUrl: string }[]> {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const t = db.transaction(SCAN_STORE, "readonly");
+    const store = t.objectStore(SCAN_STORE);
+    const keys = store.getAllKeys();
+    const values = store.getAll();
+    t.oncomplete = () => {
+      const ids = (keys.result as IDBValidKey[]).map(String);
+      const rows = values.result as string[];
+      resolve(ids.map((id, i) => ({ id, dataUrl: rows[i]! })).filter((r) => r.dataUrl));
+    };
+    t.onerror = () => reject(t.error ?? new Error("Could not read scan images"));
+  });
 }

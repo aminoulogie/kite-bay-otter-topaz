@@ -6,7 +6,10 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
-import { buildBackup, parseBackup, restorePhotos, saveBackupFile, type BackupSummary } from "@/lib/backup";
+import {
+  buildBackup, parseBackup, restorePhotos, restoreScanImages, saveBackupFile,
+  type BackupSummary,
+} from "@/lib/backup";
 import {
   backupIsDue, daysSinceBackup, formatBytes, markBackedUp, requestPersistence,
   storageHealth, type StorageHealth,
@@ -129,11 +132,15 @@ export function SettingsView() {
           return;
         }
         const n = await restorePhotos(result.backup.photos);
+        // Scan images live in the same IndexedDB and are restored the same way.
+        // A v1 or v2 file simply has none, and the call no-ops.
+        const scanned = await restoreScanImages(result.backup.scanImages);
         const extras = result.summary.hasSideStores
           ? `, ${plural(result.summary.programs, "programme", "programmes")}`
           : "";
         toast.success(
-          `Restored ${result.summary.sessions} sessions${extras} and ${n} photo${n === 1 ? "" : "s"}`,
+          `Restored ${result.summary.sessions} sessions${extras} and ${n} photo${n === 1 ? "" : "s"}` +
+            (scanned ? ` · ${scanned} scan image${scanned === 1 ? "" : "s"}` : ""),
         );
       },
     });
@@ -481,7 +488,8 @@ export function SettingsView() {
         <p className="mb-2 text-[0.7rem] leading-relaxed text-faint">
           A backup holds everything: every session and correction, all nutrition, water and
           creatine, habits and their photos at full size, your foods and scanned barcodes, your
-          programmes and weekday splits, saved meals, membership periods and supplements.
+          programmes and weekday splits, saved meals, membership periods, supplements, and
+          every face scan with its photograph.
         </p>
         <div className="flex flex-col gap-2">
           <Button variant="primary" disabled={busy} onClick={() => void download()}>
