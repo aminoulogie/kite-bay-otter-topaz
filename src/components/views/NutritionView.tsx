@@ -21,6 +21,7 @@ import { useSoma } from "@/lib/store";
 import { useLongPressMove } from "@/lib/use-long-press-move";
 import { SwipeRow } from "@/components/SwipeRow";
 import { QuickAddSheet } from "@/components/QuickAddSheet";
+import { lastMealDate, mealItems, recentFoods } from "@/lib/food-recents";
 import { tapLight, tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import type { FoodItem } from "@/lib/types";
@@ -137,6 +138,16 @@ export function NutritionView() {
   const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
   // Accent-insensitive, group-aware, and ordered by how well it matches — a
   // five-hundred-food library needs a real search, not a substring test.
+  /**
+   * What you actually eat, from the log rather than from a counter nobody
+   * increments. Offered when the search box is empty, which is the moment you
+   * are about to type the same thing you typed yesterday.
+   */
+  const recents = useMemo(
+    () => recentFoods(nutrition, activeDate, 10),
+    [nutrition, activeDate],
+  );
+
   const hits = useMemo(() => {
     if (query) return searchFoods(library, query, 25);
     return showAll ? searchFoods(library, "", 200) : [];
@@ -268,6 +279,29 @@ export function NutritionView() {
             <ScanLine className="size-4" /> Scan
           </Button>
         </div>
+
+        {!query && !showAll && recents.length > 0 && (
+          <div className="mt-2">
+            <div className="mb-1.5 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+              You eat these
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {recents.map((r) => (
+                <button
+                  key={r.name}
+                  type="button"
+                  // Opens the portion sheet at the size last logged, so the
+                  // common case is two taps rather than a search and a number.
+                  onClick={() => setPortion({ item: r.item, meal, mode: "add" })}
+                  className="flex h-8 items-center gap-1.5 rounded-full bg-surface-2 px-3 text-xs font-bold text-muted"
+                >
+                  <span className="max-w-[9rem] truncate">{r.name}</span>
+                  <span className="text-[0.6rem] text-faint">{r.item.serving}{r.item.unit}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="mt-2 flex items-center justify-between gap-3">
           <button
@@ -484,7 +518,7 @@ export function NutritionView() {
             </button>
             {open && (
               <div className="mt-3 space-y-1.5">
-                {group.length === 0 && <div className="py-2 text-center text-xs text-faint">Nothing logged</div>}
+                {group.length === 0 && <RepeatMeal meal={m} />}
                 {group.map(({ it, idx }) => (
                   <SwipeRow
                     key={idx}
@@ -611,6 +645,45 @@ function Macro({ label, used, goal, unit }: { label: string; used: number; goal:
         </span>
       </div>
       <Progress className="mt-2" value={(used / goal) * 100} />
+    </div>
+  );
+}
+
+/**
+ * Offers the last time you ate this meal, on the card where it is missing.
+ *
+ * Placed here rather than as a "copy yesterday" button at the top because this
+ * is where the absence is visible: you are looking at an empty Breakfast, and
+ * the thing you want is the breakfast you had on the last day you had one —
+ * which is often not yesterday, and is worth naming rather than assuming.
+ */
+function RepeatMeal({ meal }: { meal: string }) {
+  const nutrition = useSoma((s) => s.nutrition);
+  const activeDate = useSoma((s) => s.activeDate);
+  const addFood = useSoma((s) => s.addFood);
+
+  const from = lastMealDate(nutrition, meal, activeDate);
+  const items = from ? mealItems(nutrition, from, meal) : [];
+  if (!from || items.length === 0) {
+    return <div className="py-2 text-center text-xs text-faint">Nothing logged</div>;
+  }
+
+  const kcal = Math.round(items.reduce((a, i) => a + i.cals, 0));
+  return (
+    <div className="py-1 text-center">
+      <div className="mb-1.5 text-xs text-faint">Nothing logged</div>
+      <button
+        type="button"
+        onClick={() => {
+          // Copied, not referenced: editing today's portion must not rewrite
+          // what was eaten on the day it came from.
+          for (const item of items) addFood({ ...item, meal });
+          toast.success(`Repeated ${meal.toLowerCase()} from ${from}`);
+        }}
+        className="rounded-full border border-border bg-surface-2 px-3 py-1.5 text-xs font-bold text-accent-text"
+      >
+        Repeat {from} · {items.length} item{items.length === 1 ? "" : "s"} · {kcal} kcal
+      </button>
     </div>
   );
 }

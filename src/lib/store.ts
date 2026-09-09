@@ -622,6 +622,20 @@ export const useSoma = create<SomaStore>()(
         get().ensureDay(k);
         const day = get().nutrition[k]!;
         get().patchDay(k, { items: [...day.items, item] });
+
+        // Count the logging. `usageCount` is read by the search tie-break and
+        // by the pre-workout picker, and nothing had ever incremented it — so
+        // every food sat at zero and "the one you reach for most" ranked
+        // nothing at all. Only the user's own foods carry the count; a shipped
+        // food is a shared constant and must not be mutated per install.
+        const name = item.name.trim().toLowerCase();
+        const customs = get().customFoods;
+        const i = customs.findIndex((f) => f.name.trim().toLowerCase() === name);
+        if (i >= 0) {
+          const next = [...customs];
+          next[i] = { ...next[i]!, usageCount: (next[i]!.usageCount ?? 0) + 1 };
+          set({ customFoods: next });
+        }
       },
       removeFood: (idx) => {
         const k = get().activeDate;
