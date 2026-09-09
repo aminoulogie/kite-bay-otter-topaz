@@ -4,7 +4,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { SwipeRow } from "@/components/SwipeRow";
-import { evennessOf, latestByKind, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { latestByKind, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { symmetryPercent } from "@/lib/aether/harmony";
 import { deleteScanImage } from "@/lib/habit-photos";
 import { agoLabel } from "@/lib/last-time";
 import { getLocalDateKey } from "@/lib/soma";
@@ -59,8 +60,13 @@ export function LooksView() {
   // Only gated-clean front captures compare. Two readings taken at different
   // yaw are not the same measurement, and subtracting them produces a change
   // that is mostly the head turning.
+  // Expressed on the same scale as the figure above it, or the card would
+  // report a change in units nothing else on the screen uses.
   const change =
-    trend.length >= 2 ? trend[trend.length - 1]!.evenness - trend[0]!.evenness : null;
+    trend.length >= 2
+      ? symmetryPercent(1 - trend[trend.length - 1]!.evenness / 100) -
+        symmetryPercent(1 - trend[0]!.evenness / 100)
+      : null;
 
   const del = (scan: ScanRecord) => {
     const index = scans.findIndex((x) => x.id === scan.id);
@@ -81,11 +87,12 @@ export function LooksView() {
         {front?.face ? (
           <>
             <div className="flex items-end gap-3">
-              <div className="font-display text-5xl font-extrabold tabular">
-                {evennessOf(front.face)}
+              <div className="font-display text-6xl font-extrabold tabular leading-none">
+                {symmetryPercent(front.face.alpha)}
+                <span className="text-2xl">%</span>
               </div>
               <div className="pb-1.5 text-xs text-muted">
-                evenness
+                symmetry
                 <div className="text-[0.65rem] text-faint">{agoLabel(front.date, today)}</div>
               </div>
             </div>
@@ -97,8 +104,8 @@ export function LooksView() {
             {change != null && (
               <p className="mt-1 text-[0.68rem] text-faint">
                 {change >= 0 ? "+" : ""}
-                {change.toFixed(1)} across {trend.length} clean front captures. Anything under
-                about a point is the photograph, not the face.
+                {change.toFixed(1)} points across {trend.length} clean front captures. Anything
+                under about a point is the photograph, not the face.
               </p>
             )}
           </>
@@ -137,7 +144,7 @@ export function LooksView() {
                   {KIND_LABEL[k]}
                 </div>
                 <div className="tabular font-display text-lg font-extrabold">
-                  {sc?.face ? evennessOf(sc.face) : "—"}
+                  {sc?.face ? `${symmetryPercent(sc.face.alpha)}%` : "—"}
                 </div>
               </button>
             );
@@ -175,7 +182,7 @@ export function LooksView() {
                     </div>
                     <div className="text-[0.7rem] text-faint">
                       {sc.date}
-                      {sc.face ? ` · evenness ${evennessOf(sc.face)}` : ""}
+                      {sc.face ? ` · ${symmetryPercent(sc.face.alpha)}% symmetry` : ""}
                     </div>
                   </div>
                   <ChevronRight className="size-4 shrink-0 text-faint" />

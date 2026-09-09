@@ -16,6 +16,8 @@
 import type { FaceAnalysis } from "./analyzeFace.ts";
 import type { PostureAnalysis } from "./analyzePosture.ts";
 import type { CaptureKind } from "./captureQuality.ts";
+import type { SkinReport } from "./skin.ts";
+import type { Reading } from "./harmony.ts";
 
 export interface ScanRecord {
   id: string;
@@ -25,6 +27,12 @@ export interface ScanRecord {
   kind: CaptureKind | "posture_side" | "posture_front";
   face?: FaceAnalysis;
   posture?: PostureAnalysis;
+  /** Pixel measurements — absent on captures taken before these existed. */
+  skin?: SkinReport;
+  /** Cheek width over intercanthal. Soft tissue over fixed bone. */
+  puffiness?: number | null;
+  /** Every canon measured against its published norm. */
+  harmony?: Reading[];
 }
 
 /** Evenness as a percentage, from the raw Procrustes distance. */

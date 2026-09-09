@@ -68,8 +68,8 @@ export interface SkinReport {
   missing: string[];
 }
 
-/** sRGB to CIELAB, D65. Only a* and b* and L* are needed. */
-function rgbToLab(r: number, g: number, b: number): { L: number; a: number; b: number } {
+/** sRGB to CIELAB, D65. Only the a* and b* chroma axes are needed. */
+function rgbToLab(r: number, g: number, b: number): { a: number; b: number } {
   const f = (v: number) => {
     const s = v / 255;
     return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
@@ -85,7 +85,7 @@ function rgbToLab(r: number, g: number, b: number): { L: number; a: number; b: n
   const fx = k(X);
   const fy = k(Y);
   const fz = k(Z);
-  return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+  return { a: 500 * (fx - fy), b: 200 * (fy - fz) };
 }
 
 /** A pixel bright enough to be a reflection rather than skin. */
@@ -109,7 +109,6 @@ export function samplePatch(
   const r2 = r * r;
 
   let n = 0;
-  let sumL = 0;
   let sumA = 0;
   let sumB = 0;
   let sumLum = 0;
@@ -133,8 +132,9 @@ export function samplePatch(
       // Rec. 601 luma, which is what "how bright does this look" means here.
       const lum = 0.299 * R + 0.587 * G + 0.114 * B;
       if (lum >= SPECULAR_LUM) spec++;
+      // Only a* and b* are taken from Lab; brightness is the Rec.601 luma
+      // above, which is the one the indices are expressed against.
       const lab = rgbToLab(R, G, B);
-      sumL += lab.L;
       sumA += lab.a;
       sumB += lab.b;
       sumLum += lum;

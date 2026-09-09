@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { loadScanImage } from "@/lib/habit-photos";
 import { evennessOf, type ScanRecord } from "@/lib/aether/scan-store";
+import { harmonySummary, regionPercent, symmetryPercent } from "@/lib/aether/harmony";
 import { cn } from "@/lib/utils";
 
 /**
@@ -62,19 +63,136 @@ export function FaceFileSheet({ scan, onClose }: { scan: ScanRecord; onClose: ()
         ) : (
           <>
             <Card>
-              <CardTitle>Evenness</CardTitle>
+              <CardTitle>Symmetry</CardTitle>
               <div className="flex items-end gap-3">
-                <div className="font-display text-5xl font-extrabold tabular">{evenness}</div>
+                <div className="font-display text-6xl font-extrabold tabular leading-none">
+                  {symmetryPercent(face.alpha)}
+                  <span className="text-2xl">%</span>
+                </div>
                 <div className="pb-1.5 text-xs text-muted">
                   under this pose
-                  <div className="text-[0.65rem] text-faint">α {face.alpha.toFixed(4)}</div>
+                  <div className="text-[0.65rem] text-faint">
+                    α {face.alpha.toFixed(4)} · evenness {evenness}
+                  </div>
                 </div>
               </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {(Object.entries(face.regional) as [string, number][]).map(([region, v]) => (
+                  <div key={region} className="rounded-xl border border-border bg-surface-2 p-2">
+                    <div className="text-[0.55rem] font-bold uppercase tracking-wider text-faint">
+                      {region}
+                    </div>
+                    <div className="tabular font-display text-xl font-extrabold">
+                      {regionPercent(v)}%
+                    </div>
+                  </div>
+                ))}
+              </div>
               <p className="mt-2 text-[0.68rem] leading-snug text-faint">
-                Total shape asymmetry in this photograph. Not a rating, and not fluctuating
-                asymmetry — that needs repeated measurements and cannot come from one frame.
+                Procrustes shape asymmetry in this photograph, scaled so an ordinary face
+                lands in the nineties — everyone is asymmetric, and a scale reporting everyone
+                near 100 would measure nothing. Not fluctuating asymmetry: that needs repeated
+                measurements and cannot come from one frame.
               </p>
             </Card>
+
+            {scan.skin && (
+              <Card>
+                <CardTitle>Skin and soft tissue</CardTitle>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ["Under-eye", scan.skin.underEyeIndex, "% darker than cheek"],
+                    ["Puffiness", scan.puffiness ?? null, "cheek ÷ eye span"],
+                    ["Redness", scan.skin.erythemaIndex, "cheek vs forehead a*"],
+                    ["Unevenness", scan.skin.unevenness, "% tone spread"],
+                    ["Shine", scan.skin.shine, "% specular"],
+                  ] as const).map(([label, value, unit]) => (
+                    <div key={label} className="rounded-xl border border-border bg-surface-2 p-2.5">
+                      <div className="text-[0.55rem] font-bold uppercase tracking-wider text-faint">
+                        {label}
+                      </div>
+                      <div className="tabular font-display text-2xl font-extrabold">
+                        {value == null ? "—" : value}
+                      </div>
+                      <div className="text-[0.55rem] leading-tight text-faint">{unit}</div>
+                    </div>
+                  ))}
+                </div>
+                {scan.skin.underEyeL != null && scan.skin.underEyeR != null && (
+                  <p className="mt-2 text-[0.7rem] text-muted">
+                    Under-eye left {scan.skin.underEyeL} · right {scan.skin.underEyeR}
+                  </p>
+                )}
+                <p className="mt-2 text-[0.68rem] leading-snug text-faint">
+                  Each figure is measured against another patch of your own face, so a
+                  different bulb does not move it. Compare these only between captures that
+                  both passed their lighting gate.
+                </p>
+              </Card>
+            )}
+
+            {scan.harmony && scan.harmony.length > 0 && (
+              <Card>
+                <CardTitle>
+                  <span>Against published norms</span>
+                  <span className="text-xs font-bold text-muted">
+                    {harmonySummary(scan.harmony).typical}/{harmonySummary(scan.harmony).measured} typical
+                  </span>
+                </CardTitle>
+                <div className="space-y-2">
+                  {scan.harmony
+                    .filter((r) => r.value != null)
+                    .map((r) => (
+                      <div key={r.norm.id}>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <span className="truncate text-xs font-bold">{r.norm.label}</span>
+                          <span className="shrink-0 tabular text-sm font-extrabold">
+                            {r.value}
+                            {r.norm.unit === "deg" ? "°" : ""}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2 text-[0.62rem]">
+                          <span className="truncate text-faint">{r.norm.formula}</span>
+                          <span
+                            className={cn(
+                              "shrink-0 tabular font-bold",
+                              r.typical ? "text-muted" : "text-warn",
+                            )}
+                          >
+                            norm {r.norm.norm}
+                            {r.norm.unit === "deg" ? "°" : ""} · {r.pct! >= 0 ? "+" : ""}
+                            {r.pct}
+                            {r.norm.unit === "deg" ? "°" : "%"}
+                          </span>
+                        </div>
+                        {/* Where this sits within the natural spread. Centre is
+                            the norm; the band is one standard deviation either
+                            side, which is what "typical" means here. */}
+                        <div className="relative mt-1 h-1.5 overflow-hidden rounded-full bg-surface-2">
+                          <span className="absolute inset-y-0 left-1/3 w-1/3 bg-accent/15" />
+                          <span
+                            className={cn(
+                              "absolute top-0 h-full w-0.5",
+                              r.typical ? "bg-accent" : "bg-warn",
+                            )}
+                            style={{
+                              left: `${Math.max(1, Math.min(99, 50 + (r.z ?? 0) * 16.67))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+                <p className="mt-2 text-[0.66rem] leading-snug text-faint">
+                  The shaded band is one standard deviation either side of the published
+                  figure. Farkas&apos;s own large-sample work found these canons are often NOT
+                  met in faces everyone agrees are attractive, and that they differ by
+                  ancestry — so a deviation here describes you, it does not mark you down.
+                  There is no blended score because there is nothing true to calibrate one
+                  against.
+                </p>
+              </Card>
+            )}
 
             <Card>
               <CardTitle>How it was taken</CardTitle>

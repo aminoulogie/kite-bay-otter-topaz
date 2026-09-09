@@ -8,6 +8,8 @@ import {
   type Quality,
 } from "@/lib/aether/captureQuality";
 import { FACE } from "@/lib/aether/landmarks";
+import { measureHarmony } from "@/lib/aether/harmony";
+import { analyseSkin, puffinessRatio } from "@/lib/aether/skin";
 import {
   detectFace, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
 } from "@/lib/aether/mediapipe";
@@ -32,6 +34,14 @@ import { cn } from "@/lib/utils";
 
 const BURST = 5;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+interface Grab {
+  analysis: FaceAnalysis;
+  skin: ReturnType<typeof analyseSkin>;
+  puffiness: number | null;
+  harmony: ReturnType<typeof measureHarmony>;
+  dataUrl: string;
+}
 
 export function ScanSheet({ onClose }: { onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -147,7 +157,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     rafRef.current = requestAnimationFrame(tick);
   }
 
-  async function grab(): Promise<{ analysis: FaceAnalysis; dataUrl: string } | null> {
+  async function grab(): Promise<Grab | null> {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
@@ -174,7 +184,16 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       poseSource: eu ? "matrix" : "proxy",
       lighting, framing, quality, smileBlend: smile,
     });
-    return { analysis, dataUrl: canvas.toDataURL("image/jpeg", 0.82) };
+    // Pixel measurements come off the SAME canvas the landmarks were found on,
+    // so a patch placed at a landmark lands on the skin it names.
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    return {
+      analysis,
+      skin: analyseSkin(pixels, pts),
+      puffiness: puffinessRatio(pts),
+      harmony: measureHarmony(pts),
+      dataUrl: canvas.toDataURL("image/jpeg", 0.82),
+    };
   }
 
   /**
@@ -191,7 +210,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setBurstPct(0);
     try {
-      const frames: { analysis: FaceAnalysis; dataUrl: string }[] = [];
+      const frames: Grab[] = [];
       for (let i = 0; i < BURST; i++) {
         const g = await grab();
         if (g) frames.push(g);
@@ -212,6 +231,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         capturedAt: best.analysis.capturedAt,
         kind,
         face: best.analysis,
+        skin: best.skin,
+        puffiness: best.puffiness,
+        harmony: best.harmony,
       });
       const q = best.analysis.quality;
       setStatus(
@@ -262,9 +284,16 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         lighting: sampleLighting(canvas, faceBox(pts)),
         framing: framingFromLandmarks(pts),
       });
+      const pixels = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height);
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
       await saveScanImage(id, canvas.toDataURL("image/jpeg", 0.82));
-      addScan({ id, date: getLocalDateKey(new Date()), capturedAt: analysis.capturedAt, kind, face: analysis });
+      addScan({
+        id, date: getLocalDateKey(new Date()), capturedAt: analysis.capturedAt, kind,
+        face: analysis,
+        skin: analyseSkin(pixels, pts),
+        puffiness: puffinessRatio(pts),
+        harmony: measureHarmony(pts),
+      });
       setStatus(`Imported as ${s.short}. Evenness ${(100 - analysis.alpha * 100).toFixed(1)}.`);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Import failed.");
