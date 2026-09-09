@@ -3,7 +3,10 @@ import { X } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { loadScanImage } from "@/lib/habit-photos";
 import { evennessOf, type ScanRecord } from "@/lib/aether/scan-store";
-import { harmonySummary, regionPercent, symmetryPercent } from "@/lib/aether/harmony";
+import {
+  distinctiveness, distinctivenessLabel, harmonySummary, regionPercent, symmetryPercent,
+} from "@/lib/aether/harmony";
+import { finding } from "@/lib/aether/evidence";
 import { cn } from "@/lib/utils";
 
 /**
@@ -62,8 +65,41 @@ export function FaceFileSheet({ scan, onClose }: { scan: ScanRecord; onClose: ()
           </Card>
         ) : (
           <>
+            {scan.harmony && distinctiveness(scan.harmony) && (
+              <Card>
+                <CardTitle>Distinctiveness</CardTitle>
+                <div className="flex items-end gap-3">
+                  <div className="font-display text-6xl font-extrabold tabular leading-none">
+                    {distinctiveness(scan.harmony)!.rms}
+                  </div>
+                  <div className="pb-1.5 text-xs text-muted">
+                    SD from average
+                    <div className="text-[0.65rem] text-faint">
+                      over {distinctiveness(scan.harmony)!.measured} proportions
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-1 text-sm font-bold">
+                  {distinctivenessLabel(distinctiveness(scan.harmony)!.rms)}
+                </p>
+                <p className="mt-2 text-[0.68rem] leading-snug text-faint">
+                  The best-supported shape number here, and it is not symmetry. Recent work
+                  finds attractiveness predicted by closeness to the average and by
+                  femininity, and NOT by symmetry once averageness is accounted for. Lower is
+                  more average. It is not a beauty score — plenty of striking faces are
+                  distinctive, and the effect is much smaller on real photographs than on the
+                  morphed faces the famous studies used.
+                </p>
+              </Card>
+            )}
+
             <Card>
-              <CardTitle>Symmetry</CardTitle>
+              <CardTitle>
+                <span>Symmetry</span>
+                <span className="text-[0.6rem] font-bold text-faint">
+                  r ≈ {finding("symmetry")?.r} at most
+                </span>
+              </CardTitle>
               <div className="flex items-end gap-3">
                 <div className="font-display text-6xl font-extrabold tabular leading-none">
                   {symmetryPercent(face.alpha)}
@@ -93,6 +129,12 @@ export function FaceFileSheet({ scan, onClose }: { scan: ScanRecord; onClose: ()
                 lands in the nineties — everyone is asymmetric, and a scale reporting everyone
                 near 100 would measure nothing. Not fluctuating asymmetry: that needs repeated
                 measurements and cannot come from one frame.
+                <br />
+                <br />
+                Worth less than the internet thinks. Meta-analysis puts symmetry&apos;s
+                association with attractiveness at about r = 0.2, recent equivalence tests find
+                it smaller still, and the 2025 shape work found it did not predict
+                attractiveness at all once averageness was accounted for.
               </p>
             </Card>
 
@@ -123,10 +165,35 @@ export function FaceFileSheet({ scan, onClose }: { scan: ScanRecord; onClose: ()
                     Under-eye left {scan.skin.underEyeL} · right {scan.skin.underEyeR}
                   </p>
                 )}
+                {scan.skin.circleType && scan.skin.circleType !== "none" && (
+                  <div className="mt-2 rounded-xl border border-border bg-surface-2 p-2.5">
+                    <div className="mb-1 flex items-baseline justify-between gap-2">
+                      <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+                        Under-eye type
+                      </span>
+                      <span className="text-[0.62rem] tabular text-faint">
+                        ΔL* {scan.skin.deltaL} · Δa* {scan.skin.deltaA} · ΔITA {scan.skin.deltaITA}°
+                      </span>
+                    </div>
+                    <div className="text-sm font-bold capitalize">{scan.skin.circleType}</div>
+                    <p className="mt-0.5 text-[0.68rem] leading-snug text-muted">
+                      {scan.skin.circleType === "pigmented"
+                        ? "Lightness dominates the difference, which points at pigment. That responds to sun protection and topical actives, over months — not to sleep."
+                        : scan.skin.circleType === "vascular"
+                          ? "The red-green axis dominates, which points at vessels or shadow rather than pigment. That responds to sleep, fluid and allergy, within days — and topical brighteners will do nothing for it."
+                          : "Neither axis dominates clearly enough to call it. Rescan in even, flat light before treating it as either."}
+                    </p>
+                  </div>
+                )}
                 <p className="mt-2 text-[0.68rem] leading-snug text-faint">
                   Each figure is measured against another patch of your own face, so a
                   different bulb does not move it. Compare these only between captures that
                   both passed their lighting gate.
+                  <br />
+                  <br />
+                  This card is first on purpose. Skin tone evenness correlates with perceived
+                  age at about r = −0.62 — several times the effect size of facial symmetry,
+                  and the one thing on this screen that a habit can move within weeks.
                 </p>
               </Card>
             )}
@@ -152,7 +219,10 @@ export function FaceFileSheet({ scan, onClose }: { scan: ScanRecord; onClose: ()
                           </span>
                         </div>
                         <div className="flex items-baseline justify-between gap-2 text-[0.62rem]">
-                          <span className="truncate text-faint">{r.norm.formula}</span>
+                          <span className="truncate text-faint">
+                            {r.norm.formula}
+                            {r.norm.metByPct != null ? ` · met by ${r.norm.metByPct}%` : ""}
+                          </span>
                           <span
                             className={cn(
                               "shrink-0 tabular font-bold",
@@ -185,11 +255,16 @@ export function FaceFileSheet({ scan, onClose }: { scan: ScanRecord; onClose: ()
                 </div>
                 <p className="mt-2 text-[0.66rem] leading-snug text-faint">
                   The shaded band is one standard deviation either side of the published
-                  figure. Farkas&apos;s own large-sample work found these canons are often NOT
-                  met in faces everyone agrees are attractive, and that they differ by
-                  ancestry — so a deviation here describes you, it does not mark you down.
-                  There is no blended score because there is nothing true to calibrate one
-                  against.
+                  figure, and &quot;met by&quot; is the share of young adults who actually
+                  satisfy that canon — 9.3% for the vertical thirds, 30.6% for the orbital
+                  one, about 40% for the best of them. A canon almost nobody meets describes a
+                  statue, not a target, and validity falls further outside European-descent
+                  samples: several of these fit Southern Chinese and Tibetan faces essentially
+                  never.
+                  <br />
+                  <br />
+                  So a deviation here describes you; it does not mark you down. There is no
+                  blended score because there is nothing true to calibrate one against.
                 </p>
               </Card>
             )}

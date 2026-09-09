@@ -39,6 +39,13 @@ export interface Norm {
   spread: number;
   source: string;
   unit?: "deg";
+  /**
+   * Share of young adults who actually MEET this canon, where a replication
+   * reports it. This is the number that reframes the whole card: the orbital
+   * canon fits 30.6% of people, the nasoaural 13%, the nasofacial 9.3%. A
+   * canon almost nobody meets is a description of a statue, not a target.
+   */
+  metByPct?: number;
 }
 
 /**
@@ -57,6 +64,7 @@ export const NORMS: Norm[] = [
     norm: 1.0,
     spread: 0.1,
     source: "Neoclassical canon; Farkas found mean near 1.0 with wide spread",
+    metByPct: 30.6,
   },
   {
     id: "nose_icd",
@@ -65,6 +73,7 @@ export const NORMS: Norm[] = [
     norm: 1.0,
     spread: 0.12,
     source: "Neoclassical canon (nasal aperture ≈ intercanthal)",
+    metByPct: 40,
   },
   {
     id: "mouth_nose",
@@ -73,6 +82,7 @@ export const NORMS: Norm[] = [
     norm: 1.5,
     spread: 0.15,
     source: "Neoclassical canon (oral fissure ≈ 1.5 × nasal width)",
+    metByPct: 13,
   },
   {
     id: "fifths",
@@ -81,6 +91,7 @@ export const NORMS: Norm[] = [
     norm: 5.0,
     spread: 0.6,
     source: "Rule of fifths; a face is about five eyes wide",
+    metByPct: 37,
   },
   {
     id: "mid_lower",
@@ -89,6 +100,7 @@ export const NORMS: Norm[] = [
     norm: 1.0,
     spread: 0.1,
     source: "Vertical thirds, lower two only — no hairline available",
+    metByPct: 9.3,
   },
   {
     id: "fwhr",
@@ -96,7 +108,10 @@ export const NORMS: Norm[] = [
     formula: "cheekbone width ÷ brow-to-lip height",
     norm: 1.9,
     spread: 0.25,
-    source: "fWHR literature; sexually dimorphic, higher in males",
+    source:
+      "fWHR literature. Reliably predicts judged DOMINANCE and threat, not " +
+      "beauty — and the sexual-dimorphism claim it was built on does not " +
+      "replicate in faces outside East Asian samples.",
   },
   {
     id: "jaw_cheek",
@@ -234,4 +249,45 @@ export function symmetryPercent(alpha: number): number {
 
 export function regionPercent(regionalValue: number): number {
   return Math.round(Math.max(0, Math.min(100, 100 - regionalValue * 100)) * 10) / 10;
+}
+
+
+/**
+ * How far this face sits from the population averages, overall.
+ *
+ * The single most defensible number here, and it is not symmetry. The 2025
+ * Scientific Reports work found facial attractiveness robustly predicted by
+ * LOW DISTINCTIVENESS — closeness to the average — and by femininity, and NOT
+ * by symmetry or masculinity once averageness was accounted for.
+ *
+ * So this is the root-mean-square of the standardised deviations already
+ * computed: one number for "how unusual are my proportions". RMS rather than a
+ * plain mean because one large deviation is more distinctive than several
+ * small ones, and averaging would hide it.
+ *
+ * Two things it is NOT. It is not a beauty score: averageness predicts
+ * attractiveness on the population level and plenty of striking faces are
+ * distinctive. And the effect is much smaller on real photographs than on the
+ * computer-morphed faces the famous studies used, which is where most of the
+ * popular version of this finding comes from.
+ */
+export function distinctiveness(readings: Reading[]): { rms: number; measured: number } | null {
+  const zs = readings.map((r) => r.z).filter((z): z is number => z != null);
+  if (zs.length < 3) return null;
+  const rms = Math.sqrt(zs.reduce((a, z) => a + z * z, 0) / zs.length);
+  return { rms: Math.round(rms * 100) / 100, measured: zs.length };
+}
+
+/**
+ * Distinctiveness in words, banded by standard deviations.
+ *
+ * Bands rather than a number to two decimals, because the input is eight
+ * ratios measured off one photograph and pretending to that precision would be
+ * the same lie as a blended score.
+ */
+export function distinctivenessLabel(rms: number): string {
+  if (rms < 0.6) return "Close to the population average across the board";
+  if (rms < 1.0) return "Typical — most proportions within one standard deviation";
+  if (rms < 1.5) return "Somewhat distinctive";
+  return "Distinctive — several proportions well outside the usual range";
 }

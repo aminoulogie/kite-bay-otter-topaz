@@ -31,6 +31,8 @@ import { FACE } from "./landmarks.ts";
 export interface Patch {
   /** Mean luminance, 0-255. */
   lum: number;
+  /** Mean CIELAB lightness, 0-100. The axis the dermatology literature uses. */
+  Lstar: number;
   /** Mean redness on the CIELAB a* axis; positive is red, negative is green. */
   redA: number;
   /** Mean yellowness on b*. */
@@ -64,12 +66,20 @@ export interface SkinReport {
   unevenness: number | null;
   /** Share of forehead and nose reading as specular highlight. An oil proxy. */
   shine: number | null;
+  /** ΔL* between infraorbital and cheek, as the dermatology literature reports it. */
+  deltaL: number | null;
+  /** ΔITA°, the standard colorimetric descriptor. Negative is darker. */
+  deltaITA: number | null;
+  /** Δa* — the axis that separates vascular circles from pigmented ones. */
+  deltaA: number | null;
+  /** Which kind, since pigment and vascular need opposite treatments. */
+  circleType: CircleType;
   /** Regions that could not be sampled, so a missing figure is explained. */
   missing: string[];
 }
 
-/** sRGB to CIELAB, D65. Only the a* and b* chroma axes are needed. */
-function rgbToLab(r: number, g: number, b: number): { a: number; b: number } {
+/** sRGB to CIELAB, D65. L* is needed for ITA and the dark-circle subtype. */
+function rgbToLab(r: number, g: number, b: number): { L: number; a: number; b: number } {
   const f = (v: number) => {
     const s = v / 255;
     return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
@@ -85,7 +95,7 @@ function rgbToLab(r: number, g: number, b: number): { a: number; b: number } {
   const fx = k(X);
   const fy = k(Y);
   const fz = k(Z);
-  return { a: 500 * (fx - fy), b: 200 * (fy - fz) };
+  return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
 }
 
 /** A pixel bright enough to be a reflection rather than skin. */
@@ -109,6 +119,7 @@ export function samplePatch(
   const r2 = r * r;
 
   let n = 0;
+  let sumLstar = 0;
   let sumA = 0;
   let sumB = 0;
   let sumLum = 0;
@@ -132,9 +143,8 @@ export function samplePatch(
       // Rec. 601 luma, which is what "how bright does this look" means here.
       const lum = 0.299 * R + 0.587 * G + 0.114 * B;
       if (lum >= SPECULAR_LUM) spec++;
-      // Only a* and b* are taken from Lab; brightness is the Rec.601 luma
-      // above, which is the one the indices are expressed against.
       const lab = rgbToLab(R, G, B);
+      sumLstar += lab.L;
       sumA += lab.a;
       sumB += lab.b;
       sumLum += lum;
@@ -143,19 +153,59 @@ export function samplePatch(
     }
   }
 
-  if (!n) return { lum: 0, redA: 0, yellowB: 0, lumSd: 0, specular: 0, n: 0 };
+  if (!n) return { lum: 0, Lstar: 0, redA: 0, yellowB: 0, lumSd: 0, specular: 0, n: 0 };
   const mean = sumLum / n;
   // Population variance, floored at zero — floating point can make it very
   // slightly negative on a perfectly flat patch.
   const variance = Math.max(0, sumLum2 / n - mean * mean);
   return {
     lum: mean,
+    Lstar: sumLstar / n,
     redA: sumA / n,
     yellowB: sumB / n,
     lumSd: Math.sqrt(variance),
     specular: spec / n,
     n,
   };
+}
+
+/**
+ * Individual Typology Angle, the standard colorimetric descriptor of skin.
+ *
+ * ITA° = arctan((L* − 50) / b*) in degrees. Higher is lighter. The clinical
+ * literature on dark circles reports ΔITA and ΔL* between the infraorbital
+ * region and the adjacent cheek, so reporting the same thing makes a reading
+ * here comparable to a published figure rather than to nothing.
+ */
+export function ita(patch: { Lstar: number; yellowB: number }): number {
+  if (!patch.yellowB) return 0;
+  return (Math.atan((patch.Lstar - 50) / patch.yellowB) * 180) / Math.PI;
+}
+
+/**
+ * Which KIND of dark circle, which is the part that decides what helps.
+ *
+ * Instrumental work on the infraorbital region separates the causes by which
+ * colour axis moves: the constitutional and post-inflammatory (pigmented)
+ * subtypes shift L* most, while vascular and shadow subtypes shift a*. They
+ * respond to completely different things — pigment to sun protection and
+ * topical actives over months, vascular to sleep, allergy and fluid overnight —
+ * so telling someone "you have dark circles" without the subtype sends half of
+ * them at the wrong treatment.
+ *
+ * Deliberately returns "unclear" when neither axis dominates, rather than
+ * picking the larger of two similar numbers and sounding certain.
+ */
+export type CircleType = "pigmented" | "vascular" | "unclear" | "none";
+
+export function circleSubtype(dL: number, dA: number): CircleType {
+  // Under about a point of lightness difference there is nothing to classify.
+  if (Math.abs(dL) < 1 && Math.abs(dA) < 0.6) return "none";
+  const lDominant = Math.abs(dL) / 4;
+  const aDominant = Math.abs(dA);
+  if (lDominant > aDominant * 1.5) return "pigmented";
+  if (aDominant > lDominant * 1.5) return "vascular";
+  return "unclear";
 }
 
 /** Halfway between two points, used to place patches the mesh has no point for. */
@@ -187,6 +237,7 @@ export function analyseSkin(data: ImageData, pts: Pt[]): SkinReport {
     return {
       underEyeIndex: null, underEyeL: null, underEyeR: null,
       erythemaIndex: null, unevenness: null, shine: null,
+      deltaL: null, deltaITA: null, deltaA: null, circleType: "none",
       missing: ["eyes — nothing could be measured without them"],
     };
   }
@@ -215,6 +266,34 @@ export function analyseSkin(data: ImageData, pts: Pt[]): SkinReport {
 
   const underEyeL = underEye(lInner, lOuter, lCheek);
   const underEyeR = underEye(rInner, rOuter, rCheek);
+
+  /**
+   * The same comparison in the units the clinical literature uses, averaged
+   * over both sides. Reported alongside the relative index rather than instead
+   * of it: ΔL* is comparable to published figures, the percentage is the one a
+   * person can read.
+   */
+  let deltaL: number | null = null;
+  let deltaITA: number | null = null;
+  let deltaA: number | null = null;
+  const infraPatches: { dark: ReturnType<typeof samplePatch>; ref: ReturnType<typeof samplePatch> }[] = [];
+  for (const [inner, outer, cheek] of [
+    [lInner, lOuter, lCheek],
+    [rInner, rOuter, rCheek],
+  ] as const) {
+    if (!inner || !outer || !cheek) continue;
+    const eyeMid = between(inner, outer, 0.5);
+    const dark = samplePatch(data, between(eyeMid, cheek, 0.35), rad * 0.8);
+    const ref = samplePatch(data, between(eyeMid, cheek, 0.95), rad * 0.8);
+    if (dark.n && ref.n) infraPatches.push({ dark, ref });
+  }
+  if (infraPatches.length) {
+    const mean = (f: (p: (typeof infraPatches)[number]) => number) =>
+      infraPatches.reduce((a, p) => a + f(p), 0) / infraPatches.length;
+    deltaL = Math.round(mean((p) => p.dark.Lstar - p.ref.Lstar) * 100) / 100;
+    deltaA = Math.round(mean((p) => p.dark.redA - p.ref.redA) * 100) / 100;
+    deltaITA = Math.round(mean((p) => ita(p.dark) - ita(p.ref)) * 10) / 10;
+  }
   if (underEyeL == null && underEyeR == null) missing.push("under-eye");
   const both = [underEyeL, underEyeR].filter((v): v is number => v != null);
   const underEyeIndex = both.length ? Math.round((both.reduce((a, b) => a + b, 0) / both.length) * 10) / 10 : null;
@@ -244,7 +323,12 @@ export function analyseSkin(data: ImageData, pts: Pt[]): SkinReport {
     if (fh.n && nose.n) shine = Math.round(((fh.specular + nose.specular) / 2) * 1000) / 10;
   }
 
-  return { underEyeIndex, underEyeL, underEyeR, erythemaIndex, unevenness, shine, missing };
+  return {
+    underEyeIndex, underEyeL, underEyeR, erythemaIndex, unevenness, shine,
+    deltaL, deltaITA, deltaA,
+    circleType: deltaL != null && deltaA != null ? circleSubtype(deltaL, deltaA) : "none",
+    missing,
+  };
 }
 
 /**

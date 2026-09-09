@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  NORMS, harmonySummary, measureHarmony, mostDeviant, regionPercent, symmetryPercent,
+  NORMS, distinctiveness, distinctivenessLabel, harmonySummary, measureHarmony, mostDeviant,
+  regionPercent, symmetryPercent,
 } from "./harmony.ts";
 import { FACE } from "./landmarks.ts";
 import type { Pt } from "./geometry.ts";
@@ -159,4 +160,71 @@ test("region percentages are bounded and readable", () => {
   assert.equal(regionPercent(0), 100);
   assert.ok(regionPercent(0.05) < 100 && regionPercent(0.05) > 90);
   assert.equal(regionPercent(3), 0);
+});
+
+test("distinctiveness is the RMS of the deviations, not their mean", () => {
+  // RMS because one large deviation is more distinctive than several small
+  // ones, and a mean would hide it.
+  const mk = (zs: number[]) =>
+    zs.map((z, i) => ({ norm: NORMS[i]!, value: 1, z, pct: 0, typical: Math.abs(z) <= 1 }));
+  const spread = distinctiveness(mk([0.5, 0.5, 0.5, 0.5]))!;
+  const spiky = distinctiveness(mk([0, 0, 0, 2]))!;
+  assert.equal(spread.rms, 0.5);
+  assert.equal(spiky.rms, 1);
+  assert.ok(spiky.rms > spread.rms, "the same total deviation, concentrated, reads as more unusual");
+});
+
+test("distinctiveness needs enough ratios to mean anything", () => {
+  const mk = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ norm: NORMS[i]!, value: 1, z: 0.5, pct: 0, typical: true }));
+  assert.equal(distinctiveness(mk(2)), null, "two ratios is not a face");
+  assert.ok(distinctiveness(mk(3)));
+});
+
+test("one face cannot satisfy every canon at once, which is the real finding", () => {
+  // canonFace is built to hit five canons exactly. It then CANNOT hit fWHR or
+  // canthal tilt, because those constrain the same points in incompatible
+  // directions. That is not a flaw in the test face — it is the same reason
+  // the replication studies find each canon met by only 9–40% of people, and
+  // why the card reports prevalence rather than treating a canon as a target.
+  const rs = measureHarmony(canonFace());
+  const hit = ["icd_pfw", "nose_icd", "mouth_nose", "fifths", "mid_lower"];
+  for (const id of hit) {
+    assert.ok(Math.abs(rs.find((r) => r.norm.id === id)!.z!) < 0.2, `${id} should be dead centre`);
+  }
+  const missed = rs.filter((r) => !hit.includes(r.norm.id) && r.norm.id !== "jaw_cheek");
+  assert.ok(missed.some((r) => Math.abs(r.z!) > 1), "and the rest cannot also be centred");
+});
+
+test("a set of readings all at their norms is maximally average", () => {
+  // Distinctiveness itself, tested on readings rather than on a face that
+  // cannot geometrically be average on every axis at once.
+  const allCentred = NORMS.map((norm) => ({ norm, value: norm.norm, z: 0, pct: 0, typical: true }));
+  const d = distinctiveness(allCentred)!;
+  assert.equal(d.rms, 0);
+  assert.match(distinctivenessLabel(d.rms), /average/i);
+});
+
+test("distinctiveness is banded, not reported to false precision", () => {
+  // Eight ratios off one photograph does not support two decimals of meaning.
+  assert.match(distinctivenessLabel(0.3), /average/i);
+  assert.match(distinctivenessLabel(0.8), /Typical/i);
+  assert.match(distinctivenessLabel(1.2), /Somewhat/i);
+  assert.match(distinctivenessLabel(2.0), /Distinctive/i);
+});
+
+test("canons carry how many people actually meet them", () => {
+  // The number that reframes the card: a canon 9% of people meet is a
+  // description of a statue, not a target.
+  const withPrev = NORMS.filter((n) => n.metByPct != null);
+  assert.ok(withPrev.length >= 5, "the replicated canons should all carry their prevalence");
+  for (const n of withPrev) {
+    assert.ok(n.metByPct! > 0 && n.metByPct! < 50, `${n.id} prevalence ${n.metByPct} is implausible`);
+  }
+});
+
+test("fWHR is described as a dominance cue, not a beauty norm", () => {
+  const fwhr = NORMS.find((n) => n.id === "fwhr")!;
+  assert.match(fwhr.source, /dominance|threat/i);
+  assert.match(fwhr.source, /does not replicate|not replicate/i);
 });
