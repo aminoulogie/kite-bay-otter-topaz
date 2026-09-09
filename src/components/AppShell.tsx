@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, BrainCircuit, CalendarDays, Dumbbell, LayoutGrid, LineChart, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, Utensils, Wallet } from "lucide-react";
+import { Activity, BrainCircuit, CalendarDays, Dumbbell, LayoutGrid, LineChart, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
@@ -23,6 +23,7 @@ import { useTabSwipe } from "@/lib/use-tab-swipe";
 import { DashboardView } from "@/components/views/DashboardView";
 import { MoneyView } from "@/components/views/MoneyView";
 import { MindView } from "@/components/views/MindView";
+import { LooksView } from "@/components/views/LooksView";
 
 /**
  * The dock, drawn in TAB_ORDER so it can never disagree with the direction a
@@ -31,6 +32,7 @@ import { MindView } from "@/components/views/MindView";
  */
 const TAB_META: Record<TabId, { label: string; icon: typeof Dumbbell }> = {
   mind: { label: "Mind", icon: BrainCircuit },
+  looks: { label: "Looks", icon: ScanFace },
   money: { label: "Money", icon: Wallet },
   dashboard: { label: "Home", icon: LayoutGrid },
   workout: { label: "Train", icon: Dumbbell },
@@ -262,6 +264,7 @@ export function AppShell() {
         {tab === "dashboard" && <DashboardView />}
         {tab === "money" && <MoneyView />}
         {tab === "mind" && <MindView />}
+        {tab === "looks" && <LooksView />}
         {tab === "workout" && <WorkoutView />}
         {tab === "nutrition" && <NutritionView />}
         {tab === "habits" && <HabitsView />}

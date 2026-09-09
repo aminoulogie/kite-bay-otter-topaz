@@ -16,6 +16,7 @@ import type { TabId } from "./types.ts";
 
 export const TAB_ORDER: TabId[] = [
   "mind",
+  "looks",
   "money",
   "dashboard",
   "workout",

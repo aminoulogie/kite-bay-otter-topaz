@@ -4,6 +4,7 @@ export type ThemePref = "dark" | "light" | "system";
 export type TabId =
   // Left of the dashboard: the rest of what gets tracked.
   | "mind"
+  | "looks"
   | "money"
   // The middle, and where the app opens.
   | "dashboard"

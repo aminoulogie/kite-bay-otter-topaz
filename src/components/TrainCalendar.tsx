@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Pencil, X } from "lucide-react";
 import { toast } from "sonner";
+import { Card, CardTitle } from "@/components/ui/card";
 import { getPhoto } from "@/lib/habit-photos";
 import { scoreDay, type DayScore } from "@/lib/day-score";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
@@ -11,6 +12,10 @@ import {
 } from "@/lib/membership";
 import { SomaIntelligenceEngine } from "@/lib/soma";
 import { useSideStoreRevision } from "@/lib/use-side-stores";
+import {
+  DOMAINS, DOMAIN_DOT, DOMAIN_LABEL, buildDayMarks, domainsOn, summariseDay,
+  type DayMarksInput,
+} from "@/lib/day-marks";
 import { useSwipeToClose } from "@/lib/use-edge-swipe";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import type { HistorySession, NutritionDay } from "@/lib/types";
@@ -60,6 +65,8 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   const history = useSoma((s) => s.history);
   const habits = useSoma((s) => s.habits);
   const nutrition = useSoma((s) => s.nutrition);
+  const ledger = useSoma((s) => s.ledger);
+  const mind = useSoma((s) => s.mind);
   const settings = useSoma((s) => s.settings);
   const program = useActiveProgram();
 
@@ -106,6 +113,19 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
 
   const trainHabit = habits.find((h) => h.id === TRAIN_HABIT_ID);
   const cells = useMemo(() => monthMatrix(cursor.y, cursor.m), [cursor]);
+
+  /**
+   * What happened on every day, across all five domains.
+   *
+   * Built once for the whole grid rather than per cell: the ledger and the
+   * mind log are flat arrays, and asking them 42 times a render would walk
+   * every entry 42 times.
+   */
+  const marksInput = { history, nutrition, ledger, mind, habits };
+  const dayMarks = useMemo(
+    () => buildDayMarks({ history, nutrition, ledger, mind, habits }),
+    [history, nutrition, ledger, mind, habits],
+  );
 
   /**
    * Each day's completion score, for the number shown in its square.
@@ -303,19 +323,20 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
                 )}
               >
                 <span className="leading-none">{Number(date.slice(8, 10))}</span>
-                {/* Trained, missed, and still to come are three different
-                    states; the label carries the split, the dot carries which
-                    of the three this is. */}
-                <span
-                  className={cn(
-                    "mt-0.5 size-1 rounded-full",
-                    trained
-                      ? "bg-emerald-500"
-                      : future
-                        ? "bg-transparent"
-                        : "border border-dashed border-faint/50 bg-transparent",
+                {/* One dot per domain that has something on this day. A cell
+                    is forty pixels wide: it can carry "there is something
+                    here" for five things and not how much, which is what the
+                    card below is for. A past day with nothing at all keeps the
+                    old dashed outline, so empty and unrecorded stay distinct
+                    from a day still to come. */}
+                <span className="mt-0.5 flex h-1 items-center gap-[2px]">
+                  {domainsOn(dayMarks, date).map((d) => (
+                    <span key={d} className={cn("size-1 rounded-full", DOMAIN_DOT[d])} />
+                  ))}
+                  {domainsOn(dayMarks, date).length === 0 && !future && (
+                    <span className="size-1 rounded-full border border-dashed border-faint/50" />
                   )}
-                />
+                </span>
                 {score != null && (
                   <span
                     className={cn(
@@ -357,11 +378,16 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[0.65rem] text-muted">
+          {/* One entry per domain, from the same table the grid draws from, so
+              the legend cannot describe a colour the cells no longer use. */}
+          {DOMAINS.map((d) => (
+            <span key={d} className="flex items-center gap-1.5">
+              <span className={cn("size-1.5 rounded-full", DOMAIN_DOT[d])} />
+              {DOMAIN_LABEL[d].toLowerCase()}
+            </span>
+          ))}
           <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-emerald-500" /> trained
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full border border-dashed border-faint/50" /> not trained
+            <span className="size-1.5 rounded-full border border-dashed border-faint/50" /> nothing logged
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded bg-surface-2" /> membership active
@@ -399,6 +425,10 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           onMoved={(to) => setSelected(to)}
           onClosePanel={onClose}
         />
+
+        {/* Below the training card rather than inside it: this is the rest of
+            the day, and the training card is about training. */}
+        <DayEverything date={selected} input={marksInput} />
       </div>
 
       {renewing && (
@@ -429,6 +459,83 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
  * another. Docked, both are on screen at once and tapping around the month
  * just changes what this shows.
  */
+/**
+ * Everything else that happened on the selected day.
+ *
+ * The calendar answered "did I train" and nothing else, so a day where you ate
+ * well, stayed under budget and read for an hour but did not lift looked
+ * identical to a day where nothing happened. The dots on the grid say which
+ * domains have something; this says what.
+ *
+ * Zero and "not logged" are kept apart throughout. A day with no money entries
+ * is not a day you spent nothing, and reporting it as 0 would be a claim the
+ * app cannot make.
+ */
+function DayEverything({ date, input }: { date: string; input: DayMarksInput }) {
+  const dayNotes = useSoma((s) => s.dayNotes);
+  const setDayNote = useSoma((s) => s.setDayNote);
+  const settings = useSoma((s) => s.settings);
+  const [draft, setDraft] = useState<string | null>(null);
+
+  const marks = useMemo(() => buildDayMarks(input), [input]);
+  const present = domainsOn(marks, date);
+  const summary = summariseDay(input, date);
+  const currency = settings.currency || "DZD";
+  const note = dayNotes[date] ?? "";
+
+  const lines: string[] = [];
+  if (summary.spend != null) lines.push(`Spent ${summary.spend.toLocaleString()} ${currency}`);
+  if (summary.income != null) lines.push(`In ${summary.income.toLocaleString()} ${currency}`);
+  if (summary.mindEntries) {
+    lines.push(`${summary.mindEntries} mind entr${summary.mindEntries === 1 ? "y" : "ies"}`);
+  }
+  if (summary.habitsTotal) lines.push(`${summary.habitsDone}/${summary.habitsTotal} habits`);
+
+  return (
+    <Card className="mt-2">
+      <CardTitle>The rest of the day</CardTitle>
+
+      {present.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {present.map((d) => (
+            <span
+              key={d}
+              className="flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1 text-[0.65rem] font-bold text-muted"
+            >
+              <span className={cn("size-1.5 rounded-full", DOMAIN_DOT[d])} />
+              {DOMAIN_LABEL[d]}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mb-2 text-xs text-faint">Nothing logged on this day.</p>
+      )}
+
+      {lines.length > 0 && (
+        <div className="mb-2 space-y-0.5 text-[0.72rem] text-muted">
+          {lines.map((l) => (
+            <div key={l}>{l}</div>
+          ))}
+        </div>
+      )}
+
+      <label className="mb-1 block text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+        Note
+      </label>
+      <input
+        value={draft ?? note}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft != null) setDayNote(date, draft);
+          setDraft(null);
+        }}
+        placeholder="Appointment, plan, or why the day went the way it did"
+        className="h-10 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm outline-none placeholder:text-faint focus:border-accent"
+      />
+    </Card>
+  );
+}
+
 function DayCard({
   date, isToday, session, previous, isRestDay, nutrition, onBackToToday, onMoved, onClosePanel,
 }: {

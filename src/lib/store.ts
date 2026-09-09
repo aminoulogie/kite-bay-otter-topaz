@@ -158,6 +158,13 @@ export interface SomaStore {
   repeatSession: (date: string) => boolean;
   saveRoutine: (name: string, list: { name: string }[], original?: string) => string | null;
   deleteRoutine: (name: string) => void;
+  /**
+   * A line about a day, for anything the app has no field for — an
+   * appointment, a plan, why a week went badly. Keyed by date, empty string
+   * means deleted rather than kept as a blank.
+   */
+  dayNotes: Record<string, string>;
+  setDayNote: (date: string, note: string) => void;
   /** Money and mind, both dated logs, both persisted with everything else. */
   ledger: LedgerEntry[];
   mind: MindEntry[];
@@ -214,6 +221,7 @@ export const useSoma = create<SomaStore>()(
       customExercises: [],
       customFoods: [],
       logOverrides: {},
+      dayNotes: {},
       ledger: [],
       mind: [],
       programs: [],
@@ -1294,6 +1302,15 @@ export const useSoma = create<SomaStore>()(
        * not the whole ledger — so an index into the visible rows means nothing
        * to the store holding all of them.
        */
+      setDayNote: (date, note) => {
+        const next = { ...get().dayNotes };
+        const text = note.trim();
+        // An empty note is a deleted note, not a stored blank — otherwise the
+        // calendar fills with keys that say nothing and the backup carries them.
+        if (text) next[date] = text;
+        else delete next[date];
+        set({ dayNotes: next });
+      },
       addLedger: (e) =>
         set({ ledger: [...get().ledger, { ...e, id: newId() }] }),
       updateLedger: (id, patch) =>
@@ -1338,6 +1355,7 @@ export const useSoma = create<SomaStore>()(
             customExercises: get().customExercises,
             customFoods: get().customFoods,
             logOverrides: get().logOverrides,
+            dayNotes: get().dayNotes,
             ledger: get().ledger,
             mind: get().mind,
             live: get().live,
@@ -1377,6 +1395,7 @@ export const useSoma = create<SomaStore>()(
               customExercises: data.customExercises || [],
               customFoods: data.customFoods || [],
               logOverrides: data.logOverrides || {},
+              dayNotes: data.dayNotes || {},
               ledger: data.ledger || [],
               mind: data.mind || [],
               seeded: true,
@@ -1433,6 +1452,8 @@ export const useSoma = create<SomaStore>()(
             })(),
             // Merged by id, the device winning a conflict — the same rule the
             // rest of the restore follows.
+            // Incoming notes fill gaps; a note on the device is the newer edit.
+            dayNotes: { ...(data.dayNotes || {}), ...cur.dayNotes },
             ledger: mergeById(data.ledger || [], cur.ledger),
             mind: mergeById(data.mind || [], cur.mind),
             seeded: true,
@@ -1486,6 +1507,7 @@ export const useSoma = create<SomaStore>()(
         customExercises: s.customExercises,
         customFoods: s.customFoods,
         logOverrides: s.logOverrides,
+        dayNotes: s.dayNotes,
         ledger: s.ledger,
         mind: s.mind,
         live: s.live,
