@@ -6,12 +6,22 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * A row that slides left to reveal Delete.
+ * A row that slides left to reveal a round Delete button.
+ *
+ * Round rather than a full-height red panel: the row is a floating rounded
+ * card on a dark ground, and a square block butting against it reads as a
+ * different design language wedged in beside it. A circle that scales in as
+ * the row moves belongs to the same surface.
  *
  * Only one row is open at a time, which is why `openId` is passed in rather
  * than kept here: two open rows would leave a delete button stranded behind
  * whichever one the user forgot about, and the next tap in that area would
  * destroy something they were not looking at.
+ *
+ * The wrapper is marked data-no-swipe-nav. Without it the page's tab swipe
+ * also fires on the same gesture, so swiping a food row deleted nothing and
+ * navigated to the next tab instead — two gestures for one finger, and the
+ * one that owns the row has to win.
  *
  * The arbitration lives in lib/use-swipe-action.ts; this holds the pointer,
  * the transform, and the rule that a delete is always undoable.
@@ -22,7 +32,6 @@ export function SwipeRow({
   setOpenId,
   onDelete,
   disabled,
-  deleteLabel = "Delete",
   children,
 }: {
   id: string;
@@ -31,7 +40,6 @@ export function SwipeRow({
   onDelete: () => void;
   /** True while the row is held for a drag, so the two gestures never overlap. */
   disabled?: boolean;
-  deleteLabel?: string;
   children: React.ReactNode;
 }) {
   const open = openId === id;
@@ -101,25 +109,38 @@ export function SwipeRow({
 
   const offset = dragOffset ?? (open ? REVEAL_PX : 0);
   const swiping = dragOffset != null;
+  // The button grows in with the swipe rather than sitting there at full size
+  // waiting to be uncovered, so the gesture and the target feel like one thing.
+  const progress = Math.max(0, Math.min(1, offset / REVEAL_PX));
 
   return (
-    <div ref={wrap} className="relative overflow-hidden rounded-xl">
-      {/* Behind the row, revealed as it slides. aria-hidden while closed so a
-          screen reader is not offered a delete for a button it cannot see. */}
-      <button
-        type="button"
-        aria-hidden={offset < 8}
-        tabIndex={offset < 8 ? -1 : 0}
-        onClick={() => {
-          setOpenId(null);
-          onDelete();
-        }}
+    <div ref={wrap} data-no-swipe-nav className="relative">
+      <div
+        className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end"
         style={{ width: REVEAL_PX }}
-        className="absolute inset-y-0 right-0 flex flex-col items-center justify-center gap-0.5 bg-danger text-xs font-bold text-white"
       >
-        <Trash2 className="size-4" />
-        {deleteLabel}
-      </button>
+        <button
+          type="button"
+          aria-hidden={progress < 0.35}
+          tabIndex={progress < 0.35 ? -1 : 0}
+          aria-label="Delete"
+          onClick={() => {
+            setOpenId(null);
+            onDelete();
+          }}
+          style={{
+            opacity: progress,
+            transform: `scale(${0.6 + progress * 0.4})`,
+            transition: swiping ? "none" : "opacity 180ms, transform 180ms",
+          }}
+          className={cn(
+            "grid size-11 shrink-0 place-items-center rounded-full bg-danger text-white shadow-lg",
+            progress >= 0.35 && "pointer-events-auto",
+          )}
+        >
+          <Trash2 className="size-[1.15rem]" strokeWidth={2.2} />
+        </button>
+      </div>
 
       <div
         onPointerDown={onPointerDown}
@@ -133,7 +154,7 @@ export function SwipeRow({
           // Vertical panning stays with the page until the swipe has committed.
           touchAction: lock.current === "swipe" ? "none" : "pan-y",
         }}
-        className={cn("relative", offset > 0 && "z-[1]")}
+        className="relative z-[1]"
       >
         {children}
       </div>

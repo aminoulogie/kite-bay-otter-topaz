@@ -19,8 +19,15 @@
  * would make the diary unusable.
  */
 
-/** How far the row slides to park, and the width of the button behind it. */
-export const REVEAL_PX = 88;
+/**
+ * How far the row slides to park.
+ *
+ * Sized for a round 44px button with air either side rather than for a
+ * full-height panel — 44 is the smallest target that is reliably hit with a
+ * thumb, and the gap is what keeps it reading as a button beside the row
+ * instead of a block welded to it.
+ */
+export const REVEAL_PX = 72;
 
 /**
  * Past this share of the row's width, letting go deletes rather than parks.
