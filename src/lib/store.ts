@@ -146,6 +146,7 @@ export interface SomaStore {
   resumeFinished: () => void;
   moveSession: (from: string, to: string) => string | null;
   deleteSession: (date: string) => void;
+  restoreSession: (date: string, session: HistorySession) => boolean;
   renameSession: (date: string, split: string) => void;
   patchHistorySet: (date: string, exIdx: number, setIdx: number, patch: Partial<WorkoutSet>) => void;
   removeHistorySet: (date: string, exIdx: number, setIdx: number) => void;
@@ -1130,6 +1131,23 @@ export const useSoma = create<SomaStore>()(
         if (!history[date]) return;
         delete history[date];
         set({ history });
+      },
+      /**
+       * Put a deleted session back.
+       *
+       * Deleting a day used to be the one action in the app with no way back —
+       * it said so, in the button's own hint. A session is every set, every
+       * rating and every muscle tally from a real hour in a gym, which makes it
+       * the single worst thing to lose to a mistap.
+       *
+       * Refuses to overwrite: if something has been logged on that date since,
+       * restoring would destroy the newer session to recover the older one,
+       * which is the same mistake in the other direction.
+       */
+      restoreSession: (date, session) => {
+        if (get().history[date]) return false;
+        set({ history: { ...get().history, [date]: session } });
+        return true;
       },
       /**
        * Correct one set inside a saved session.

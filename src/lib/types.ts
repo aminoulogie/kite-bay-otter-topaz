@@ -219,6 +219,8 @@ export interface Settings {
   unit: Unit;
   /** What money is counted in. Defaults to the dinar; free text, not a list. */
   currency?: string;
+  /** Monthly spending budget. Unset means the Money tab reports without judging. */
+  monthlyBudget?: number;
   barWeight: number;
   restDefault: number;
   autoRest: boolean;

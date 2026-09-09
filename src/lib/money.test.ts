@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { costPerSession, inMonth, monthOf, shiftMonth, totals } from "./money.ts";
+import {
+  budgetState, costPerSession, daysInMonth, inMonth, monthOf, shiftMonth, totals,
+} from "./money.ts";
 import type { LedgerEntry } from "./types.ts";
 
 const e = (p: Partial<LedgerEntry>): LedgerEntry =>
@@ -71,4 +73,47 @@ test("walking backwards past January lands in the previous year", () => {
   assert.equal(shiftMonth("2026-01", -1), "2025-12");
   assert.equal(shiftMonth("2026-12", 1), "2027-01");
   assert.equal(shiftMonth("2026-09", -3), "2026-06");
+});
+
+test("no budget set means nothing to report, not a division by zero", () => {
+  assert.equal(budgetState(0, 500, 10, 30), null);
+  assert.equal(budgetState(-100, 500, 10, 30), null);
+});
+
+test("being ahead of pace is what matters, not the raw share", () => {
+  // 60% of the budget on the 3rd of 30 is a problem.
+  assert.equal(budgetState(10000, 6000, 3, 30)?.aheadOfPace, true);
+  // The same 60% on the 25th is fine.
+  assert.equal(budgetState(10000, 6000, 25, 30)?.aheadOfPace, false);
+});
+
+test("a couple of percent ahead early on is noise, not a warning", () => {
+  const s = budgetState(10000, 1500, 4, 30);
+  assert.ok(s!.used > s!.elapsed, "it really is slightly ahead");
+  assert.equal(s?.aheadOfPace, false, "but not enough to say so");
+});
+
+test("going over budget is reported, not clamped", () => {
+  const s = budgetState(10000, 13000, 28, 30);
+  assert.ok(s!.used > 1);
+  assert.equal(s?.left, -3000);
+});
+
+test("one day is not a rate", () => {
+  // Projecting a month from a single day's groceries is wrong by a factor of
+  // five and reads as though it means something.
+  assert.equal(budgetState(10000, 2000, 1, 30)?.projected, null);
+  assert.equal(budgetState(10000, 2000, 2, 30)?.projected, 30000);
+});
+
+test("a day beyond the month cannot push elapsed past one", () => {
+  const s = budgetState(10000, 5000, 45, 30);
+  assert.equal(s?.elapsed, 1);
+});
+
+test("months have the right number of days, February included", () => {
+  assert.equal(daysInMonth("2026-02"), 28);
+  assert.equal(daysInMonth("2024-02"), 29);
+  assert.equal(daysInMonth("2026-09"), 30);
+  assert.equal(daysInMonth("2026-12"), 31);
 });

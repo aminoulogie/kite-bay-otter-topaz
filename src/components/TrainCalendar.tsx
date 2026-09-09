@@ -703,11 +703,24 @@ function DayActions({
         <ActionButton
           label="Delete session"
           danger
-          hint="cannot be undone"
+          hint="undo is offered for a few seconds"
           onClick={() => {
             if (!confirm(`Delete the ${session.split} session logged on ${date}?`)) return;
+            // Captured before the delete, so undo restores the session itself
+            // rather than whatever the store happens to hold afterwards.
+            const removed = session;
             deleteSession(date);
-            toast.success(`Deleted the session on ${date}`);
+            toast.success(`Deleted the session on ${date}`, {
+              action: {
+                label: "Undo",
+                onClick: () => {
+                  const ok = useSoma.getState().restoreSession(date, removed);
+                  toast[ok ? "success" : "error"](
+                    ok ? "Session restored" : "Something else has been logged on that day",
+                  );
+                },
+              },
+            });
           }}
         />
       </div>

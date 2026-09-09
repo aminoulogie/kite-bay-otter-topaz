@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
-import { CATEGORIES, costPerSession, inMonth, monthOf, shiftMonth, totals } from "@/lib/money";
+import {
+  CATEGORIES, budgetState, costPerSession, daysInMonth, inMonth, monthOf, shiftMonth, totals,
+} from "@/lib/money";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -26,6 +28,7 @@ export function MoneyView() {
   const restoreLedger = useSoma((s) => s.restoreLedger);
   const history = useSoma((s) => s.history);
   const settings = useSoma((s) => s.settings);
+  const patchSettings = useSoma((s) => s.patchSettings);
 
   const today = getLocalDateKey(new Date());
   const [month, setMonth] = useState(() => monthOf(today));
@@ -46,6 +49,18 @@ export function MoneyView() {
   );
   const perSession = costPerSession(rows, sessions);
   const currency = settings.currency || "DZD";
+
+  // Pace against the budget, for the month actually being looked at. A past
+  // month is finished, so it is judged on the whole month rather than on how
+  // far through today happens to be.
+  const isThisMonth = month === monthOf(today);
+  const days = daysInMonth(month);
+  const budget = budgetState(
+    settings.monthlyBudget ?? 0,
+    t.spend,
+    isThisMonth ? new Date().getDate() : days,
+    days,
+  );
 
   const submit = () => {
     const value = Math.abs(Number(String(amount).replace(",", ".")));
@@ -108,6 +123,44 @@ export function MoneyView() {
             </div>
           ))}
         </div>
+
+        {budget && (
+          <div className="mt-3">
+            <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
+              <span className="font-bold text-muted">Budget</span>
+              <span className={cn("tabular font-bold", budget.left < 0 ? "text-danger" : "text-muted")}>
+                {budget.left < 0
+                  ? `${money(Math.abs(budget.left))} over`
+                  : `${money(budget.left)} left`}
+              </span>
+            </div>
+            <div className="relative h-2 overflow-hidden rounded-full bg-surface-2">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-[width]",
+                  budget.used > 1 ? "bg-danger" : budget.aheadOfPace ? "bg-warn" : "bg-accent",
+                )}
+                style={{ width: `${Math.min(100, budget.used * 100)}%` }}
+              />
+              {/* Where the month is, so the bar has something to be judged
+                  against. 60% spent means nothing without knowing it is the 3rd. */}
+              {isThisMonth && (
+                <span
+                  aria-hidden
+                  className="absolute top-0 h-full w-0.5 bg-fg/60"
+                  style={{ left: `${budget.elapsed * 100}%` }}
+                />
+              )}
+            </div>
+            <p className="mt-1 text-[0.68rem] text-faint">
+              {budget.aheadOfPace
+                ? `Ahead of pace — ${Math.round(budget.used * 100)}% spent, ${Math.round(budget.elapsed * 100)}% through the month.`
+                : budget.projected != null && isThisMonth
+                  ? `On track for about ${money(budget.projected)} this month.`
+                  : `${Math.round(budget.used * 100)}% of ${money(budget.budget)}.`}
+            </p>
+          </div>
+        )}
 
         {perSession != null && (
           <p className="mt-2 text-center text-[0.7rem] text-muted">
@@ -223,6 +276,32 @@ export function MoneyView() {
             ))}
           </div>
         )}
+      </Card>
+
+      <Card>
+        <CardTitle>Budget</CardTitle>
+        <p className="mb-2 text-[0.7rem] leading-snug text-faint">
+          A monthly ceiling to measure against. Leave it empty and this tab reports what
+          you spent without judging it.
+        </p>
+        <div className="flex gap-2">
+          <Input
+            type="text"
+            inputMode="decimal"
+            placeholder={`Monthly budget in ${currency}`}
+            defaultValue={settings.monthlyBudget ? String(settings.monthlyBudget) : ""}
+            onBlur={(e) => {
+              const n = Number(e.target.value.replace(",", "."));
+              patchSettings({ monthlyBudget: Number.isFinite(n) && n > 0 ? n : undefined });
+            }}
+          />
+          <Input
+            className="w-24 text-center"
+            defaultValue={currency}
+            aria-label="Currency"
+            onBlur={(e) => patchSettings({ currency: e.target.value.trim() || "DZD" })}
+          />
+        </div>
       </Card>
 
       <p className="px-1 text-center text-[0.7rem] text-faint">

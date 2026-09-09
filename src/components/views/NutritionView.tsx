@@ -20,6 +20,7 @@ import { composeLibrary, searchFoods } from "@/lib/foods";
 import { useSoma } from "@/lib/store";
 import { useLongPressMove } from "@/lib/use-long-press-move";
 import { SwipeRow } from "@/components/SwipeRow";
+import { QuickAddSheet } from "@/components/QuickAddSheet";
 import { tapLight, tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import type { FoodItem } from "@/lib/types";
@@ -81,6 +82,7 @@ export function NutritionView() {
   /** Only one row shows its Delete at a time, so a stray tap cannot hit a
       button left open behind a row the user has stopped looking at. */
   const [swipedRow, setSwipedRow] = useState<string | null>(null);
+  const [quickAdd, setQuickAdd] = useState(false);
 
   /**
    * Delete a food, and mean it only if the user does nothing.
@@ -267,13 +269,22 @@ export function NutritionView() {
           </Button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowAll((v) => !v)}
-          className="mt-2 text-xs font-bold text-accent-text"
-        >
-          {showAll ? "Hide" : `Browse all ${library.length} foods`}
-        </button>
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="text-xs font-bold text-accent-text"
+          >
+            {showAll ? "Hide" : `Browse all ${library.length} foods`}
+          </button>
+          <button
+            type="button"
+            onClick={() => setQuickAdd(true)}
+            className="text-xs font-bold text-muted underline"
+          >
+            Quick add calories
+          </button>
+        </div>
 
         {(query || showAll) && (
           <div className="mt-2 max-h-64 overflow-y-auto rounded-xl border border-border">
@@ -502,6 +513,18 @@ export function NutritionView() {
       <p className="px-1 text-[0.7rem] text-faint">
         Goals: {goals.cals} kcal · P {goals.protein} · C {goals.carbs} · F {goals.fat}. Units {settings.unit}.
       </p>
+
+      {quickAdd && (
+        <QuickAddSheet
+          meal={meal}
+          onClose={() => setQuickAdd(false)}
+          onAdd={(item) => {
+            addFood(item);
+            setQuickAdd(false);
+            toast.success(`Added ${item.cals} kcal to ${item.meal}`);
+          }}
+        />
+      )}
 
       {portion && (
         <PortionSheet

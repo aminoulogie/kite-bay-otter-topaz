@@ -83,3 +83,58 @@ export function shiftMonth(month: string, by: number): string {
   const d = new Date((y ?? 2000), (m ?? 1) - 1 + by, 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+
+/**
+ * How a month is going against a budget.
+ *
+ * Pace is the point rather than the raw total. "You have spent 60% of the
+ * month's budget" is meaningless on the 3rd and alarming on the 28th, so this
+ * reports both the share spent and the share of the month elapsed — being
+ * ahead of pace is the thing worth flagging, and it is the only comparison
+ * that means anything mid-month.
+ */
+export interface BudgetState {
+  budget: number;
+  spent: number;
+  left: number;
+  /** 0-1, and allowed past 1: going over is a fact, not something to clamp. */
+  used: number;
+  /** 0-1 of the month gone, so `used` has something to be judged against. */
+  elapsed: number;
+  /** Spending faster than the month is passing. */
+  aheadOfPace: boolean;
+  /** What this month lands on at the current rate, or null before day two. */
+  projected: number | null;
+}
+
+export function budgetState(
+  budget: number,
+  spent: number,
+  dayOfMonth: number,
+  daysInMonth: number,
+): BudgetState | null {
+  if (!(budget > 0)) return null;
+  const days = Math.max(1, daysInMonth);
+  const day = Math.max(1, Math.min(dayOfMonth, days));
+  const used = spent / budget;
+  const elapsed = day / days;
+  return {
+    budget,
+    spent,
+    left: Math.round((budget - spent) * 100) / 100,
+    used,
+    elapsed,
+    // A tolerance, because being 2% ahead on the 4th is noise, not a warning.
+    aheadOfPace: used > elapsed + 0.05,
+    // One day is not a rate. Projecting a month from a single Monday's
+    // groceries produces a number that is wrong by a factor of five and reads
+    // as though it means something.
+    projected: day >= 2 ? Math.round((spent / day) * days * 100) / 100 : null,
+  };
+}
+
+/** Days in the month a YYYY-MM key names. */
+export function daysInMonth(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(y ?? 2000, m ?? 1, 0).getDate();
+}

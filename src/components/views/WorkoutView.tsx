@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatRest, restProgress, secondsLeft } from "@/lib/rest-timer";
+import { agoLabel, lastTimeFor, summarise } from "@/lib/last-time";
 import { useRestTimer } from "@/lib/use-rest-timer";
 import { Check, Link2, Plus, Redo2, Search, Timer, Trash2, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -571,6 +572,14 @@ export function WorkoutView() {
 
       {live.exercises.map((ex, exIdx) => {
         const last = useSoma.getState().lastPerformance(ex.name);
+        // The whole of the previous session for this lift, set by set. Excludes
+        // the day being logged so an edited or backfilled session cannot end up
+        // comparing against itself.
+        // The date this session will be FILED under, which is forDate when
+        // backfilling, otherwise the day it was opened. Getting this wrong makes
+        // an edited session its own history and offers you back what you just
+        // typed as though it were last week.
+        const lastTime = lastTimeFor(history, ex.name, live.forDate ?? live.date ?? todayKey);
         const keys = ex.targetKeys || [];
         const muscleR = keys.length
           ? Math.min(...keys.map((k) => readinessMap[k]?.recovery ?? 100))
@@ -669,6 +678,20 @@ export function WorkoutView() {
                 {target.diffTier}
               </Badge>
             </div>
+
+            {lastTime && (
+              // The whole of last time, not just the top set. Greyed numbers in
+              // the fields below say what to put on the bar; this says whether
+              // last time went well enough to repeat.
+              <div className="rounded-xl border border-border bg-surface-2 px-2.5 py-1.5">
+                <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+                  Last {agoLabel(lastTime.date, todayKey)}
+                </span>
+                <span className="ml-2 text-[0.72rem] font-bold tabular text-muted">
+                  {summarise(lastTime)}
+                </span>
+              </div>
+            )}
 
             <PlateLoading exercise={ex} targetWeight={target.weight} unit={settings.unit} />
 
@@ -942,6 +965,16 @@ export function WorkoutView() {
  * "12," into "12" the instant the comma was typed, making a decimal impossible
  * to enter at all. So the field owns its text while it is being edited and
  * re-syncs from the store the moment it is not.
+ */
+/**
+ * A set's weight or reps.
+ *
+ * Deliberately has no "what you did last time" placeholder. The fields already
+ * arrive filled with an autoregulated TARGET — last time plus or minus what
+ * the readiness maths says — so an empty field never occurs in practice and a
+ * placeholder offering last week's number would be both invisible and a step
+ * backwards from the suggestion already there. Last time is shown on the card
+ * instead, where it belongs: next to the target, so the two can be compared.
  */
 function SetNumberField({
   value,
