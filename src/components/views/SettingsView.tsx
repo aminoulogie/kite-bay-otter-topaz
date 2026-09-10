@@ -21,7 +21,6 @@ import {
 } from "@/lib/food-import";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useActiveProgram, useSoma } from "@/lib/store";
-import { HealthImportCard } from "@/components/HealthImportCard";
 import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
@@ -499,8 +498,6 @@ export function SettingsView() {
         </p>
       </Card>
 
-      <HealthImportCard />
-
       <Card>
         <CardTitle>Data</CardTitle>
         <p className="mb-3 text-xs text-muted">
@@ -764,19 +761,6 @@ export function SettingsView() {
         <div className="mt-1 flex items-center justify-between text-xs">
           <span className="text-muted">Data</span>
           <span className="font-bold">on this device only</span>
-        </div>
-        {/* Stated rather than left as a mystery, and specific about WHY.
-            HealthKit needs an entitlement a free Apple ID cannot be granted,
-            and this app is installed by signing an unsigned .ipa with exactly
-            that — so the live connection is not "coming soon", it is not
-            possible on this install. The file import above is the way in. */}
-        <div className="mt-1 flex items-center justify-between text-xs">
-          <span className="text-muted">Apple Health</span>
-          <span className="font-bold text-faint">by file import</span>
-        </div>
-        <div className="mt-1 flex items-center justify-between text-xs">
-          <span className="text-muted">Apple Watch</span>
-          <span className="font-bold text-faint">needs a paid developer account</span>
         </div>
       </Card>
 
