@@ -1,5 +1,5 @@
 import { Suspense, lazy, useMemo, useState } from "react";
-import { Camera, ChevronRight, ScanFace } from "lucide-react";
+import { ArrowLeftRight, Camera, ChevronRight, ScanFace } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -32,6 +32,9 @@ const ScanSheet = lazy(() =>
 const FaceFileSheet = lazy(() =>
   import("@/components/aether/FaceFileSheet").then((m) => ({ default: m.FaceFileSheet })),
 );
+const CompareSheet = lazy(() =>
+  import("@/components/aether/CompareSheet").then((m) => ({ default: m.CompareSheet })),
+);
 
 const KIND_LABEL: Record<string, string> = {
   face_front_true: "Front",
@@ -49,6 +52,7 @@ export function LooksView() {
 
   const [scanning, setScanning] = useState(false);
   const [open, setOpen] = useState<ScanRecord | null>(null);
+  const [comparing, setComparing] = useState(false);
   const [swiped, setSwiped] = useState<string | null>(null);
 
   const today = getLocalDateKey(new Date());
@@ -153,7 +157,22 @@ export function LooksView() {
       )}
 
       <Card>
-        <CardTitle>{rows.length ? `${rows.length} captures` : "Nothing captured"}</CardTitle>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <CardTitle className="mb-0">
+            {rows.length ? `${rows.length} captures` : "Nothing captured"}
+          </CardTitle>
+          {/* The only question anyone opens this tab with is what changed, and
+              until now the tab could only say what you are today. */}
+          {rows.length >= 2 && (
+            <button
+              type="button"
+              onClick={() => setComparing(true)}
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.7rem] font-bold"
+            >
+              <ArrowLeftRight className="size-3.5" /> Compare
+            </button>
+          )}
+        </div>
         {rows.length === 0 ? (
           <p className="py-2 text-center text-xs text-faint">
             Captures land here, on the calendar, and in your backup.
@@ -206,6 +225,11 @@ export function LooksView() {
       {open && (
         <Suspense fallback={<LoadingSheet label="Opening the file…" />}>
           <FaceFileSheet scan={open} onClose={() => setOpen(null)} />
+        </Suspense>
+      )}
+      {comparing && (
+        <Suspense fallback={<LoadingSheet label="Opening the captures…" />}>
+          <CompareSheet scans={rows} onClose={() => setComparing(false)} />
         </Suspense>
       )}
     </div>

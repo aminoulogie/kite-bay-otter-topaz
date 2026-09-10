@@ -10,7 +10,8 @@ import { SomaIntelligenceEngine } from "@/lib/soma";
 import {
   currentSaturation, saturationLabel, saturationSeries, supplyStatus,
 } from "@/lib/creatine";
-import { SLEEP_FACTORS, currentDebt, debtLabel, nightsToClear } from "@/lib/sleep-debt";
+import { SLEEP_FACTORS, currentDebt, debtLabel, nightsToClear, sleepDebtSeries } from "@/lib/sleep-debt";
+import { deltaLabel, deltaTone, tapeHistories } from "@/lib/tape-history";
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
 import { captureImage, getPhoto, savePhoto } from "@/lib/habit-photos";
 import { DecimalInput } from "@/components/ui/decimal-input";
@@ -170,6 +171,18 @@ function SleepPanel() {
   const debt = series.length ? currentDebt(series) : null;
   const toClear = debt !== null ? nightsToClear(debt) : null;
 
+  // Which way the debt is going over the last week of nights. A figure alone
+  // cannot say that, and "carrying debt" reads very differently depending on
+  // whether you are paying it off or still borrowing.
+  const debtTrend = (() => {
+    const trace = sleepDebtSeries(series);
+    if (trace.length < 3) return "building a picture";
+    const now = trace[trace.length - 1]!.debt;
+    const then = trace[Math.max(0, trace.length - 8)]!.debt;
+    if (Math.abs(now - then) < 0.5) return "holding steady";
+    return now < then ? "coming down" : "climbing";
+  })();
+
   return (
     <>
       <Card>
@@ -231,7 +244,25 @@ function SleepPanel() {
             )}
           </div>
         </div>
-        {series.length >= 2 && <Spark points={series.slice(-14).map((s) => s.hours)} className="mt-3" />}
+        {series.length >= 2 && (
+          <>
+            <div className="mt-3 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+              Hours · last {Math.min(14, series.length)} nights
+            </div>
+            <Spark points={series.slice(-14).map((s) => s.hours)} className="mt-1" />
+            {/* The debt trace, not just the figure. A single number says
+                nothing about direction, and direction is the whole question:
+                eleven hours down and falling is a good week, eleven hours
+                down and climbing is next week's injury. */}
+            <div className="mt-3 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+              Debt · {debtTrend}
+            </div>
+            <Spark
+              points={sleepDebtSeries(series).slice(-14).map((p) => p.debt)}
+              className="mt-1 text-[var(--color-danger)]"
+            />
+          </>
+        )}
       </Card>
       <Card>
         <CardTitle>What moves sleep</CardTitle>
@@ -322,6 +353,7 @@ function MeasurePanel() {
     }
   };
   return (
+    <>
     <Card>
       <CardTitle>Circumference</CardTitle>
       <p className="mb-3 text-xs text-muted">Measure cold, same spots. Weekly is plenty.</p>
@@ -379,6 +411,8 @@ function MeasurePanel() {
         Save
       </Button>
 
+      <TapeHistory />
+
       {photoSite && (
         <HabitPhotoCalendar
           habit={{
@@ -395,6 +429,89 @@ function MeasurePanel() {
           }}
         />
       )}
+    </Card>
+    </>
+  );
+}
+
+/**
+ * What the tape has said, per site.
+ *
+ * A single circumference is close to meaningless — the useful fact is always
+ * the difference from last time, and working that out meant paging back
+ * through the calendar a week at a time. The arithmetic lives in
+ * lib/tape-history.ts; this draws it.
+ */
+function TapeHistory() {
+  const nutrition = useSoma((s) => s.nutrition);
+  const sites = useMemo(
+    () => tapeHistories(nutrition, SITES.map((s) => s.key)),
+    [nutrition],
+  );
+  const labels = useMemo(() => new Map(SITES.map((s) => [s.key, s.label])), []);
+  const [open, setOpen] = useState<string | null>(null);
+
+  if (!sites.length) return null;
+
+  return (
+    <Card className="mt-3">
+      <CardTitle>Tape history</CardTitle>
+      <p className="mb-3 text-xs text-muted">
+        Each change is against the reading before it. Under 0.25 cm is where the tape
+        sits rather than where the tissue is, and is reported as such.
+      </p>
+      <div className="space-y-1.5">
+        {sites.map((site) => {
+          const tone = deltaTone(site.latest?.delta ?? null);
+          const expanded = open === site.key;
+          return (
+            <div key={site.key} className="rounded-xl border border-border bg-surface-2">
+              <button
+                type="button"
+                onClick={() => setOpen(expanded ? null : site.key)}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
+              >
+                <span className="text-sm font-bold">{labels.get(site.key) ?? site.key}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="font-display text-sm font-extrabold tabular">
+                    {site.latest!.value.toFixed(1)}
+                    <span className="ml-0.5 text-[0.6rem] font-bold text-faint">cm</span>
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[0.65rem] font-bold tabular",
+                      tone === "up" ? "text-accent-text" : tone === "down" ? "text-info" : "text-faint",
+                    )}
+                  >
+                    {deltaLabel(site.latest?.delta ?? null)}
+                  </span>
+                </span>
+              </button>
+              {expanded && (
+                <div className="border-t border-border px-3 py-2">
+                  {site.readings.map((r) => (
+                    <div key={r.date} className="flex items-baseline justify-between gap-2 py-0.5 text-[0.7rem]">
+                      <span className="text-faint tabular">{r.date}</span>
+                      <span className="tabular">
+                        <span className="font-bold">{r.value.toFixed(1)}</span>
+                        <span className="ml-2 text-faint">
+                          {deltaLabel(r.delta)}
+                          {r.gapDays ? ` · ${r.gapDays}d` : ""}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                  {site.net !== null && (
+                    <p className="mt-1.5 border-t border-border pt-1.5 text-[0.65rem] text-muted">
+                      {deltaLabel(site.net)} across {site.spanDays} days shown.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </Card>
   );
 }
@@ -621,9 +738,15 @@ function Spark({ points, className }: { points: number[]; className?: string }) 
       return `${i === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
     })
     .join(" ");
+  // currentColor rather than a hardcoded accent, so a caller can say what the
+  // line means — the sleep debt trace is not good news drawn in the good-news
+  // colour. Callers that pass nothing keep the accent they already had.
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className={cn("h-20 w-full", className)}>
-      <path d={d} fill="none" stroke="var(--color-accent-text)" strokeWidth="2.5" strokeLinejoin="round" />
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      className={cn("h-20 w-full text-[var(--color-accent-text)]", className)}
+    >
+      <path d={d} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
     </svg>
   );
 }

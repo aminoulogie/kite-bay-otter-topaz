@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
-  CartesianGrid, Line, LineChart, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip,
-  XAxis, YAxis,
+  Area, CartesianGrid, ComposedChart, Line, ReferenceDot, ReferenceLine, ResponsiveContainer,
+  Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Card, CardTitle } from "@/components/ui/card";
 import {
@@ -10,6 +10,7 @@ import {
 import { useTrainingLog } from "@/lib/use-training-log";
 import { microMuscleStrength } from "@/lib/micro-muscle";
 import { ZoomableChart, useChartZoom } from "@/components/ZoomableChart";
+import { bandNote, confidenceOf, residualBand } from "@/lib/residual-band";
 import { cn } from "@/lib/utils";
 
 /**
@@ -75,7 +76,7 @@ export function GraphsView() {
     return Date.now() - d * 86400000;
   }, [range]);
 
-  const { data, prs } = useMemo(() => {
+  const { data, prs, band } = useMemo(() => {
     const series = active
       .map((n) => log.find((e) => e.name === n))
       .filter((e): e is ExerciseLog => !!e);
@@ -118,7 +119,30 @@ export function GraphsView() {
         if (marks[i]!.name === e.name && marks[i] !== last) marks.splice(i, 1);
       }
     }
-    return { data: rows, prs: marks };
+    /**
+     * The scatter of the readings around their own trend.
+     *
+     * Only for a single lift: two bands overlapping is a smear nobody can
+     * read, and the question the band answers ("how much does this bounce
+     * around") is about one series at a time anyway.
+     */
+    let band: ReturnType<typeof residualBand> = null;
+    if (series.length === 1) {
+      const name = series[0]!.name;
+      const pts = rows
+        .filter((r) => typeof r[name] === "number")
+        .map((r) => ({ t: r.t as number, v: r[name] as number }));
+      band = residualBand(pts, confidenceOf(pts));
+      if (band) {
+        const by = new Map(band.points.map((p) => [p.t, p.range]));
+        for (const r of rows) {
+          const range = by.get(r.t as number);
+          if (range) (r as Record<string, unknown>).__band = range;
+        }
+      }
+    }
+
+    return { data: rows, prs: marks, band };
   }, [active, log, metric, cutoff]);
 
   const unit = METRICS.find((m) => m.id === metric)!.unit;
@@ -213,7 +237,7 @@ export function GraphsView() {
             zoomed={zoom.zoomed}
           >
             <ResponsiveContainer>
-              <LineChart data={data} margin={{ top: 8, right: 10, bottom: 0, left: 0 }}>
+              <ComposedChart data={data} margin={{ top: 8, right: 10, bottom: 0, left: 0 }}>
                 <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="t"
@@ -250,6 +274,23 @@ export function GraphsView() {
                     return [label ? `${v} ${unit} · top set ${label}` : `${v} ${unit}`, n as string];
                   }}
                 />
+                {/* Drawn before the lines so it sits behind them. Faint on
+                    purpose — it is context for the line, not a second series
+                    competing with it. Withheld entirely below medium
+                    confidence: see lib/residual-band.ts. */}
+                {band && (
+                  <Area
+                    type="monotone"
+                    dataKey="__band"
+                    stroke="none"
+                    fill={SERIES_COLORS[0]}
+                    fillOpacity={0.13}
+                    isAnimationActive={false}
+                    connectNulls
+                    activeDot={false}
+                    tooltipType="none"
+                  />
+                )}
                 {active.map((n, i) => (
                   <Line
                     key={n}
@@ -276,9 +317,14 @@ export function GraphsView() {
                     label={{ value: "PR", position: "top", fill: "#ef4444", fontSize: 9, fontWeight: 800 }}
                   />
                 ))}
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </ZoomableChart>
+        )}
+        {band && (
+          <p className="mt-1 px-1 text-center text-[0.58rem] leading-snug text-faint">
+            {bandNote(band, unit)}
+          </p>
         )}
         <p className="mt-1 text-center text-[0.58rem] text-faint">
           Pinch across to zoom time, up and down to zoom weight. Drag to pan, double-tap to reset.
@@ -460,8 +506,27 @@ function MicroMusclePanel({ micro }: { micro: ReturnType<typeof microMuscleStren
  * previous one's zoom window, which is confusing and looks like a bug.
  */
 function MicroChart({ m }: { m: ReturnType<typeof microMuscleStrength>[number] }) {
-  const points = useMemo(
-    () => m.points.map((p) => ({ ...p, t: new Date(p.date).getTime() })),
+  const points = useMemo(() => {
+    const rows = m.points.map((p) => ({ ...p, t: new Date(p.date).getTime() }));
+    // Same band as the strength chart, same rule: withheld below medium
+    // confidence, because an index computed from three sessions has a spread
+    // arithmetically and drawing it would make noise look measured.
+    const b = residualBand(rows.map((r) => ({ t: r.t, v: r.index })), confidenceOf(rows));
+    if (b) {
+      const by = new Map(b.points.map((p) => [p.t, p.range]));
+      for (const r of rows) {
+        const range = by.get(r.t);
+        if (range) (r as Record<string, unknown>).__band = range;
+      }
+    }
+    return rows;
+  }, [m.points]);
+
+  const band = useMemo(
+    () => residualBand(
+      m.points.map((p) => ({ t: new Date(p.date).getTime(), v: p.index })),
+      confidenceOf(m.points.map((p) => ({ t: new Date(p.date).getTime() }))),
+    ),
     [m.points],
   );
 
@@ -506,7 +571,7 @@ function MicroChart({ m }: { m: ReturnType<typeof microMuscleStrength>[number] }
           {/* No negative left margin. It was -18 with a 40px axis, which slid
               the tick labels 18px off the left edge of the chart and clipped
               them — the axis was drawn, it just could not be read. */}
-          <LineChart data={points} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
+          <ComposedChart data={points} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="t"
@@ -551,6 +616,19 @@ function MicroChart({ m }: { m: ReturnType<typeof microMuscleStrength>[number] }
                 "index",
               ]}
             />
+            {band && (
+              <Area
+                type="monotone"
+                dataKey="__band"
+                stroke="none"
+                fill="var(--color-accent)"
+                fillOpacity={0.12}
+                isAnimationActive={false}
+                connectNulls
+                activeDot={false}
+                tooltipType="none"
+              />
+            )}
             <Line
               type="monotone"
               dataKey="index"
@@ -560,11 +638,12 @@ function MicroChart({ m }: { m: ReturnType<typeof microMuscleStrength>[number] }
               isAnimationActive
               animationDuration={380}
             />
-          </LineChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </ZoomableChart>
       <p className="px-1 text-[0.58rem] leading-snug text-faint">
         From {m.exercises.join(", ")}
+        {band ? ` · ${bandNote(band, "")}` : ""}
       </p>
     </>
   );

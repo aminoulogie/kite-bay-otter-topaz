@@ -7,6 +7,7 @@ import { GraphsView, MicroMuscleView } from "@/components/views/GraphsView";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
 import { CoachBrief } from "@/components/CoachBrief";
+import { MesoReviewCard } from "@/components/MesoReviewCard";
 import { Progress } from "@/components/ui/progress";
 import { applyGoal, goalMode } from "@/lib/goal-mode";
 import { computeBiologicalReadiness, heatColor, heatLabel, MUSCLE_REGIONS } from "@/lib/recovery";
@@ -133,6 +134,8 @@ function OverviewPanel() {
   return (
     <>
       <CoachBrief horizon="week" />
+
+      <MesoReviewCard />
 
       <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <Badge tone="accent">Training consistency</Badge>
