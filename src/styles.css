@@ -324,3 +324,17 @@ html.soma-dragging * {
   /* Stops iOS raising the copy/define bubble over the row being dragged. */
   -webkit-touch-callout: none;
 }
+
+/*
+ * Belt and braces on the scroll.
+ *
+ * The touchmove listener in the drag hooks is what actually stops WebKit
+ * scrolling mid-gesture — touch-action is latched when a gesture BEGINS, so
+ * setting it once a row is held is always too late for the touch in flight.
+ * This still earns its place: it covers the NEXT gesture, so a second finger
+ * or a quick re-grab while a row is up cannot start a scroll either.
+ */
+html.soma-dragging body {
+  touch-action: none;
+  overscroll-behavior: contain;
+}

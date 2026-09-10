@@ -402,8 +402,11 @@ function ProgramEditor({
                       : "border-border bg-surface-2",
                 isRestSplit(d) && drag.dragging !== i && "opacity-70",
               )}
-              // Vertical panning is handled by the drag itself once a row is
-              // held; leaving it to the browser would scroll the page instead.
+              // pan-y so a normal scroll through the list still works. The
+              // "none" half only affects the NEXT gesture, not the one in
+              // flight — touch-action is latched when a gesture begins, so
+              // what actually stops the page scrolling under a held row is the
+              // touchmove listener in lib/use-long-press-drag.ts.
               style={{ touchAction: drag.dragging != null ? "none" : "pan-y" }}
             >
               <GripVertical className="size-4 shrink-0 cursor-grab text-faint" />

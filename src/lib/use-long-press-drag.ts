@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resetSelectionGuard, restoreSelection, suppressSelection } from "./drag-select";
+import { stopDragScroll, updateDragScroll } from "./drag-scroll";
 
 /**
  * Long-press to pick up a row, drag to move it, release to drop.
@@ -12,6 +13,21 @@ import { resetSelectionGuard, restoreSelection, suppressSelection } from "./drag
  * The press has to be held before the drag starts, so a normal scroll through
  * a long list does not pick a row up by accident. Movement beyond a few pixels
  * during that hold cancels it and lets the scroll through.
+ *
+ * Stopping the page scrolling under a held row is the hard part, and the
+ * obvious approaches do not work on the phone this runs on:
+ *
+ *  - `touch-action: none` set on the row once it is held is too late. The
+ *    browser latches touch-action when the gesture BEGINS, so changing it
+ *    after a 320ms hold plus a React render has no effect on the touch in
+ *    flight. Both call sites did exactly this, and it never once worked.
+ *  - `preventDefault()` on `pointermove` does not cancel a touch scroll in
+ *    WebKit. Scrolling there is driven by touch events; the pointer events are
+ *    a synthesised view of them.
+ *
+ * What does work is a non-passive `touchmove` listener that preventDefaults
+ * while armed. Without it iOS starts scrolling, fires `pointercancel`, and the
+ * drag dies mid-gesture — which is precisely what "kinda broken" looked like.
  */
 
 const HOLD_MS = 320;
@@ -84,15 +100,15 @@ export function useLongPressDrag(
       e.preventDefault();
       const target = rowAt(e.clientX, e.clientY);
       if (target != null) setOver(target);
+      // With the page's own scrolling suppressed, this is the only way left to
+      // reach a drop target that is off screen.
+      updateDragScroll(e.clientY, document.elementFromPoint(e.clientX, e.clientY));
     };
 
-    const up = () => {
+    const reset = () => {
       clearHold();
       if (armed.current) restoreSelection();
-      if (armed.current && from.current != null) {
-        const to = live.current.over;
-        if (to != null && to !== from.current) live.current.onReorder(from.current, to);
-      }
+      stopDragScroll();
       armed.current = false;
       from.current = null;
       start.current = null;
@@ -100,15 +116,43 @@ export function useLongPressDrag(
       setOver(null);
     };
 
+    /** Let go deliberately: commit wherever the row was dropped. */
+    const up = () => {
+      const commit = armed.current && from.current != null;
+      const to = live.current.over;
+      const wasFrom = from.current;
+      reset();
+      if (commit && to != null && to !== wasFrom) live.current.onReorder(wasFrom!, to);
+    };
+
+    /**
+     * The gesture was taken away: put everything back and reorder NOTHING.
+     *
+     * This used to run the same code as a deliberate release, so a cancelled
+     * drag committed a move to whatever row the finger happened to be over —
+     * silently reordering a programme the user was not even trying to change.
+     * On iOS that fired constantly, because a scroll starting under a held row
+     * is exactly how the system cancels a pointer.
+     */
+    const cancel = () => reset();
+
+    // The one thing that actually stops WebKit scrolling mid-drag.
+    const blockTouchScroll = (e: TouchEvent) => {
+      if (armed.current && e.cancelable) e.preventDefault();
+    };
+
     // Non-passive so preventDefault can actually stop the scroll mid-drag.
     window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("touchmove", blockTouchScroll, { passive: false });
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("touchmove", blockTouchScroll);
       clearHold();
+      stopDragScroll();
       resetSelectionGuard();
     };
   }, [rowAt]);

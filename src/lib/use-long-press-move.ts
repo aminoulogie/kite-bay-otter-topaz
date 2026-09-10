@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resetSelectionGuard, restoreSelection, suppressSelection } from "./drag-select";
+import { stopDragScroll, updateDragScroll } from "./drag-scroll";
 
 /**
  * Press and hold a row, drag it onto another section, release to move it there.
@@ -15,6 +16,11 @@ import { resetSelectionGuard, restoreSelection, suppressSelection } from "./drag
  *
  * Mark each droppable section with `data-drop-zone="<id>"`, and spread
  * `handlers(itemId)` onto anything draggable.
+ *
+ * Suppressing the page's own scroll mid-drag needs a non-passive `touchmove`
+ * listener; see the note in use-long-press-drag.ts for why the two obvious
+ * approaches — `touch-action` on the row and `preventDefault()` on
+ * `pointermove` — cannot work in WebKit.
  */
 
 const HOLD_MS = 300;
@@ -79,15 +85,15 @@ export function useLongPressMove<T>(
       // Only safe once armed, or an ordinary scroll would be swallowed.
       e.preventDefault();
       setOver(zoneAt(e.clientX, e.clientY));
+      // With the page's own scrolling suppressed, this is the only way left to
+      // reach a meal further down the diary than the screen.
+      updateDragScroll(e.clientY, document.elementFromPoint(e.clientX, e.clientY));
     };
 
-    const up = () => {
+    const reset = () => {
       clearHold();
       if (armed.current) restoreSelection();
-      if (armed.current && held.current != null) {
-        const zone = live.current.over;
-        if (zone) live.current.onMove(held.current, zone);
-      }
+      stopDragScroll();
       armed.current = false;
       held.current = null;
       start.current = null;
@@ -95,15 +101,40 @@ export function useLongPressMove<T>(
       setOver(null);
     };
 
+    /** Let go deliberately: drop it in whichever section it is over. */
+    const up = () => {
+      const item = armed.current ? held.current : null;
+      const zone = live.current.over;
+      reset();
+      if (item != null && zone) live.current.onMove(item, zone);
+    };
+
+    /**
+     * The gesture was taken away: move NOTHING.
+     *
+     * Cancelling used to run the same code as a release, so a food that lost
+     * its pointer to a system gesture jumped to whatever meal the finger was
+     * over. On iOS that happened whenever a scroll started under a held row.
+     */
+    const cancel = () => reset();
+
+    // The one thing that actually stops WebKit scrolling mid-drag.
+    const blockTouchScroll = (e: TouchEvent) => {
+      if (armed.current && e.cancelable) e.preventDefault();
+    };
+
     // Non-passive so preventDefault can actually stop the scroll mid-drag.
     window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("touchmove", blockTouchScroll, { passive: false });
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("touchmove", blockTouchScroll);
       clearHold();
+      stopDragScroll();
       // Unmounting mid-drag never sees pointerup, and a page that can never
       // select text again is a worse bug than the one being fixed.
       resetSelectionGuard();

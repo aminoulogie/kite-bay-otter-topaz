@@ -949,7 +949,10 @@ function FoodRow({
       type="button"
       onClick={onEdit}
       {...dragHandlers}
-      // Vertical panning belongs to the page until the row is actually held.
+      // pan-y so the diary still scrolls normally. The "none" half cannot
+      // stop the gesture already in flight — touch-action is latched when a
+      // gesture begins — so the touchmove listener in lib/use-long-press-move.ts
+      // is what actually keeps the page still under a held row.
       style={{ touchAction: held ? "none" : "pan-y" }}
       className={cn(
         "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-[colors,transform]",
