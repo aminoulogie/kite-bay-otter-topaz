@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
+import { Bookshelf } from "@/components/Bookshelf";
+import { WordBook } from "@/components/WordBook";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -93,6 +95,10 @@ export function MindView() {
   return (
     <div className="space-y-3 pb-4">
       <ReviewQueue />
+
+      <WordBook />
+
+      <Bookshelf />
 
       <Card>
         <CardTitle>This week</CardTitle>

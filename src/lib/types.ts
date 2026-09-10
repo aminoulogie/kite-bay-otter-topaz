@@ -379,6 +379,31 @@ export interface MindEntry {
    */
   takeaway?: string;
   /**
+   * Books: what a shelf needs.
+   *
+   * `pages` is the MEDIAN across editions rather than one edition's count —
+   * editions of the same book differ by hundreds of pages, and a progress bar
+   * measured against the wrong one is worse than no progress bar.
+   */
+  author?: string;
+  pages?: number;
+  page?: number;
+  /** Open Library work key, so the same book can be looked up again. */
+  sourceKey?: string;
+  /** Set once the last page is turned, so a shelf can be read from a log. */
+  finished?: string;
+  /**
+   * Words: how it sounds, and a sentence using it.
+   *
+   * The definition itself goes in `takeaway`, which means vocabulary joins the
+   * spaced-repetition queue for free — and drilling a word at two days, a week
+   * and a month is exactly what you would build for it anyway.
+   */
+  phonetic?: string;
+  example?: string;
+  /** Where a fetched definition came from. A definition is never anonymous. */
+  source?: string;
+  /**
    * Dates the takeaway was reviewed, oldest first.
    *
    * Spaced repetition state, kept on the entry rather than in a side store so
