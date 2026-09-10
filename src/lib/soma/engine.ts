@@ -4,6 +4,7 @@
 // why it is the part covered by tests.
 // ==========================================================================
 
+import { capForVolume } from "../autoregulate";
 import { getLocalDateKey, parseLocalDateKey } from "./dates";
 import { ROTATION_SEQUENCE } from "./data";
 
@@ -184,11 +185,19 @@ class SomaIntelligenceEngine {
   static computeAutoregulatedTarget(lastSet, opts = {}) {
     const {
       isBW = false,
-      readiness = null,
       isDeload = false,
       unit = "kg",
-      trend = null
+      trend = null,
+      // True when this lift's muscle is already past MRV for the week.
+      // Volume you cannot recover from is not a reason to add load, so the
+      // lift is treated as only partly recovered however fresh the clock
+      // says the muscle is. See lib/autoregulate.ts.
+      overMrv = false
     } = opts;
+    const readiness = capForVolume(
+      opts.readiness === undefined ? null : opts.readiness,
+      !!overMrv,
+    );
 
     const base = this.computeOverloadRecommendation(lastSet, isBW);
     const inc = this.loadIncrement(unit);
@@ -235,22 +244,29 @@ class SomaIntelligenceEngine {
         reps: capped ? lastR + 1 : base.reps,
         adjusted: capped,
         diffTier: capped ? "Hold (Recovering)" : base.diffTier,
-        autoNote: capped
-          ? `Only ${readiness}% recovered — holding load, chasing a rep instead of weight.`
-          : `${readiness}% recovered — proceed as planned.`
+        autoNote: overMrv
+          ? "Already past this muscle's weekly MRV — holding load, chasing a rep instead of weight."
+          : capped
+            ? `Only ${readiness}% recovered — holding load, chasing a rep instead of weight.`
+            : `${readiness}% recovered — proceed as planned.`
       };
     }
 
     // 4. Stalled lift on a recovered muscle. More load is not the answer;
     //    the ladder needs a different lever.
     if (trend && trend.stalled && !isDeload) {
+      // Hold the load, and allow a rep — nothing more. The ladder's answer to
+      // a stall was whatever the last set's rating implied, which on a good
+      // rating meant MORE weight: exactly the thing that is already not
+      // working. A recovered muscle on a stalled lift needs a different
+      // lever, not a heavier one.
       return {
         ...out,
-        weight: base.weight,
-        reps: base.reps,
+        weight: isBW ? base.weight : lastW,
+        reps: lastR + 1,
         adjusted: true,
         diffTier: "Stalled",
-        autoNote: `No estimated-1RM gain across the last ${trend.points.length} sessions. Hold this load for a week, add a set, or swap the variation.`
+        autoNote: `No estimated-1RM gain across the last ${trend.points.length} sessions. Holding ${lastW > 0 ? lastW + unit : "bodyweight"} for one more rep — then add a set or swap the variation.`
       };
     }
 

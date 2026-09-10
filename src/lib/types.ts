@@ -1,3 +1,4 @@
+import type { TrainingGoal } from "./goal-mode.ts";
 export type SetType = "normal" | "dropset" | "warmup";
 export type Unit = "kg" | "lb";
 export type ThemePref = "dark" | "light" | "system";
@@ -179,7 +180,16 @@ export interface FoodItem {
 
 export interface SleepLog {
   hours: number;
-  quality: number;
+  /**
+   * 1-5, and genuinely optional.
+   *
+   * Logging hours from the Home card takes one tap; being made to rate the
+   * night as well is what stops it being one tap. The readiness blend already
+   * weights hours twice as heavily and skips any part it was not given, so an
+   * unrated night costs almost nothing — and inventing a 3 to fill the field
+   * would put a number nobody entered into a figure that drives load.
+   */
+  quality?: number;
 }
 
 export interface ReadinessCheckin {
@@ -229,6 +239,13 @@ export interface Settings {
    * is the deficit working, on a bulk it means the surplus did not happen.
    */
   phase?: "bulk" | "cut" | "maintain";
+  /**
+   * What the training is for. Bends the weekly volume landmarks — see
+   * lib/goal-mode.ts. Deliberately does NOT move the mesocycle clock: deload
+   * weeks are a property of the calendar, and shifting them when the goal
+   * changes would relabel every week already trained.
+   */
+  trainingGoal?: TrainingGoal;
   barWeight: number;
   restDefault: number;
   autoRest: boolean;

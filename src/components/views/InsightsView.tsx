@@ -6,7 +6,9 @@ import { ExerciseRatings } from "@/components/ExerciseRatings";
 import { GraphsView, MicroMuscleView } from "@/components/views/GraphsView";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardTitle } from "@/components/ui/card";
+import { CoachBrief } from "@/components/CoachBrief";
 import { Progress } from "@/components/ui/progress";
+import { applyGoal, goalMode } from "@/lib/goal-mode";
 import { computeBiologicalReadiness, heatColor, heatLabel, MUSCLE_REGIONS } from "@/lib/recovery";
 import { SomaIntelligenceEngine, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { useActiveProgram, useSoma } from "@/lib/store";
@@ -99,7 +101,12 @@ function OverviewPanel() {
     sessionsPerWeek: settings.sessionsPerWeek,
     now: Date.now(),
   });
-  const rows = SomaIntelligenceEngine.volumeReport(history, 7, Date.now());
+  // Re-judged against what the training is actually for. The set counts are
+  // goal-independent; only the verdict moves. See lib/goal-mode.ts.
+  const rows = applyGoal(
+    SomaIntelligenceEngine.volumeReport(history, 7, Date.now()) as never,
+    settings.trainingGoal,
+  );
   const attention = rows
     .filter((r: { tier: string }) => r.tier === "over" || r.tier === "under" || r.tier === "high")
     .slice(0, 8);
@@ -125,6 +132,8 @@ function OverviewPanel() {
 
   return (
     <>
+      <CoachBrief horizon="week" />
+
       <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <Badge tone="accent">Training consistency</Badge>
         <div className="mt-2 grid grid-cols-3 gap-2">
@@ -154,6 +163,9 @@ function OverviewPanel() {
 
       <Card>
         <CardTitle>Weekly volume vs landmarks</CardTitle>
+        <p className="-mt-1 mb-3 text-[0.68rem] leading-snug text-faint">
+          {goalMode(settings.trainingGoal).label} · {goalMode(settings.trainingGoal).blurb}
+        </p>
         <div className="space-y-3">
           {(shown.length ? shown : rows.slice(0, 8)).map(
             (r: { label: string; sets: number; mev: number; mav: number; mrv: number; tier: string; note: string }) => (

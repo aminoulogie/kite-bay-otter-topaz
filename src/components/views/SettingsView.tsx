@@ -21,6 +21,7 @@ import {
 } from "@/lib/food-import";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useActiveProgram, useSoma } from "@/lib/store";
+import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
 
 const GOAL_FIELDS = [
@@ -176,6 +177,35 @@ export function SettingsView() {
             </button>
           ))}
         </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Training goal</CardTitle>
+        <p className="mb-2 text-[0.7rem] leading-snug text-faint">
+          What the weekly volume landmarks are judged against. It does not move the
+          mesocycle clock — deload weeks belong to the calendar, and shifting them here
+          would relabel every week you have already trained.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {GOAL_LIST.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              onClick={() => patchSettings({ trainingGoal: g.id })}
+              className={cn(
+                "h-11 rounded-xl border text-sm font-bold",
+                (settings.trainingGoal ?? DEFAULT_GOAL) === g.id
+                  ? "border-accent bg-accent text-accent-ink"
+                  : "border-border bg-surface-2",
+              )}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[0.7rem] leading-snug text-muted">
+          {goalMode(settings.trainingGoal).blurb}
+        </p>
       </Card>
 
       <Card>

@@ -38,6 +38,8 @@ import { resolveSplitName } from "./split-match";
 import { HOME_TAB } from "./tab-order";
 import type { ScanRecord } from "./aether/scan-store";
 import type { HungerEntry } from "./hunger";
+import { deloadSetCount } from "./autoregulate";
+import { lastSetAt, lastTimeFor } from "./last-time";
 
 /**
  * A blank day.
@@ -126,7 +128,7 @@ export interface SomaStore {
   removeCustomFood: (name: string) => void;
   addCreatine: (g: number) => void;
   resetCreatine: () => void;
-  logSleep: (hours: number, quality: number) => void;
+  logSleep: (hours: number, quality?: number | null) => void;
   logWeight: (kg: number) => void;
   logMeasurements: (m: Record<string, number>) => void;
   logReadiness: (soreness: number, stress: number) => void;
@@ -819,7 +821,9 @@ export const useSoma = create<SomaStore>()(
       logSleep: (hours, quality) => {
         const k = get().activeDate;
         get().ensureDay(k);
-        get().patchDay(k, { sleep: { hours, quality } });
+        get().patchDay(k, {
+          sleep: quality == null ? { hours } : { hours, quality },
+        });
       },
       logWeight: (kg) => {
         const k = get().activeDate;
@@ -1675,9 +1679,43 @@ function makeSessionEx(name: string, db: ExerciseDef[], store: SomaStore): Sessi
     isAxial: false,
     isBW: false,
   };
-  const last = store.lastPerformance(name);
-  const target = SomaIntelligenceEngine.computeOverloadRecommendation(last, data.isBW);
-  const w = target.weight > 0 ? target.weight : data.isBW ? 0 : "";
+  // Set by set, not top set. `lastPerformance` returns the single heaviest
+  // set of the last session, so every set in the new one was prefilled with
+  // the top set — which asks for a back-off set at the top set's weight, and
+  // then reads the inevitable miss as a stall. Set N is built from set N.
+  const lastTime = lastTimeFor(store.history, name, store.live?.forDate ?? store.live?.date);
+  const last = lastTime?.sets[0] ?? store.lastPerformance(name);
+
+  const proj = SomaIntelligenceEngine.getProgramProjectedDay(
+    new Date(),
+    store.settings.scheduleOverrides,
+    store.activeProgram(),
+  );
+
+  // How many sets to lay out: what was actually done last time, kept inside
+  // sane bounds, or three when there is no history. A deload week halves it.
+  const normalCount = Math.max(2, Math.min(5, lastTime?.sets.length || 3));
+  const count = proj.isDeload ? deloadSetCount(normalCount) : normalCount;
+
+  const sets = Array.from({ length: count }, (_, i) => {
+    const prior = lastSetAt(lastTime, i) ?? last;
+    const t = SomaIntelligenceEngine.computeAutoregulatedTarget(prior, {
+      isBW: data.isBW,
+      isDeload: !!proj.isDeload,
+      unit: store.settings.unit,
+    });
+    const weight: number | "" = t.weight > 0 ? Number(t.weight) : data.isBW ? 0 : "";
+    return {
+      weight,
+      reps: t.reps,
+      // Nothing has happened yet, so this is a placeholder the lifter
+      // overwrites by rating the set — not a claim about how it went.
+      failure: 2,
+      done: false,
+      type: "normal" as const,
+    };
+  });
+
   return {
     name: data.name,
     muscle: data.muscle,
@@ -1691,11 +1729,7 @@ function makeSessionEx(name: string, db: ExerciseDef[], store: SomaStore): Sessi
     usesBar: exerciseUsesBar(data.name),
     barWeight: store.settings.barWeight,
     supersetGroup: "",
-    sets: [
-      { weight: w, reps: target.reps, failure: 2, done: false, type: "normal" },
-      { weight: w, reps: target.reps, failure: 2, done: false, type: "normal" },
-      { weight: w, reps: Math.max(6, target.reps - 1), failure: 3, done: false, type: "normal" },
-    ],
+    sets,
   };
 }
 

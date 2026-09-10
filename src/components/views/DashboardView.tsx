@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { ArrowRight, Flame, Moon, Utensils } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
+import { CoachBrief } from "@/components/CoachBrief";
+import { LogTheGap } from "@/components/LogTheGap";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
 import { ratingTone } from "@/lib/stimulus";
 import { scoreDay } from "@/lib/day-score";
@@ -9,7 +11,6 @@ import { totalWaterMl } from "@/lib/hydration";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import type { TabId } from "@/lib/types";
 
 /**
  * The middle tab, and where the app opens.
@@ -26,7 +27,6 @@ import type { TabId } from "@/lib/types";
 export function DashboardView() {
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
-  const habits = useSoma((s) => s.habits);
   const activeDate = useSoma((s) => s.activeDate);
   const setTab = useSoma((s) => s.setTab);
   const live = useSoma((s) => s.live);
@@ -97,19 +97,11 @@ export function DashboardView() {
   const protein = Math.round((day?.items ?? []).reduce((a, i) => a + i.p, 0));
   const water = totalWaterMl(day);
   const session = history[date];
-  const habitsDone = habits.filter((h) => h.history?.[date] === true).length;
-
-  // What is still open today, in the order it is usually done.
-  const open: { label: string; tab: TabId }[] = [];
-  if (!session && live.exercises.length === 0) open.push({ label: "No session logged", tab: "workout" });
-  if (!day?.items?.length) open.push({ label: "Nothing eaten logged", tab: "nutrition" });
-  if (day?.sleep?.hours == null) open.push({ label: "Sleep not logged", tab: "body" });
-  if (habits.length && habitsDone < habits.length) {
-    open.push({ label: `${habits.length - habitsDone} habits left`, tab: "habits" });
-  }
 
   return (
     <div className="space-y-3 pb-4">
+      <CoachBrief horizon="today" />
+
       <Card>
         <CardTitle>Today</CardTitle>
         <div className="flex items-end gap-3">
@@ -149,24 +141,7 @@ export function DashboardView() {
               unit="lifts" onClick={() => setTab("workout")} />
       </div>
 
-      {open.length > 0 && (
-        <Card>
-          <CardTitle>Still open</CardTitle>
-          <div className="space-y-1.5">
-            {open.map((o) => (
-              <button
-                key={o.label}
-                type="button"
-                onClick={() => setTab(o.tab)}
-                className="flex w-full items-center justify-between rounded-xl border border-border bg-surface-2 px-3 py-2 text-left"
-              >
-                <span className="text-sm font-bold">{o.label}</span>
-                <ArrowRight className="size-4 shrink-0 text-faint" />
-              </button>
-            ))}
-          </div>
-        </Card>
-      )}
+      <LogTheGap />
 
       <Card>
         <CardTitle>Across everything</CardTitle>

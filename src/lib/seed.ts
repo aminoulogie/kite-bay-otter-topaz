@@ -1,3 +1,4 @@
+import { DEFAULT_GOAL } from "./goal-mode.ts";
 import {
   BASE_EXERCISE_DB,
   BASE_FOOD_LIBRARY,
@@ -288,6 +289,7 @@ export function defaultSettings(): Settings {
   return {
     unit: "kg",
     currency: "DZD",
+    trainingGoal: DEFAULT_GOAL,
     barWeight: 20,
     restDefault: 90,
     autoRest: true,

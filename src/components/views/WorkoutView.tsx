@@ -17,6 +17,9 @@ import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
+import { failureFromQuality, readinessWithSleepDebt } from "@/lib/autoregulate";
+import { applyGoal } from "@/lib/goal-mode";
+import { currentDebt } from "@/lib/sleep-debt";
 import { rateExerciseInstance, rateSession, rateSet, ratingTone } from "@/lib/stimulus";
 import { tapLight, tapMedium, tapSuccess } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
@@ -118,6 +121,29 @@ export function WorkoutView() {
     () => computeBiologicalReadiness(history, now),
     [history, now],
   );
+
+  /**
+   * Two facts that belong to the whole session rather than to any one lift.
+   *
+   * Sleep debt is the fortnight, not last night — the blend already reads last
+   * night's hours, and a lifter eleven hours down after two bad weeks does not
+   * show up in it at all. Volume is the week: a muscle already past MRV gets
+   * no more load today whatever the recovery clock says about it.
+   */
+  const sleepDebt = useMemo(() => {
+    const nights = Object.entries(nutrition)
+      .filter(([, n]) => n?.sleep?.hours != null)
+      .map(([date, n]) => ({ date, hours: n!.sleep!.hours!, quality: n!.sleep!.quality }));
+    return currentDebt(nights);
+  }, [nutrition]);
+
+  const overMrvLabels = useMemo(() => {
+    const rows = applyGoal(
+      SomaIntelligenceEngine.volumeReport(history, 7, now) as never,
+      settings.trainingGoal,
+    );
+    return new Set(rows.filter((r) => r.tier === "over").map((r) => r.key));
+  }, [history, now, settings.trainingGoal]);
 
   // Reads 00:00 until the first set is ticked, which is the truth: nothing
   // has been trained yet.
@@ -600,10 +626,14 @@ export function WorkoutView() {
         });
         const target = SomaIntelligenceEngine.computeAutoregulatedTarget(last, {
           isBW: ex.isBW,
-          readiness: SomaIntelligenceEngine.blendReadiness(muscleR, subj),
+          readiness: readinessWithSleepDebt(
+            SomaIntelligenceEngine.blendReadiness(muscleR, subj),
+            sleepDebt,
+          ),
           isDeload: !!proj.isDeload,
           unit: settings.unit,
           trend: SomaIntelligenceEngine.computeVolumeTrend(history, ex.name),
+          overMrv: keys.some((k) => overMrvLabels.has(k)),
         });
         const color = SUPERSET_COLOR[ex.supersetGroup] || "";
         const alts =
@@ -945,11 +975,13 @@ export function WorkoutView() {
                 // Keep the legacy 1-5 in step with `closeness`. Calorie burn
                 // and muscle stimulus still read it, and two fields describing
                 // the same thing must never disagree.
-                const CLOSENESS_TO_FAILURE = {
-                  reps_left: 2, one_left: 3, nothing: 5, forced: 5,
-                } as const;
+                // The mapping lives in lib/autoregulate.ts, where it is tested.
+                // The limiter matters as much as the closeness: a set the
+                // triceps ended is not evidence the chest reached failure.
                 const next = { ...patch } as typeof patch & { failure?: number };
-                if (patch.closeness) next.failure = CLOSENESS_TO_FAILURE[patch.closeness];
+                const merged = { ...set, ...patch };
+                const f = failureFromQuality(merged);
+                if (f != null) next.failure = f;
                 updateSet(rating.exIdx, rating.sIdx, next);
               }}
               onClose={() => setRating(null)}
