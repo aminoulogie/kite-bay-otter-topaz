@@ -462,28 +462,72 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             <line x1="66" y1="8" x2="66" y2="92" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
             <line x1="8" y1="33" x2="92" y2="33" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
             <line x1="8" y1="66" x2="92" y2="66" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
+            {/* Centred only for the front shot. A turned face is not supposed
+                to straddle the middle of the frame, and a bright line saying it
+                should is the same mistake as the two eye marks. */}
             <line
               x1="50" y1="6" x2="50" y2="94"
-              stroke={ready ? "rgba(48,209,88,.75)" : "rgba(255,255,255,.4)"}
-              strokeWidth="0.3"
+              stroke={
+                kind !== "face_front_true"
+                  ? "rgba(255,255,255,.10)"
+                  : ready
+                    ? "rgba(48,209,88,.75)"
+                    : "rgba(255,255,255,.4)"
+              }
+              strokeWidth={kind === "face_front_true" ? 0.3 : 0.18}
             />
             <line x1="12" y1="40" x2="88" y2="40" stroke="rgba(255,255,255,.35)" strokeWidth="0.22" />
-            <ellipse cx="38" cy="40" rx="9" ry="6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
-            <ellipse cx="62" cy="40" rx="9" ry="6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
+
+            {/* The eye marks belong to the POSE, not to the screen. Drawing two
+                of them on the profile step asked for something a profile
+                cannot do — you cannot put both eyes on marks when one of them
+                is behind your nose — so the guide was telling you that you had
+                failed at the exact moment you had done it right.
+
+                The profile line bulges right, so these steps all turn the face
+                to the right of frame: the near eye moves toward the nose side
+                and the far one narrows to nothing as it passes behind it. */}
             {kind === "face_front_true" && (
-              <ellipse cx="50" cy="48" rx="28" ry="36" fill="none" stroke="rgba(255,255,255,.22)" strokeWidth="0.3" />
+              <>
+                <ellipse cx="38" cy="40" rx="9" ry="6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
+                <ellipse cx="62" cy="40" rx="9" ry="6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
+                <ellipse cx="50" cy="48" rx="28" ry="36" fill="none" stroke="rgba(255,255,255,.22)" strokeWidth="0.3" />
+              </>
             )}
+
             {kind === "face_oblique" && (
-              <path d="M58 16 C78 28 82 70 62 88" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
+              <>
+                {/* Near eye keeps its width; the far one is foreshortened and
+                    sits close to the nose line, which is what 45° looks like. */}
+                <ellipse cx="44" cy="40" rx="8.5" ry="5.6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
+                <ellipse cx="66" cy="40" rx="4.5" ry="5" fill="none" stroke="rgba(10,132,255,.5)" strokeWidth="0.35" />
+                <path d="M58 16 C78 28 82 70 62 88" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
+              </>
             )}
+
             {kind === "face_side" && (
-              <path d="M68 14 C88 30 90 72 70 90" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
+              <>
+                {/* ONE eye. The other is behind the nose at a true profile. */}
+                <ellipse cx="60" cy="40" rx="7" ry="5.4" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
+                {/* And the ear, which is the landmark a profile is judged on —
+                    the CVA measurement is taken from the tragus. */}
+                <circle cx="33" cy="43" r="4.5" fill="none" stroke="rgba(10,132,255,.5)" strokeWidth="0.35" />
+                <text x="33" y="51.5" fill="rgba(10,132,255,.6)" fontSize="3" textAnchor="middle">
+                  ear
+                </text>
+                <path d="M68 14 C88 30 90 72 70 90" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
+              </>
             )}
             {eyes && (
               <>
                 <circle cx={eyes.lx * 100} cy={eyes.ly * 100} r="1.1" fill="#0a84ff" />
                 <circle cx={eyes.rx * 100} cy={eyes.ry * 100} r="1.1" fill="#0a84ff" />
-                <line x1={eyes.mx * 100} y1="8" x2={eyes.mx * 100} y2="92" stroke="rgba(10,132,255,.35)" strokeWidth="0.2" />
+                {/* The midline is only meaningful where there is a midline to
+                    be on. At profile it is behind the face and lining up to it
+                    would be actively wrong. */}
+                {kind === "face_front_true" && (
+                  <line x1={eyes.mx * 100} y1="8" x2={eyes.mx * 100} y2="92" stroke="rgba(10,132,255,.35)" strokeWidth="0.2" />
+                )}
               </>
             )}
           </svg>
