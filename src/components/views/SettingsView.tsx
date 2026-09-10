@@ -21,6 +21,8 @@ import {
 } from "@/lib/food-import";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useActiveProgram, useSoma } from "@/lib/store";
+import { HealthImportCard } from "@/components/HealthImportCard";
+import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +57,7 @@ export function SettingsView() {
   const applyGoalsToOpenDays = useSoma((s) => s.applyGoalsToOpenDays);
   const activeProgram = useActiveProgram();
   const [programsOpen, setProgramsOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   // Raw text beside the stored numbers, so a half-typed target is not wiped on
   // every keystroke.
   const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>(() =>
@@ -479,6 +482,26 @@ export function SettingsView() {
       </Card>
 
       <Card>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <CardTitle className="mb-0">Report</CardTitle>
+          <button
+            type="button"
+            onClick={() => setReportOpen(true)}
+            className="shrink-0 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.7rem] font-bold"
+          >
+            Open
+          </button>
+        </div>
+        <p className="text-[0.7rem] leading-snug text-faint">
+          A printable summary of the last week, month or quarter. iOS&apos;s print sheet saves
+          it as a PDF and offers AirDrop, so this is the export — nothing leaves the phone
+          unless you send it.
+        </p>
+      </Card>
+
+      <HealthImportCard />
+
+      <Card>
         <CardTitle>Data</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Everything lives on this device only, so a backup is the only copy if this phone
@@ -742,19 +765,22 @@ export function SettingsView() {
           <span className="text-muted">Data</span>
           <span className="font-bold">on this device only</span>
         </div>
-        {/* Stated rather than left as a mystery. An Apple Watch app is a
-            separate native target with its own build and its own signing, and
-            this app is sideloaded unsigned — so it is not "coming soon", it is
-            not started. Saying so beats a settings toggle that does nothing. */}
-        <div className="mt-1 flex items-center justify-between text-xs">
-          <span className="text-muted">Apple Watch</span>
-          <span className="font-bold text-faint">not built — separate app target</span>
-        </div>
+        {/* Stated rather than left as a mystery, and specific about WHY.
+            HealthKit needs an entitlement a free Apple ID cannot be granted,
+            and this app is installed by signing an unsigned .ipa with exactly
+            that — so the live connection is not "coming soon", it is not
+            possible on this install. The file import above is the way in. */}
         <div className="mt-1 flex items-center justify-between text-xs">
           <span className="text-muted">Apple Health</span>
-          <span className="font-bold text-faint">not connected</span>
+          <span className="font-bold text-faint">by file import</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between text-xs">
+          <span className="text-muted">Apple Watch</span>
+          <span className="font-bold text-faint">needs a paid developer account</span>
         </div>
       </Card>
+
+      {reportOpen && <ReportSheet onClose={() => setReportOpen(false)} />}
 
       {programsOpen && (
         <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">

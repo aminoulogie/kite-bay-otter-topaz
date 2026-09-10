@@ -338,3 +338,34 @@ html.soma-dragging body {
   touch-action: none;
   overscroll-behavior: contain;
 }
+
+/*
+ * Printing, which is also how a PDF gets made.
+ *
+ * iOS's print sheet writes a PDF and offers AirDrop from the same panel, so
+ * this stylesheet IS the export — no library, no network, nothing to keep
+ * updated. Only the report is printed; the app's chrome, the dock and the
+ * controls are all marked print:hidden by the sheet itself.
+ */
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  /* Every surface flattens to paper: a dark card printed as-is is a page of
+     toner, and on a phone it is a page nobody can read. */
+  #soma-report * {
+    background: transparent !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
+  #soma-report [class*="rounded"] {
+    border-color: #bbb !important;
+  }
+  /* A section split across a page break is the one thing that makes a printed
+     report look broken. */
+  #soma-report > * {
+    break-inside: avoid;
+  }
+}
