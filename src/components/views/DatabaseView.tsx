@@ -9,6 +9,7 @@ import {
 } from "@/lib/training-log";
 import { useTrainingLog } from "@/lib/use-training-log";
 import { rateAllExercises, ratingBreakdown, ratingLabel, ratingTone } from "@/lib/exercise-ratings";
+import { SwipeRow } from "@/components/SwipeRow";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -194,6 +195,43 @@ function ExerciseWindow({
   // Which day is open for editing, if any. One at a time: two open editors in
   // a 42vh window is more chrome than data.
   const [editDate, setEditDate] = useState<string | null>(null);
+  // One row open at a time, same rule as every other swipe list in the app.
+  const [swiped, setSwiped] = useState<string | null>(null);
+
+  const removeHistoryExercise = useSoma((s) => s.removeHistoryExercise);
+  const restoreSession = useSoma((s) => s.restoreSession);
+  const setImportedDay = useSoma((s) => s.setImportedDay);
+
+  /**
+   * Drop this lift from that day.
+   *
+   * Undoable rather than confirmed. The old flow put a browser `confirm()` in
+   * the way of every deletion, which is a modal you dismiss without reading by
+   * the third time — and it still could not bring anything back if you were
+   * wrong. A snapshot plus an Undo toast is both less friction and more
+   * recoverable: the whole session is captured, because removing one exercise
+   * rewrites the array the others live in.
+   */
+  const dropDay = (date: string, sets: LoggedSet[], imported: boolean, exIdx: number | null) => {
+    if (imported) {
+      setImportedDay(ex.name, date, null);
+      toast.success(`${ex.name} removed from ${date}`, {
+        action: { label: "Undo", onClick: () => setImportedDay(ex.name, date, sets) },
+      });
+      return;
+    }
+    if (exIdx == null) return;
+    const before = useSoma.getState().history[date];
+    removeHistoryExercise(date, exIdx);
+    toast.success(`${ex.name} removed from ${date}`, {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          if (before) restoreSession(date, before);
+        },
+      },
+    });
+  };
 
   const entries = useMemo(() => {
     const list = Object.entries(ex.days).map(([date, sets]) => ({
@@ -275,7 +313,17 @@ function ExerciseWindow({
           const imported = !src;
           const editing = editDate === row.date;
           return (
-            <div key={row.date} className="border-b border-border/40 px-3 py-2 last:border-0">
+            <SwipeRow
+              key={row.date}
+              id={row.date}
+              openId={swiped}
+              setOpenId={setSwiped}
+              // A day open for editing must not also slide: the two gestures
+              // would fight over the same finger on the same row.
+              disabled={editing}
+              onDelete={() => dropDay(row.date, row.sets, imported, src?.exIdx ?? null)}
+            >
+            <div className="border-b border-border/40 bg-surface px-3 py-2 last:border-0">
               <div className="mb-1 flex items-center gap-2">
                 <span className="text-[0.7rem] font-bold tabular-nums">
                   {new Date(row.date + "T00:00:00").toLocaleDateString(undefined, {
@@ -328,6 +376,7 @@ function ExerciseWindow({
                 </div>
               )}
             </div>
+            </SwipeRow>
           );
         })}
       </div>

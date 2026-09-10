@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
-import { HOME_TAB, TAB_ORDER, stepForSwipe, tabAt } from "./tab-order.ts";
+import { HOME_TAB, TAB_ORDER, tabAt } from "./tab-order.ts";
 
 test("every tab in the union is in the order, and nothing extra", () => {
   // The dock is built by mapping TAB_ORDER, so a tab missing here is a tab
@@ -25,12 +25,6 @@ test("home is in the middle, not at an end", () => {
   assert.ok(i < TAB_ORDER.length - 1, "something is to the right of home");
 });
 
-test("swiping left goes right along the order", () => {
-  // Dragging the page left pulls the next tab in from the right, the way a
-  // carousel does. Getting this backwards is the classic version of this bug.
-  assert.equal(stepForSwipe(-80), 1);
-  assert.equal(stepForSwipe(80), -1);
-});
 
 test("stepping walks one tab at a time", () => {
   assert.equal(tabAt("dashboard", 1), "workout");

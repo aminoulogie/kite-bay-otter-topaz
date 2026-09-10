@@ -46,7 +46,3 @@ export function tabAt(current: TabId, step: number): TabId | null {
   return next >= 0 && next < TAB_ORDER.length ? TAB_ORDER[next]! : null;
 }
 
-/** Which way a swipe moves: dragging left reveals the tab to the right. */
-export function stepForSwipe(dx: number): number {
-  return dx < 0 ? 1 : -1;
-}

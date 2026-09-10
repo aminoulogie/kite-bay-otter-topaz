@@ -309,3 +309,18 @@ button:not(:disabled):active,
   background-size: 200% 100%;
   animation: soma-shimmer 1.4s ease-in-out infinite;
 }
+
+/*
+ * While a long-press drag is running.
+ *
+ * Set on <html> rather than on the dragged row: the finger leaves the row
+ * almost immediately, and the selection the browser wants to make runs across
+ * whatever is under it now, not what it started on. See lib/drag-select.ts.
+ */
+html.soma-dragging,
+html.soma-dragging * {
+  -webkit-user-select: none;
+  user-select: none;
+  /* Stops iOS raising the copy/define bubble over the row being dragged. */
+  -webkit-touch-callout: none;
+}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { resetSelectionGuard, restoreSelection, suppressSelection } from "./drag-select";
 
 /**
  * Press and hold a row, drag it onto another section, release to move it there.
@@ -82,6 +83,7 @@ export function useLongPressMove<T>(
 
     const up = () => {
       clearHold();
+      if (armed.current) restoreSelection();
       if (armed.current && held.current != null) {
         const zone = live.current.over;
         if (zone) live.current.onMove(held.current, zone);
@@ -102,6 +104,9 @@ export function useLongPressMove<T>(
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
       clearHold();
+      // Unmounting mid-drag never sees pointerup, and a page that can never
+      // select text again is a worse bug than the one being fixed.
+      resetSelectionGuard();
     };
   }, [zoneAt]);
 
@@ -115,6 +120,9 @@ export function useLongPressMove<T>(
         timer.current = setTimeout(() => {
           armed.current = true;
           held.current = item;
+          // Only once the hold has ARMED. Doing it on pointerdown would kill
+          // selection for every ordinary tap on the page.
+          suppressSelection();
           setDragging(item);
           live.current.onPickUp?.();
         }, HOLD_MS);

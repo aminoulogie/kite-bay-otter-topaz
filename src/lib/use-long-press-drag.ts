@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { resetSelectionGuard, restoreSelection, suppressSelection } from "./drag-select";
 
 /**
  * Long-press to pick up a row, drag to move it, release to drop.
@@ -87,6 +88,7 @@ export function useLongPressDrag(
 
     const up = () => {
       clearHold();
+      if (armed.current) restoreSelection();
       if (armed.current && from.current != null) {
         const to = live.current.over;
         if (to != null && to !== from.current) live.current.onReorder(from.current, to);
@@ -107,6 +109,7 @@ export function useLongPressDrag(
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
       clearHold();
+      resetSelectionGuard();
     };
   }, [rowAt]);
 
@@ -119,6 +122,9 @@ export function useLongPressDrag(
         clearHold();
         timer.current = setTimeout(() => {
           armed.current = true;
+          // Only once the hold has ARMED. Doing it on pointerdown would kill
+          // selection for every ordinary tap on the page.
+          suppressSelection();
           from.current = index;
           setDragging(index);
           setOver(index);
@@ -133,6 +139,7 @@ export function useLongPressDrag(
   // that no longer exists.
   useEffect(() => {
     if (dragging != null && dragging >= count) {
+      if (armed.current) restoreSelection();
       armed.current = false;
       from.current = null;
       setDragging(null);

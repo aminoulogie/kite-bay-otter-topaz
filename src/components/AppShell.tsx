@@ -18,8 +18,7 @@ import { accentInk, accentText, normalizeAccent, resolveTheme } from "@/lib/soma
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { TabId } from "@/lib/types";
-import { TAB_ORDER, tabAt } from "@/lib/tab-order";
-import { useTabSwipe } from "@/lib/use-tab-swipe";
+import { TAB_ORDER } from "@/lib/tab-order";
 import { DashboardView } from "@/components/views/DashboardView";
 import { MoneyView } from "@/components/views/MoneyView";
 import { MindView } from "@/components/views/MindView";
@@ -92,19 +91,17 @@ export function AppShell() {
   );
   const setTab = useSoma((s) => s.setTab);
 
-  // Swiping the page sideways walks TAB_ORDER. Disabled while the drawer or
-  // the calendar is open — a gesture inside a panel must not change what is
-  // behind it — and it stands down inside scrollers and modals on its own.
-  useTabSwipe(
-    useCallback(
-      (step: number) => {
-        const next = tabAt(useSoma.getState().tab, step);
-        if (next) setTab(next);
-      },
-      [setTab],
-    ),
-    ready && !drawerOpen && !calendarOpen,
-  );
+  /**
+   * The page-wide tab swipe is gone.
+   *
+   * It fired from anywhere on the screen, which meant every horizontal drag
+   * that was not caught by a no-swipe zone — a mis-aimed swipe-to-delete, a
+   * finger sliding while scrolling a long diary — changed tab under you. The
+   * two edge gestures (drawer, calendar) still work, and the dock is the way
+   * between tabs. A navigation gesture that fires by accident is worse than no
+   * gesture, because you lose your place and have to find it again.
+   */
+
   const settings = useSoma((s) => s.settings);
   const activeDate = useSoma((s) => s.activeDate);
   const setActiveDate = useSoma((s) => s.setActiveDate);

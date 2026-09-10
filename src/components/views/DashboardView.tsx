@@ -162,10 +162,6 @@ export function DashboardView() {
           </p>
         )}
       </Card>
-
-      <p className="px-1 text-center text-[0.7rem] leading-relaxed text-faint">
-        Swipe left and right to move between tabs.
-      </p>
     </div>
   );
 }
