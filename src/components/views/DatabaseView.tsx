@@ -7,6 +7,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import {
   allDates, dayBest, formatSet, groupsOf, type ExerciseLog, type LoggedSet,
 } from "@/lib/training-log";
+import type { HistorySession } from "@/lib/types";
 import { useTrainingLog } from "@/lib/use-training-log";
 import { rateAllExercises, ratingBreakdown, ratingLabel, ratingTone } from "@/lib/exercise-ratings";
 import { SwipeRow } from "@/components/SwipeRow";
@@ -68,6 +69,59 @@ export function DatabaseView() {
   const [openExercise, setOpenExercise] = useState<string | null>(null);
   const [sort, setSort] = useState<SortBy>("date");
 
+  const [swipedExercise, setSwipedExercise] = useState<string | null>(null);
+  const removeHistoryExercise = useSoma((s) => s.removeHistoryExercise);
+  const restoreSession = useSoma((s) => s.restoreSession);
+  const setImportedDay = useSoma((s) => s.setImportedDay);
+
+  /**
+   * Erase a lift from the database entirely.
+   *
+   * Every day it was ever logged, in one gesture. That sounds drastic and is
+   * exactly what is needed: the rows worth deleting are the junk ones — a
+   * typo that spawned "Bench Pres", a duplicate an import created — and
+   * clearing those a day at a time through thirty sessions is why nobody ever
+   * does it.
+   *
+   * Undo restores the whole thing, which is what makes the gesture safe to
+   * offer. Sessions are snapshotted BEFORE anything is removed, because
+   * deleting an exercise rewrites the array its siblings live in.
+   */
+  const dropExercise = (ex: ExerciseLog) => {
+    const before: Record<string, HistorySession> = {};
+    const imported: Record<string, LoggedSet[]> = {};
+    for (const date of Object.keys(ex.days)) {
+      const src = ex.sources?.[date];
+      if (src) {
+        const session = history[date];
+        if (session) before[date] = session;
+      } else {
+        imported[date] = ex.days[date]!;
+      }
+    }
+
+    // Highest index first: removing entry 1 shifts entry 2 down, and deleting
+    // by ascending index would take the wrong lift on the second pass.
+    const logged = Object.entries(ex.sources ?? {}).sort(
+      (a, b) => b[1].exIdx - a[1].exIdx,
+    );
+    for (const [date, src] of logged) removeHistoryExercise(date, src.exIdx);
+    for (const date of Object.keys(imported)) setImportedDay(ex.name, date, null);
+
+    const n = Object.keys(ex.days).length;
+    toast.success(`${ex.name} removed from ${n} day${n === 1 ? "" : "s"}`, {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          for (const [date, session] of Object.entries(before)) restoreSession(date, session);
+          for (const [date, sets] of Object.entries(imported)) {
+            setImportedDay(ex.name, date, sets);
+          }
+        },
+      },
+    });
+  };
+
   const rows = useMemo(
     () =>
       (group ? log.filter((e) => e.group === group) : []).sort(
@@ -127,7 +181,18 @@ export function DatabaseView() {
         const rated = ratings.get(ex.name);
 
         return (
-          <div key={ex.name} className="overflow-hidden rounded-2xl border border-border bg-surface">
+          <SwipeRow
+            key={ex.name}
+            id={ex.name}
+            openId={swipedExercise}
+            setOpenId={setSwipedExercise}
+            // An open exercise is being read, not managed. Letting the card
+            // slide while its day list is expanded puts two gestures on one
+            // finger for no gain.
+            disabled={open}
+            onDelete={() => dropExercise(ex)}
+          >
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface">
             <button
               type="button"
               onClick={() => setOpenExercise(open ? null : ex.name)}
@@ -170,6 +235,7 @@ export function DatabaseView() {
               />
             )}
           </div>
+          </SwipeRow>
         );
       })}
     </div>

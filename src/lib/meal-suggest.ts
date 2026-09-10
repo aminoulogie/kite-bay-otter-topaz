@@ -20,7 +20,7 @@
  */
 
 import { perGram, type Macro, type Totals } from "./rebalance.ts";
-import { matchName, stockKey, type PantryItem } from "./pantry.ts";
+import { findStock, matchName, stockKey, type PantryItem } from "./pantry.ts";
 import type { FoodItem, Goals } from "./types.ts";
 
 /** Nobody eats 900g of one thing because a spreadsheet said so. */
@@ -186,4 +186,95 @@ export function suggestDay(
     : "Nothing in stock gets you closer to today's targets than what you have already eaten.";
 
   return { items, projected: now, skipped, note };
+}
+
+// ------------------------------------------------------------ a whole week --
+
+/** How many days ahead a week plan may reach. */
+export const MAX_PLAN_DAYS = 7;
+
+export interface DayPlan {
+  date: string;
+  items: FoodItem[];
+  projected: Totals;
+  note: string;
+}
+
+export interface WeekSuggestion {
+  days: DayPlan[];
+  /** What is left in the cupboard once the whole week has been eaten. */
+  remaining: PantryItem[];
+  /** The first date the cupboard could no longer fill, if any. */
+  ranOutOn: string | null;
+  skipped: string[];
+  note: string;
+}
+
+/**
+ * A week of food out of one cupboard.
+ *
+ * The trap here is obvious once stated and easy to miss: planning seven days
+ * independently spends the same 1500g of chicken seven times. Each day is
+ * fitted against a WORKING COPY of the pantry that the previous days have
+ * already eaten from, so the plan is one the cupboard can actually pay for.
+ *
+ * Which turns the shortfall into the useful output. When the food runs out on
+ * Thursday, that is not a failure of the planner — it is the shopping list,
+ * arriving three days before you would otherwise have noticed.
+ */
+export function suggestWeek(
+  pantry: PantryItem[],
+  library: FoodItem[],
+  goals: Goals,
+  dates: string[],
+  meal = "Lunch",
+): WeekSuggestion {
+  const days: DayPlan[] = [];
+  const stock = (pantry ?? []).map((p) => ({ ...p }));
+  let ranOutOn: string | null = null;
+  let skipped: string[] = [];
+
+  for (const date of dates.slice(0, MAX_PLAN_DAYS)) {
+    const day = suggestDay(stock, library, goals, [], meal);
+    if (!skipped.length) skipped = day.skipped;
+    days.push({ date, items: day.items, projected: day.projected, note: day.note });
+
+    if (!day.items.length && !ranOutOn) ranOutOn = date;
+
+    // Spend what this day would eat before fitting the next one. Matched the
+    // same lenient way everything else is, so "Chicken Breast (Cooked)" comes
+    // off "Chicken breast". `suggestDay` already ignores empty stock, so items
+    // that hit zero simply stop being candidates.
+    for (const item of day.items) {
+      const held = findStock(stock, item.name);
+      if (!held) continue;
+      const i = stock.indexOf(held);
+      stock[i] = { ...held, qty: Math.max(0, held.qty - (Number(item.serving) || 0)) };
+    }
+  }
+
+  const fed = days.filter((d) => d.items.length).length;
+  const note = !days.length
+    ? "Pick some days first."
+    : fed === 0
+      ? "Nothing in the cupboard can fill any of these days."
+      : ranOutOn
+        ? `${fed} of ${days.length} days covered — the cupboard runs out on ${ranOutOn}.`
+        : `All ${days.length} days covered from what you have.`;
+
+  return { days, remaining: stock, ranOutOn, skipped, note };
+}
+
+/** The next n dates starting from `from`, inclusive. */
+export function nextDates(from: string, n: number): string[] {
+  const [y, m, d] = from.split("-").map(Number);
+  const base = new Date(y!, (m ?? 1) - 1, d ?? 1, 12, 0, 0);
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const t = new Date(base.getTime() + i * 86400000);
+    out.push(
+      `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`,
+    );
+  }
+  return out;
 }

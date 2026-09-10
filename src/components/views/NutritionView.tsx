@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
@@ -23,7 +23,7 @@ import { SwipeRow } from "@/components/SwipeRow";
 import { PlatePhoto } from "@/components/PlatePhoto";
 import { MacroStrip } from "@/components/MacroStrip";
 import { rebalance } from "@/lib/rebalance";
-import { suggestDay } from "@/lib/meal-suggest";
+import { nextDates, suggestDay, suggestWeek } from "@/lib/meal-suggest";
 import { QuickAddSheet } from "@/components/QuickAddSheet";
 import { lastMealDate, mealItems, recentFoods } from "@/lib/food-recents";
 import { HUNGER_LABEL, hungerNote, hungerOn, type HungerEntry } from "@/lib/hunger";
@@ -137,8 +137,6 @@ export function NutritionView() {
   };
   const goals = day.goals || DEFAULT_GOALS;
   const items = day.items || [];
-  // Counted by nothing until it is confirmed — see NutritionDay.planned.
-  const planned = day.planned || [];
 
   /**
    * Whether what you add next is eaten or planned.
@@ -150,7 +148,27 @@ export function NutritionView() {
    * stated at the top of the screen and everything obeys it.
    */
   const [planMode, setPlanMode] = useState(false);
-  const addOrPlan = (item: FoodItem) => (planMode ? planFood(item, activeDate) : addFood(item));
+
+  /**
+   * Which day the plan is being written for.
+   *
+   * Separate from `activeDate` on purpose: writing Thursday's dinner should
+   * not move the diary off today, and being bounced to another day every time
+   * you add something is how a week plan becomes unusable. Reset whenever the
+   * diary date changes, so it can never quietly point at a day you have
+   * navigated away from.
+   */
+  const [planDate, setPlanDate] = useState(activeDate);
+  useEffect(() => setPlanDate(activeDate), [activeDate]);
+  const planTarget = planMode ? planDate : activeDate;
+
+  // Counted by nothing until it is confirmed — see NutritionDay.planned. Read
+  // from the day being PLANNED: showing today's plan while you write
+  // Thursday's is how a week plan gets written twice.
+  const planned = nutrition[planTarget]?.planned || [];
+
+  const addOrPlan = (item: FoodItem) =>
+    planMode ? planFood(item, planTarget) : addFood(item);
   const workout = history[activeDate];
   const burn = workout?.caloriesBurned || 0;
 
@@ -275,14 +293,45 @@ export function NutritionView() {
           ))}
         </div>
         {planMode && (
-          <p className="mt-2 text-[0.68rem] leading-snug text-faint">
-            Anything you add lands on the plan, greyed out and counted by nothing.
-            Swipe a planned row right when you have actually eaten it.
-          </p>
+          <>
+            {/* Which day you are writing for. A week is planned by moving
+                along this strip, not by leaving the tab seven times. */}
+            <div className="mt-2 flex gap-1 overflow-x-auto pb-1" data-no-swipe-nav>
+              {nextDates(activeDate, 7).map((d) => {
+                const on = d === planDate;
+                const count = nutrition[d]?.planned?.length ?? 0;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setPlanDate(d)}
+                    className={cn(
+                      "shrink-0 rounded-xl border px-2.5 py-1.5 text-center",
+                      on ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface-2",
+                    )}
+                  >
+                    <div className="text-[0.55rem] font-bold uppercase tracking-wider">
+                      {d === activeDate
+                        ? "Today"
+                        : new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" })}
+                    </div>
+                    <div className="text-[0.7rem] font-extrabold tabular">
+                      {count > 0 ? `${count} item${count === 1 ? "" : "s"}` : "—"}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-[0.68rem] leading-snug text-faint">
+              Anything you add lands on {planDate === activeDate ? "today's" : planDate} plan,
+              greyed out and counted by nothing. Swipe a planned row right when you have
+              actually eaten it.
+            </p>
+          </>
         )}
       </Card>
 
-      <SuggestFromPantry meal={meal} />
+      <SuggestFromPantry meal={meal} target={planTarget} />
 
       <PlanCard
         planned={planned}
@@ -290,7 +339,7 @@ export function NutritionView() {
         goals={goals}
         goalCals={goalCals}
         onConfirmAll={() => {
-          confirmAllPlanned(activeDate);
+          confirmAllPlanned(planTarget);
           toast.success("The whole plan counted");
         }}
       />
@@ -657,15 +706,15 @@ export function NutritionView() {
                     setOpenId={setSwipedRow}
                     confirmLabel={`Confirm ${it.name}`}
                     onConfirm={() => {
-                      confirmPlanned(idx, activeDate);
+                      confirmPlanned(idx, planTarget);
                       toast.success(`${it.name} counted`);
                     }}
                     onDelete={() => {
-                      removePlanned(idx, activeDate);
+                      removePlanned(idx, planTarget);
                       toast.success(`${it.name} off the plan`, {
                         action: {
                           label: "Undo",
-                          onClick: () => restorePlanned(idx, it, activeDate),
+                          onClick: () => restorePlanned(idx, it, planTarget),
                         },
                       });
                     }}
@@ -732,7 +781,7 @@ export function NutritionView() {
           onDelete={
             portion.mode === "edit" && portion.idx !== undefined
               ? () => {
-                  if (portion.planned) removePlanned(portion.idx!, activeDate);
+                  if (portion.planned) removePlanned(portion.idx!, planTarget);
                   else removeFood(portion.idx!);
                   setPortion(null);
                   toast.success("Removed");
@@ -744,8 +793,8 @@ export function NutritionView() {
               if (portion.planned) {
                 // Edited in place on the plan: it must not jump the queue into
                 // the eaten list just because the portion changed.
-                removePlanned(portion.idx, activeDate);
-                restorePlanned(portion.idx, next, activeDate);
+                removePlanned(portion.idx, planTarget);
+                restorePlanned(portion.idx, next, planTarget);
               } else {
                 updateFood(portion.idx, next);
               }
@@ -1084,12 +1133,13 @@ function PlanCard({
  * with 200g of salmon you would have to go and buy is a shopping list
  * pretending to be breakfast. The fitting is in lib/meal-suggest.ts.
  */
-function SuggestFromPantry({ meal }: { meal: string }) {
+function SuggestFromPantry({ meal, target }: { meal: string; target: string }) {
   const pantry = useSoma((s) => s.pantry);
   const customFoods = useSoma((s) => s.customFoods);
   const nutrition = useSoma((s) => s.nutrition);
   const activeDate = useSoma((s) => s.activeDate);
   const planFood = useSoma((s) => s.planFood);
+  const [days, setDays] = useState(1);
 
   const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
   const day = nutrition[activeDate];
@@ -1098,6 +1148,19 @@ function SuggestFromPantry({ meal }: { meal: string }) {
   const suggestion = useMemo(
     () => suggestDay(pantry, library, goals, day?.items ?? [], meal),
     [pantry, library, goals, day?.items, meal],
+  );
+
+  /**
+   * The same fitting, carried across several days.
+   *
+   * One cupboard has to pay for all of them, so each day is fitted against
+   * what the days before it left behind — see suggestWeek. Which makes the
+   * shortfall the useful output: when the food runs out on Thursday, that is
+   * the shopping list arriving three days early.
+   */
+  const week = useMemo(
+    () => (days > 1 ? suggestWeek(pantry, library, goals, nextDates(target, days), meal) : null),
+    [days, pantry, library, goals, target, meal],
   );
 
   // Nothing tracked at all: this card would be a permanent advert for a
@@ -1110,21 +1173,70 @@ function SuggestFromPantry({ meal }: { meal: string }) {
   return (
     <Card>
       <CardTitle>From the cupboard</CardTitle>
-      <p className="mb-2 text-[0.72rem] leading-snug text-muted">{suggestion.note}</p>
 
-      {suggestion.items.length > 0 && (
-        <div className="mb-2 space-y-1">
-          {suggestion.items.map((i) => (
-            <div key={i.name} className="flex items-baseline justify-between gap-2 text-xs">
-              <span className="min-w-0 truncate text-muted">{i.name}</span>
-              <span className="shrink-0 tabular font-bold">
-                {i.serving}
-                {i.unit}
-                <span className="ml-1.5 text-faint">{i.cals} kcal</span>
-              </span>
+      {/* One day or several. A week is where the cupboard's limits show up,
+          which is the whole reason to look at more than today. */}
+      <div className="mb-2 flex gap-1" data-no-swipe-nav>
+        {[1, 3, 7].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setDays(n)}
+            className={cn(
+              "h-8 flex-1 rounded-lg border text-[0.7rem] font-bold",
+              days === n ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface-2",
+            )}
+          >
+            {n === 1 ? "Today" : `${n} days`}
+          </button>
+        ))}
+      </div>
+
+      <p className="mb-2 text-[0.72rem] leading-snug text-muted">
+        {week ? week.note : suggestion.note}
+      </p>
+
+      {week ? (
+        <div className="mb-2 space-y-2">
+          {week.days.map((d) => (
+            <div key={d.date}>
+              <div className="mb-0.5 flex items-baseline justify-between gap-2">
+                <span className="text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+                  {new Date(`${d.date}T12:00:00`).toLocaleDateString(undefined, {
+                    weekday: "short", day: "numeric", month: "short",
+                  })}
+                </span>
+                <span className="text-[0.62rem] tabular text-faint">
+                  {d.items.length ? `${Math.round(d.projected.p)}g P` : "nothing left"}
+                </span>
+              </div>
+              {d.items.map((i) => (
+                <div key={i.name} className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="min-w-0 truncate text-muted">{i.name}</span>
+                  <span className="shrink-0 tabular font-bold">
+                    {i.serving}
+                    {i.unit}
+                  </span>
+                </div>
+              ))}
             </div>
           ))}
         </div>
+      ) : (
+        suggestion.items.length > 0 && (
+          <div className="mb-2 space-y-1">
+            {suggestion.items.map((i) => (
+              <div key={i.name} className="flex items-baseline justify-between gap-2 text-xs">
+                <span className="min-w-0 truncate text-muted">{i.name}</span>
+                <span className="shrink-0 tabular font-bold">
+                  {i.serving}
+                  {i.unit}
+                  <span className="ml-1.5 text-faint">{i.cals} kcal</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )
       )}
 
       {suggestion.skipped.length > 0 && (
@@ -1134,16 +1246,31 @@ function SuggestFromPantry({ meal }: { meal: string }) {
         </p>
       )}
 
-      {suggestion.items.length > 0 && (
+      {(week ? week.days.some((d) => d.items.length) : suggestion.items.length > 0) && (
         <button
           type="button"
           onClick={() => {
-            for (const item of suggestion.items) planFood(item, activeDate);
-            toast.success(`${suggestion.items.length} items on the plan`);
+            let n = 0;
+            if (week) {
+              for (const d of week.days) {
+                for (const item of d.items) {
+                  planFood(item, d.date);
+                  n++;
+                }
+              }
+            } else {
+              for (const item of suggestion.items) planFood(item, target);
+              n = suggestion.items.length;
+            }
+            toast.success(`${n} item${n === 1 ? "" : "s"} on the plan`);
           }}
           className="w-full rounded-xl bg-accent px-3 py-2.5 text-sm font-extrabold text-accent-ink"
         >
-          {already ? "Add to the plan" : "Put it on the plan"}
+          {week
+            ? `Plan ${week.days.filter((d) => d.items.length).length} days`
+            : already
+              ? "Add to the plan"
+              : "Put it on the plan"}
         </button>
       )}
     </Card>

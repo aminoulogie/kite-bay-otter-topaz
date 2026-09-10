@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MAX_LINES, MAX_PORTION_G, MIN_PORTION_G, suggestDay } from "./meal-suggest.ts";
+import {
+  MAX_LINES, MAX_PLAN_DAYS, MAX_PORTION_G, MIN_PORTION_G, nextDates, suggestDay, suggestWeek,
+} from "./meal-suggest.ts";
 import type { PantryItem } from "./pantry.ts";
 import type { FoodItem, Goals } from "./types.ts";
 
@@ -130,4 +132,83 @@ test("the same cupboard gives the same day, every time", () => {
   const a = suggestDay(pantry, LIBRARY, GOALS);
   const b = suggestDay(pantry, LIBRARY, GOALS);
   assert.deepEqual(a, b);
+});
+
+// ------------------------------------------------------------ a whole week --
+
+test("a week of days is dated from the day you asked for", () => {
+  const dates = nextDates("2026-09-10", 4);
+  assert.deepEqual(dates, ["2026-09-10", "2026-09-11", "2026-09-12", "2026-09-13"]);
+});
+
+test("the same chicken cannot be eaten on seven different days", () => {
+  // The trap this exists for: planning seven days independently spends the
+  // same 1500g of stock seven times over, and the plan reads as fine.
+  const week = suggestWeek(
+    [stock("Chicken breast", { qty: 700 })],
+    LIBRARY,
+    GOALS,
+    nextDates("2026-09-10", 7),
+  );
+  const eaten = week.days.reduce(
+    (a, d) => a + d.items.reduce((b, i) => b + i.serving, 0),
+    0,
+  );
+  assert.ok(eaten <= 700, `${eaten}g planned from 700g of stock`);
+});
+
+test("running out is reported, with the day it happens", () => {
+  const week = suggestWeek(
+    [stock("Chicken breast", { qty: 400 })],
+    LIBRARY,
+    GOALS,
+    nextDates("2026-09-10", 5),
+  );
+  assert.ok(week.ranOutOn, "a small cupboard cannot cover five days");
+  assert.match(week.note, /runs out on/);
+  // The days before it still get a plan — a short week is not an empty one.
+  assert.ok(week.days[0]!.items.length > 0);
+});
+
+test("a full cupboard covers the week without complaint", () => {
+  const week = suggestWeek(
+    [stock("Chicken breast", { qty: 4000 }), stock("White rice", { qty: 4000 })],
+    LIBRARY,
+    GOALS,
+    nextDates("2026-09-10", 5),
+  );
+  assert.equal(week.ranOutOn, null);
+  assert.match(week.note, /All 5 days/);
+  assert.ok(week.days.every((d) => d.items.length > 0));
+});
+
+test("what is left over is what the cupboard would actually have", () => {
+  const week = suggestWeek(
+    [stock("Chicken breast", { qty: 1000 })],
+    LIBRARY,
+    GOALS,
+    nextDates("2026-09-10", 3),
+  );
+  const eaten = week.days.reduce(
+    (a, d) => a + d.items.reduce((b, i) => b + i.serving, 0),
+    0,
+  );
+  const left = week.remaining.find((p) => p.name === "Chicken breast")!;
+  assert.equal(left.qty, 1000 - eaten);
+});
+
+test("a week never reaches further than a week", () => {
+  const week = suggestWeek(
+    [stock("Chicken breast", { qty: 9000 })],
+    LIBRARY,
+    GOALS,
+    nextDates("2026-09-10", 30),
+  );
+  assert.ok(week.days.length <= MAX_PLAN_DAYS);
+});
+
+test("no days asked for is no plan, not an empty week of nothing", () => {
+  const week = suggestWeek([stock("Chicken breast")], LIBRARY, GOALS, []);
+  assert.deepEqual(week.days, []);
+  assert.match(week.note, /Pick some days/);
 });
