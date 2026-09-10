@@ -356,6 +356,14 @@ export interface LedgerEntry {
   note?: string;
 }
 
+export interface TodoItem {
+  id: string;
+  text: string;
+  done: boolean;
+  /** The day it was added, so a list can be cleared by age rather than by hand. */
+  date: string;
+}
+
 export interface MindEntry {
   id: string;
   date: string;

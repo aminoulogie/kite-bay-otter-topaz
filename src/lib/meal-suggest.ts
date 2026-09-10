@@ -20,7 +20,7 @@
  */
 
 import { perGram, type Macro, type Totals } from "./rebalance.ts";
-import { stockKey, type PantryItem } from "./pantry.ts";
+import { matchName, stockKey, type PantryItem } from "./pantry.ts";
 import type { FoodItem, Goals } from "./types.ts";
 
 /** Nobody eats 900g of one thing because a spreadsheet said so. */
@@ -53,14 +53,15 @@ function candidates(
   pantry: PantryItem[],
   library: FoodItem[],
 ): { stock: PantryItem; food: FoodItem; pg: Totals }[] {
-  const byName = new Map(library.map((f) => [stockKey(f.name), f]));
   const out: { stock: PantryItem; food: FoodItem; pg: Totals }[] = [];
   for (const stock of pantry ?? []) {
     if ((Number(stock.qty) || 0) <= 0) continue;
     // Pieces cannot be portioned in grams, which is how every target here is
     // expressed. Skipped rather than converted by a guess.
     if (stock.unit !== "g" && stock.unit !== "ml") continue;
-    const food = byName.get(stockKey(stock.name));
+    // Loose match: the library says "Chicken Breast (Raw)" and a person writes
+    // "Chicken breast". See lib/pantry.ts.
+    const food = matchName(stock.name, library, (fd) => fd.name);
     if (!food) continue;
     const pg = perGram(food);
     if (!pg) continue;
@@ -123,7 +124,7 @@ export function suggestDay(
   let now = { ...start };
 
   for (let round = 0; round < MAX_LINES; round++) {
-    let best: { item: FoodItem; after: Totals; gain: number } | null = null;
+    let best: { item: FoodItem; stock: PantryItem; after: Totals; gain: number } | null = null;
     const before = miss(now);
 
     for (const c of pool) {
@@ -153,6 +154,7 @@ export function suggestDay(
           best = {
             after,
             gain,
+            stock: c.stock,
             item: {
               ...c.food,
               serving: grams,
@@ -170,7 +172,12 @@ export function suggestDay(
 
     if (!best) break;
     items.push(best.item);
-    used.add(stockKey(best.item.name));
+    // Keyed on the STOCK name, which is what the loop checks. Keying it on the
+    // library name looked identical and was not: "White rice" in the cupboard
+    // matches "White Rice (Cooked)" in the library, so the guard never fired
+    // and the fitter cheerfully prescribed 180g of rice five times over — from
+    // 180g of stock.
+    used.add(stockKey(best.stock.name));
     now = best.after;
   }
 

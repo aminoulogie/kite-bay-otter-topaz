@@ -50,6 +50,20 @@ test("it never proposes more than is in the cupboard", () => {
   assert.ok(total <= 120, `${total} proposed from 120g of stock`);
 });
 
+test("a food the library names differently is still only used once", () => {
+  // The bug this exists for: the dedupe was keyed on the LIBRARY name while
+  // the loop checked the STOCK name, so "White rice" in the cupboard matching
+  // "White Rice (Cooked)" in the library slipped through it every round — and
+  // the fitter prescribed 180g of rice five times from 180g of stock.
+  const lib = [food("White Rice (Cooked)", { cals: 130, p: 2.7, c: 28, f: 0.3 })];
+  const s = suggestDay([stock("White rice", { qty: 180 })], lib, GOALS);
+  assert.equal(s.items.length, 1, `proposed ${s.items.length} lines of the same rice`);
+  assert.ok(
+    s.items.reduce((a, i) => a + i.serving, 0) <= 180,
+    "and never more of it than there is",
+  );
+});
+
 test("no single portion is a thing nobody would eat", () => {
   const s = suggestDay([stock("Chicken breast"), stock("White rice")], LIBRARY, GOALS);
   for (const i of s.items) {

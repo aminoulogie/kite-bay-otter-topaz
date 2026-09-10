@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  deduct, findStock, isLow, lineFor, listCost, lowItems, restock, stockKey, withLowStock,
-  type GroceryLine, type PantryItem,
+  deduct, findStock, isLow, lineFor, listCost, lowItems, matchName, restock, stockKey,
+  withLowStock, type GroceryLine, type PantryItem,
 } from "./pantry.ts";
 
 let n = 0;
@@ -130,4 +130,40 @@ test("buying something untracked starts tracking it", () => {
 test("low is inclusive, because at exactly the mark you are out", () => {
   assert.equal(isLow(item({ name: "x", qty: 200, low: 200 })), true);
   assert.equal(isLow(item({ name: "x", qty: 201, low: 200 })), false);
+});
+
+// ------------------------------------------------------- matching by name --
+
+test("the library's qualifier does not stop a match", () => {
+  // The whole feature silently did nothing before this: the library calls it
+  // "Chicken Breast (Raw)", a person writes "Chicken breast", and neither
+  // could see the other.
+  const lib = [{ name: "Chicken Breast (Raw)" }, { name: "Chicken Nuggets" }];
+  assert.equal(matchName("Chicken breast", lib, (x) => x.name)?.name, "Chicken Breast (Raw)");
+});
+
+test("a prefix match respects word boundaries", () => {
+  const lib = [{ name: "Chicken Nuggets" }, { name: "Chickpeas" }];
+  assert.equal(matchName("chicken", lib, (x) => x.name)?.name, "Chicken Nuggets");
+  assert.equal(matchName("chick", lib, (x) => x.name), undefined, "not a word");
+});
+
+test("the most generic name wins a tie", () => {
+  const lib = [
+    { name: "Rice, White, Grilled And Seasoned" },
+    { name: "Rice White" },
+  ];
+  assert.equal(matchName("rice white", lib, (x) => x.name)?.name, "Rice White");
+});
+
+test("no match is no match, not the nearest thing", () => {
+  assert.equal(matchName("saffron", [{ name: "Chicken" }], (x) => x.name), undefined);
+  assert.equal(matchName("", [{ name: "Chicken" }], (x) => x.name), undefined);
+});
+
+test("eating the library's name deducts from the cupboard's name", () => {
+  const pantry = [item({ name: "Chicken breast", qty: 1000, low: 200 })];
+  const r = deduct(pantry, "Chicken Breast (Raw)", 200, "g");
+  assert.equal(r.deducted, 200);
+  assert.equal(r.pantry[0]!.qty, 800);
 });

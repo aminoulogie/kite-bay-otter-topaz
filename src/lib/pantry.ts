@@ -51,14 +51,63 @@ export interface GroceryLine {
   auto?: boolean;
 }
 
-/** Names are matched on this, so "Chicken Breast" and "chicken breast" are one thing. */
+/** Identity of a pantry row: "Chicken Breast" and "chicken breast" are one thing. */
 export function stockKey(name: string): string {
   return String(name ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/**
+ * The looser form used to match ACROSS lists.
+ *
+ * The food library calls it "Chicken Breast (Raw)". A person tracking their
+ * cupboard writes "Chicken breast". Exact matching linked neither to the other
+ * and the whole feature silently did nothing — the pantry knew about food the
+ * suggester could not see, and eating chicken deducted from no stock at all.
+ *
+ * So the parenthetical qualifier goes, along with punctuation. This is only
+ * for matching; the name the user typed is what is stored and shown.
+ */
+export function normaliseName(name: string): string {
+  return String(name ?? "")
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Find the one entry that means the same food, or nothing.
+ *
+ * Exact first, then a prefix on a word boundary — "chicken breast" finds
+ * "Chicken Breast (Raw)" but never "Chicken Nuggets". When several qualify the
+ * SHORTEST wins, on the grounds that it is the most generic: "Chicken Breast"
+ * over "Chicken Breast Grilled And Marinated". Deterministic, and visible in
+ * the UI so a wrong link can be seen and corrected rather than silently
+ * feeding the wrong numbers into a plan.
+ */
+export function matchName<T>(
+  name: string,
+  list: T[],
+  nameOf: (x: T) => string,
+): T | undefined {
+  const want = normaliseName(name);
+  if (!want) return undefined;
+  const norm = (list ?? []).map((x) => ({ x, n: normaliseName(nameOf(x)) }));
+
+  const exact = norm.find((e) => e.n === want);
+  if (exact) return exact.x;
+
+  // Either direction: the stock may be the more specific name, or the library.
+  const starts = norm.filter(
+    (e) => e.n.startsWith(`${want} `) || want.startsWith(`${e.n} `),
+  );
+  if (!starts.length) return undefined;
+  return starts.reduce((a, b) => (b.n.length < a.n.length ? b : a)).x;
+}
+
 export function findStock(pantry: PantryItem[], name: string): PantryItem | undefined {
-  const k = stockKey(name);
-  return (pantry ?? []).find((p) => stockKey(p.name) === k);
+  return matchName(name, pantry ?? [], (p) => p.name);
 }
 
 /** Grams and millilitres are interchangeable for this purpose; pieces are not. */
@@ -98,12 +147,10 @@ export function deduct(
   today?: string,
 ): DeductResult {
   const list = pantry ?? [];
-  const k = stockKey(name);
-  const i = list.findIndex((p) => stockKey(p.name) === k);
   const amount = Number(qty) || 0;
-  if (i < 0 || amount <= 0) return { pantry: list, deducted: 0, wentLow: false };
-
-  const item = list[i]!;
+  const item = findStock(list, name);
+  if (!item || amount <= 0) return { pantry: list, deducted: 0, wentLow: false };
+  const i = list.indexOf(item);
   if (!unitsAgree(item.unit, unit)) return { pantry: list, deducted: 0, wentLow: false };
 
   const before = item.qty;

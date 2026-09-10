@@ -20,6 +20,7 @@ import type {
   LedgerEntry,
   MindEntry,
   TabId,
+  TodoItem,
   WorkoutSet,
 } from "./types";
 import CUSTOM_FOOD_SEED from "./custom-foods-seed.json";
@@ -121,6 +122,14 @@ export interface SomaStore {
   ensureDay: (key?: string) => void;
   patchDay: (key: string, patch: Partial<NutritionDay>) => void;
   addFood: (item: FoodItem) => void;
+  /** The short list of things to do. Nothing clever: a line and a box. */
+  todos: TodoItem[];
+  addTodo: (text: string) => void;
+  toggleTodo: (id: string) => void;
+  removeTodo: (id: string) => void;
+  restoreTodo: (idx: number, todo: TodoItem) => void;
+  /** Drop everything already ticked. */
+  clearDoneTodos: () => number;
   /** What is in the house, and the list of what is not. */
   pantry: PantryItem[];
   grocery: GroceryLine[];
@@ -285,6 +294,7 @@ export const useSoma = create<SomaStore>()(
       mind: [],
       pantry: [],
       grocery: [],
+      todos: [],
       programs: [],
       activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
@@ -805,6 +815,32 @@ export const useSoma = create<SomaStore>()(
        * next list can be costed. An app that guesses what chicken costs and
        * files the guess as an expense is worse than one that asks.
        */
+      addTodo: (text) => {
+        const t = text.trim();
+        if (!t) return;
+        set({
+          todos: [
+            ...get().todos,
+            { id: newId(), text: t, done: false, date: getLocalDateKey(new Date()) },
+          ],
+        });
+      },
+      toggleTodo: (id) =>
+        set({ todos: get().todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }),
+      removeTodo: (id) => set({ todos: get().todos.filter((t) => t.id !== id) }),
+      restoreTodo: (idx, todo) => {
+        const next = [...get().todos];
+        // Back where it was rather than appended, so undoing a swipe does not
+        // quietly reorder the list.
+        next.splice(Math.max(0, Math.min(idx, next.length)), 0, todo);
+        set({ todos: next });
+      },
+      clearDoneTodos: () => {
+        const before = get().todos.length;
+        set({ todos: get().todos.filter((t) => !t.done) });
+        return before - get().todos.length;
+      },
+
       addStock: (item) => set({ pantry: [...get().pantry, { ...item, id: newId() }] }),
       updateStock: (id, patch) =>
         set({ pantry: get().pantry.map((p) => (p.id === id ? { ...p, ...patch } : p)) }),
@@ -1616,6 +1652,7 @@ export const useSoma = create<SomaStore>()(
             mind: get().mind,
             pantry: get().pantry,
             grocery: get().grocery,
+            todos: get().todos,
             live: get().live,
             activeDate: get().activeDate,
             sideStores: collectSideStores(),
@@ -1660,6 +1697,7 @@ export const useSoma = create<SomaStore>()(
               mind: data.mind || [],
               pantry: data.pantry || [],
               grocery: data.grocery || [],
+              todos: data.todos || [],
               seeded: true,
               // A backup from before these were exported has neither, and the
               // device keeps whatever it is on rather than being emptied.
@@ -1728,6 +1766,7 @@ export const useSoma = create<SomaStore>()(
             // in the cupboard now, and a month-old snapshot of it is not.
             pantry: mergeById(data.pantry || [], cur.pantry),
             grocery: mergeById(data.grocery || [], cur.grocery),
+            todos: mergeById(data.todos || [], cur.todos),
             seeded: true,
           });
           // `live` and `activeDate` are deliberately not merged: the device is
@@ -1786,6 +1825,7 @@ export const useSoma = create<SomaStore>()(
         mind: s.mind,
         pantry: s.pantry,
         grocery: s.grocery,
+        todos: s.todos,
         live: s.live,
         activeDate: s.activeDate,
       }),

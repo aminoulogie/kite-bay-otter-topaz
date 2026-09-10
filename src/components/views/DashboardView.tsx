@@ -1,7 +1,9 @@
 import { useMemo } from "react";
-import { ArrowRight, Flame, Moon, Utensils } from "lucide-react";
+import { ArrowRight, Check, Moon } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { CoachBrief } from "@/components/CoachBrief";
+import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
+import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
 import { ratingTone } from "@/lib/stimulus";
@@ -93,8 +95,19 @@ export function DashboardView() {
   }, [history, nutrition, ledger, mind]);
 
   const day = nutrition[date];
-  const kcal = Math.round((day?.items ?? []).reduce((a, i) => a + i.cals, 0));
-  const protein = Math.round((day?.items ?? []).reduce((a, i) => a + i.p, 0));
+  const eaten = day?.items ?? [];
+  // Confirmed food only — planned items live in their own array and are
+  // counted by nothing, which is what makes a green tick here mean something.
+  const macros = eaten.reduce(
+    (a, i) => ({
+      cals: a.cals + (i.cals || 0),
+      p: a.p + (i.p || 0),
+      c: a.c + (i.c || 0),
+      f: a.f + (i.f || 0),
+    }),
+    { cals: 0, p: 0, c: 0, f: 0 },
+  );
+  const goals = day?.goals;
   const water = totalWaterMl(day);
   const session = history[date];
 
@@ -129,17 +142,26 @@ export function DashboardView() {
         </div>
       </Card>
 
+      {/* Four quantities with a target, then two without. The ticked ones are
+          done — that is the whole point of the row, and it is why only
+          CONFIRMED food counts towards them. */}
       <div className="grid grid-cols-2 gap-2">
-        <Tile icon={Flame} label="Calories" value={kcal ? String(kcal) : "—"} unit="kcal"
-              onClick={() => setTab("nutrition")} />
-        <Tile icon={Utensils} label="Protein" value={protein ? String(protein) : "—"} unit="g"
-              onClick={() => setTab("nutrition")} />
+        <MacroTile macro="cals" label="Calories" unit="kcal"
+                   value={macros.cals} target={goals?.cals} onClick={() => setTab("nutrition")} />
+        <MacroTile macro="p" label="Protein" unit="g"
+                   value={macros.p} target={goals?.protein} onClick={() => setTab("nutrition")} />
+        <MacroTile macro="c" label="Carbs" unit="g"
+                   value={macros.c} target={goals?.carbs} onClick={() => setTab("nutrition")} />
+        <MacroTile macro="f" label="Fat" unit="g"
+                   value={macros.f} target={goals?.fat} onClick={() => setTab("nutrition")} />
         <Tile icon={Moon} label="Water" value={water ? (water / 1000).toFixed(1) : "—"} unit="L"
               onClick={() => setTab("nutrition")} />
         <Tile icon={ArrowRight} label="Session"
               value={session ? String(session.exercises?.length ?? 0) : live.exercises.length ? String(live.exercises.length) : "—"}
               unit="lifts" onClick={() => setTab("workout")} />
       </div>
+
+      <TodoCard />
 
       <LogTheGap />
 
@@ -169,7 +191,7 @@ export function DashboardView() {
 function Tile({
   icon: Icon, label, value, unit, onClick,
 }: {
-  icon: typeof Flame;
+  icon: typeof Moon;
   label: string;
   value: string;
   unit: string;
@@ -189,6 +211,79 @@ function Tile({
         {value}
         <span className="ml-1 text-xs font-bold text-faint">{unit}</span>
       </div>
+    </button>
+  );
+}
+
+/**
+ * One quantity against its target, ticked when it is met.
+ *
+ * The tick is the point. A number on its own — "142g" — makes you remember
+ * what you were aiming for and do the subtraction; that is a small tax paid
+ * every time you look at the screen. Green means done and nothing more needs
+ * reading.
+ *
+ * Over target is shown in the macro's own colour rather than as a failure.
+ * 190g of protein against a 180g target is not a mistake, and colouring it red
+ * would be the app inventing a rule the user never set. Calories are the one
+ * that says so, because a surplus or deficit is the thing being managed.
+ */
+function MacroTile({
+  macro, label, unit, value, target, onClick,
+}: {
+  macro: MacroKey;
+  label: string;
+  unit: string;
+  value: number;
+  target?: number;
+  onClick: () => void;
+}) {
+  const logged = value > 0;
+  const has = typeof target === "number" && target > 0;
+  const pct = has ? Math.min(100, (value / target!) * 100) : 0;
+  const hit = has && value >= target! * 0.95;
+  const over = has && macro === "cals" && value > target! * 1.1;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-2xl border border-border bg-surface p-3 text-left"
+    >
+      <div className="mb-1 flex items-center gap-1.5 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+        <span
+          aria-hidden
+          className="h-2.5 w-[3px] shrink-0 rounded-full"
+          style={{ background: MACRO_COLOR[macro] }}
+        />
+        {label}
+        {hit && (
+          <span
+            className={cn(
+              "ml-auto grid size-4 shrink-0 place-items-center rounded-full",
+              over ? "bg-warn text-black" : "bg-accent text-accent-ink",
+            )}
+            aria-label={over ? `${label} over target` : `${label} target met`}
+          >
+            <Check className="size-3" strokeWidth={3.2} />
+          </span>
+        )}
+      </div>
+      <div className="font-display text-2xl font-extrabold tabular">
+        {logged ? Math.round(value) : "—"}
+        <span className="ml-1 text-xs font-bold text-faint">{unit}</span>
+      </div>
+      {has && (
+        <>
+          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-3">
+            <div
+              className="h-full rounded-full transition-[width]"
+              style={{ width: `${pct}%`, background: MACRO_COLOR[macro] }}
+            />
+          </div>
+          <div className="mt-1 text-[0.6rem] tabular text-faint">of {Math.round(target!)}</div>
+        </>
+      )}
     </button>
   );
 }

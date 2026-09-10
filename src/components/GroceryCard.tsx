@@ -5,7 +5,8 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
-import { listCost, lowItems } from "@/lib/pantry";
+import { listCost, lowItems, matchName } from "@/lib/pantry";
+import { composeLibrary } from "@/lib/foods";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -198,6 +199,8 @@ export function GroceryCard({ money }: { money: (n: number) => string }) {
  */
 export function PantryCard() {
   const pantry = useSoma((s) => s.pantry);
+  const customFoods = useSoma((s) => s.customFoods);
+  const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
   const addStock = useSoma((s) => s.addStock);
   const updateStock = useSoma((s) => s.updateStock);
   const removeStock = useSoma((s) => s.removeStock);
@@ -234,6 +237,9 @@ export function PantryCard() {
           <div className="space-y-1.5">
             {sorted.map((p) => {
               const low = p.qty <= p.low;
+              // Shown rather than assumed. A silent wrong link would feed the
+              // wrong macros into every suggested day, and nobody would know.
+              const linked = matchName(p.name, library, (fd) => fd.name);
               return (
                 <SwipeRow
                   key={p.id}
@@ -253,6 +259,16 @@ export function PantryCard() {
                         {p.unit === "x" ? "" : p.unit}
                         {low && " · low"}
                       </span>
+                    </div>
+                    <div
+                      className={cn(
+                        "mt-0.5 truncate text-[0.6rem]",
+                        linked ? "text-faint" : "text-warn",
+                      )}
+                    >
+                      {linked
+                        ? `nutrition from ${linked.name}`
+                        : "no matching food — rename it to match one in the diary"}
                     </div>
                     <div className="mt-1.5 grid grid-cols-3 gap-1.5">
                       <Field label="Have" value={p.qty} onChange={(v) => updateStock(p.id, { qty: v })} />
