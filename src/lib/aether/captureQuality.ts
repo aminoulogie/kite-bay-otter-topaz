@@ -176,30 +176,112 @@ export function scoreCapture(opts: {
   return { alignment, lighting, framing, overall, ready, coach, reasons: reasons.slice(0, 4) };
 }
 
+/**
+ * The rectangle lighting is sampled from.
+ *
+ * Guards the profile case. The width used to come from the two tragus points,
+ * which converge as the head turns and very nearly coincide at full profile —
+ * so the box collapsed to a sliver and the LIGHT reading was taken from a
+ * couple of pixels beside the ear. That is why the lighting chip was wrong on
+ * exactly the two steps where it was hardest to notice.
+ *
+ * Face height barely changes with yaw, so a box that has degenerated in width
+ * is rebuilt from the height instead.
+ */
 export function faceBox(pts: Pt[]) {
   const brow = pts[FACE.glabella];
   const chin = pts[FACE.chin];
   const lt = pts[FACE.leftTragus] ?? pts[FACE.leftOuter];
   const rt = pts[FACE.rightTragus] ?? pts[FACE.rightOuter];
   if (!brow || !chin || !lt || !rt) return { x: 0.2, y: 0.15, w: 0.6, h: 0.7 };
-  const x = Math.min(lt.x, rt.x) - 0.04;
-  const y = brow.y - 0.08;
-  return { x, y, w: Math.abs(rt.x - lt.x) + 0.08, h: chin.y - brow.y + 0.16 };
+
+  const h = Math.abs(chin.y - brow.y) + 0.16;
+
+  // Spanned across everything visible rather than ear to ear. At profile the
+  // two tragus points nearly coincide while the face still extends forward to
+  // the nose, so an ear-to-ear box is both a sliver AND in the wrong place —
+  // it would sample the light beside the head instead of on it.
+  const xs = [lt.x, rt.x, brow.x, chin.x];
+  const tip = pts[FACE.noseTip];
+  if (tip) xs.push(tip.x);
+  const lo = pts[FACE.leftOuter];
+  const ro = pts[FACE.rightOuter];
+  if (lo) xs.push(lo.x);
+  if (ro) xs.push(ro.x);
+
+  const lowest = Math.min(...xs) - 0.03;
+  const highest = Math.max(...xs) + 0.03;
+  const seen = highest - lowest;
+  // A face is roughly two-thirds as wide as tall head-on. Well below that the
+  // width is foreshortening, and the box is padded around its own centre.
+  const minW = h * 0.3;
+  const w = Math.max(seen, minW);
+  const centre = (lowest + highest) / 2;
+  return { x: centre - w / 2, y: brow.y - 0.08, w, h };
 }
 
+/**
+ * Head pose from landmarks alone, for when the transform matrix is absent.
+ *
+ * ## The bug this replaces
+ *
+ * Yaw used to be the nose tip's offset from the eye midpoint, divided by the
+ * INTERCANTHAL DISTANCE, times 38. That is fine at front and nonsense
+ * everywhere else, because the denominator foreshortens as you turn: by 45°
+ * the gap between the inner eye corners has visibly shrunk, so the quotient
+ * inflates, and near profile the two corners almost coincide and it runs away
+ * entirely. The 45° and profile steps were being graded against a number that
+ * could read past 100°.
+ *
+ * The replacement is bounded by construction. Nose tip sits between the two
+ * outer eye corners; as the head turns, the gap on one side grows and the
+ * other shrinks. Their normalised difference runs from 0 at true front to ±1
+ * at full profile and cannot exceed it, whatever the foreshortening does,
+ * because the same shrinking appears in both the numerator and the denominator
+ * and cancels.
+ *
+ * Pitch and the smile proxy are normalised by FACE HEIGHT rather than by the
+ * eye gap for the same reason — a vertical span barely foreshortens with yaw,
+ * an inter-eye span does.
+ */
 export function proxyPose(pts: Pt[]) {
   const li = pts[FACE.leftInner];
   const ri = pts[FACE.rightInner];
+  const lo = pts[FACE.leftOuter];
+  const ro = pts[FACE.rightOuter];
   const tip = pts[FACE.noseTip];
   const brow = pts[FACE.glabella];
   const chin = pts[FACE.chin];
-  const ic = li && ri ? dist(li, ri) : 0.12;
+
   const mid = li && ri ? midpoint(li, ri) : { x: 0.5, y: 0.4 };
   const rollDeg = li && ri ? lineAngleVsHorizontal(li, ri) : 0;
-  const yawDeg = tip ? ((tip.x - mid.x) / (ic || 0.12)) * 38 : 0;
-  const expected = mid.y + ic * 0.15;
-  const pitchDeg = tip ? ((tip.y - expected) / (ic || 0.12)) * 28 : 0;
-  const smile = pts[FACE.leftMouth] && pts[FACE.rightMouth] ? dist(pts[FACE.leftMouth], pts[FACE.rightMouth]) / (ic || 0.12) : 0;
-  void brow; void chin;
+
+  // A vertical scale, which yaw does not squash.
+  const faceH = brow && chin ? Math.abs(chin.y - brow.y) : 0.32;
+  const scale = faceH || 0.32;
+
+  let yawDeg = 0;
+  if (tip && lo && ro) {
+    // SIGNED, not absolute. Near profile the nose tip projects past the far
+    // eye corner, so that gap genuinely goes negative — taking the magnitude
+    // instead makes the measure fold back on itself and a full profile reads
+    // like a front face, which is worse than the bug it replaced.
+    const dLeft = tip.x - lo.x;
+    const dRight = ro.x - tip.x;
+    // Divided by face HEIGHT, which a turn barely shortens. Every horizontal
+    // span on a face collapses as it rotates, so any of them in a denominator
+    // is the original bug wearing a different hat. The constant maps a full
+    // profile onto 90° and is close to linear in between.
+    yawDeg = Math.max(-90, Math.min(90, ((dLeft - dRight) / scale) * 200));
+  }
+
+  // Where the nose tip sits vertically against a face-height reference.
+  const expected = mid.y + scale * 0.16;
+  const pitchDeg = tip ? ((tip.y - expected) / scale) * 34 : 0;
+
+  const lm = pts[FACE.leftMouth];
+  const rm = pts[FACE.rightMouth];
+  const smile = lm && rm ? (dist(lm, rm) / scale) * 2.2 : 0;
+
   return { rollDeg, yawDeg, pitchDeg, smile };
 }

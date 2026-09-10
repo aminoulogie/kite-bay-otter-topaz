@@ -35,6 +35,19 @@ import { cn } from "@/lib/utils";
 const BURST = 5;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Consecutive good frames before the shutter fires itself.
+ *
+ * The live loop runs about eight times a second, so six frames is roughly
+ * three quarters of a second of holding still. Long enough that a frame
+ * flickering green as you move past the right angle does not trigger it, short
+ * enough that you are not asked to hold a pose while hunting for a button.
+ *
+ * Reaching for the shutter is the thing that ruins the shot — it tilts the
+ * phone and moves the head at the exact moment the frame was good.
+ */
+const HOLD_FRAMES = 6;
+
 interface Grab {
   analysis: FaceAnalysis;
   skin: ReturnType<typeof analyseSkin>;
@@ -49,6 +62,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const smallRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef(0);
+  const held = useRef(0);
 
   const addScan = useSoma((s) => s.addScan);
   const scans = useSoma((s) => s.scans);
@@ -60,9 +74,18 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [hud, setHud] = useState<Quality | null>(null);
   const [eyes, setEyes] = useState<{ lx: number; ly: number; rx: number; ry: number; mx: number } | null>(null);
   const [status, setStatus] = useState("Open the camera. Front → 45° → profile.");
+  const [pose, setPose] = useState<{ yaw: number; roll: number; pitch: number } | null>(null);
+  const [autoFire, setAutoFire] = useState(true);
+  const [holding, setHolding] = useState(0);
+
+  // Read inside the animation loop, which is attached once and would otherwise
+  // close over the first render's values for the life of the screen.
+  const liveRefs = useRef({ autoFire, busy: false, step: 0 });
 
   const s = SESSION[step]!;
   const kind = s.kind;
+  liveRefs.current.autoFire = autoFire;
+  liveRefs.current.step = step;
   const done = new Set(scans.map((x) => x.kind));
   const ready = hud?.ready ?? false;
 
@@ -75,6 +98,13 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     },
     [],
   );
+
+  // A new step is a new pose to hold; carrying a streak across would fire the
+  // shutter the instant you switched tabs.
+  useEffect(() => {
+    held.current = 0;
+    setHolding(0);
+  }, [step]);
 
   /**
    * Ask for the camera FIRST, before anything that awaits.
@@ -179,18 +209,35 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         const pts = landmarksToPts(lms);
         const eu = eulerFromMatrix4(res.facialTransformationMatrixes?.[0]?.data as number[] | undefined);
         const proxy = proxyPose(pts);
-        setHud(
-          scoreCapture({
-            kind,
-            yawDeg: eu?.yawDeg ?? proxy.yawDeg,
-            rollDeg: eu?.rollDeg ?? proxy.rollDeg,
-            pitchDeg: eu?.pitchDeg ?? proxy.pitchDeg,
-            lighting: sampleLighting(small, faceBox(pts)),
-            framing: framingFromLandmarks(pts),
-            smile: smileFromBlendshapes(res.faceBlendshapes?.[0] as never),
-            hasFace: true,
-          }),
-        );
+        const yawDeg = eu?.yawDeg ?? proxy.yawDeg;
+        const rollDeg = eu?.rollDeg ?? proxy.rollDeg;
+        const pitchDeg = eu?.pitchDeg ?? proxy.pitchDeg;
+        const q = scoreCapture({
+          kind: SESSION[liveRefs.current.step]!.kind,
+          yawDeg, rollDeg, pitchDeg,
+          lighting: sampleLighting(small, faceBox(pts)),
+          framing: framingFromLandmarks(pts),
+          smile: smileFromBlendshapes(res.faceBlendshapes?.[0] as never),
+          hasFace: true,
+        });
+        setHud(q);
+        // Shown so the gates can be checked rather than trusted. A coach line
+        // saying "turn more" is not falsifiable; a yaw of 41° is.
+        setPose({ yaw: yawDeg, roll: rollDeg, pitch: pitchDeg });
+
+        // Held green long enough, and nothing else in flight: take it.
+        if (q.ready && liveRefs.current.autoFire && !liveRefs.current.busy) {
+          held.current += 1;
+          setHolding(held.current);
+          if (held.current >= HOLD_FRAMES) {
+            held.current = 0;
+            setHolding(0);
+            void capture();
+          }
+        } else if (held.current !== 0) {
+          held.current = 0;
+          setHolding(0);
+        }
         const li = pts[FACE.leftInner];
         const ri = pts[FACE.rightInner];
         // Mirrored for display only. The preview is flipped so it behaves like
@@ -263,6 +310,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       return;
     }
     setBusy(true);
+    liveRefs.current.busy = true;
     setBurstPct(0);
     try {
       const frames: Grab[] = [];
@@ -302,6 +350,11 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       setStatus(err instanceof Error ? err.message : "Capture failed.");
     } finally {
       setBusy(false);
+      // A short cooldown, or the frame right after a capture is still green and
+      // fires again immediately.
+      setTimeout(() => {
+        liveRefs.current.busy = false;
+      }, 1200);
       setTimeout(() => setBurstPct(0), 400);
     }
   }
@@ -455,14 +508,38 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
+          {pose && (
+            // The raw angles, so the coach line can be checked rather than
+            // taken on faith. "Turn more" is not falsifiable; 41° is.
+            <div className="absolute right-2 top-2 rounded-lg bg-black/55 px-2 py-1 text-right text-[0.55rem] font-bold tabular text-white/75">
+              <div>yaw {pose.yaw.toFixed(0)}°</div>
+              <div className="text-white/50">
+                target {s.yawAbs[0]}–{s.yawAbs[1]}°
+              </div>
+              <div>roll {pose.roll.toFixed(1)}°</div>
+            </div>
+          )}
+
           <div
             className={cn(
               "absolute inset-x-0 bottom-0 px-3 py-2 text-center text-[0.7rem] font-bold",
               ready ? "bg-emerald-500/25 text-emerald-200" : "bg-black/55 text-white/85",
             )}
           >
-            {hud?.coach ?? s.coach}
+            {holding > 0
+              ? `Hold… ${Math.max(1, HOLD_FRAMES - holding)}`
+              : (hud?.coach ?? s.coach)}
           </div>
+
+          {holding > 0 && (
+            // A ring closing round the frame, so the countdown is visible
+            // without looking away from your own face.
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 rounded-2xl border-4 border-emerald-400 transition-opacity"
+              style={{ opacity: holding / HOLD_FRAMES }}
+            />
+          )}
 
           {burstPct > 0 && (
             <div className="absolute inset-x-0 top-0 h-1 bg-white/10">
@@ -479,6 +556,33 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             {busy ? "Burst…" : ready ? "Capture · green" : "Capture anyway"}
           </Button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setAutoFire((v) => !v)}
+          className="mt-2 flex w-full items-center justify-between rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-left"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-bold">Shoot it for me</span>
+            <span className="block text-[0.66rem] leading-snug text-faint">
+              Fires once the frame holds green. Reaching for the button is what tilts the
+              phone at the moment the pose was right.
+            </span>
+          </span>
+          <span
+            className={cn(
+              "ml-3 h-6 w-11 shrink-0 rounded-full p-0.5 transition-colors",
+              autoFire ? "bg-accent" : "bg-surface-3",
+            )}
+          >
+            <span
+              className={cn(
+                "block size-5 rounded-full bg-white transition-transform",
+                autoFire && "translate-x-5",
+              )}
+            />
+          </span>
+        </button>
 
         <label className="mt-2 flex h-11 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-2 text-sm font-semibold">
           Import a still instead
