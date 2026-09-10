@@ -62,8 +62,12 @@ export const SESSION: {
     kind: "face_side",
     title: "3 · Profile",
     short: "Side",
-    coach: "Keep turning until only one eye and the ear show.",
-    yawAbs: [62, 98],
+    // Was "keep turning until only one eye and the ear show", which is a full
+    // 90° — and 90° is exactly where the landmark model stops being able to
+    // see a face at all. A shot you cannot take is worth less than a slightly
+    // less side-on one you can, so the target stops short of the cliff.
+    coach: "Turn until the far eyebrow just disappears. Not quite full profile.",
+    yawAbs: [52, 90],
     rollMax: 8,
     pitchMax: 14,
   },
@@ -151,7 +155,20 @@ export function scoreCapture(opts: {
   if (rollAbs > step.rollMax) reasons.push(`Level the phone / head. Roll ${rollAbs.toFixed(1)}°.`);
   const pitchScore = Math.max(0, 1 - pitchAbs / (step.pitchMax * 2.2));
   if (pitchAbs > step.pitchMax) reasons.push(opts.pitchDeg > 0 ? "Chin down a little." : "Chin up a little.");
-  const alignment = Math.max(0, Math.min(1, 0.5 * yawScore + 0.3 * rollScore + 0.2 * pitchScore));
+  /**
+   * Yaw GATES alignment; roll and pitch only trim it.
+   *
+   * A weighted sum let a barely-turned head pass the profile step: at 30° yaw
+   * the yaw term scored 0.58, and a level head handed back the other half of
+   * the score for free, so alignment cleared 0.7 and the shutter fired on a
+   * shot that is not a profile at all. Multiplying instead says the true
+   * thing — if the head is at the wrong angle, how level it is cannot rescue
+   * the frame, because the measurement being taken is of the angle.
+   */
+  const alignment = Math.max(
+    0,
+    Math.min(1, yawScore * (0.6 + 0.25 * rollScore + 0.15 * pitchScore)),
+  );
 
   let lighting = 0.85;
   if (opts.lighting.grade === "dark") lighting = 0.25;

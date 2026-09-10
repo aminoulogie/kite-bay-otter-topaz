@@ -46,6 +46,14 @@ export async function loadVision() {
         numFaces: 1,
         outputFaceBlendshapes: true,
         outputFacialTransformationMatrixes: true,
+        // Well below the 0.5 default, and this is the whole reason the profile
+        // step never captured. MediaPipe CAN find a face turned 70-90° — it
+        // just scores it around 0.3, so the default threshold threw every
+        // profile frame away and the app reported "no face". A lower bar
+        // costs a little precision on a shot nobody was getting at all.
+        minFaceDetectionConfidence: 0.2,
+        minFacePresenceConfidence: 0.2,
+        minTrackingConfidence: 0.2,
       });
       pose = await PoseLandmarker.createFromOptions(files, {
         baseOptions: { modelAssetPath: POSE_MODEL, delegate: "GPU" },
@@ -63,6 +71,14 @@ export async function loadVision() {
         numFaces: 1,
         outputFaceBlendshapes: true,
         outputFacialTransformationMatrixes: true,
+        // Well below the 0.5 default, and this is the whole reason the profile
+        // step never captured. MediaPipe CAN find a face turned 70-90° — it
+        // just scores it around 0.3, so the default threshold threw every
+        // profile frame away and the app reported "no face". A lower bar
+        // costs a little precision on a shot nobody was getting at all.
+        minFaceDetectionConfidence: 0.2,
+        minFacePresenceConfidence: 0.2,
+        minTrackingConfidence: 0.2,
       });
       pose = await PoseLandmarker.createFromOptions(files, {
         baseOptions: { modelAssetPath: POSE_MODEL, delegate: "CPU" },

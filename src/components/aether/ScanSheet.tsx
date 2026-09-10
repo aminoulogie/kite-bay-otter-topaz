@@ -48,6 +48,19 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 const HOLD_FRAMES = 6;
 
+/**
+ * How long a dropped frame is forgiven for.
+ *
+ * At the edge of what the landmark model can see — which is exactly where the
+ * profile shot lives — detection succeeds on most frames and misses the odd
+ * one. Treating each miss as "no face" flashed the gates to zero and reset the
+ * hold streak, so the counter never reached six and the shutter never fired,
+ * even though the pose was fine. The streak now tolerates a gap; it still
+ * takes six genuinely good frames to fire, they just no longer have to be
+ * consecutive to the millisecond.
+ */
+const FACE_GRACE_MS = 700;
+
 interface Grab {
   analysis: FaceAnalysis;
   skin: ReturnType<typeof analyseSkin>;
@@ -63,6 +76,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef(0);
   const held = useRef(0);
+  /** When the model last actually saw a face, for FACE_GRACE_MS. */
+  const lastFaceAt = useRef(0);
 
   const addScan = useSoma((s) => s.addScan);
   const scans = useSoma((s) => s.scans);
@@ -195,6 +210,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         const res = await detectFace(small);
         const lms = res.faceLandmarks?.[0];
         if (!lms) {
+          // Inside the grace window this is a blink in the model, not a face
+          // that has left. Leave the HUD and the hold streak where they are.
+          if (Date.now() - lastFaceAt.current < FACE_GRACE_MS) return;
           setHud(
             scoreCapture({
               kind, yawDeg: 0, rollDeg: 0, pitchDeg: 0,
@@ -204,8 +222,11 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             }),
           );
           setEyes(null);
+          held.current = 0;
+          setHolding(0);
           return;
         }
+        lastFaceAt.current = Date.now();
         const pts = landmarksToPts(lms);
         const eu = eulerFromMatrix4(res.facialTransformationMatrixes?.[0]?.data as number[] | undefined);
         const proxy = proxyPose(pts);
@@ -321,7 +342,11 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         if (i < BURST - 1) await sleep(80);
       }
       if (!frames.length) {
-        setStatus("No face in the burst. More light, or move closer.");
+        setStatus(
+          kind === "face_side"
+            ? "Turned too far to read. Come back a few degrees — the far eyebrow should only just be hidden."
+            : "No face in the burst. More light, or move closer.",
+        );
         return;
       }
       frames.sort((a, b) => (b.analysis.quality?.overall ?? 0) - (a.analysis.quality?.overall ?? 0));

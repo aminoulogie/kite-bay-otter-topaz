@@ -140,3 +140,93 @@ test("framing complains about the right thing", () => {
   );
   assert.match(tooFar.notes.join(" "), /closer/i);
 });
+
+// ------------------------------------- the profile step that never captured --
+
+const GOOD_LIGHT = {
+  grade: "good" as const,
+  mean: 130, contrast: 30, leftRightDelta: 8, highlightPct: 0.02, shadowPct: 0.02, notes: [],
+};
+const GOOD_FRAME = { faceHeightFrac: 0.45, eyesY: 0.4, centerX: 0.5, notes: [] };
+
+const at = (kind: Parameters<typeof scoreCapture>[0]["kind"], yawDeg: number) =>
+  scoreCapture({
+    kind, yawDeg, rollDeg: 0, pitchDeg: 0,
+    lighting: GOOD_LIGHT, framing: GOOD_FRAME, smile: 0, hasFace: true,
+  });
+
+test("no face zeroes every gate at once", () => {
+  // The reported symptom was ALIGN 0 · LIGHT 0 · FRAME 0 together. That is
+  // this one branch, not three independent failures — which is what pointed
+  // at the detector rather than at the scoring.
+  const q = scoreCapture({
+    kind: "face_side", yawDeg: 80, rollDeg: 0, pitchDeg: 0,
+    lighting: GOOD_LIGHT, framing: GOOD_FRAME, smile: 0, hasFace: false,
+  });
+  assert.deepEqual([q.alignment, q.lighting, q.framing, q.overall], [0, 0, 0, 0]);
+  assert.equal(q.ready, false);
+});
+
+test("the profile target stops short of where the model goes blind", () => {
+  // A full 90° is exactly where the landmark model stops finding a face, so
+  // asking for it is asking for a shot that cannot be taken.
+  const side = SESSION.find((s) => s.kind === "face_side")!;
+  assert.ok(side.yawAbs[1] <= 90, "never demands past a full profile");
+  assert.ok(side.yawAbs[0] <= 55, "and starts within reach of the detector");
+});
+
+test("a comfortable near-profile is ready", () => {
+  const q = at("face_side", 60);
+  assert.ok(q.alignment >= 0.7, `alignment ${q.alignment}`);
+  assert.equal(q.ready, true);
+});
+
+test("not turned far enough is coached toward the pose, not away", () => {
+  const q = at("face_side", 30);
+  assert.equal(q.ready, false);
+  assert.ok(q.reasons.some((r) => /Turn more/.test(r)), q.reasons.join(" | "));
+});
+
+test("over-rotated past the band is told to ease back", () => {
+  const q = at("face_side", 115);
+  assert.equal(q.ready, false);
+  assert.ok(q.reasons.some((r) => /over-rotated/i.test(r)), q.reasons.join(" | "));
+});
+
+test("the three steps ask for different amounts of turn", () => {
+  const front = SESSION.find((s) => s.kind === "face_front_true")!;
+  const oblique = SESSION.find((s) => s.kind === "face_oblique")!;
+  const side = SESSION.find((s) => s.kind === "face_side")!;
+  assert.ok(front.yawAbs[1] < oblique.yawAbs[0]);
+  assert.ok(oblique.yawAbs[0] < side.yawAbs[0]);
+});
+
+test("a front shot at profile yaw is never ready", () => {
+  assert.equal(at("face_front_true", 70).ready, false);
+});
+
+test("dark light blocks a capture however well the head is turned", () => {
+  const q = scoreCapture({
+    kind: "face_side", yawDeg: 65, rollDeg: 0, pitchDeg: 0,
+    lighting: { ...GOOD_LIGHT, grade: "dark" }, framing: GOOD_FRAME, smile: 0, hasFace: true,
+  });
+  assert.equal(q.ready, false, "lighting has its own floor");
+});
+
+test("a level head cannot rescue the wrong angle", () => {
+  // The bug this encodes: alignment used to be a weighted SUM, so at 30° yaw
+  // the yaw term scored 0.58 and a level head handed back the rest for free.
+  // Alignment cleared 0.7 and the shutter fired on a "profile" that was
+  // barely turned — a measurement of the angle, taken at the wrong angle.
+  const barelyTurned = at("face_side", 30);
+  assert.equal(barelyTurned.ready, false);
+  assert.ok(barelyTurned.alignment < 0.7, `alignment ${barelyTurned.alignment}`);
+
+  // And roll still costs you something once the angle IS right.
+  const level = at("face_side", 65);
+  const tilted = scoreCapture({
+    kind: "face_side", yawDeg: 65, rollDeg: 12, pitchDeg: 0,
+    lighting: GOOD_LIGHT, framing: GOOD_FRAME, smile: 0, hasFace: true,
+  });
+  assert.ok(tilted.alignment < level.alignment);
+});
