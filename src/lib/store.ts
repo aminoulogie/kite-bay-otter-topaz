@@ -118,6 +118,14 @@ export interface SomaStore {
   ensureDay: (key?: string) => void;
   patchDay: (key: string, patch: Partial<NutritionDay>) => void;
   addFood: (item: FoodItem) => void;
+  /** Put food on the plan for a date without counting it. */
+  planFood: (item: FoodItem, date?: string) => void;
+  /** Move a planned item into the day's real intake. */
+  confirmPlanned: (idx: number, date?: string) => void;
+  /** Everything still on the plan, eaten at once. */
+  confirmAllPlanned: (date?: string) => void;
+  removePlanned: (idx: number, date?: string) => void;
+  restorePlanned: (idx: number, item: FoodItem, date?: string) => void;
   removeFood: (idx: number) => void;
   restoreFood: (idx: number, item: FoodItem, date?: string) => void;
   addWater: (ml: number) => void;
@@ -722,6 +730,57 @@ export const useSoma = create<SomaStore>()(
         const day = get().nutrition[k];
         if (!day) return;
         get().patchDay(k, { items: day.items.filter((_, i) => i !== idx) });
+      },
+
+      /**
+       * The plan.
+       *
+       * Planned food lives in its own array and is invisible to every total in
+       * the app until it is confirmed — see the note on NutritionDay.planned.
+       * These five actions are the only things that move an item across that
+       * line, which is what keeps "planned" from leaking into a figure that is
+       * supposed to mean "eaten".
+       */
+      planFood: (item, date) => {
+        const k = date ?? get().activeDate;
+        get().ensureDay(k);
+        const day = get().nutrition[k]!;
+        get().patchDay(k, { planned: [...(day.planned ?? []), item] });
+      },
+      confirmPlanned: (idx, date) => {
+        const k = date ?? get().activeDate;
+        const day = get().nutrition[k];
+        const item = day?.planned?.[idx];
+        if (!day || !item) return;
+        // Removed from the plan in the same patch that adds it to the intake.
+        // Two patches would leave a frame where the food is in both, and the
+        // day score reads the store on every change.
+        get().patchDay(k, {
+          items: [...day.items, item],
+          planned: day.planned!.filter((_, i) => i !== idx),
+        });
+      },
+      confirmAllPlanned: (date) => {
+        const k = date ?? get().activeDate;
+        const day = get().nutrition[k];
+        if (!day?.planned?.length) return;
+        get().patchDay(k, { items: [...day.items, ...day.planned], planned: [] });
+      },
+      removePlanned: (idx, date) => {
+        const k = date ?? get().activeDate;
+        const day = get().nutrition[k];
+        if (!day?.planned) return;
+        get().patchDay(k, { planned: day.planned.filter((_, i) => i !== idx) });
+      },
+      restorePlanned: (idx, item, date) => {
+        const k = date ?? get().activeDate;
+        const day = get().nutrition[k];
+        if (!day) return;
+        const next = [...(day.planned ?? [])];
+        // Back where it was, not appended: undoing a swipe must not quietly
+        // reorder the plan.
+        next.splice(Math.max(0, Math.min(idx, next.length)), 0, item);
+        get().patchDay(k, { planned: next });
       },
       /**
        * Put a deleted food back where it was.

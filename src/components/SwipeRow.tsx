@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import {
-  REVEAL_PX, decideLock, decideRelease, offsetFor, type Lock,
+  CONFIRM_PX, REVEAL_PX, decideLock, decideRelease, offsetFor, type Lock,
 } from "@/lib/use-swipe-action";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +23,11 @@ import { cn } from "@/lib/utils";
  * navigated to the next tab instead — two gestures for one finger, and the
  * one that owns the row has to win.
  *
+ * Passing `onConfirm` adds the mirror gesture: swipe RIGHT to confirm. It is
+ * deliberately not symmetrical with delete. Delete parks and reveals a button,
+ * because destroying a logged entry deserves a second deliberate tap; confirm
+ * is one-shot, because the swipe IS the action and there is nothing to reveal.
+ *
  * The arbitration lives in lib/use-swipe-action.ts; this holds the pointer,
  * the transform, and the rule that a delete is always undoable.
  */
@@ -31,6 +36,8 @@ export function SwipeRow({
   openId,
   setOpenId,
   onDelete,
+  onConfirm,
+  confirmLabel = "Confirm",
   disabled,
   children,
 }: {
@@ -38,6 +45,9 @@ export function SwipeRow({
   openId: string | null;
   setOpenId: (id: string | null) => void;
   onDelete: () => void;
+  /** Present on rows that can be swiped right. Absent leaves that side inert. */
+  onConfirm?: () => void;
+  confirmLabel?: string;
   /** True while the row is held for a drag, so the two gestures never overlap. */
   disabled?: boolean;
   children: React.ReactNode;
@@ -66,6 +76,9 @@ export function SwipeRow({
     if (landing === "delete") {
       setOpenId(null);
       onDelete();
+    } else if (landing === "confirm") {
+      setOpenId(null);
+      onConfirm?.();
     } else if (landing === "open") {
       setOpenId(id);
     } else if (open) {
@@ -87,7 +100,7 @@ export function SwipeRow({
     const dy = e.clientY - start.current.y;
 
     if (lock.current === "undecided") {
-      lock.current = decideLock(dx, dy);
+      lock.current = decideLock(dx, dy, !!onConfirm);
       // Locked to scrolling: hand the gesture back to the page for good.
       if (lock.current === "scroll") start.current = null;
       if (lock.current !== "swipe") return;
@@ -97,7 +110,7 @@ export function SwipeRow({
     }
     // An already-open row starts from its parked position rather than from
     // zero, so a second swipe carries on instead of jumping back.
-    setDragOffset(offsetFor(dx - (open ? REVEAL_PX : 0)));
+    setDragOffset(offsetFor(dx - (open ? REVEAL_PX : 0), !!onConfirm));
   };
 
   const onPointerUp = () => {
@@ -112,9 +125,31 @@ export function SwipeRow({
   // The button grows in with the swipe rather than sitting there at full size
   // waiting to be uncovered, so the gesture and the target feel like one thing.
   const progress = Math.max(0, Math.min(1, offset / REVEAL_PX));
+  // The confirm side has no button to uncover, so its feedback is the tick
+  // filling in as the row crosses the distance that would commit it.
+  const confirmProgress = Math.max(0, Math.min(1, -offset / CONFIRM_PX));
 
   return (
     <div ref={wrap} data-no-swipe-nav className="relative">
+      {onConfirm && (
+        <div
+          className="pointer-events-none absolute inset-y-0 left-0 flex items-center justify-start"
+          style={{ width: CONFIRM_PX }}
+        >
+          <div
+            aria-label={confirmLabel}
+            style={{
+              opacity: confirmProgress,
+              transform: `scale(${0.6 + confirmProgress * 0.4})`,
+              transition: swiping ? "none" : "opacity 180ms, transform 180ms",
+            }}
+            className="ml-2 grid size-11 shrink-0 place-items-center rounded-full bg-accent text-accent-ink shadow-lg"
+          >
+            <Check className="size-[1.15rem]" strokeWidth={2.6} />
+          </div>
+        </div>
+      )}
+
       <div
         className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end"
         style={{ width: REVEAL_PX }}

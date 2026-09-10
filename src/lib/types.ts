@@ -203,6 +203,21 @@ export interface NutritionDay {
   bodyWeight?: number;
   creatine?: number;
   items: FoodItem[];
+  /**
+   * Food planned but not yet eaten.
+   *
+   * A SEPARATE array rather than a flag on the items, and that is the whole
+   * design. Around twenty places in this app sum `day.items` — the day score,
+   * the maintenance estimate, the minerals card, the CSV export, the coach
+   * brief, five charts. A `planned: true` flag would have counted breakfast
+   * you have not eaten in every one of them until someone remembered to filter
+   * it, and the ones that were missed would be silently wrong rather than
+   * broken. Keeping planned food out of `items` makes every existing total
+   * correct without touching it.
+   *
+   * Confirming moves the item across. Nothing is ever in both.
+   */
+  planned?: FoodItem[];
   sleep?: SleepLog;
   measurements?: Record<string, number>;
   readiness?: ReadinessCheckin;

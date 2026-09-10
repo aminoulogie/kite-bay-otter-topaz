@@ -21,12 +21,14 @@ import { useSoma } from "@/lib/store";
 import { useLongPressMove } from "@/lib/use-long-press-move";
 import { SwipeRow } from "@/components/SwipeRow";
 import { PlatePhoto } from "@/components/PlatePhoto";
+import { MacroStrip } from "@/components/MacroStrip";
+import { rebalance } from "@/lib/rebalance";
 import { QuickAddSheet } from "@/components/QuickAddSheet";
 import { lastMealDate, mealItems, recentFoods } from "@/lib/food-recents";
 import { HUNGER_LABEL, hungerNote, hungerOn, type HungerEntry } from "@/lib/hunger";
 import { tapLight, tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
-import type { FoodItem } from "@/lib/types";
+import type { FoodItem, Goals } from "@/lib/types";
 
 // Pre-Workout was missing, so anything logged under it — including
 // everything the pre-workout card adds — was invisible in the diary.
@@ -40,6 +42,11 @@ export function NutritionView() {
   const addFood = useSoma((s) => s.addFood);
   const removeFood = useSoma((s) => s.removeFood);
   const restoreFood = useSoma((s) => s.restoreFood);
+  const planFood = useSoma((s) => s.planFood);
+  const confirmPlanned = useSoma((s) => s.confirmPlanned);
+  const confirmAllPlanned = useSoma((s) => s.confirmAllPlanned);
+  const removePlanned = useSoma((s) => s.removePlanned);
+  const restorePlanned = useSoma((s) => s.restorePlanned);
   const hunger = useSoma((s) => s.hunger);
   const logHunger = useSoma((s) => s.logHunger);
   const removeHunger = useSoma((s) => s.removeHunger);
@@ -77,7 +84,14 @@ export function NutritionView() {
   const [editingFood, setEditingFood] = useState<FoodItem | null>(null);
   // One sheet drives both logging a portion and editing a logged one.
   const [portion, setPortion] = useState<
-    { item: FoodItem; meal: string; mode: "add" | "edit"; idx?: number } | null
+    {
+      item: FoodItem;
+      meal: string;
+      mode: "add" | "edit";
+      idx?: number;
+      /** Editing a row on the plan rather than one already eaten. */
+      planned?: boolean;
+    } | null
   >(null);
 
   // Deliberately NOT ensuring the day here. Creating a record just because a
@@ -122,10 +136,34 @@ export function NutritionView() {
   };
   const goals = day.goals || DEFAULT_GOALS;
   const items = day.items || [];
+  // Counted by nothing until it is confirmed — see NutritionDay.planned.
+  const planned = day.planned || [];
+
+  /**
+   * Whether what you add next is eaten or planned.
+   *
+   * One switch rather than a second "plan" button on every add path — the
+   * barcode scanner, the search results, the recents chips, the quick add
+   * sheet and the meal repeat are five different doors into the same list, and
+   * doubling each of them would be five more buttons to mis-tap. The mode is
+   * stated at the top of the screen and everything obeys it.
+   */
+  const [planMode, setPlanMode] = useState(false);
+  const addOrPlan = (item: FoodItem) => (planMode ? planFood(item, activeDate) : addFood(item));
   const workout = history[activeDate];
   const burn = workout?.caloriesBurned || 0;
 
   const totals = items.reduce(
+    (a, i) => ({
+      cals: a.cals + (i.cals || 0),
+      p: a.p + (i.p || 0),
+      c: a.c + (i.c || 0),
+      f: a.f + (i.f || 0),
+      fiber: a.fiber + (i.fiber || 0),
+    }),
+    { cals: 0, p: 0, c: 0, f: 0, fiber: 0 },
+  );
+  const plannedTotals = planned.reduce(
     (a, i) => ({
       cals: a.cals + (i.cals || 0),
       p: a.p + (i.p || 0),
@@ -204,11 +242,55 @@ export function NutritionView() {
             <span className="text-muted">Calories</span>
             <span className="tabular">
               {Math.round(totals.cals)} / {goalCals}
+              {plannedTotals.cals > 0 && (
+                <span className="ml-1 text-faint">+{Math.round(plannedTotals.cals)}</span>
+              )}
             </span>
           </div>
           <Progress value={(totals.cals / goalCals) * 100} />
         </div>
+
+        {/* The mode everything you add next will obey. Stated where the day is
+            stated, because "did that count?" is the question the whole feature
+            exists to answer and the answer must never be somewhere else. */}
+        <div className="mt-3 flex gap-1.5" data-no-swipe-nav>
+          {([
+            [false, "Eating now"],
+            [true, "Planning"],
+          ] as const).map(([mode, label]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setPlanMode(mode)}
+              className={cn(
+                "h-9 flex-1 rounded-xl border text-xs font-bold",
+                planMode === mode
+                  ? "border-accent bg-accent text-accent-ink"
+                  : "border-border bg-surface-2 text-muted",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {planMode && (
+          <p className="mt-2 text-[0.68rem] leading-snug text-faint">
+            Anything you add lands on the plan, greyed out and counted by nothing.
+            Swipe a planned row right when you have actually eaten it.
+          </p>
+        )}
       </Card>
+
+      <PlanCard
+        planned={planned}
+        totals={totals}
+        goals={goals}
+        goalCals={goalCals}
+        onConfirmAll={() => {
+          confirmAllPlanned(activeDate);
+          toast.success("The whole plan counted");
+        }}
+      />
 
       <div className="grid grid-cols-3 gap-2">
         <Macro label="Protein" used={totals.p} goal={goals.protein} unit="g" />
@@ -516,8 +598,12 @@ export function NutritionView() {
         const group = items
           .map((it, idx) => ({ it, idx }))
           .filter(({ it }) => (it.meal || "Snacks") === m);
+        const plannedGroup = planned
+          .map((it, idx) => ({ it, idx }))
+          .filter(({ it }) => (it.meal || "Snacks") === m);
         const cals = group.reduce((a, g) => a + g.it.cals, 0);
         const p = group.reduce((a, g) => a + g.it.p, 0);
+        const plannedCals = plannedGroup.reduce((a, g) => a + g.it.cals, 0);
         const open = openMeals.has(m);
         const isTarget = mealDrag.over === m && mealDrag.dragging !== null;
         return (
@@ -539,13 +625,56 @@ export function NutritionView() {
                 {isTarget ? (
                   <span className="text-accent-text">Drop here</span>
                 ) : (
-                  `${Math.round(cals)} kcal · ${Math.round(p)}g P`
+                  <>
+                    {Math.round(cals)} kcal · {Math.round(p)}g P
+                    {/* Named as planned rather than folded into the total: a
+                        header that quietly includes food you have not eaten
+                        is the exact confusion this feature exists to avoid. */}
+                    {plannedCals > 0 && (
+                      <span className="ml-1.5 text-faint">
+                        +{Math.round(plannedCals)} planned
+                      </span>
+                    )}
+                  </>
                 )}
               </span>
             </button>
             {open && (
               <div className="mt-3 space-y-1.5">
-                {group.length === 0 && <RepeatMeal meal={m} />}
+                {group.length === 0 && plannedGroup.length === 0 && <RepeatMeal meal={m} />}
+
+                {/* The plan sits ABOVE what has been eaten, because it is the
+                    thing you are about to act on. Each row swipes right to
+                    say it happened and left to say it did not. */}
+                {plannedGroup.map(({ it, idx }) => (
+                  <SwipeRow
+                    key={`p${idx}`}
+                    id={`planned-${idx}`}
+                    openId={swipedRow}
+                    setOpenId={setSwipedRow}
+                    confirmLabel={`Confirm ${it.name}`}
+                    onConfirm={() => {
+                      confirmPlanned(idx, activeDate);
+                      toast.success(`${it.name} counted`);
+                    }}
+                    onDelete={() => {
+                      removePlanned(idx, activeDate);
+                      toast.success(`${it.name} off the plan`, {
+                        action: {
+                          label: "Undo",
+                          onClick: () => restorePlanned(idx, it, activeDate),
+                        },
+                      });
+                    }}
+                  >
+                    <FoodRow
+                      item={it}
+                      planned
+                      onEdit={() => setPortion({ item: it, meal: m, mode: "edit", idx, planned: true })}
+                    />
+                  </SwipeRow>
+                ))}
+
                 {group.map(({ it, idx }) => (
                   <SwipeRow
                     key={idx}
@@ -580,9 +709,13 @@ export function NutritionView() {
           meal={meal}
           onClose={() => setQuickAdd(false)}
           onAdd={(item) => {
-            addFood(item);
+            addOrPlan(item);
             setQuickAdd(false);
-            toast.success(`Added ${item.cals} kcal to ${item.meal}`);
+            toast.success(
+              planMode
+                ? `${item.cals} kcal planned for ${item.meal}`
+                : `Added ${item.cals} kcal to ${item.meal}`,
+            );
           }}
         />
       )}
@@ -596,7 +729,8 @@ export function NutritionView() {
           onDelete={
             portion.mode === "edit" && portion.idx !== undefined
               ? () => {
-                  removeFood(portion.idx!);
+                  if (portion.planned) removePlanned(portion.idx!, activeDate);
+                  else removeFood(portion.idx!);
                   setPortion(null);
                   toast.success("Removed");
                 }
@@ -604,11 +738,22 @@ export function NutritionView() {
           }
           onConfirm={(next) => {
             if (portion.mode === "edit" && portion.idx !== undefined) {
-              updateFood(portion.idx, next);
+              if (portion.planned) {
+                // Edited in place on the plan: it must not jump the queue into
+                // the eaten list just because the portion changed.
+                removePlanned(portion.idx, activeDate);
+                restorePlanned(portion.idx, next, activeDate);
+              } else {
+                updateFood(portion.idx, next);
+              }
               toast.success(`Updated to ${next.serving}g`);
             } else {
-              addFood(next);
-              toast.success(`Added ${next.serving}g ${next.name}`);
+              addOrPlan(next);
+              toast.success(
+                planMode
+                  ? `Planned ${next.serving}g ${next.name}`
+                  : `Added ${next.serving}g ${next.name}`,
+              );
             }
             setPortion(null);
           }}
@@ -784,12 +929,14 @@ function RepeatMeal({ meal }: { meal: string }) {
 }
 
 function FoodRow({
-  item, onEdit, held, dragHandlers,
+  item, onEdit, held, dragHandlers, planned,
 }: {
   item: FoodItem;
   onEdit: () => void;
   held?: boolean;
   dragHandlers?: { onPointerDown: (e: React.PointerEvent) => void };
+  /** On the plan, not eaten. Greyed, and counted by nothing. */
+  planned?: boolean;
 }) {
   // The whole row opens the editor: correcting a portion is far more common
   // than deleting, and delete lives inside the editor anyway. A press and hold
@@ -805,18 +952,119 @@ function FoodRow({
         "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-[colors,transform]",
         held
           ? "scale-[1.02] border-accent bg-accent/15 shadow-lg"
-          : "border-border bg-surface-2",
+          : planned
+            // Dashed, because the row is a placeholder for a decision not yet
+            // made. A solid border at reduced opacity just reads as a bug.
+            ? "border-dashed border-border bg-surface-2/50"
+            : "border-border bg-surface-2",
       )}
     >
-      <div className="min-w-0">
-        <div className="truncate text-sm font-bold">{item.name}</div>
+      <div className="min-w-0 flex-1">
+        <div className={cn("truncate text-sm font-bold", planned && "text-muted")}>
+          {item.name}
+        </div>
         <div className="text-[0.7rem] text-faint">
           {item.serving}
-          {item.unit} · {Math.round(item.cals)} kcal · {item.p}p {item.c}c {item.f}f
+          {item.unit}
           {item.waterMl ? <span className="text-info"> · {item.waterMl} ml water</span> : null}
         </div>
+        <MacroStrip
+          className="mt-1"
+          cals={item.cals}
+          p={item.p}
+          c={item.c}
+          f={item.f}
+          dim={planned}
+        />
       </div>
       <Pencil className="size-4 shrink-0 text-faint" />
     </button>
+  );
+}
+
+/**
+ * What the plan adds up to, and what to change about it.
+ *
+ * The point of planning food is to find out BEFORE you eat it that the day
+ * does not work. So this card leads with where the day lands if the whole plan
+ * happens, and then says what to do about it in one sentence — which item to
+ * cut, by how many grams, and what to add back. The arithmetic is in
+ * lib/rebalance.ts, where it is tested; nothing here invents a figure.
+ */
+function PlanCard({
+  planned, totals, goals, goalCals, onConfirmAll,
+}: {
+  planned: FoodItem[];
+  totals: { cals: number; p: number; c: number; f: number };
+  goals: Goals;
+  goalCals: number;
+  onConfirmAll: () => void;
+}) {
+  const customFoods = useSoma((s) => s.customFoods);
+  const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
+  const eatenAsItems = useMemo(
+    () => [{ name: "eaten", serving: 1, unit: "x", ...totals } as unknown as FoodItem],
+    [totals],
+  );
+  const advice = useMemo(
+    () => rebalance(eatenAsItems, planned, goals, library),
+    [eatenAsItems, planned, goals, library],
+  );
+
+  if (!planned.length) return null;
+
+  const p = advice.projected;
+  const rows: { label: string; value: number; target: number }[] = [
+    { label: "Calories", value: p.cals, target: goalCals },
+    { label: "Protein", value: p.p, target: goals.protein },
+    { label: "Carbs", value: p.c, target: goals.carbs },
+    { label: "Fat", value: p.f, target: goals.fat },
+  ];
+
+  return (
+    <Card>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <CardTitle className="mb-0">
+          If you eat the plan · {planned.length} item{planned.length === 1 ? "" : "s"}
+        </CardTitle>
+        <button
+          type="button"
+          onClick={onConfirmAll}
+          className="shrink-0 rounded-full bg-accent px-3 py-1.5 text-[0.7rem] font-extrabold text-accent-ink"
+        >
+          Ate it all
+        </button>
+      </div>
+
+      <div className="space-y-1">
+        {rows.map((r) => {
+          const over = r.target > 0 && r.value > r.target * 1.05;
+          const under = r.target > 0 && r.value < r.target * 0.9;
+          return (
+            <div key={r.label} className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="text-muted">{r.label}</span>
+              <span className="tabular">
+                <span className={cn("font-bold", over && "text-danger", under && "text-warn")}>
+                  {Math.round(r.value)}
+                </span>
+                <span className="text-faint">/{Math.round(r.target)}</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="mt-2 border-t border-border pt-2 text-[0.72rem] font-bold leading-snug">
+        {advice.note}
+      </p>
+      {advice.cut && (
+        <p className="mt-1 text-[0.66rem] leading-snug text-faint">
+          That also removes {advice.cut.costs.p}g protein and {advice.cut.costs.cals} kcal
+          {advice.add
+            ? `; the ${advice.add.grams}g of ${advice.add.name.toLowerCase()} puts back ${advice.add.gives.p}g protein for ${advice.add.gives.f}g fat.`
+            : "."}
+        </p>
+      )}
+    </Card>
   );
 }

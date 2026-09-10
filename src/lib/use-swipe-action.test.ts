@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  COMMIT_RATIO, LOCK_PX, REVEAL_PX, decideLock, decideRelease, offsetFor,
+  COMMIT_RATIO, CONFIRM_PX, CONFIRM_RATIO, LOCK_PX, REVEAL_PX, decideLock,
+  decideRelease, offsetFor,
 } from "./use-swipe-action.ts";
 
 test("a small movement has not decided anything yet", () => {
@@ -71,4 +72,62 @@ test("an unmeasured row never deletes by accident", () => {
   assert.equal(decideRelease(1, 0), "closed");
   // The guard that matters: no width means no commit point, at any distance.
   assert.notEqual(decideRelease(9999, 0), "delete");
+});
+
+// ------------------------------------------------------- the confirm side --
+
+test("a row with nothing on the right still refuses to move that way", () => {
+  // Every row in the app that is not a planned meal: sliding towards an empty
+  // side reads as the row having come loose.
+  assert.equal(decideLock(40, 2), "scroll");
+  assert.equal(offsetFor(50), 0);
+});
+
+test("a row that can be confirmed swipes both ways", () => {
+  assert.equal(decideLock(-30, 4, true), "swipe");
+  assert.equal(decideLock(30, 4, true), "swipe");
+  // But a scroll is still a scroll, whichever way it drifts.
+  assert.equal(decideLock(20, 45, true), "scroll");
+  assert.equal(decideLock(-20, 45, true), "scroll");
+});
+
+test("rightward travel reports negative, so the two directions cannot be confused", () => {
+  const right = offsetFor(60, true);
+  assert.ok(right < 0, "confirm side is negative");
+  assert.ok(offsetFor(-60) > 0, "delete side is positive");
+});
+
+test("the confirm side is heavier than the finger", () => {
+  // No parked position to arrive at, so the resistance is the only landmark.
+  assert.ok(Math.abs(offsetFor(100, true)) < 100);
+  assert.ok(Math.abs(offsetFor(100, true)) > 0);
+});
+
+test("a short push right springs back rather than confirming", () => {
+  assert.equal(decideRelease(-10, 360), "closed");
+  assert.equal(decideRelease(-(CONFIRM_PX - 1), 360), "closed");
+});
+
+test("carrying the row right past the bar confirms it", () => {
+  assert.equal(decideRelease(-CONFIRM_PX, 360), "confirm");
+  assert.equal(decideRelease(-200, 360), "confirm");
+});
+
+test("on a narrow row the bar is a share of the width, not a fixed distance", () => {
+  // 96px on a 200px row would be almost half the row; the ratio takes over
+  // so the gesture stays proportionate on a small screen.
+  const narrow = 200;
+  assert.equal(decideRelease(-(narrow * CONFIRM_RATIO), narrow), "confirm");
+  assert.equal(decideRelease(-(narrow * CONFIRM_RATIO - 1), narrow), "closed");
+});
+
+test("confirming asks for less travel than deleting", () => {
+  // Confirming flips a flag you can flip back; deleting destroys a logged
+  // entry. They are not the same size of decision.
+  assert.ok(CONFIRM_RATIO < COMMIT_RATIO);
+});
+
+test("an unmeasured row never confirms by accident either", () => {
+  assert.equal(decideRelease(-10, 0), "closed");
+  assert.equal(decideRelease(-CONFIRM_PX, 0), "confirm");
 });
