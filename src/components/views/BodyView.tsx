@@ -17,6 +17,7 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import {
   EVIDENCE_LABEL, EVIDENCE_TONE, SUPPLEMENTS, loadTaken, saveTaken,
 } from "@/lib/supplements";
+import { useDayDraft } from "@/lib/use-day-draft";
 import { useSideStoreRevision } from "@/lib/use-side-stores";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -79,7 +80,9 @@ function WeightPanel() {
   const activeDate = useSoma((s) => s.activeDate);
   const settings = useSoma((s) => s.settings);
   const day = nutrition[activeDate] || {};
-  const [val, setVal] = useState(String(day.bodyWeight || ""));
+  // Re-seeds when the date changes, or browsing to another day leaves the
+  // previous day's weight in a box above a button that says "Save for" the new one.
+  const [val, setVal] = useDayDraft(activeDate, () => String(day.bodyWeight || ""));
   const series = Object.keys(nutrition)
     .filter((k) => nutrition[k]?.bodyWeight)
     .sort()
@@ -154,8 +157,8 @@ function SleepPanel() {
   const logSleep = useSoma((s) => s.logSleep);
   const activeDate = useSoma((s) => s.activeDate);
   const day = nutrition[activeDate] || {};
-  const [hours, setHours] = useState(day.sleep?.hours ?? 7.5);
-  const [quality, setQuality] = useState(day.sleep?.quality ?? 4);
+  const [hours, setHours] = useDayDraft(activeDate, () => day.sleep?.hours ?? 7.5);
+  const [quality, setQuality] = useDayDraft(activeDate, () => day.sleep?.quality ?? 4);
   const series = Object.keys(nutrition)
     .filter((k) => nutrition[k]?.sleep?.hours)
     .sort()
@@ -286,7 +289,7 @@ function MeasurePanel() {
   const logMeasurements = useSoma((s) => s.logMeasurements);
   const activeDate = useSoma((s) => s.activeDate);
   const existing = nutrition[activeDate]?.measurements || {};
-  const [vals, setVals] = useState<Record<string, string>>(() =>
+  const [vals, setVals] = useDayDraft<Record<string, string>>(activeDate, () =>
     Object.fromEntries(SITES.map((s) => [s.key, existing[s.key] != null ? String(existing[s.key]) : ""])),
   );
   const [photoSite, setPhotoSite] = useState<{ key: string; label: string } | null>(null);

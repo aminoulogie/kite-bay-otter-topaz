@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatRest, restProgress, secondsLeft } from "@/lib/rest-timer";
 import { agoLabel, lastTimeFor, summarise } from "@/lib/last-time";
+import { useDayDraft } from "@/lib/use-day-draft";
 import { useRestTimer } from "@/lib/use-rest-timer";
 import { Check, Link2, Plus, Redo2, Search, Timer, Trash2, Undo2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -44,6 +45,10 @@ export function WorkoutView() {
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
   const activeDate = useSoma((s) => s.activeDate);
+  // Declared here rather than further down: the readiness drafts below read it
+  // inside a closure that runs during this same render, and a const referenced
+  // before its declaration throws rather than reading undefined.
+  const day = nutrition[activeDate] || {};
   const routinesFn = useSoma((s) => s.routines);
   const loadSplit = useSoma((s) => s.loadSplit);
   const addExercise = useSoma((s) => s.addExercise);
@@ -80,8 +85,12 @@ export function WorkoutView() {
   const [rating, setRating] = useState<{ exIdx: number; sIdx: number } | null>(null);
   const [customName, setCustomName] = useState("");
   const [customMuscle, setCustomMuscle] = useState("chest");
-  const [soreness, setSoreness] = useState(3);
-  const [stress, setStress] = useState(3);
+  // Seeded from the day being viewed and re-seeded when it changes. These used
+  // to be bare defaults, so the sliders showed whatever you last dragged
+  // regardless of which day you were looking at, and a day with readiness
+  // already logged still opened at 3 / 3.
+  const [soreness, setSoreness] = useDayDraft(activeDate, () => day.readiness?.soreness ?? 3);
+  const [stress, setStress] = useDayDraft(activeDate, () => day.readiness?.stress ?? 3);
 
   // Ticks only while a rest is running, and — the part that was missing — fires
   // a chime, a buzz and a notification the moment it lands, including when that
@@ -105,7 +114,6 @@ export function WorkoutView() {
     new Date(),
     settings.scheduleOverrides,
   );
-  const day = nutrition[activeDate] || {};
   const readinessMap = useMemo(
     () => computeBiologicalReadiness(history, now),
     [history, now],
