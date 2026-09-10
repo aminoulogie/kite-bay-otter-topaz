@@ -168,12 +168,15 @@ test("hunger only costs you on a bulk", () => {
   assert.ok(bulking.actions.some((a) => a.id === "hungry-bulk"));
 });
 
-test("the weekly view does not tell you to log today's sleep", () => {
-  const args = input({ volume: [], stalled: [] });
-  const week = coachBrief({ ...args, horizon: "week" });
-  assert.ok(!week.actions.some((a) => a.id === "log-sleep"));
-  const today = coachBrief({ ...args, horizon: "today" });
-  assert.ok(today.actions.some((a) => a.id === "log-sleep"));
+test("the brief never spends a slot telling you to log something", () => {
+  // Log the gap sits directly under this card on Home and fills those in a
+  // tap. A brief that says "log your sleep" has pushed a real finding off a
+  // three-item list to duplicate the card below it.
+  const args = input({ volume: [], stalled: [], nutrition: {}, history: enoughDays().history });
+  for (const horizon of ["today", "week"] as const) {
+    const b = coachBrief({ ...args, horizon });
+    assert.ok(!b.actions.some((a) => /^log-/.test(a.id)), `${horizon} stayed off logging`);
+  }
 });
 
 test("a habit added midweek is not reported as failing", () => {

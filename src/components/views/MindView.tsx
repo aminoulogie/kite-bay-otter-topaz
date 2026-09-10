@@ -8,6 +8,7 @@ import { SwipeRow } from "@/components/SwipeRow";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { dueLabel, dueQueue, markReviewed, nextUp, stageLabel } from "@/lib/review-queue";
 import type { MindEntry } from "@/lib/types";
 
 /**
@@ -91,6 +92,8 @@ export function MindView() {
 
   return (
     <div className="space-y-3 pb-4">
+      <ReviewQueue />
+
       <Card>
         <CardTitle>This week</CardTitle>
         <div className="flex items-end gap-3">
@@ -188,5 +191,85 @@ export function MindView() {
         Swipe an entry left to delete it.
       </p>
     </div>
+  );
+}
+
+/**
+ * Coming back to what you wrote down.
+ *
+ * The tab already insists on a takeaway for an article. That was half the job:
+ * a takeaway written once and never read again is the same as not writing it,
+ * and the log becomes a record of things you have forgotten, kept in enough
+ * detail to prove you once knew them.
+ *
+ * Three passes at two days, a week and a month, and then the entry graduates
+ * and never comes back. The schedule lives in lib/review-queue.ts; this shows
+ * one card at a time, because a list of forty is a list nobody opens twice.
+ */
+function ReviewQueue() {
+  const mind = useSoma((s) => s.mind);
+  const updateMind = useSoma((s) => s.updateMind);
+  const today = getLocalDateKey(new Date());
+
+  const queue = useMemo(() => dueQueue(mind, today), [mind, today]);
+  const upcoming = useMemo(() => (queue.length ? null : nextUp(mind, today)), [mind, today, queue.length]);
+  const [revealed, setRevealed] = useState(false);
+
+  const item = queue[0];
+  if (!item && !upcoming) return null;
+
+  return (
+    <Card>
+      <CardTitle>
+        {item ? `Review · ${queue.length} due` : "Nothing due"}
+      </CardTitle>
+
+      {!item ? (
+        <p className="text-xs leading-snug text-faint">
+          Next takeaway comes back {dueLabel(upcoming!)} — {upcoming!.entry.title}.
+        </p>
+      ) : (
+        <>
+          <div className="text-sm font-bold leading-snug">{item.entry.title}</div>
+          <div className="mt-0.5 text-[0.65rem] text-faint">
+            {item.entry.kind} · logged {item.entry.date} · {stageLabel(item.stage)} · {dueLabel(item)}
+          </div>
+
+          {/* Hidden until asked for. Reading the answer off the screen is not
+              recall, and a queue that shows you the takeaway with the title is
+              a list of things you have seen, not things you know. */}
+          {revealed ? (
+            <p className="mt-2 rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs leading-snug">
+              {item.entry.takeaway}
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setRevealed(true)}
+              className="mt-2 w-full rounded-xl border border-border bg-surface-2 py-2.5 text-xs font-bold text-muted"
+            >
+              What did you take from it?
+            </button>
+          )}
+
+          {revealed && (
+            <Button
+              variant="primary"
+              className="mt-2 w-full"
+              onClick={() => {
+                const patch = markReviewed(item.entry, today);
+                if (patch) updateMind(item.entry.id, patch);
+                setRevealed(false);
+                toast.success(
+                  item.stage + 1 >= 3 ? "Finished with that one" : "Back again later",
+                );
+              }}
+            >
+              {item.stage + 1 >= 3 ? "Done with it" : "Got it"}
+            </Button>
+          )}
+        </>
+      )}
+    </Card>
   );
 }

@@ -742,6 +742,18 @@ export function SettingsView() {
           <span className="text-muted">Data</span>
           <span className="font-bold">on this device only</span>
         </div>
+        {/* Stated rather than left as a mystery. An Apple Watch app is a
+            separate native target with its own build and its own signing, and
+            this app is sideloaded unsigned — so it is not "coming soon", it is
+            not started. Saying so beats a settings toggle that does nothing. */}
+        <div className="mt-1 flex items-center justify-between text-xs">
+          <span className="text-muted">Apple Watch</span>
+          <span className="font-bold text-faint">not built — separate app target</span>
+        </div>
+        <div className="mt-1 flex items-center justify-between text-xs">
+          <span className="text-muted">Apple Health</span>
+          <span className="font-bold text-faint">not connected</span>
+        </div>
       </Card>
 
       {programsOpen && (

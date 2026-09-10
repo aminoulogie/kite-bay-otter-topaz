@@ -267,18 +267,10 @@ function rules(input: BriefInput): Candidate[] {
     });
   }
 
-  // --- Today's gaps, but only the ones that are still fixable today.
-  const todayN = input.nutrition[input.today];
-  if (todayN?.sleep?.hours == null) {
-    out.push({
-      id: "log-sleep",
-      scope: "today",
-      weight: 44,
-      text: "Log last night's sleep",
-      why: "Nothing recorded for today, and readiness reads it.",
-      tab: "body",
-    });
-  }
+  // Deliberately NO "log today's sleep" rule. The Log the gap card sits
+  // directly under this one on Home and fills that gap in a tap; spending a
+  // slot on a job the next card does, and does better, would push a real
+  // finding off the list.
 
   // --- A habit that has quietly stopped. Needs a full week of history so a
   //     habit added on Friday is not reported as failing.

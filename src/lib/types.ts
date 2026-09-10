@@ -355,4 +355,12 @@ export interface MindEntry {
    * a line is one you skimmed, and logging it as "read" is lying to yourself.
    */
   takeaway?: string;
+  /**
+   * Dates the takeaway was reviewed, oldest first.
+   *
+   * Spaced repetition state, kept on the entry rather than in a side store so
+   * it rides the existing backup and cannot drift away from what it describes.
+   * Absent means never reviewed — see lib/review-queue.ts.
+   */
+  reviews?: string[];
 }

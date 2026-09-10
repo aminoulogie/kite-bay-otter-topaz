@@ -20,6 +20,7 @@ import { composeLibrary, searchFoods } from "@/lib/foods";
 import { useSoma } from "@/lib/store";
 import { useLongPressMove } from "@/lib/use-long-press-move";
 import { SwipeRow } from "@/components/SwipeRow";
+import { PlatePhoto } from "@/components/PlatePhoto";
 import { QuickAddSheet } from "@/components/QuickAddSheet";
 import { lastMealDate, mealItems, recentFoods } from "@/lib/food-recents";
 import { HUNGER_LABEL, hungerNote, hungerOn, type HungerEntry } from "@/lib/hunger";
@@ -257,6 +258,8 @@ export function NutritionView() {
           </Button>
         </div>
       </Card>
+
+      <PlatePhoto date={activeDate} />
 
       <HungerCard
         entries={hungerOn(hunger, activeDate)}
