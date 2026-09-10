@@ -76,24 +76,71 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     [],
   );
 
+  /**
+   * Ask for the camera FIRST, before anything that awaits.
+   *
+   * This order is not a style choice. Safari grants getUserMedia only inside a
+   * user gesture, and a gesture does not survive a long await — loading the
+   * vision model fetches eleven megabytes, so by the time it resolved the tap
+   * had expired and the permission prompt never appeared AT ALL. Not a denial,
+   * not an error: silence. The camera simply never opened and the only clue
+   * was a status line saying it could not.
+   *
+   * So the request goes out synchronously with the tap, and the model loads
+   * behind the preview afterwards. That also happens to be the better screen:
+   * the picture appears immediately instead of after a blank ten seconds.
+   */
   async function startCam() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus("This browser has no camera access. It needs a secure (https) page.");
+      return;
+    }
+
+    // Started before any await, so the tap is still what is asking.
+    const pending = navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 2560 } },
+      audio: false,
+    });
+    setStatus("Allow the camera when asked…");
+
+    let stream: MediaStream;
     try {
-      setStatus("Loading the vision model…");
-      await loadVision();
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 2560 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (!videoRef.current) return;
-      videoRef.current.srcObject = stream;
+      stream = await pending;
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : "";
+      setStatus(
+        name === "NotAllowedError"
+          ? "Camera permission was refused. Allow it in your browser's site settings, then tap Camera again."
+          : name === "NotFoundError"
+            ? "No camera found on this device."
+            : err instanceof Error
+              ? err.message
+              : "Could not open the camera.",
+      );
+      return;
+    }
+
+    // Only now is it safe to drop the previous stream — doing it before the
+    // new one arrives would leave a black preview if the request failed.
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = stream;
+    if (!videoRef.current) return;
+    videoRef.current.srcObject = stream;
+    try {
       await videoRef.current.play();
-      setLive(true);
+    } catch {
+      // Autoplay refusal on a muted inline video is rare and not fatal.
+    }
+    setLive(true);
+
+    // The model loads behind a live preview rather than in front of a blank one.
+    setStatus("Camera on. Loading the face model…");
+    try {
+      await loadVision();
       setStatus(s.coach);
       loop();
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Could not open the camera.");
+      setStatus(err instanceof Error ? err.message : "Could not load the face model.");
     }
   }
 
@@ -205,6 +252,14 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   async function capture() {
     if (!live) {
       setStatus("Open the camera first.");
+      return;
+    }
+    // The preview can now be live while the model is still downloading, so a
+    // tap during that window has to wait rather than fail.
+    try {
+      await loadVision();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Could not load the face model.");
       return;
     }
     setBusy(true);
