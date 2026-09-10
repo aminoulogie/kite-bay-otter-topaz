@@ -23,6 +23,7 @@ import { SwipeRow } from "@/components/SwipeRow";
 import { PlatePhoto } from "@/components/PlatePhoto";
 import { MacroStrip } from "@/components/MacroStrip";
 import { rebalance } from "@/lib/rebalance";
+import { suggestDay } from "@/lib/meal-suggest";
 import { QuickAddSheet } from "@/components/QuickAddSheet";
 import { lastMealDate, mealItems, recentFoods } from "@/lib/food-recents";
 import { HUNGER_LABEL, hungerNote, hungerOn, type HungerEntry } from "@/lib/hunger";
@@ -280,6 +281,8 @@ export function NutritionView() {
           </p>
         )}
       </Card>
+
+      <SuggestFromPantry meal={meal} />
 
       <PlanCard
         planned={planned}
@@ -1064,6 +1067,81 @@ function PlanCard({
             ? `; the ${advice.add.grams}g of ${advice.add.name.toLowerCase()} puts back ${advice.add.gives.p}g protein for ${advice.add.gives.f}g fat.`
             : "."}
         </p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * "Here is today, out of what you already have."
+ *
+ * The question you actually have at 7am with the fridge open. It builds a plan
+ * rather than logging one — nothing counts until you have swiped each row to
+ * say you ate it — and every line comes from stock, because a plan that opens
+ * with 200g of salmon you would have to go and buy is a shopping list
+ * pretending to be breakfast. The fitting is in lib/meal-suggest.ts.
+ */
+function SuggestFromPantry({ meal }: { meal: string }) {
+  const pantry = useSoma((s) => s.pantry);
+  const customFoods = useSoma((s) => s.customFoods);
+  const nutrition = useSoma((s) => s.nutrition);
+  const activeDate = useSoma((s) => s.activeDate);
+  const planFood = useSoma((s) => s.planFood);
+
+  const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
+  const day = nutrition[activeDate];
+  const goals = day?.goals ?? DEFAULT_GOALS;
+
+  const suggestion = useMemo(
+    () => suggestDay(pantry, library, goals, day?.items ?? [], meal),
+    [pantry, library, goals, day?.items, meal],
+  );
+
+  // Nothing tracked at all: this card would be a permanent advert for a
+  // feature the user has not set up, on the screen they use most.
+  if (!pantry.length) return null;
+
+  const planned = day?.planned ?? [];
+  const already = planned.length > 0;
+
+  return (
+    <Card>
+      <CardTitle>From the cupboard</CardTitle>
+      <p className="mb-2 text-[0.72rem] leading-snug text-muted">{suggestion.note}</p>
+
+      {suggestion.items.length > 0 && (
+        <div className="mb-2 space-y-1">
+          {suggestion.items.map((i) => (
+            <div key={i.name} className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="min-w-0 truncate text-muted">{i.name}</span>
+              <span className="shrink-0 tabular font-bold">
+                {i.serving}
+                {i.unit}
+                <span className="ml-1.5 text-faint">{i.cals} kcal</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {suggestion.skipped.length > 0 && (
+        <p className="mb-2 text-[0.65rem] leading-snug text-faint">
+          Not used: {suggestion.skipped.slice(0, 4).join(", ")} — no nutrition figures
+          behind {suggestion.skipped.length === 1 ? "it" : "them"} yet, and this does not guess.
+        </p>
+      )}
+
+      {suggestion.items.length > 0 && (
+        <button
+          type="button"
+          onClick={() => {
+            for (const item of suggestion.items) planFood(item, activeDate);
+            toast.success(`${suggestion.items.length} items on the plan`);
+          }}
+          className="w-full rounded-xl bg-accent px-3 py-2.5 text-sm font-extrabold text-accent-ink"
+        >
+          {already ? "Add to the plan" : "Put it on the plan"}
+        </button>
       )}
     </Card>
   );

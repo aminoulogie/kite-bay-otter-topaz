@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { GroceryCard, PantryCard } from "@/components/GroceryCard";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import {
@@ -175,6 +176,10 @@ export function MoneyView() {
           </p>
         )}
       </Card>
+
+      <GroceryCard money={money} />
+
+      <PantryCard />
 
       <Card>
         <CardTitle>Log</CardTitle>

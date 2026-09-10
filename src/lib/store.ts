@@ -38,6 +38,9 @@ import { resolveSplitName } from "./split-match";
 import { HOME_TAB } from "./tab-order";
 import type { ScanRecord } from "./aether/scan-store";
 import type { HungerEntry } from "./hunger";
+import {
+  deduct, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
+} from "./pantry";
 import { deloadSetCount } from "./autoregulate";
 import { lastSetAt, lastTimeFor } from "./last-time";
 
@@ -118,6 +121,21 @@ export interface SomaStore {
   ensureDay: (key?: string) => void;
   patchDay: (key: string, patch: Partial<NutritionDay>) => void;
   addFood: (item: FoodItem) => void;
+  /** What is in the house, and the list of what is not. */
+  pantry: PantryItem[];
+  grocery: GroceryLine[];
+  addStock: (item: Omit<PantryItem, "id">) => void;
+  updateStock: (id: string, patch: Partial<PantryItem>) => void;
+  removeStock: (id: string) => void;
+  addGroceryLine: (line: Omit<GroceryLine, "id">) => void;
+  updateGroceryLine: (id: string, patch: Partial<GroceryLine>) => void;
+  removeGroceryLine: (id: string) => void;
+  /** Take a confirmed portion out of stock, raising a line if it runs low. */
+  takeFromPantry: (item: FoodItem, date?: string) => void;
+  /** Pull everything that has fallen low onto the list. */
+  raiseLowStock: () => number;
+  /** Put the shopping away: restock, remember prices, file one expense. */
+  buyGroceries: (category?: string) => number;
   /** Put food on the plan for a date without counting it. */
   planFood: (item: FoodItem, date?: string) => void;
   /** Move a planned item into the day's real intake. */
@@ -265,6 +283,8 @@ export const useSoma = create<SomaStore>()(
       scans: [],
       ledger: [],
       mind: [],
+      pantry: [],
+      grocery: [],
       programs: [],
       activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
@@ -710,6 +730,8 @@ export const useSoma = create<SomaStore>()(
         get().ensureDay(k);
         const day = get().nutrition[k]!;
         get().patchDay(k, { items: [...day.items, item] });
+        // Eaten, so it leaves the cupboard. Planning does not — see planFood.
+        get().takeFromPantry(item, k);
 
         // Count the logging. `usageCount` is read by the search tie-break and
         // by the pre-workout picker, and nothing had ever incremented it — so
@@ -759,12 +781,15 @@ export const useSoma = create<SomaStore>()(
           items: [...day.items, item],
           planned: day.planned!.filter((_, i) => i !== idx),
         });
+        get().takeFromPantry(item, k);
       },
       confirmAllPlanned: (date) => {
         const k = date ?? get().activeDate;
         const day = get().nutrition[k];
         if (!day?.planned?.length) return;
-        get().patchDay(k, { items: [...day.items, ...day.planned], planned: [] });
+        const eaten = day.planned;
+        get().patchDay(k, { items: [...day.items, ...eaten], planned: [] });
+        for (const item of eaten) get().takeFromPantry(item, k);
       },
       removePlanned: (idx, date) => {
         const k = date ?? get().activeDate;
@@ -772,6 +797,79 @@ export const useSoma = create<SomaStore>()(
         if (!day?.planned) return;
         get().patchDay(k, { planned: day.planned.filter((_, i) => i !== idx) });
       },
+      /**
+       * Stock, the list, and the one expense at the end of it.
+       *
+       * The whole loop in six actions. Nothing here guesses a price: a price
+       * exists because it was typed after a shop, and it is remembered so the
+       * next list can be costed. An app that guesses what chicken costs and
+       * files the guess as an expense is worse than one that asks.
+       */
+      addStock: (item) => set({ pantry: [...get().pantry, { ...item, id: newId() }] }),
+      updateStock: (id, patch) =>
+        set({ pantry: get().pantry.map((p) => (p.id === id ? { ...p, ...patch } : p)) }),
+      removeStock: (id) => set({ pantry: get().pantry.filter((p) => p.id !== id) }),
+
+      addGroceryLine: (line) => set({ grocery: [...get().grocery, { ...line, id: newId() }] }),
+      updateGroceryLine: (id, patch) =>
+        set({ grocery: get().grocery.map((l) => (l.id === id ? { ...l, ...patch } : l)) }),
+      removeGroceryLine: (id) => set({ grocery: get().grocery.filter((l) => l.id !== id) }),
+
+      takeFromPantry: (item, date) => {
+        const r = deduct(
+          get().pantry,
+          item.name,
+          Number(item.serving) || 0,
+          String(item.unit ?? ""),
+          date,
+        );
+        if (!r.deducted) return;
+        set({ pantry: r.pantry });
+        // Only on the CROSSING. An already-empty cupboard raising a fresh line
+        // at every meal is how a grocery list becomes noise.
+        if (r.wentLow) set({ grocery: withLowStock(get().grocery, r.pantry, newId) });
+      },
+
+      raiseLowStock: () => {
+        const before = get().grocery.length;
+        const next = withLowStock(get().grocery, get().pantry, newId);
+        if (next !== get().grocery) set({ grocery: next });
+        return next.length - before;
+      },
+
+      buyGroceries: (category = "Groceries") => {
+        const today = getLocalDateKey(new Date());
+        const { pantry, remaining, bought } = restock(
+          get().pantry,
+          get().grocery,
+          newId,
+          today,
+        );
+        if (!bought.length) return 0;
+        const { total } = listCost(bought);
+        set({ pantry, grocery: remaining });
+        // One entry for the shop rather than one per item: that is how the
+        // money actually left, and a ledger with fourteen rows for one trip is
+        // a ledger nobody reads. Unpriced lines contribute nothing rather than
+        // an estimate.
+        if (total > 0) {
+          set({
+            ledger: [
+              ...get().ledger,
+              {
+                id: newId(),
+                date: today,
+                kind: "spend" as const,
+                amount: total,
+                category,
+                note: `${bought.length} item${bought.length === 1 ? "" : "s"}`,
+              },
+            ],
+          });
+        }
+        return total;
+      },
+
       restorePlanned: (idx, item, date) => {
         const k = date ?? get().activeDate;
         const day = get().nutrition[k];
@@ -1516,6 +1614,8 @@ export const useSoma = create<SomaStore>()(
             scans: get().scans,
             ledger: get().ledger,
             mind: get().mind,
+            pantry: get().pantry,
+            grocery: get().grocery,
             live: get().live,
             activeDate: get().activeDate,
             sideStores: collectSideStores(),
@@ -1558,6 +1658,8 @@ export const useSoma = create<SomaStore>()(
               scans: data.scans || [],
               ledger: data.ledger || [],
               mind: data.mind || [],
+              pantry: data.pantry || [],
+              grocery: data.grocery || [],
               seeded: true,
               // A backup from before these were exported has neither, and the
               // device keeps whatever it is on rather than being emptied.
@@ -1622,6 +1724,10 @@ export const useSoma = create<SomaStore>()(
             scans: mergeById(data.scans || [], cur.scans),
             ledger: mergeById(data.ledger || [], cur.ledger),
             mind: mergeById(data.mind || [], cur.mind),
+            // The device wins on both: stock on this phone is what is actually
+            // in the cupboard now, and a month-old snapshot of it is not.
+            pantry: mergeById(data.pantry || [], cur.pantry),
+            grocery: mergeById(data.grocery || [], cur.grocery),
             seeded: true,
           });
           // `live` and `activeDate` are deliberately not merged: the device is
@@ -1678,6 +1784,8 @@ export const useSoma = create<SomaStore>()(
         scans: s.scans,
         ledger: s.ledger,
         mind: s.mind,
+        pantry: s.pantry,
+        grocery: s.grocery,
         live: s.live,
         activeDate: s.activeDate,
       }),
