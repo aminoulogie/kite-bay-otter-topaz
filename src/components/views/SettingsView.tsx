@@ -149,6 +149,36 @@ export function SettingsView() {
   return (
     <div className="space-y-3 pb-4">
       <Card>
+        <CardTitle>Phase</CardTitle>
+        <p className="mb-2 text-[0.7rem] leading-snug text-faint">
+          Which way you are eating. It decides one thing: whether logging hunger costs you
+          points. On a cut it never does — being hungry is the deficit working, and docking
+          you for it would make the score reward eating more.
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            ["bulk", "Bulk"],
+            ["maintain", "Maintain"],
+            ["cut", "Cut"],
+          ] as const).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => patchSettings({ phase: id })}
+              className={cn(
+                "h-11 rounded-xl border text-sm font-bold",
+                (settings.phase ?? "maintain") === id
+                  ? "border-accent bg-accent text-accent-ink"
+                  : "border-border bg-surface-2",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
         <CardTitle>Appearance</CardTitle>
         <div className="mb-2 text-xs font-bold text-muted">Theme</div>
         <div className="mb-4 grid grid-cols-3 gap-2">

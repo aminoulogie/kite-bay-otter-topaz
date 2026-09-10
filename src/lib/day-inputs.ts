@@ -2,6 +2,7 @@ import { checkPreWorkout, preTargets, PRE_WINDOWS } from "./preworkout.ts";
 import { totalWaterMl } from "./hydration.ts";
 import type { DayInputs } from "./day-score.ts";
 import type { HistorySession, NutritionDay } from "./types.ts";
+import { hungerOn, hungerPenalty, type HungerEntry, type Phase } from "./hunger.ts";
 
 /**
  * Everything scoreDay needs for one date, assembled in exactly one place.
@@ -57,10 +58,13 @@ export interface BuildDayInputsArgs {
   isRestDay?: boolean;
   /** Latest known bodyweight, for scaling the pre-workout target. */
   bodyweightKg?: number;
+  /** Hunger logged on this day, and how you are eating. */
+  hunger?: HungerEntry[];
+  phase?: Phase;
 }
 
 export function buildDayInputs({
-  date, session, previous, nutrition, isRestDay, bodyweightKg = 0,
+  date, session, previous, nutrition, isRestDay, bodyweightKg = 0, hunger, phase,
 }: BuildDayInputsArgs): DayInputs {
   const day = nutrition[date];
   const logged = (day?.items?.length ?? 0) > 0;
@@ -76,6 +80,10 @@ export function buildDayInputs({
     sleepHours: day?.sleep?.hours ?? null,
     creatineG: day?.creatine ?? null,
     preworkout: isRestDay ? null : preworkoutShare(day, bodyweightKg),
+    // Computed here so every screen reading a day score gets the same
+    // deduction — the calendar square and the day card disagreeing about a
+    // score is a bug this file already exists to prevent.
+    hungerPenalty: hunger ? hungerPenalty(hungerOn(hunger, date), phase ?? "maintain") : 0,
   };
 }
 

@@ -54,6 +54,11 @@ export interface DayInputs {
   calories?: { kcal: number; target: number } | null;
   sleepHours?: number | null;
   creatineG?: number | null;
+  /**
+   * Points to take off for hunger, already phase-adjusted. Zero on a cut, where
+   * being hungry is the deficit doing its job rather than a failure.
+   */
+  hungerPenalty?: number;
   /** A rest day is not a missed workout, so the workout share is not counted. */
   isRestDay?: boolean;
   /**
@@ -232,8 +237,19 @@ export function scoreDay(inp: DayInputs): DayScore {
   const earned = assessed.reduce((t, l) => t + (l.earned ?? 0), 0);
   const tracked = assessed.reduce((t, l) => t + l.possible, 0);
 
+  /**
+   * Hunger comes off the finished percentage rather than being a line of its
+   * own.
+   *
+   * A line would have to carry a `possible`, which would grow the denominator
+   * and mean every day WITHOUT hunger logged scored differently from before —
+   * silently rewriting months of history. Taking it off the top leaves an
+   * unhungry day exactly where it was and only moves the ones that earned it.
+   */
+  const penalty = inp.hungerPenalty ?? 0;
+
   return {
-    score: tracked ? Math.round((earned / tracked) * 100) : 0,
+    score: tracked ? Math.max(0, Math.round((earned / tracked) * 100 - penalty)) : 0,
     earned: Math.round(earned * 10) / 10,
     tracked,
     lines,

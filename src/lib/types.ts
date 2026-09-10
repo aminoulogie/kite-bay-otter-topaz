@@ -224,6 +224,11 @@ export interface Settings {
   monthlyBudget?: number;
   /** Spending categories. Unset means the shipped defaults. */
   spendCategories?: string[];
+  /**
+   * Which way you are eating. Decides whether hunger costs points: on a cut it
+   * is the deficit working, on a bulk it means the surplus did not happen.
+   */
+  phase?: "bulk" | "cut" | "maintain";
   barWeight: number;
   restDefault: number;
   autoRest: boolean;

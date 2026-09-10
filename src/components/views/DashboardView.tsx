@@ -32,6 +32,8 @@ export function DashboardView() {
   const live = useSoma((s) => s.live);
   const ledger = useSoma((s) => s.ledger);
   const mind = useSoma((s) => s.mind);
+  const hunger = useSoma((s) => s.hunger);
+  const settings = useSoma((s) => s.settings);
 
   const today = getLocalDateKey(new Date());
   const date = activeDate || today;
@@ -44,9 +46,11 @@ export function DashboardView() {
         previous: previousSameSplit(history, date),
         nutrition,
         bodyweightKg: bodyweightOn(nutrition, date),
+        hunger,
+        phase: settings.phase,
       }),
     );
-  }, [history, nutrition, date]);
+  }, [history, nutrition, date, hunger, settings.phase]);
 
   /**
    * The five things worth comparing, each as a date-keyed series.

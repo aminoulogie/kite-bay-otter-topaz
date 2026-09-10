@@ -67,6 +67,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   const nutrition = useSoma((s) => s.nutrition);
   const ledger = useSoma((s) => s.ledger);
   const mind = useSoma((s) => s.mind);
+  const hunger = useSoma((s) => s.hunger);
   const settings = useSoma((s) => s.settings);
   const program = useActiveProgram();
 
@@ -157,6 +158,8 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           // every programmed rest day scored as a failure to train.
           isRestDay: !session && (projected.isRest || isRestSplit(projected.split)),
           bodyweightKg: bodyweightOn(nutrition, date),
+        hunger,
+        phase: settings.phase,
         }),
       );
       // Nothing tracked at all is not a zero-scoring day, it is an unscored one.
@@ -551,6 +554,11 @@ function DayCard({
 }) {
   const [photo, setPhoto] = useState<string | null>(null);
   const renameSession = useSoma((s) => s.renameSession);
+  // Read here as well as in the grid above. Both feed the SAME buildDayInputs,
+  // which is the point: the card and the square disagreeing about one day is
+  // the bug that file was written to end.
+  const hunger = useSoma((s) => s.hunger);
+  const settings = useSoma((s) => s.settings);
   const [renaming, setRenaming] = useState(false);
   const [splitDraft, setSplitDraft] = useState("");
 
@@ -592,9 +600,11 @@ function DayCard({
           nutrition,
           isRestDay,
           bodyweightKg: bodyweightOn(nutrition, date),
+          hunger,
+          phase: settings.phase,
         }),
       ),
-    [date, session, previous, nutrition, isRestDay],
+    [date, session, previous, nutrition, isRestDay, hunger, settings.phase],
   );
 
   return (

@@ -37,12 +37,24 @@ import { guessMuscles } from "./muscle-guess";
 import { resolveSplitName } from "./split-match";
 import { HOME_TAB } from "./tab-order";
 import type { ScanRecord } from "./aether/scan-store";
+import type { HungerEntry } from "./hunger";
 
-function emptyDay(weight = 78): NutritionDay {
+/**
+ * A blank day.
+ *
+ * Carries NO bodyweight. It used to be stamped with the last weight on record,
+ * so a day you merely looked at claimed a measurement you never took — and
+ * since the weight chart and the bodyweight projection both scan for days that
+ * have one, browsing back through the calendar quietly invented a flat line of
+ * data points. A day you did not weigh yourself has no weight.
+ *
+ * Goals are targets rather than logged data, so they stay: without them the
+ * day score has nothing to score against.
+ */
+function emptyDay(): NutritionDay {
   return {
     goals: { ...DEFAULT_GOALS },
     water: 0,
-    bodyWeight: weight,
     creatine: 0,
     items: [],
   };
@@ -173,6 +185,11 @@ export interface SomaStore {
    * construction — the rule the side-stores work established after four things
    * had already been forgotten that way.
    */
+  /** Times you were hungry, which on a surplus is a fact worth keeping. */
+  hunger: HungerEntry[];
+  logHunger: (level: 1 | 2 | 3, note?: string) => void;
+  removeHunger: (at: string) => void;
+  restoreHunger: (index: number, entry: HungerEntry) => void;
   scans: ScanRecord[];
   addScan: (scan: ScanRecord) => void;
   removeScan: (id: string) => void;
@@ -234,6 +251,7 @@ export const useSoma = create<SomaStore>()(
       customFoods: [],
       logOverrides: {},
       dayNotes: {},
+      hunger: [],
       scans: [],
       ledger: [],
       mind: [],
@@ -342,8 +360,35 @@ export const useSoma = create<SomaStore>()(
         }
       },
 
+      /**
+       * Put the demo log in, once, on a genuinely empty install.
+       *
+       * Refuses to run when ANY real data is present, not only when the seeded
+       * flag is set. The flag is one boolean in persisted storage: lose it to a
+       * partial clear, a restore from a file written before it existed, or a
+       * change to what gets persisted, and this would replace every session,
+       * every logged day and every habit with demo content. It sets rather
+       * than merges, so there would be no way back.
+       *
+       * A flag saying "already seeded" and data saying "there is something
+       * here" should both be able to stop it. Only one of them could.
+       */
       ensureSeed: () => {
         if (get().seeded) return;
+        const cur = get();
+        const hasRealData =
+          Object.keys(cur.history).length > 0 ||
+          Object.keys(cur.nutrition).length > 0 ||
+          cur.habits.length > 0 ||
+          cur.customFoods.length > 0 ||
+          cur.scans.length > 0 ||
+          cur.hunger.length > 0 ||
+          cur.ledger.length > 0;
+        if (hasRealData) {
+          // Mark it so the check is not repeated every boot, but change nothing.
+          set({ seeded: true });
+          return;
+        }
         const hist = seedHistory();
         const nutrition = seedNutrition();
         const today = getLocalDateKey(new Date());
@@ -617,6 +662,18 @@ export const useSoma = create<SomaStore>()(
       setActiveDate: (d) => set({ activeDate: d }),
       patchSettings: (p) => set({ settings: { ...get().settings, ...p } }),
 
+      /**
+       * Make sure a day exists so something can be written into it.
+       *
+       * Call this before a WRITE, never merely to look at a date. It creates a
+       * record, and a record is what the calendar, the backup and every chart
+       * count as "this day happened" — so calling it on view turned browsing
+       * the calendar into logging.
+       *
+       * The protein target is still derived from the last known weight, since
+       * that is a target and not a claim about the day. The day itself no
+       * longer inherits that weight.
+       */
       ensureDay: (key) => {
         const k = key || get().activeDate;
         const nutrition = { ...get().nutrition };
@@ -628,7 +685,7 @@ export const useSoma = create<SomaStore>()(
           // Applied last so an explicit target always wins, including over the
           // bodyweight-derived protein figure.
           Object.assign(goals, s.customGoals ?? {});
-          nutrition[k] = emptyDay(w);
+          nutrition[k] = emptyDay();
           nutrition[k]!.goals = goals;
           set({ nutrition });
         }
@@ -1324,6 +1381,22 @@ export const useSoma = create<SomaStore>()(
         else delete next[date];
         set({ dayNotes: next });
       },
+      logHunger: (level, note) => {
+        set({
+          hunger: [
+            ...get().hunger,
+            // Stamped with the browsed date, not today: backfilling yesterday
+            // has to land on yesterday like every other log in the app.
+            { date: get().activeDate, at: new Date().toISOString(), level, note },
+          ],
+        });
+      },
+      removeHunger: (at) => set({ hunger: get().hunger.filter((h) => h.at !== at) }),
+      restoreHunger: (index, entry) => {
+        const next = [...get().hunger];
+        next.splice(Math.max(0, Math.min(index, next.length)), 0, entry);
+        set({ hunger: next });
+      },
       addScan: (scan) => set({ scans: [...get().scans, scan] }),
       removeScan: (id) => set({ scans: get().scans.filter((x) => x.id !== id) }),
       restoreScan: (index, scan) => {
@@ -1376,6 +1449,7 @@ export const useSoma = create<SomaStore>()(
             customFoods: get().customFoods,
             logOverrides: get().logOverrides,
             dayNotes: get().dayNotes,
+            hunger: get().hunger,
             scans: get().scans,
             ledger: get().ledger,
             mind: get().mind,
@@ -1417,6 +1491,7 @@ export const useSoma = create<SomaStore>()(
               customFoods: data.customFoods || [],
               logOverrides: data.logOverrides || {},
               dayNotes: data.dayNotes || {},
+              hunger: data.hunger || [],
               scans: data.scans || [],
               ledger: data.ledger || [],
               mind: data.mind || [],
@@ -1476,6 +1551,11 @@ export const useSoma = create<SomaStore>()(
             // rest of the restore follows.
             // Incoming notes fill gaps; a note on the device is the newer edit.
             dayNotes: { ...(data.dayNotes || {}), ...cur.dayNotes },
+            // Keyed on the timestamp, which is unique per entry.
+            hunger: (() => {
+              const seen = new Set(cur.hunger.map((h) => h.at));
+              return [...cur.hunger, ...(data.hunger || []).filter((h: HungerEntry) => !seen.has(h.at))];
+            })(),
             scans: mergeById(data.scans || [], cur.scans),
             ledger: mergeById(data.ledger || [], cur.ledger),
             mind: mergeById(data.mind || [], cur.mind),
@@ -1531,6 +1611,7 @@ export const useSoma = create<SomaStore>()(
         customFoods: s.customFoods,
         logOverrides: s.logOverrides,
         dayNotes: s.dayNotes,
+        hunger: s.hunger,
         scans: s.scans,
         ledger: s.ledger,
         mind: s.mind,

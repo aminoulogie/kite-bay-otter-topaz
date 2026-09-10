@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, ScanLine, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { PortionSheet } from "@/components/PortionSheet";
@@ -22,6 +22,7 @@ import { useLongPressMove } from "@/lib/use-long-press-move";
 import { SwipeRow } from "@/components/SwipeRow";
 import { QuickAddSheet } from "@/components/QuickAddSheet";
 import { lastMealDate, mealItems, recentFoods } from "@/lib/food-recents";
+import { HUNGER_LABEL, hungerNote, hungerOn, type HungerEntry } from "@/lib/hunger";
 import { tapLight, tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import type { FoodItem } from "@/lib/types";
@@ -35,10 +36,13 @@ export function NutritionView() {
   const history = useSoma((s) => s.history);
   const activeDate = useSoma((s) => s.activeDate);
   const customFoods = useSoma((s) => s.customFoods);
-  const ensureDay = useSoma((s) => s.ensureDay);
   const addFood = useSoma((s) => s.addFood);
   const removeFood = useSoma((s) => s.removeFood);
   const restoreFood = useSoma((s) => s.restoreFood);
+  const hunger = useSoma((s) => s.hunger);
+  const logHunger = useSoma((s) => s.logHunger);
+  const removeHunger = useSoma((s) => s.removeHunger);
+  const restoreHunger = useSoma((s) => s.restoreHunger);
   const addWater = useSoma((s) => s.addWater);
   const setWater = useSoma((s) => s.setWater);
   const updateFood = useSoma((s) => s.updateFood);
@@ -75,9 +79,11 @@ export function NutritionView() {
     { item: FoodItem; meal: string; mode: "add" | "edit"; idx?: number } | null
   >(null);
 
-  useEffect(() => {
-    ensureDay(activeDate);
-  }, [activeDate, ensureDay]);
+  // Deliberately NOT ensuring the day here. Creating a record just because a
+  // date was looked at is what made browsing the calendar indistinguishable
+  // from logging: every day visited turned up in the backup, on the calendar,
+  // and — while empty days carried an inherited bodyweight — in the weight
+  // chart. The writes create the day; viewing does not.
 
   // Hold a logged food, drag it onto another meal card, let go.
   /** Only one row shows its Delete at a time, so a stray tap cannot hit a
@@ -251,6 +257,24 @@ export function NutritionView() {
           </Button>
         </div>
       </Card>
+
+      <HungerCard
+        entries={hungerOn(hunger, activeDate)}
+        phase={settings.phase ?? "maintain"}
+        onLog={(level) => {
+          logHunger(level);
+          toast.success(`${HUNGER_LABEL[level]} logged`);
+        }}
+        onRemove={(at) => {
+          const index = hunger.findIndex((h) => h.at === at);
+          const entry = hunger[index];
+          if (!entry) return;
+          removeHunger(at);
+          toast.success("Removed", {
+            action: { label: "Undo", onClick: () => restoreHunger(index, entry) },
+          });
+        }}
+      />
 
       <Card>
         <CardTitle>Add food</CardTitle>
@@ -657,6 +681,74 @@ function Macro({ label, used, goal, unit }: { label: string; used: number; goal:
  * the thing you want is the breakfast you had on the last day you had one —
  * which is often not yesterday, and is worth naming rather than assuming.
  */
+/**
+ * Log being hungry.
+ *
+ * Sits above the food list rather than buried in a menu, because it has to be
+ * reachable in the two seconds someone is actually hungry — a log that takes
+ * navigating to is one that gets filled in from memory hours later, if at all.
+ *
+ * The consequence is stated on the card. A number silently coming off the
+ * day's score is the kind of thing that makes a score feel arbitrary; saying
+ * why, and saying when it does NOT apply, is what keeps it trusted.
+ */
+function HungerCard({
+  entries, phase, onLog, onRemove,
+}: {
+  entries: HungerEntry[];
+  phase: "bulk" | "cut" | "maintain";
+  onLog: (level: 1 | 2 | 3) => void;
+  onRemove: (at: string) => void;
+}) {
+  return (
+    <Card>
+      <CardTitle>
+        <span>Hungry?</span>
+        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">{phase}</span>
+      </CardTitle>
+      <div className="mb-2 grid grid-cols-3 gap-2">
+        {([1, 2, 3] as const).map((level) => (
+          <button
+            key={level}
+            type="button"
+            onClick={() => onLog(level)}
+            className="flex min-h-12 flex-col items-center justify-center rounded-xl bg-surface-2 text-xs font-bold text-muted transition-colors active:bg-accent active:text-accent-ink"
+          >
+            {HUNGER_LABEL[level]}
+          </button>
+        ))}
+      </div>
+      <p
+        className={cn(
+          "text-[0.7rem] leading-snug",
+          entries.length && phase === "bulk" ? "text-warn" : "text-faint",
+        )}
+      >
+        {hungerNote(entries, phase)}
+      </p>
+      {entries.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {entries.map((h) => (
+            <button
+              key={h.at}
+              type="button"
+              onClick={() => onRemove(h.at)}
+              aria-label={`Remove ${HUNGER_LABEL[h.level]} logged at ${new Date(h.at).toLocaleTimeString()}`}
+              className="flex h-7 items-center gap-1.5 rounded-full bg-surface-2 px-2.5 text-[0.65rem] font-bold text-muted"
+            >
+              {HUNGER_LABEL[h.level]}
+              <span className="text-faint">
+                {new Date(h.at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <X className="size-3 text-faint" />
+            </button>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function RepeatMeal({ meal }: { meal: string }) {
   const nutrition = useSoma((s) => s.nutrition);
   const activeDate = useSoma((s) => s.activeDate);
