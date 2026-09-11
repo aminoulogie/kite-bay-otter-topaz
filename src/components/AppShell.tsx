@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, BrainCircuit, CalendarDays, Dumbbell, LayoutGrid, LineChart, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
+import { Activity, BrainCircuit, CalendarDays, Clock, Dumbbell, LayoutGrid, LineChart, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
@@ -23,6 +23,7 @@ import { DashboardView } from "@/components/views/DashboardView";
 import { MoneyView } from "@/components/views/MoneyView";
 import { MindView } from "@/components/views/MindView";
 import { LooksView } from "@/components/views/LooksView";
+import { TimeView } from "@/components/views/TimeView";
 
 /**
  * The dock, drawn in TAB_ORDER so it can never disagree with the direction a
@@ -37,6 +38,7 @@ const TAB_META: Record<TabId, { label: string; icon: typeof Dumbbell }> = {
   workout: { label: "Train", icon: Dumbbell },
   nutrition: { label: "Fuel", icon: Utensils },
   habits: { label: "Habits", icon: Target },
+  time: { label: "Time", icon: Clock },
   body: { label: "Body", icon: Activity },
   insights: { label: "Stats", icon: TrendingUp },
   estimates: { label: "Ahead", icon: LineChart },
@@ -265,6 +267,7 @@ export function AppShell() {
         {tab === "workout" && <WorkoutView />}
         {tab === "nutrition" && <NutritionView />}
         {tab === "habits" && <HabitsView />}
+        {tab === "time" && <TimeView />}
         {tab === "body" && <BodyView />}
         {tab === "insights" && <InsightsView />}
         {tab === "estimates" && <EstimatesView />}

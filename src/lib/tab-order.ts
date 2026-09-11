@@ -22,6 +22,7 @@ export const TAB_ORDER: TabId[] = [
   "workout",
   "nutrition",
   "habits",
+  "time",
   "body",
   "insights",
   "estimates",

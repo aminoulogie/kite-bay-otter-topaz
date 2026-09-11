@@ -16,7 +16,9 @@ export type TabId =
   | "body"
   | "insights"
   | "estimates"
-  | "settings";
+  | "settings"
+  // The day itself, as a ring.
+  | "time";
 
 export interface WorkoutSet {
   weight: number | "";

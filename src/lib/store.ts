@@ -43,6 +43,7 @@ import {
   deduct, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
 } from "./pantry";
 import { deloadSetCount } from "./autoregulate";
+import { defaultPlan, normalise, type TimeBlock } from "./day-plan";
 import { lastSetAt, lastTimeFor } from "./last-time";
 
 /**
@@ -122,6 +123,17 @@ export interface SomaStore {
   ensureDay: (key?: string) => void;
   patchDay: (key: string, patch: Partial<NutritionDay>) => void;
   addFood: (item: FoodItem) => void;
+  /**
+   * The day, as twenty-four hours of blocks, per date.
+   *
+   * A date with no entry falls back to `defaultPlan()` rather than being
+   * written on sight — the same rule nutrition learned the hard way. Browsing
+   * the calendar must not create a plan for every day you looked at.
+   */
+  dayPlans: Record<string, TimeBlock[]>;
+  planFor: (date?: string) => TimeBlock[];
+  setDayPlan: (date: string, blocks: TimeBlock[]) => void;
+  resetDayPlan: (date: string) => void;
   /** The short list of things to do. Nothing clever: a line and a box. */
   todos: TodoItem[];
   addTodo: (text: string) => void;
@@ -295,6 +307,7 @@ export const useSoma = create<SomaStore>()(
       pantry: [],
       grocery: [],
       todos: [],
+      dayPlans: {},
       programs: [],
       activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
@@ -815,6 +828,21 @@ export const useSoma = create<SomaStore>()(
        * next list can be costed. An app that guesses what chicken costs and
        * files the guess as an expense is worse than one that asks.
        */
+      planFor: (date) => {
+        const k = date ?? get().activeDate;
+        return get().dayPlans[k] ?? defaultPlan();
+      },
+      setDayPlan: (date, blocks) => {
+        // Normalised on the way in, so nothing downstream has to trust that
+        // whoever called this kept the day adding up to 24.
+        set({ dayPlans: { ...get().dayPlans, [date]: normalise(blocks).blocks } });
+      },
+      resetDayPlan: (date) => {
+        const next = { ...get().dayPlans };
+        delete next[date];
+        set({ dayPlans: next });
+      },
+
       addTodo: (text) => {
         const t = text.trim();
         if (!t) return;
@@ -1653,6 +1681,7 @@ export const useSoma = create<SomaStore>()(
             pantry: get().pantry,
             grocery: get().grocery,
             todos: get().todos,
+            dayPlans: get().dayPlans,
             live: get().live,
             activeDate: get().activeDate,
             sideStores: collectSideStores(),
@@ -1698,6 +1727,7 @@ export const useSoma = create<SomaStore>()(
               pantry: data.pantry || [],
               grocery: data.grocery || [],
               todos: data.todos || [],
+              dayPlans: data.dayPlans || {},
               seeded: true,
               // A backup from before these were exported has neither, and the
               // device keeps whatever it is on rather than being emptied.
@@ -1767,6 +1797,8 @@ export const useSoma = create<SomaStore>()(
             pantry: mergeById(data.pantry || [], cur.pantry),
             grocery: mergeById(data.grocery || [], cur.grocery),
             todos: mergeById(data.todos || [], cur.todos),
+            // Incoming days fill gaps; a plan on the device is the newer edit.
+            dayPlans: { ...(data.dayPlans || {}), ...cur.dayPlans },
             seeded: true,
           });
           // `live` and `activeDate` are deliberately not merged: the device is
@@ -1826,6 +1858,7 @@ export const useSoma = create<SomaStore>()(
         pantry: s.pantry,
         grocery: s.grocery,
         todos: s.todos,
+        dayPlans: s.dayPlans,
         live: s.live,
         activeDate: s.activeDate,
       }),
