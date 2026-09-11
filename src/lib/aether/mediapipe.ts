@@ -102,6 +102,75 @@ export async function detectFace(image: HTMLImageElement | HTMLCanvasElement | H
   return face.detect(image);
 }
 
+/** Scratch canvas for the mirrored retry, made once rather than per frame. */
+let flipCanvas: HTMLCanvasElement | null = null;
+
+export interface TolerantDetection {
+  landmarks: { x: number; y: number; z?: number }[] | null;
+  blendshapes: unknown;
+  /** Absent when the face was only found mirrored — see below. */
+  matrix: number[] | undefined;
+  /** True when this came from the flipped frame. */
+  mirrored: boolean;
+}
+
+/**
+ * Detect, and if that finds nothing, try the frame mirrored.
+ *
+ * The face detector behind FaceLandmarker is BlazeFace, trained overwhelmingly
+ * on frontal faces. At a hard yaw it does not return a low-confidence box that
+ * a threshold could rescue — it often proposes no box at all, which is why
+ * dropping the confidence to 0.2 did not make the profile step work.
+ *
+ * What it IS, is asymmetric: it will frequently find a head turned one way and
+ * miss the mirror image of the same pose. Flipping the frame costs one extra
+ * inference, and only on frames that already failed.
+ *
+ * The landmarks come back in the flipped frame's coordinates, so x is undone
+ * here — every consumer gets geometry in the real image's space and none of
+ * them need to know this happened. The transformation matrix is DROPPED rather
+ * than un-mirrored: reflecting a 4x4 pose matrix correctly is fiddly, and
+ * silently handing back a matrix with the wrong handedness would flip every
+ * yaw sign downstream. Callers fall back to the landmark proxy, which is
+ * computed from the corrected points and is right by construction.
+ */
+export async function detectFaceTolerant(
+  canvas: HTMLCanvasElement,
+): Promise<TolerantDetection> {
+  const direct = await detectFace(canvas);
+  const lms = direct.faceLandmarks?.[0];
+  if (lms?.length) {
+    return {
+      landmarks: lms,
+      blendshapes: direct.faceBlendshapes?.[0],
+      matrix: direct.facialTransformationMatrixes?.[0]?.data as number[] | undefined,
+      mirrored: false,
+    };
+  }
+
+  flipCanvas ??= document.createElement("canvas");
+  flipCanvas.width = canvas.width;
+  flipCanvas.height = canvas.height;
+  const ctx = flipCanvas.getContext("2d");
+  if (!ctx) return { landmarks: null, blendshapes: undefined, matrix: undefined, mirrored: false };
+  ctx.save();
+  ctx.setTransform(-1, 0, 0, 1, canvas.width, 0);
+  ctx.drawImage(canvas, 0, 0);
+  ctx.restore();
+
+  const flipped = await detectFace(flipCanvas);
+  const fl = flipped.faceLandmarks?.[0];
+  if (!fl?.length) {
+    return { landmarks: null, blendshapes: undefined, matrix: undefined, mirrored: false };
+  }
+  return {
+    landmarks: fl.map((p) => ({ ...p, x: 1 - p.x })),
+    blendshapes: flipped.faceBlendshapes?.[0],
+    matrix: undefined,
+    mirrored: true,
+  };
+}
+
 export async function detectPose(image: HTMLImageElement | HTMLCanvasElement | HTMLVideoElement) {
   await loadVision();
   if (!pose) throw new Error("Pose landmarker failed to load");

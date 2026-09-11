@@ -66,7 +66,11 @@ export const SESSION: {
     // 90° — and 90° is exactly where the landmark model stops being able to
     // see a face at all. A shot you cannot take is worth less than a slightly
     // less side-on one you can, so the target stops short of the cliff.
-    coach: "Turn until the far eyebrow just disappears. Not quite full profile.",
+    // The landmark model is trained on frontal faces and simply proposes no
+    // face at a hard yaw — so the coaching has to aim at the last angle it can
+    // still read, not at the anatomically ideal one. Past this the photo is
+    // still kept; the measurements are not.
+    coach: "Turn until the far eyebrow just disappears — no further, or it stops reading.",
     yawAbs: [52, 90],
     rollMax: 8,
     pitchMax: 14,

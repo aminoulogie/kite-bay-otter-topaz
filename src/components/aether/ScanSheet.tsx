@@ -11,7 +11,7 @@ import { FACE } from "@/lib/aether/landmarks";
 import { measureHarmony } from "@/lib/aether/harmony";
 import { analyseSkin, puffinessRatio } from "@/lib/aether/skin";
 import {
-  detectFace, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
+  detectFace, detectFaceTolerant, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
 } from "@/lib/aether/mediapipe";
 import { saveScanImage } from "@/lib/habit-photos";
 import { getLocalDateKey } from "@/lib/soma";
@@ -61,13 +61,36 @@ const HOLD_FRAMES = 6;
  */
 const FACE_GRACE_MS = 700;
 
-interface Grab {
+interface Measured {
+  photoOnly?: false;
   analysis: FaceAnalysis;
   skin: ReturnType<typeof analyseSkin>;
   puffiness: number | null;
   harmony: ReturnType<typeof measureHarmony>;
   dataUrl: string;
 }
+
+/**
+ * A frame the landmark model could not read.
+ *
+ * The profile step is the reason this exists. BlazeFace is trained on frontal
+ * faces and at a hard yaw it simply proposes no face — no confidence threshold
+ * rescues that, which is why lowering it did not fix the step. But a side
+ * photograph is most of what anyone wants from a profile shot: it is the thing
+ * you put next to last month's to see whether your jawline changed.
+ *
+ * So the photo is kept and NOTHING is claimed about it. No symmetry, no
+ * ratios, no pose — a scan with no `face` on it, which Compare and the Face
+ * File already handle because gated captures have always been possible.
+ * Inventing measurements from landmarks that were never found would be far
+ * worse than an honest photograph.
+ */
+interface PhotoOnly {
+  photoOnly: true;
+  dataUrl: string;
+}
+
+type Grab = Measured | PhotoOnly;
 
 export function ScanSheet({ onClose }: { onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -207,8 +230,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       if (!ctx) return;
       ctx.drawImage(video, 0, 0, small.width, small.height);
       try {
-        const res = await detectFace(small);
-        const lms = res.faceLandmarks?.[0];
+        const res = await detectFaceTolerant(small);
+        const lms = res.landmarks;
         if (!lms) {
           // Inside the grace window this is a blink in the model, not a face
           // that has left. Leave the HUD and the hold streak where they are.
@@ -228,7 +251,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         }
         lastFaceAt.current = Date.now();
         const pts = landmarksToPts(lms);
-        const eu = eulerFromMatrix4(res.facialTransformationMatrixes?.[0]?.data as number[] | undefined);
+        const eu = eulerFromMatrix4(res.matrix);
         const proxy = proxyPose(pts);
         const yawDeg = eu?.yawDeg ?? proxy.yawDeg;
         const rollDeg = eu?.rollDeg ?? proxy.rollDeg;
@@ -238,7 +261,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           yawDeg, rollDeg, pitchDeg,
           lighting: sampleLighting(small, faceBox(pts)),
           framing: framingFromLandmarks(pts),
-          smile: smileFromBlendshapes(res.faceBlendshapes?.[0] as never),
+          smile: smileFromBlendshapes(res.blendshapes as never),
           hasFace: true,
         });
         setHud(q);
@@ -281,15 +304,20 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const res = await detectFace(canvas);
-    const lms = res.faceLandmarks?.[0];
-    if (!lms) return null;
+    const res = await detectFaceTolerant(canvas);
+    const lms = res.landmarks;
+    if (!lms) {
+      // No landmarks anywhere in this frame. The PHOTO is still worth keeping —
+      // see the note on photoOnly below — so it comes back without an analysis
+      // rather than as nothing at all.
+      return { photoOnly: true, dataUrl: canvas.toDataURL("image/jpeg", 0.82) };
+    }
     const pts = landmarksToPts(lms);
-    const eu = eulerFromMatrix4(res.facialTransformationMatrixes?.[0]?.data as number[] | undefined);
+    const eu = eulerFromMatrix4(res.matrix);
     const proxy = proxyPose(pts);
     const lighting = sampleLighting(canvas, faceBox(pts));
     const framing = framingFromLandmarks(pts);
-    const smile = smileFromBlendshapes(res.faceBlendshapes?.[0] as never);
+    const smile = smileFromBlendshapes(res.blendshapes as never);
     const yawDeg = eu?.yawDeg ?? proxy.yawDeg;
     const rollDeg = eu?.rollDeg ?? proxy.rollDeg;
     const pitchDeg = eu?.pitchDeg ?? proxy.pitchDeg;
@@ -342,16 +370,35 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         if (i < BURST - 1) await sleep(80);
       }
       if (!frames.length) {
-        setStatus(
-          kind === "face_side"
-            ? "Turned too far to read. Come back a few degrees — the far eyebrow should only just be hidden."
-            : "No face in the burst. More light, or move closer.",
-        );
+        setStatus("Nothing came back from the camera. Try again.");
         return;
       }
-      frames.sort((a, b) => (b.analysis.quality?.overall ?? 0) - (a.analysis.quality?.overall ?? 0));
-      const best = frames[0]!;
+
+      const measured = frames.filter((f): f is Measured => !f.photoOnly);
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+      // Nothing in the burst was trackable. Keep the photograph and claim
+      // nothing about it — see PhotoOnly. A side shot you can put next to last
+      // month's is most of what a profile is for, and an invented measurement
+      // would be far worse than an honest picture.
+      if (!measured.length) {
+        await saveScanImage(id, frames[frames.length - 1]!.dataUrl);
+        addScan({
+          id,
+          date: getLocalDateKey(new Date()),
+          capturedAt: new Date().toISOString(),
+          kind,
+        });
+        setStatus(
+          "Photo kept, no measurements — the landmark model cannot read a head turned this far.",
+        );
+        toast.success(`${s.short} photo saved`);
+        if (step < SESSION.length - 1) setStep(step + 1);
+        return;
+      }
+
+      measured.sort((a, b) => (b.analysis.quality?.overall ?? 0) - (a.analysis.quality?.overall ?? 0));
+      const best = measured[0]!;
       await saveScanImage(id, best.dataUrl);
       addScan({
         id,
@@ -367,7 +414,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       setStatus(
         q?.ready
           ? `Kept ${s.short}. Light ${best.analysis.lighting?.grade ?? "?"}.`
-          : `Kept the best of ${frames.length}. ${q?.coach ?? best.analysis.gates.reasons[0] ?? ""}`,
+          : `Kept the best of ${measured.length}. ${q?.coach ?? best.analysis.gates.reasons[0] ?? ""}`,
       );
       toast.success(`${s.short} captured · evenness ${(100 - best.analysis.alpha * 100).toFixed(1)}`);
       if (q && q.overall >= 0.55 && step < SESSION.length - 1) setStep(step + 1);
@@ -622,7 +669,15 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Button onClick={() => void startCam()}>{live ? "Restart camera" : "Camera"}</Button>
           <Button variant="primary" disabled={busy} onClick={() => void capture()}>
-            {busy ? "Burst…" : ready ? "Capture · green" : "Capture anyway"}
+            {busy
+              ? "Burst…"
+              : ready
+                ? "Capture · green"
+                // No face at all: say what tapping will actually get you,
+                // rather than promising a capture that cannot be measured.
+                : hud && hud.overall === 0
+                  ? "Keep the photo"
+                  : "Capture anyway"}
           </Button>
         </div>
 
