@@ -13,6 +13,7 @@ import type {
   FoodItem,
   Habit,
   HabitStep,
+  ScreenTimeDay,
   HistorySession,
   LiveSession,
   NutritionDay,
@@ -31,6 +32,7 @@ import {
 } from "./programs";
 import { collectSideStores, restoreSideStores, type SideStores } from "./side-stores";
 import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
+import { clampMinutes } from "./screen-time";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 import { tallyMuscles } from "./set-quality";
 import { SHIPPED_FOODS, composeLibrary } from "./foods";
@@ -133,9 +135,17 @@ export interface SomaStore {
    * the calendar must not create a plan for every day you looked at.
    */
   dayPlans: Record<string, TimeBlock[]>;
+  /**
+   * Screen time, per day, typed in by hand. iOS will not hand it over — see
+   * lib/screen-time.ts for why that is a wall and not an oversight.
+   */
+  screenTime: Record<string, ScreenTimeDay>;
   planFor: (date?: string) => TimeBlock[];
   setDayPlan: (date: string, blocks: TimeBlock[]) => void;
   resetDayPlan: (date: string) => void;
+  /** Record a day's screen time. Replaces whatever was there. */
+  logScreenTime: (date: string | undefined, entry: ScreenTimeDay) => void;
+  clearScreenTime: (date?: string) => void;
   /** The short list of things to do. Nothing clever: a line and a box. */
   todos: TodoItem[];
   addTodo: (text: string) => void;
@@ -314,6 +324,7 @@ export const useSoma = create<SomaStore>()(
       grocery: [],
       todos: [],
       dayPlans: {},
+      screenTime: {},
       programs: [],
       activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
@@ -847,6 +858,21 @@ export const useSoma = create<SomaStore>()(
         const next = { ...get().dayPlans };
         delete next[date];
         set({ dayPlans: next });
+      },
+      logScreenTime: (date, entry) => {
+        const key = date || get().activeDate;
+        set({
+          screenTime: {
+            ...get().screenTime,
+            [key]: { ...entry, total: clampMinutes(entry.total) },
+          },
+        });
+      },
+      clearScreenTime: (date) => {
+        const key = date || get().activeDate;
+        const next = { ...get().screenTime };
+        delete next[key];
+        set({ screenTime: next });
       },
 
       addTodo: (text) => {
@@ -1707,6 +1733,7 @@ export const useSoma = create<SomaStore>()(
             grocery: get().grocery,
             todos: get().todos,
             dayPlans: get().dayPlans,
+            screenTime: get().screenTime,
             live: get().live,
             activeDate: get().activeDate,
             sideStores: collectSideStores(),
@@ -1753,6 +1780,7 @@ export const useSoma = create<SomaStore>()(
               grocery: data.grocery || [],
               todos: data.todos || [],
               dayPlans: data.dayPlans || {},
+              screenTime: data.screenTime || {},
               seeded: true,
               // A backup from before these were exported has neither, and the
               // device keeps whatever it is on rather than being emptied.
@@ -1844,6 +1872,7 @@ export const useSoma = create<SomaStore>()(
             todos: mergeById(data.todos || [], cur.todos),
             // Incoming days fill gaps; a plan on the device is the newer edit.
             dayPlans: { ...(data.dayPlans || {}), ...cur.dayPlans },
+            screenTime: { ...(data.screenTime || {}), ...cur.screenTime },
             seeded: true,
           });
           // `live` and `activeDate` are deliberately not merged: the device is
@@ -1904,6 +1933,7 @@ export const useSoma = create<SomaStore>()(
         grocery: s.grocery,
         todos: s.todos,
         dayPlans: s.dayPlans,
+        screenTime: s.screenTime,
         live: s.live,
         activeDate: s.activeDate,
       }),

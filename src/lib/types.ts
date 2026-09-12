@@ -254,6 +254,8 @@ export interface Habit {
   stepLog?: Record<string, Record<string, number>>;
 }
 
+export type { ScreenApp, ScreenTimeDay } from "./screen-time";
+
 export interface Settings {
   /**
    * Daily nutrition targets the user has set themselves.

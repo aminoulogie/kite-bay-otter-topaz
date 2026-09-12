@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { DayRing } from "@/components/DayRing";
 import { DecimalInput } from "@/components/ui/decimal-input";
+import { ScreenTimeCard } from "@/components/ScreenTimeCard";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import {
@@ -99,6 +100,11 @@ export function TimeView() {
       <p className="px-1 text-center text-[0.68rem] leading-snug text-faint">
         Drag the ring to bring any hour to the marker. Tap a segment to edit it.
       </p>
+
+      {/* The phone belongs on the tab that asks where the day went, and it is
+          measured against the flexible hours rather than the whole 24: sleep
+          and work are not time the phone was competing for. */}
+      <ScreenTimeCard flexibleHours={freeLeft} />
 
       <Card>
         <div className="mb-2 flex items-center justify-between gap-2">
