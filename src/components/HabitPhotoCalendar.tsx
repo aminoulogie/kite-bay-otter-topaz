@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Check, ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { captureImage, deletePhoto, getPhoto, savePhoto, thumbsFor } from "@/lib/habit-photos";
+import { nextPhotoDate, positionIn, prevPhotoDate } from "@/lib/photo-nav";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,10 @@ export function HabitPhotoCalendar({ habit, onClose }: { habit: Habit; onClose: 
       for (const u of created) URL.revokeObjectURL(u);
     };
   }, [habit.id, reload]);
+
+  // Every day this habit has a picture on, across every month — the viewer
+  // steps through the whole run, not just the month the grid is showing.
+  const photoDates = useMemo(() => [...urls.keys()].sort(), [urls]);
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
@@ -193,6 +198,8 @@ export function HabitPhotoCalendar({ habit, onClose }: { habit: Habit; onClose: 
           habitId={habit.id}
           habitName={habit.name}
           date={openDate}
+          photoDates={photoDates}
+          onGo={setOpenDate}
           done={habit.history[openDate] === true}
           onToggle={() => toggleHabit(habit.id, openDate)}
           onChanged={() => setReload((k) => k + 1)}
@@ -203,11 +210,26 @@ export function HabitPhotoCalendar({ habit, onClose }: { habit: Habit; onClose: 
   );
 }
 
+/**
+ * One day, and a way through the rest of them.
+ *
+ * The grid is how you find a photograph; it is a poor way to look through a
+ * run of them. Tapping the right of the picture moves to the next day that has
+ * one, the left goes back — the story gesture, because it is the one everybody
+ * already has in their hands.
+ *
+ * Chevrons are drawn rather than left invisible. Instagram can rely on an
+ * unmarked tap zone because everyone has already learned it there; a habit
+ * calendar cannot, and an affordance nobody finds is the same as not building
+ * it. They fade out at the ends, where there is nothing to move to.
+ */
 export function DaySheet({
   habitId,
   habitName,
   date,
   done,
+  photoDates = [],
+  onGo,
   onToggle,
   onChanged,
   onClose,
@@ -216,6 +238,10 @@ export function DaySheet({
   habitName: string;
   date: string;
   done: boolean;
+  /** Every day this set has a picture on, in any order. */
+  photoDates?: string[];
+  /** Move the viewer to another day. Absent leaves it on this one. */
+  onGo?: (date: string) => void;
   onToggle: () => void;
   onChanged: () => void;
   onClose: () => void;
@@ -223,6 +249,32 @@ export function DaySheet({
   const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [hasPhoto, setHasPhoto] = useState(false);
+
+  const prev = useMemo(() => prevPhotoDate(photoDates, date), [photoDates, date]);
+  const next = useMemo(() => nextPhotoDate(photoDates, date), [photoDates, date]);
+  const at = useMemo(() => positionIn(photoDates, date), [photoDates, date]);
+
+  const go = useCallback(
+    (to: string | null) => {
+      if (to && onGo) onGo(to);
+    },
+    [onGo],
+  );
+
+  // Arrow keys as well as taps: a photo viewer that only works with a thumb
+  // is unusable with a keyboard and unreachable with a switch.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") { go(prev); e.preventDefault(); }
+      else if (e.key === "ArrowRight") { go(next); e.preventDefault(); }
+      else if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go, prev, next, onClose]);
+
+  // A horizontal flick does the same thing, in the direction the picture moves.
+  const touch = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -269,11 +321,103 @@ export function DaySheet({
           </button>
         </CardTitle>
 
+        {at.total > 1 && (
+          <div className="flex items-center gap-2">
+            <div className="flex h-1 flex-1 gap-0.5" aria-hidden>
+              {Array.from({ length: Math.min(at.total, 24) }, (_, i) => {
+                // Capped at 24 pips: beyond that they are a grey smear and the
+                // counter beside them is doing all the work anyway.
+                const scaled = Math.round(((at.index ?? -1) / Math.max(1, at.total - 1)) * (Math.min(at.total, 24) - 1));
+                return (
+                  <span
+                    key={i}
+                    className={cn(
+                      "h-full flex-1 rounded-full",
+                      at.index !== null && i <= scaled ? "bg-accent" : "bg-surface-3",
+                    )}
+                  />
+                );
+              })}
+            </div>
+            <span className="shrink-0 text-[0.6rem] font-bold tabular text-faint">
+              {at.index === null ? "—" : at.index + 1}/{at.total}
+            </span>
+          </div>
+        )}
+
         {url ? (
-          <img src={url} alt={"Habit photo from " + date} className="w-full rounded-xl" />
+          <div
+            className="relative select-none"
+            data-no-swipe-nav
+            onTouchStart={(e) => {
+              const t = e.touches[0];
+              touch.current = t ? { x: t.clientX, y: t.clientY } : null;
+            }}
+            onTouchEnd={(e) => {
+              const start = touch.current;
+              touch.current = null;
+              const t = e.changedTouches[0];
+              if (!start || !t) return;
+              const dx = t.clientX - start.x;
+              const dy = t.clientY - start.y;
+              // More sideways than vertical, or a scroll becomes a page turn.
+              if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+              go(dx < 0 ? next : prev);
+            }}
+          >
+            <img
+              src={url}
+              alt={"Habit photo from " + date}
+              draggable={false}
+              className="w-full rounded-xl"
+            />
+
+            <button
+              type="button"
+              aria-label={prev ? `Previous photo, ${prev}` : "No earlier photo"}
+              disabled={!prev}
+              onClick={() => go(prev)}
+              className="absolute inset-y-0 left-0 grid w-1/3 place-items-start px-2 disabled:pointer-events-none"
+            >
+              <ChevronLeft
+                className={cn(
+                  "mt-[45%] size-7 rounded-full bg-black/45 p-1 text-white transition-opacity",
+                  !prev && "opacity-0",
+                )}
+              />
+            </button>
+            <button
+              type="button"
+              aria-label={next ? `Next photo, ${next}` : "No later photo"}
+              disabled={!next}
+              onClick={() => go(next)}
+              className="absolute inset-y-0 right-0 grid w-2/3 place-items-end px-2 disabled:pointer-events-none"
+            >
+              <ChevronRight
+                className={cn(
+                  "mt-[45%] size-7 rounded-full bg-black/45 p-1 text-white transition-opacity",
+                  !next && "opacity-0",
+                )}
+              />
+            </button>
+          </div>
         ) : (
-          <div className="flex h-32 items-center justify-center rounded-xl border border-dashed border-border text-xs text-faint">
+          <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border text-xs text-faint">
             No photo for this day
+            {(prev || next) && (
+              <div className="flex gap-2">
+                {prev && (
+                  <button type="button" onClick={() => go(prev)} className="font-bold text-accent-text">
+                    ← {prev}
+                  </button>
+                )}
+                {next && (
+                  <button type="button" onClick={() => go(next)} className="font-bold text-accent-text">
+                    {next} →
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 

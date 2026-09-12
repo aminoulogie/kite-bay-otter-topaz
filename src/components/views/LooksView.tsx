@@ -224,7 +224,12 @@ export function LooksView() {
       )}
       {open && (
         <Suspense fallback={<LoadingSheet label="Opening the file…" />}>
-          <FaceFileSheet scan={open} onClose={() => setOpen(null)} />
+          <FaceFileSheet
+            scan={open}
+            siblings={rows}
+            onGo={setOpen}
+            onClose={() => setOpen(null)}
+          />
         </Suspense>
       )}
       {comparing && (

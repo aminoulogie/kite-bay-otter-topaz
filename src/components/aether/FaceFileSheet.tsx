@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { loadScanImage } from "@/lib/habit-photos";
+import { nextPhotoDate, positionIn, prevPhotoDate } from "@/lib/photo-nav";
 import { evennessOf, type ScanRecord } from "@/lib/aether/scan-store";
 import {
   distinctiveness, distinctivenessLabel, harmonySummary, regionPercent, symmetryPercent,
@@ -23,9 +24,59 @@ import { cn } from "@/lib/utils";
  * nothing to a person, but the raw figure is shown beside it so the number is
  * checkable rather than a black box.
  */
-export function FaceFileSheet({ scan, onClose }: { scan: ScanRecord; onClose: () => void }) {
+export function FaceFileSheet({
+  scan, onClose, siblings = [], onGo,
+}: {
+  scan: ScanRecord;
+  onClose: () => void;
+  /** Every capture of the SAME pose, so stepping compares like with like. */
+  siblings?: ScanRecord[];
+  onGo?: (scan: ScanRecord) => void;
+}) {
   const [image, setImage] = useState<string | null>(null);
   const face = scan.face;
+
+  /**
+   * Stepping stays within one pose.
+   *
+   * A front shot and a profile are not two frames of the same sequence — going
+   * from one to the other and calling it "the next day" would put two
+   * unrelated measurements side by side and invite exactly the comparison the
+   * Compare screen refuses to make.
+   */
+  const sameKind = useMemo(
+    () => (siblings ?? []).filter((s) => s.kind === scan.kind),
+    [siblings, scan.kind],
+  );
+  const byDate = useMemo(() => {
+    const m = new Map<string, ScanRecord>();
+    for (const s of sameKind) if (!m.has(s.date)) m.set(s.date, s);
+    return m;
+  }, [sameKind]);
+  const dates = useMemo(() => [...byDate.keys()], [byDate]);
+
+  const prevDate = prevPhotoDate(dates, scan.date);
+  const nextDate = nextPhotoDate(dates, scan.date);
+  const at = positionIn(dates, scan.date);
+
+  const go = useCallback(
+    (d: string | null) => {
+      const target = d ? byDate.get(d) : null;
+      if (target && onGo) onGo(target);
+    },
+    [byDate, onGo],
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") { go(prevDate); e.preventDefault(); }
+      else if (e.key === "ArrowRight") { go(nextDate); e.preventDefault(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go, prevDate, nextDate]);
+
+  const touch = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -56,7 +107,66 @@ export function FaceFileSheet({ scan, onClose }: { scan: ScanRecord; onClose: ()
 
       <div className="soma-scroll flex-1 space-y-3 overflow-y-auto px-4 pb-8 pt-3">
         {image && (
-          <img src={image} alt="" className="w-full rounded-2xl border border-border" />
+          <div
+            className="relative select-none"
+            data-no-swipe-nav
+            onTouchStart={(e) => {
+              const t = e.touches[0];
+              touch.current = t ? { x: t.clientX, y: t.clientY } : null;
+            }}
+            onTouchEnd={(e) => {
+              const start = touch.current;
+              touch.current = null;
+              const t = e.changedTouches[0];
+              if (!start || !t) return;
+              const dx = t.clientX - start.x;
+              const dy = t.clientY - start.y;
+              if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+              go(dx < 0 ? nextDate : prevDate);
+            }}
+          >
+            <img
+              src={image}
+              alt=""
+              draggable={false}
+              className="w-full rounded-2xl border border-border"
+            />
+            {at.total > 1 && (
+              <>
+                <button
+                  type="button"
+                  aria-label={prevDate ? `Earlier ${scan.kind}, ${prevDate}` : "No earlier capture"}
+                  disabled={!prevDate}
+                  onClick={() => go(prevDate)}
+                  className="absolute inset-y-0 left-0 grid w-1/3 place-items-start px-2 disabled:pointer-events-none"
+                >
+                  <ChevronLeft
+                    className={cn(
+                      "mt-[45%] size-7 rounded-full bg-black/45 p-1 text-white",
+                      !prevDate && "opacity-0",
+                    )}
+                  />
+                </button>
+                <button
+                  type="button"
+                  aria-label={nextDate ? `Later ${scan.kind}, ${nextDate}` : "No later capture"}
+                  disabled={!nextDate}
+                  onClick={() => go(nextDate)}
+                  className="absolute inset-y-0 right-0 grid w-2/3 place-items-end px-2 disabled:pointer-events-none"
+                >
+                  <ChevronRight
+                    className={cn(
+                      "mt-[45%] size-7 rounded-full bg-black/45 p-1 text-white",
+                      !nextDate && "opacity-0",
+                    )}
+                  />
+                </button>
+                <span className="absolute bottom-2 right-2 rounded-full bg-black/55 px-2 py-0.5 text-[0.6rem] font-bold tabular text-white">
+                  {(at.index ?? 0) + 1}/{at.total}
+                </span>
+              </>
+            )}
+          </div>
         )}
 
         {!face ? (
