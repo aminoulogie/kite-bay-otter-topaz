@@ -148,7 +148,7 @@ export function newBlockId(): string {
   return `tb-${Date.now().toString(36)}-${seq.toString(36)}`;
 }
 
-export const FREE_COLOR = "#3f6b7d";
+export const FREE_COLOR = "#35c9a8";
 
 function freeBlock(hours: number): TimeBlock {
   return { id: newBlockId(), label: "Free", hours: snap(hours), color: FREE_COLOR, fixed: false };
@@ -393,9 +393,15 @@ export function hourOfDay(d = new Date()): number {
 
 // --------------------------------------------------------------- default --
 
+/**
+ * Eight fills that stay apart from each other on a near-black ground and on a
+ * near-white one. Deliberately clear of the app's lime accent, which the ring
+ * reserves for "now" — a block the colour of the clock hand would be read as
+ * the clock hand.
+ */
 export const PALETTE = [
-  "#5b8def", "#3f6b7d", "#2f8f6b", "#c08a2e",
-  "#b8574a", "#8a63b5", "#3f8fa3", "#7d7f45",
+  "#5b8cff", "#35c9a8", "#f0a63c", "#e2607a",
+  "#9b7bf0", "#3fb6f0", "#5ecf7a", "#e0785a",
 ];
 
 /**
@@ -407,9 +413,9 @@ export const PALETTE = [
  */
 export function defaultPlan(): TimeBlock[] {
   return normalise([
-    { id: "sleep", label: "Sleep", hours: 8, color: "#4a5578", fixed: true },
-    { id: "morning", label: "Morning", hours: 1.5, color: "#3f6b7d", fixed: false },
-    { id: "work", label: "Work", hours: 8, color: "#5b8def", fixed: true },
-    { id: "free", label: "Free", hours: 6.5, color: "#2f8f6b", fixed: false },
+    { id: "sleep", label: "Sleep", hours: 8, color: "#7b6cf0", fixed: true },
+    { id: "morning", label: "Morning", hours: 1.5, color: "#f0a63c", fixed: false },
+    { id: "work", label: "Work", hours: 8, color: "#5b8cff", fixed: true },
+    { id: "free", label: "Free", hours: 6.5, color: FREE_COLOR, fixed: false },
   ]).blocks;
 }
