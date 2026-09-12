@@ -32,6 +32,7 @@ import {
 } from "./programs";
 import { collectSideStores, restoreSideStores, type SideStores } from "./side-stores";
 import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
+import { followsSettings, resolveGoals, sameGoals } from "./goals";
 import { clampMinutes } from "./screen-time";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 import { tallyMuscles } from "./set-quality";
@@ -523,19 +524,22 @@ export const useSoma = create<SomaStore>()(
        * the target on a finished past day would silently rescore history.
        */
       applyGoalsToOpenDays: () => {
-        const s = get().settings;
-        const custom = s.customGoals;
-        if (!custom || !Object.keys(custom).length) return 0;
-        const today = getLocalDateKey(new Date());
         const nutrition = { ...get().nutrition };
+        const want = resolveGoals(get().settings, lastWeight(nutrition));
+        const today = getLocalDateKey(new Date());
         let touched = 0;
         for (const [k, day] of Object.entries(nutrition)) {
           if (!day) continue;
-          if (k !== today && (day.items?.length ?? 0) > 0) continue;
-          nutrition[k] = { ...day, goals: { ...day.goals, ...custom } };
+          if (!followsSettings(k, today, day.items?.length ?? 0)) continue;
+          // REBUILT, not merged. Merging can only add keys, so clearing a
+          // field to follow the default again left the old number in place
+          // for ever — which made "change it back" the one edit that could
+          // not work.
+          if (sameGoals(day.goals, want)) continue;
+          nutrition[k] = { ...day, goals: { ...want } };
           touched += 1;
         }
-        set({ nutrition });
+        if (touched) set({ nutrition });
         return touched;
       },
       /**
@@ -730,7 +734,19 @@ export const useSoma = create<SomaStore>()(
       },
       setTab: (tab) => set({ tab }),
       setActiveDate: (d) => set({ activeDate: d }),
-      patchSettings: (p) => set({ settings: { ...get().settings, ...p } }),
+      /**
+       * Change a setting, and let the open days follow it.
+       *
+       * The targets used to need a separate button at the bottom of the
+       * Settings card, so typing a new number appeared to do nothing at all.
+       * A target you have just edited must be the target you can see.
+       */
+      patchSettings: (p) => {
+        set({ settings: { ...get().settings, ...p } });
+        const touchesGoals =
+          "customGoals" in p || "autoProteinTarget" in p || "proteinPerKg" in p;
+        if (touchesGoals) get().applyGoalsToOpenDays();
+      },
 
       /**
        * Make sure a day exists so something can be written into it.
@@ -748,15 +764,8 @@ export const useSoma = create<SomaStore>()(
         const k = key || get().activeDate;
         const nutrition = { ...get().nutrition };
         if (!nutrition[k]) {
-          const w = lastWeight(nutrition);
-          const s = get().settings;
-          const goals = { ...DEFAULT_GOALS };
-          if (s.autoProteinTarget) goals.protein = SomaIntelligenceEngine.proteinTargetFor(w, s.proteinPerKg) || goals.protein;
-          // Applied last so an explicit target always wins, including over the
-          // bodyweight-derived protein figure.
-          Object.assign(goals, s.customGoals ?? {});
           nutrition[k] = emptyDay();
-          nutrition[k]!.goals = goals;
+          nutrition[k]!.goals = resolveGoals(get().settings, lastWeight(nutrition));
           set({ nutrition });
         }
       },

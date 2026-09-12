@@ -56,6 +56,15 @@ export interface SessionExercise {
   isAxial: boolean;
   isBW: boolean;
   usesBar: boolean;
+  /**
+   * Whether a session's cost is added to that day's calorie target.
+   *
+   * On by default, because it is what the app already did. Worth turning off
+   * if the target was set from a maintenance figure that already assumed you
+   * train — otherwise the training is counted twice. Only the NET cost is ever
+   * added; see lib/training-burn.ts.
+   */
+  eatBackTraining?: boolean;
   barWeight: number;
   supersetGroup: string;
   sets: WorkoutSet[];
@@ -285,6 +294,15 @@ export interface Settings {
    * changes would relabel every week already trained.
    */
   trainingGoal?: TrainingGoal;
+  /**
+   * Whether a session's cost is added to that day's calorie target.
+   *
+   * On by default, because it is what the app already did. Worth turning off
+   * if the target was set from a maintenance figure that already assumed you
+   * train — otherwise the training is counted twice. Only the NET cost is ever
+   * added; see lib/training-burn.ts.
+   */
+  eatBackTraining?: boolean;
   barWeight: number;
   restDefault: number;
   autoRest: boolean;

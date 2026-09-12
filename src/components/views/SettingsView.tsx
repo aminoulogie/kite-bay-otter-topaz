@@ -714,17 +714,21 @@ export function SettingsView() {
             </label>
           ))}
         </div>
+        <p className="mt-3 text-[0.68rem] leading-snug text-faint">
+          Today and any day with nothing logged follow this as you type. A past day
+          with food in it keeps the target it was scored under, so editing this
+          never rewrites history.
+        </p>
         <Button
-          className="mt-3 w-full"
-          variant="primary"
+          className="mt-2 w-full"
           onClick={() => {
             const n = applyGoalsToOpenDays();
             toast.success(
-              n ? `Applied to ${n} ${n === 1 ? "day" : "days"}` : "Nothing to update",
+              n ? `Applied to ${n} ${n === 1 ? "day" : "days"}` : "Everything already matches",
             );
           }}
         >
-          Apply to today
+          Re-apply to open days
         </Button>
       </Card>
 

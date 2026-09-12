@@ -23,6 +23,7 @@ import { SwipeRow } from "@/components/SwipeRow";
 import { PlatePhoto } from "@/components/PlatePhoto";
 import { MacroStrip } from "@/components/MacroStrip";
 import { rebalance } from "@/lib/rebalance";
+import { eatBack, sessionBurn } from "@/lib/training-burn";
 import { nextDates, suggestDay, suggestWeek } from "@/lib/meal-suggest";
 import { QuickAddSheet } from "@/components/QuickAddSheet";
 import { lastMealDate, mealItems, recentFoods } from "@/lib/food-recents";
@@ -60,6 +61,7 @@ export function NutritionView() {
   const moveFoodToMeal = useSoma((s) => s.moveFoodToMeal);
   const removeCustomFood = useSoma((s) => s.removeCustomFood);
   const settings = useSoma((s) => s.settings);
+  const patchSettings = useSoma((s) => s.patchSettings);
 
   const [query, setQuery] = useState("");
   const [meal, setMeal] = useState("Breakfast");
@@ -170,7 +172,12 @@ export function NutritionView() {
   const addOrPlan = (item: FoodItem) =>
     planMode ? planFood(item, planTarget) : addFood(item);
   const workout = history[activeDate];
-  const burn = workout?.caloriesBurned || 0;
+  // Derived from the session rather than read off the stored figure, so a
+  // workout logged under the old inflated formula reports honestly today.
+  // See lib/training-burn.ts for what was wrong with it.
+  const burnDetail = sessionBurn(workout, day.bodyWeight || undefined);
+  const eatsBack = settings.eatBackTraining !== false;
+  const burn = eatBack(burnDetail, eatsBack);
 
   const totals = items.reduce(
     (a, i) => ({
@@ -193,6 +200,7 @@ export function NutritionView() {
     { cals: 0, p: 0, c: 0, f: 0, fiber: 0 },
   );
   const goalCals = goals.cals + burn;
+
   const tdee = SomaIntelligenceEngine.computeMaintenanceCalories(nutrition);
   const formula = SomaIntelligenceEngine.formulaMaintenance(day.bodyWeight || 78) || 2400;
   const maintenance = tdee && tdee.ok ? tdee.maintenance : formula;
@@ -237,6 +245,7 @@ export function NutritionView() {
 
   // Water drunk as water, plus the water that arrived in drinks. Read through
   // the helper rather than off `day.water`, or the ring disagrees with the log.
+  const [burnOpen, setBurnOpen] = useState(false);
   const fromFood = foodWaterMl(day);
   const water = totalWaterMl(day);
   const waterPct = Math.min(100, Math.round((water / (goals.water || 3500)) * 100));
@@ -252,7 +261,21 @@ export function NutritionView() {
               {tdee && tdee.ok
                 ? `Measured maintenance ${maintenance} kcal (${tdee.confidence})`
                 : `Formula maintenance ${maintenance} kcal`}
-              {burn ? ` · +${burn} from training` : ""}
+              {burnDetail.net > 0 && (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    onClick={() => setBurnOpen(true)}
+                    className={cn(
+                      "underline decoration-dotted underline-offset-2",
+                      eatsBack ? "text-accent-text" : "text-faint",
+                    )}
+                  >
+                    {eatsBack ? `+${burn} from training` : `${burnDetail.net} trained, not added`}
+                  </button>
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -772,6 +795,15 @@ export function NutritionView() {
         />
       )}
 
+      {burnOpen && (
+        <BurnSheet
+          burn={burnDetail}
+          enabled={eatsBack}
+          onToggle={(on) => patchSettings({ eatBackTraining: on })}
+          onClose={() => setBurnOpen(false)}
+        />
+      )}
+
       {portion && (
         <PortionSheet
           item={portion.item}
@@ -1274,5 +1306,108 @@ function SuggestFromPantry({ meal, target }: { meal: string; target: string }) {
         </button>
       )}
     </Card>
+  );
+}
+
+
+/**
+ * What the training figure is, and how to stop it counting.
+ *
+ * It earns a sheet because the number appears on the day's target unasked, and
+ * a number that moves your calories without explaining itself is the kind of
+ * thing that makes people distrust the whole app.
+ */
+function BurnSheet({
+  burn, enabled, onToggle, onClose,
+}: {
+  burn: { gross: number; net: number; minutes: number; met: number; workMinutes: number };
+  enabled: boolean;
+  onToggle: (on: boolean) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Training calories"
+      onClick={onClose}
+    >
+      <div
+        className="soma-expand max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <span className="font-display text-base font-extrabold">Today&apos;s training</span>
+          <button type="button" onClick={onClose} aria-label="Close">
+            <X className="size-5 text-muted" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <Stat label="Billed" value={`${burn.minutes}m`} />
+          <Stat label="Under tension" value={`${burn.workMinutes}m`} />
+          <Stat label="Cost" value={`${burn.gross} kcal`} />
+        </div>
+
+        <p className="mt-3 text-xs leading-relaxed text-muted">
+          Of that {burn.gross} kcal, {burn.gross - burn.net} is what you would have
+          burned resting through the same {burn.minutes} minutes — and your
+          maintenance figure already counts it. Only the remaining{" "}
+          <strong className="text-fg">{burn.net} kcal</strong> is training on top of
+          simply existing, so that is the only part it is honest to eat back.
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-muted">
+          Only {burn.workMinutes} of those {burn.minutes} minutes were under tension
+          at {burn.met} MET; the rest is standing between sets and is billed as such.
+          The clock itself is trusted only as far as the sets bear out, so a session
+          left open while you showered and drove home is billed at what was lifted
+          rather than at the hours that passed.
+        </p>
+
+        <button
+          type="button"
+          onClick={() => onToggle(!enabled)}
+          className="mt-3 flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-surface-2 px-3 py-3 text-left"
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-bold">Add it to the day&apos;s target</span>
+            <span className="block text-xs text-faint">
+              {enabled
+                ? "On — today's target includes it."
+                : "Off — the figure is shown but not eaten back."}
+            </span>
+          </span>
+          <span
+            className={cn(
+              "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+              enabled ? "bg-accent" : "bg-surface-3",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute top-0.5 size-5 rounded-full bg-bg transition-all",
+                enabled ? "left-[22px]" : "left-0.5",
+              )}
+            />
+          </span>
+        </button>
+
+        <p className="mt-2 text-[0.68rem] leading-snug text-faint">
+          Turn it off if your calorie target already assumes you train — otherwise
+          the training is counted twice, which is the usual reason a cut stalls
+          while everything else looks right.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-surface-2 px-3 py-2 text-center">
+      <div className="font-display text-base font-extrabold tabular">{value}</div>
+      <div className="text-[0.55rem] font-bold uppercase tracking-wider text-faint">{label}</div>
+    </div>
   );
 }

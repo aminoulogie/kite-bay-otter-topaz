@@ -4,9 +4,9 @@
 // why it is the part covered by tests.
 // ==========================================================================
 
-import { capForVolume } from "../autoregulate";
-import { getLocalDateKey, parseLocalDateKey } from "./dates";
-import { ROTATION_SEQUENCE } from "./data";
+import { capForVolume } from "../autoregulate.ts";
+import { getLocalDateKey, parseLocalDateKey } from "./dates.ts";
+import { ROTATION_SEQUENCE } from "./data.ts";
 
 class SomaIntelligenceEngine {
   static calculate1RM(weight, reps) {
