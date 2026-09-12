@@ -12,6 +12,7 @@ import type {
   ExerciseDef,
   FoodItem,
   Habit,
+  HabitStep,
   HistorySession,
   LiveSession,
   NutritionDay,
@@ -29,6 +30,7 @@ import {
   savePrograms, type Program,
 } from "./programs";
 import { collectSideStores, restoreSideStores, type SideStores } from "./side-stores";
+import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 import { tallyMuscles } from "./set-quality";
 import { SHIPPED_FOODS, composeLibrary } from "./foods";
@@ -180,6 +182,10 @@ export interface SomaStore {
   logMeasurements: (m: Record<string, number>) => void;
   logReadiness: (soreness: number, stress: number) => void;
   toggleHabit: (id: string, date?: string) => void;
+  /** One more repetition of a step, wrapping to none once it is over target. */
+  bumpHabitStep: (id: string, stepId: string, date?: string) => void;
+  /** Replace a habit's checklist, re-deriving the days that carry counts. */
+  setHabitSteps: (id: string, steps: HabitStep[]) => void;
   addHabit: (h: Omit<Habit, "id" | "history">) => void;
   removeHabit: (id: string) => void;
   allExercises: () => ExerciseDef[];
@@ -1061,19 +1067,38 @@ export const useSoma = create<SomaStore>()(
         get().ensureDay(k);
         get().patchDay(k, { readiness: { soreness, stress } });
       },
+      /**
+       * Mark a day done, or not.
+       *
+       * A habit with a checklist has no separate notion of "done": the day is
+       * done when its steps are. So toggling one — from the month strip, from a
+       * pixel in the matrix — sets every step to its target or clears them all,
+       * rather than writing a tick the steps would contradict.
+       */
       toggleHabit: (id, date) => {
         const key = date || get().activeDate;
         set({
           habits: get().habits.map((h) =>
-            h.id === id ? { ...h, history: { ...h.history, [key]: !h.history[key] } } : h,
+            h.id === id ? setAllSteps(h, key, !h.history[key]) : h,
           ),
+        });
+      },
+      bumpHabitStep: (id, stepId, date) => {
+        const key = date || get().activeDate;
+        set({
+          habits: get().habits.map((h) => (h.id === id ? bumpStep(h, key, stepId) : h)),
+        });
+      },
+      setHabitSteps: (id, steps) => {
+        set({
+          habits: get().habits.map((h) => (h.id === id ? setSteps(h, steps) : h)),
         });
       },
       addHabit: (h) => {
         set({
           habits: [
             ...get().habits,
-            { ...h, id: `habit-${Date.now()}`, history: {} },
+            { ...h, id: `habit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, history: {} },
           ],
         });
       },
@@ -1754,7 +1779,27 @@ export const useSoma = create<SomaStore>()(
           for (const h of (data.habits || []) as Habit[]) byId.set(h.id, h);
           for (const h of cur.habits) {
             const prior = byId.get(h.id);
-            byId.set(h.id, prior ? { ...prior, ...h, history: { ...prior.history, ...h.history } } : h);
+            if (!prior) {
+              byId.set(h.id, h);
+              continue;
+            }
+            // Step counts union per day and per step, keeping the higher count:
+            // two brushes recorded on one device and three on the other means
+            // three happened, and taking the lower would erase a real day.
+            const stepLog: NonNullable<Habit["stepLog"]> = { ...(prior.stepLog ?? {}) };
+            for (const [date, day] of Object.entries(h.stepLog ?? {})) {
+              const merged = { ...(stepLog[date] ?? {}) };
+              for (const [sid, n] of Object.entries(day)) {
+                merged[sid] = Math.max(merged[sid] ?? 0, n);
+              }
+              stepLog[date] = merged;
+            }
+            byId.set(h.id, {
+              ...prior,
+              ...h,
+              history: { ...prior.history, ...h.history },
+              ...(Object.keys(stepLog).length ? { stepLog } : {}),
+            });
           }
 
           const mergeByName = <T extends { name: string }>(incoming: T[], mine: T[]): T[] => {

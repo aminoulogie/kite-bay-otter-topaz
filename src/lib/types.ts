@@ -225,13 +225,33 @@ export interface NutritionDay {
   readiness?: ReadinessCheckin;
 }
 
+/** One action inside a habit that is really a checklist. See lib/habit-steps.ts. */
+export interface HabitStep {
+  id: string;
+  name: string;
+  /** Times a day it has to happen. 1 for most things, 3 for brushing. */
+  target: number;
+}
+
 export interface Habit {
   id: string;
   name: string;
   desc: string;
   color: string;
   goalDaysPerWeek: number;
+  /**
+   * Whether the day counts as done. Stays authoritative for every reader —
+   * streaks, heatmaps, calendar marks, the coach — including for habits with
+   * steps, where it is derived from them rather than pressed.
+   */
   history: Record<string, boolean>;
+  /**
+   * A checklist. When present the habit is done only on days where every step
+   * has met its target, and the tick cannot be pressed directly.
+   */
+  steps?: HabitStep[];
+  /** date -> step id -> times done that day. Absent means none. */
+  stepLog?: Record<string, Record<string, number>>;
 }
 
 export interface Settings {

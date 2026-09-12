@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, Camera, Check, Trash2 } from "lucide-react";
+import { CalendarDays, Camera, Check, ListChecks, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
 import { MonthMatrix, MonthStrip, YearlyOverview } from "@/components/HabitHeatmap";
@@ -7,11 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { HabitStepsSheet } from "@/components/HabitStepsSheet";
 import { captureImage, getPhoto, savePhoto } from "@/lib/habit-photos";
+import {
+  STEP_PRESETS, hasSteps, newStepId, progress, stepCount, targetOf,
+} from "@/lib/habit-steps";
 import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import type { Habit } from "@/lib/types";
+import type { Habit, HabitStep } from "@/lib/types";
 
 type HabitTab = "today" | "month" | "year";
 
@@ -111,6 +115,33 @@ export function HabitsView() {
             Add
           </Button>
         </div>
+        {/* The two checklists everyone writes out by hand, and both are exactly
+            what steps are for. One tap rather than six. */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {STEP_PRESETS.filter(
+            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
+          ).map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              onClick={() => {
+                addHabit({
+                  name: t.name,
+                  desc: t.desc,
+                  color: t.color,
+                  goalDaysPerWeek: 7,
+                  steps: t.steps.map((x) => ({ ...x, id: newStepId() })),
+                });
+                toast.success(`Added ${t.name} with ${t.steps.length} steps`);
+              }}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
+            >
+              <ListChecks className="size-3.5" style={{ color: t.color }} />
+              {t.name}
+            </button>
+          ))}
+        </div>
+
         {habits.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
             {habits.map((h) => (
@@ -134,11 +165,14 @@ export function HabitsView() {
 function TodayPanel() {
   const habits = useSoma((s) => s.habits);
   const toggleHabit = useSoma((s) => s.toggleHabit);
+  const bumpHabitStep = useSoma((s) => s.bumpHabitStep);
+  const setHabitSteps = useSoma((s) => s.setHabitSteps);
   const activeDate = useSoma((s) => s.activeDate);
   const today = parseLocalDateKey(activeDate);
 
   // Which habit's photo calendar is open, and today's thumbnails.
   const [calendarFor, setCalendarFor] = useState<Habit | null>(null);
+  const [stepsFor, setStepsFor] = useState<Habit | null>(null);
   const [shots, setShots] = useState<Map<string, string>>(new Map());
   const [busy, setBusy] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -173,6 +207,10 @@ function TodayPanel() {
   /**
    * Capture now. Ticking the habit as well is the point: you photograph the
    * moment because it happened, so making that a second tap would be busywork.
+   *
+   * A habit with a checklist is the exception. A photo is evidence of one
+   * moment, and ticking every step off the back of it would mark a routine
+   * finished on the strength of its first item.
    */
   const captureNow = async (h: Habit) => {
     const file = await captureImage();
@@ -180,7 +218,7 @@ function TodayPanel() {
     setBusy(h.id);
     try {
       await savePhoto(h.id, activeDate, file);
-      if (!h.history[activeDate]) toggleHabit(h.id, activeDate);
+      if (!hasSteps(h) && !h.history[activeDate]) toggleHabit(h.id, activeDate);
       setReload((k) => k + 1);
       toast.success("Captured " + h.name);
     } catch (err) {
@@ -213,6 +251,8 @@ function TodayPanel() {
         });
         const weekDone = week.filter((d) => d.done).length;
         const done = !!h.history[activeDate];
+        const steps = h.steps ?? [];
+        const list = progress(h, activeDate);
 
         return (
           <Card key={h.id} className="space-y-3">
@@ -228,7 +268,20 @@ function TodayPanel() {
                 </button>
               )}
               <div className="min-w-0 flex-1">
-                <div className="truncate font-display text-sm font-bold">{h.name}</div>
+                {/* The name is the way into the checklist. A fourth round button
+                    up here would not fit on a phone, and every habit needs the
+                    route in — including the ones that have no steps yet. */}
+                <button
+                  type="button"
+                  onClick={() => setStepsFor(h)}
+                  className="flex min-w-0 items-center gap-1.5 text-left"
+                  aria-label={`Checklist for ${h.name}`}
+                >
+                  <span className="truncate font-display text-sm font-bold">{h.name}</span>
+                  <ListChecks
+                    className={cn("size-3.5 shrink-0", steps.length ? "text-accent" : "text-faint")}
+                  />
+                </button>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
                   {streak > 0 && <Badge tone="accent">{streak} day streak</Badge>}
                   <span className="text-[0.7rem] text-faint">
@@ -254,6 +307,10 @@ function TodayPanel() {
                 >
                   <Camera className="size-5" />
                 </button>
+                {/* With a checklist this reads the steps rather than setting
+                    the day: the fraction IS the state. Pressing it is the "all
+                    of it, now" shortcut, and it fills every step in so the card
+                    never claims more than the steps say. */}
                 <button
                   type="button"
                   onClick={() => toggleHabit(h.id)}
@@ -261,14 +318,87 @@ function TodayPanel() {
                     "flex size-11 items-center justify-center rounded-full border transition-transform active:scale-90",
                     done
                       ? "border-accent bg-accent text-accent-ink"
-                      : "border-border bg-surface-2 text-faint",
+                      : steps.length && list.done > 0
+                        ? "border-accent/60 bg-accent-soft text-accent-text"
+                        : "border-border bg-surface-2 text-faint",
                   )}
-                  aria-label={done ? "Uncheck habit" : "Complete habit"}
+                  aria-label={
+                    steps.length
+                      ? `${list.done} of ${list.total} steps done. ${done ? "Clear them all" : "Mark them all done"}`
+                      : done
+                        ? "Uncheck habit"
+                        : "Complete habit"
+                  }
                 >
-                  <Check className="size-5" />
+                  {steps.length && !done ? (
+                    <span className="text-xs font-extrabold tabular">
+                      {list.done}/{list.total}
+                    </span>
+                  ) : (
+                    <Check className="size-5" />
+                  )}
                 </button>
               </div>
             </div>
+            {steps.length > 0 && (
+              <div className="space-y-1">
+                {steps.map((st) => {
+                  const target = targetOf(st);
+                  const n = stepCount(h, activeDate, st.id);
+                  const stepIsDone = n >= target;
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      onClick={() => bumpHabitStep(h.id, st.id)}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors active:scale-[0.99]",
+                        stepIsDone
+                          ? "border-accent/40 bg-accent-soft"
+                          : "border-border bg-surface-2",
+                      )}
+                      aria-label={
+                        target > 1
+                          ? `${st.name}, ${n} of ${target} done. Tap for one more.`
+                          : stepIsDone
+                            ? `${st.name} done. Tap to undo.`
+                            : `${st.name}. Tap when done.`
+                      }
+                    >
+                      <span
+                        className={cn(
+                          "flex size-5 shrink-0 items-center justify-center rounded-md border",
+                          stepIsDone
+                            ? "border-accent bg-accent text-accent-ink"
+                            : "border-border-strong text-transparent",
+                        )}
+                      >
+                        <Check className="size-3.5" strokeWidth={3.5} />
+                      </span>
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-xs font-bold",
+                          stepIsDone && "text-muted line-through",
+                        )}
+                      >
+                        {st.name}
+                      </span>
+                      {target > 1 && (
+                        <span
+                          className={cn(
+                            "shrink-0 text-[0.7rem] font-extrabold tabular",
+                            stepIsDone ? "text-accent-text" : "text-faint",
+                          )}
+                        >
+                          {n}/{target}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Thirty days rather than seven, in the same strip height: a week
                 of bars said almost nothing, and this fits the month into the
                 space the week already occupied. Lit by streak, so a run
@@ -277,6 +407,14 @@ function TodayPanel() {
           </Card>
         );
       })}
+
+      {stepsFor && (
+        <HabitStepsSheet
+          habit={habits.find((h) => h.id === stepsFor.id) ?? stepsFor}
+          onClose={() => setStepsFor(null)}
+          onSave={(next: HabitStep[]) => setHabitSteps(stepsFor.id, next)}
+        />
+      )}
 
       {calendarFor && (
         <HabitPhotoCalendar
