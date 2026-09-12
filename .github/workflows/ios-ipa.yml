@@ -13,6 +13,11 @@ on:
   push:
     tags: ["ios-v*"]
 
+# Needed to publish the .ipa as a release asset, which is the only form of it
+# that can be downloaded without a GitHub login.
+permissions:
+  contents: write
+
 jobs:
   ipa:
     runs-on: macos-latest
@@ -128,6 +133,38 @@ jobs:
           cd "$RUNNER_TEMP"
           zip -qry "SOMA-$V.ipa" Payload
           echo "Built $(du -h "SOMA-$V.ipa" | cut -f1) unsigned ipa"
+
+
+      # An upload-artifact is a ZIP behind a login wall: to get at the .ipa you
+      # must be signed in to GitHub, download the zip, and unzip it — which on
+      # the phone that is meant to install it is somewhere between painful and
+      # impossible. A release asset is the same file at a plain https URL that
+      # Safari, AltStore and Sideloadly can each take directly.
+      #
+      # Pushing the tag with GITHUB_TOKEN deliberately does NOT start another
+      # run of this workflow, so the tag trigger above cannot loop.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.ver.outputs.marketing }}
+          B: ${{ steps.ver.outputs.build }}
+        run: |
+          set -euo pipefail
+          IPA="$RUNNER_TEMP/SOMA-$V.ipa"
+          TAG="ios-v$V"
+          NOTES="SOMA $V (build $B), unsigned.
+
+          Download SOMA-$V.ipa below and install it with AltStore or Sideloadly,
+          which sign it with your own Apple ID. Installing over the app already
+          on the phone keeps every log, habit and photo — the bundle id does not
+          change between builds."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$IPA" --clobber
+            gh release edit "$TAG" --notes "$NOTES"
+          else
+            gh release create "$TAG" "$IPA" --title "SOMA $V" --notes "$NOTES"
+          fi
+          echo "Release: $(gh release view "$TAG" --json url -q .url)"
 
       - uses: actions/upload-artifact@v4
         with:
