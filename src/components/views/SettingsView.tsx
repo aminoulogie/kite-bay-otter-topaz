@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,10 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
 import {
-  buildBackup, parseBackup, restorePhotos, restoreScanImages, saveBackupFile,
-  type BackupSummary,
+  parseBackup, restorePhotos, restoreScanImages, saveBackupFile, type BackupSummary,
 } from "@/lib/backup";
 import {
-  backupIsDue, daysSinceBackup, formatBytes, markBackedUp, requestPersistence,
+  backupIsDue, daysSinceBackup, formatBytes, requestPersistence,
   storageHealth, type StorageHealth,
 } from "@/lib/storage-health";
 import { ProgramBuilder } from "@/components/ProgramBuilder";
@@ -21,6 +20,7 @@ import {
 } from "@/lib/food-import";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useActiveProgram, useSoma } from "@/lib/store";
+import { useBackupDownload } from "@/lib/use-backup";
 import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,6 @@ export function SettingsView() {
   const allExercises = useSoma((s) => s.allExercises);
   const saveRoutine = useSoma((s) => s.saveRoutine);
   const deleteRoutine = useSoma((s) => s.deleteRoutine);
-  const exportJson = useSoma((s) => s.exportJson);
   const importJson = useSoma((s) => s.importJson);
   const resetAll = useSoma((s) => s.resetAll);
   const routines = routinesFn();
@@ -64,9 +63,14 @@ export function SettingsView() {
       Object.entries(useSoma.getState().settings.customGoals ?? {}).map(([k, v]) => [k, String(v)]),
     ),
   );
-  const [busy, setBusy] = useState(false);
+  const [localBusy, setBusy] = useState(false);
   const [health, setHealth] = useState<StorageHealth | null>(null);
   const [sinceBackup, setSinceBackup] = useState<number | null>(daysSinceBackup());
+  const markFresh = useCallback(() => setSinceBackup(0), []);
+  // The same call the header icon makes, so a backup taken from either place
+  // is the same file and clears the same "overdue" warning.
+  const { busy: savingBackup, download } = useBackupDownload(markFresh);
+  const busy = localBusy || savingBackup;
 
   useEffect(() => {
     void storageHealth().then(setHealth);
@@ -95,28 +99,6 @@ export function SettingsView() {
     setEditing(name);
     setRtName(name);
     setRtList(SomaIntelligenceEngine.normalizeRoutine(routines[name] || []));
-  };
-
-  const download = async () => {
-    setBusy(true);
-    try {
-      const backup = await buildBackup(JSON.parse(exportJson()));
-      const json = JSON.stringify(backup);
-      const name = `soma-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      const how = await saveBackupFile(json, name);
-      markBackedUp();
-      setSinceBackup(0);
-      const mb = (json.length / 1048576).toFixed(1);
-      toast.success(
-        how === "shared"
-          ? `Backup ready to save (${mb} MB, ${backup.photos.length} photos)`
-          : `Downloaded ${name} (${mb} MB)`,
-      );
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not build the backup.");
-    } finally {
-      setBusy(false);
-    }
   };
 
   const chooseRestore = async (file: File) => {

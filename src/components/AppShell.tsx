@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, BrainCircuit, CalendarDays, Check, Clock, Dumbbell, LayoutGrid, LineChart, PanelLeft, Pencil, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
+import { Activity, BrainCircuit, CalendarDays, Check, Clock, Download, Dumbbell, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
@@ -8,6 +8,7 @@ import { requestPersistence } from "@/lib/storage-health";
 import { TrainCalendar } from "@/components/TrainCalendar";
 import { useEdgeSwipe, useRightEdgeSwipe } from "@/lib/use-edge-swipe";
 import { useKeyboardInset } from "@/lib/use-keyboard";
+import { useBackupDownload } from "@/lib/use-backup";
 import { BodyView } from "@/components/views/BodyView";
 import { HabitsView } from "@/components/views/HabitsView";
 import { InsightsView } from "@/components/views/InsightsView";
@@ -54,6 +55,12 @@ export function AppShell() {
   // window, not of whichever field happens to be focused, and every sheet in
   // every tab needs the same answer about where it now ends.
   useKeyboardInset();
+
+  // Everything in this app lives on this one device, so the backup file is the
+  // only copy that survives losing it. Burying the one control that writes it
+  // three screens deep in Setup made the safest habit the least convenient
+  // one; it is now two taps from wherever you are.
+  const { busy: savingBackup, download: saveBackup } = useBackupDownload();
 
   const [ready, setReady] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -274,12 +281,16 @@ export function AppShell() {
               {TAB_META[tab].label}
             </div>
           </div>
-          <div className="min-w-0 lg:hidden">
+          {/* No tagline. The row now carries three controls and "Smart Coach"
+              was the only thing without a job, so it was the thing that got
+              truncated to "SMART …" to make room — which reads as a layout
+              bug rather than as branding. The name stays; the phone's home
+              screen has already said the rest. */}
+          {/* shrink-0: four characters have no sensible truncation, and the
+              flex row was clipping the last one by a pixel on a 360px phone. */}
+          <div className="shrink-0 lg:hidden">
             <div className="font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
               SOMA
-            </div>
-            <div className="truncate text-[0.65rem] font-bold uppercase tracking-[0.16em] text-faint">
-              Smart Coach
             </div>
           </div>
         </div>
@@ -306,6 +317,24 @@ export function AppShell() {
               {editingDashboard ? "Done" : "Edit"}
             </button>
           )}
+          {/* Icon only. The header already carries two labelled controls and a
+              third word would push the row into wrapping on a small phone —
+              and unlike those two this one needs no explanation once found,
+              because pressing it hands you a file. */}
+          <button
+            type="button"
+            onClick={() => void saveBackup()}
+            disabled={savingBackup}
+            aria-label={savingBackup ? "Building the backup file" : "Save a backup file"}
+            title="Save a backup file"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted active:bg-surface-3 disabled:opacity-60"
+          >
+            {savingBackup ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Download className="size-3.5" />
+            )}
+          </button>
           <button
             type="button"
             onClick={() => setCalendarOpen(true)}
