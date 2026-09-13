@@ -54,7 +54,16 @@ jobs:
           REPO: ${{ github.event.repository.name }}
         run: python3 scripts/stage_static.py --base "/$REPO"
 
+      # `enablement` turns Pages ON if it is off, rather than failing.
+      #
+      # Pages was disabled on the repository at some point and every deploy
+      # after that died at this step with "Get Pages site failed: Not Found" —
+      # the build was fine, there was simply nowhere to put it, and the live
+      # site 404d. A deploy that cannot survive a settings toggle is a deploy
+      # that goes down without anybody changing a line of code.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
