@@ -18,6 +18,9 @@ import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
 import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
 import { WidgetGrid } from "@/components/WidgetGrid";
+import { TopTabs } from "@/components/TopTabs";
+import { WeeklyFuel } from "@/components/WeeklyFuel";
+import { WeightPanel } from "@/components/views/BodyView";
 import { useSoma } from "@/lib/store";
 import { useLongPressMove } from "@/lib/use-long-press-move";
 import { SwipeRow } from "@/components/SwipeRow";
@@ -37,7 +40,15 @@ import type { FoodItem, Goals } from "@/lib/types";
 // everything the pre-workout card adds — was invisible in the diary.
 const MEALS = ["Breakfast", "Lunch", "Dinner", "Pre-Workout", "Post-Workout", "Snacks"];
 
+const FUEL_TABS = [
+  { id: "dash" as const, label: "Dashboard" },
+  { id: "week" as const, label: "Week" },
+  { id: "log" as const, label: "Log" },
+  { id: "weight" as const, label: "Weight" },
+];
+
 export function NutritionView() {
+  const [sub, setSub] = useState<"dash" | "week" | "log" | "weight">("dash");
   const nutrition = useSoma((s) => s.nutrition);
   const history = useSoma((s) => s.history);
   const activeDate = useSoma((s) => s.activeDate);
@@ -252,7 +263,15 @@ export function NutritionView() {
   const waterPct = Math.min(100, Math.round((water / (goals.water || 3500)) * 100));
 
   return (
-    <WidgetGrid tab="nutrition">
+    <>
+      {/* Four jobs, four pages. Logging a meal, checking the week, reading the
+          detailed diary and weighing yourself happen at different times and
+          were competing for the same scroll. The cards are unchanged — which
+          of them a page shows is decided by the registry, so a card belongs to
+          exactly one page and cannot quietly appear on two. */}
+      <TopTabs tabs={FUEL_TABS} value={sub} onChange={setSub} className="mb-3" />
+
+    <WidgetGrid tab={`nutrition-${sub}`}>
       <Card key="target" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <div className="flex items-start justify-between">
           <div>
@@ -374,7 +393,7 @@ export function NutritionView() {
         <Macro label="Fat" used={totals.f} goal={goals.fat} unit="g" />
       </div>
 
-      <Card key="macros">
+      <Card key="water">
         <CardTitle>
           <span>Water</span>
           <span className="tabular text-sm font-bold text-accent-text">
@@ -887,10 +906,17 @@ export function NutritionView() {
 
       <MineralsCard key="minerals" />
 
+      {/* Moved off Body. Weight is something you change with food, and it was
+          two tabs away from the only screen that can explain the number. */}
+      <WeightPanel key="weight" />
+
+      <WeeklyFuel key="weekly" />
+
       {editingFood && (
         <FoodEditorSheet food={editingFood} onClose={() => setEditingFood(null)} />
       )}
     </WidgetGrid>
+    </>
   );
 }
 

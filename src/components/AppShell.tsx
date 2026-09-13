@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, BrainCircuit, CalendarDays, Check, Clock, Download, Dumbbell, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
+import { Activity, BrainCircuit, CalendarDays, Check, Clock, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
@@ -25,6 +25,7 @@ import { TAB_ORDER, resolveTab } from "@/lib/tab-order";
 import { DashboardView } from "@/components/views/DashboardView";
 import { MoneyView } from "@/components/views/MoneyView";
 import { MindView } from "@/components/views/MindView";
+import { ProjectsView } from "@/components/views/ProjectsView";
 import { LooksView } from "@/components/views/LooksView";
 import { TimeView } from "@/components/views/TimeView";
 
@@ -35,6 +36,7 @@ import { TimeView } from "@/components/views/TimeView";
  */
 const TAB_META: Record<TabId, { label: string; icon: typeof Dumbbell }> = {
   mind: { label: "Mind", icon: BrainCircuit },
+  projects: { label: "Projects", icon: FolderKanban },
   looks: { label: "Looks", icon: ScanFace },
   money: { label: "Money", icon: Wallet },
   dashboard: { label: "Home", icon: LayoutGrid },
@@ -368,6 +370,7 @@ export function AppShell() {
         {tab === "dashboard" && <DashboardView />}
         {tab === "money" && <MoneyView />}
         {tab === "mind" && <MindView />}
+        {tab === "projects" && <ProjectsView />}
         {tab === "looks" && <LooksView />}
         {tab === "workout" && <WorkoutView />}
         {tab === "nutrition" && <NutritionView />}

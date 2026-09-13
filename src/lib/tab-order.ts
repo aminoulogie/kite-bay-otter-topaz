@@ -16,6 +16,10 @@ import type { TabId } from "./types.ts";
 
 export const TAB_ORDER: TabId[] = [
   "mind",
+  // Beside Mind rather than beside Home: a project is a thing you are thinking
+  // about and working towards, which is the same side of the app as reading,
+  // ideas and research — not the same side as the body.
+  "projects",
   "looks",
   "money",
   "dashboard",

@@ -39,9 +39,11 @@ const SITES = [
 type BodyTab = "weight" | "sleep" | "measure" | "supplements";
 
 export function BodyView() {
-  const [tab, setTab] = useState<BodyTab>("weight");
-  const tabs: { id: BodyTab; label: string; icon: typeof Scale }[] = [
-    { id: "weight", label: "Weight", icon: Scale },
+  // Weight lives on Fuel now — it is a number you move with food, and it was
+  // two tabs from the screen that explains it. Sleep is the sensible landing
+  // page for what is left.
+  const [tab, setTab] = useState<BodyTab>("sleep");
+  const tabs: { id: BodyTab; label: string; icon: typeof Moon }[] = [
     { id: "sleep", label: "Sleep", icon: Moon },
     { id: "measure", label: "Tape", icon: Ruler },
     { id: "supplements", label: "Supps", icon: Pill },
@@ -69,7 +71,6 @@ export function BodyView() {
         })}
       </div>
       <div key="panel" className="space-y-3">
-        {tab === "weight" && <WeightPanel />}
         {tab === "sleep" && <SleepPanel />}
         {tab === "measure" && <MeasurePanel />}
         {tab === "supplements" && <SupplementsPanel />}
@@ -78,7 +79,14 @@ export function BodyView() {
   );
 }
 
-function WeightPanel() {
+/**
+ * Exported because Fuel owns weight now.
+ *
+ * Weight is a thing you change with food, and it used to sit two tabs away
+ * from the only screen that can explain the number. It renders here no longer
+ * — Body keeps sleep, tape and supplements.
+ */
+export function WeightPanel() {
   const nutrition = useSoma((s) => s.nutrition);
   const logWeight = useSoma((s) => s.logWeight);
   const activeDate = useSoma((s) => s.activeDate);

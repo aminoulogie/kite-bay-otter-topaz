@@ -514,3 +514,34 @@ select,
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Small widgets.
+
+   A card set to small is a square you glance at, the way a home-screen widget
+   is. Most cards in this app were written to be full width and will not fit —
+   and that is fine, because the alternative was the app deciding which of the
+   user's cards were allowed to be small, which is a decision it has no
+   standing to make.
+
+   So: a hard square, and whatever runs past the bottom edge fades out instead
+   of pushing the row out of shape. It reads as a preview of the card, which is
+   exactly what it is, and sizing it back up is one tap away.
+--------------------------------------------------------------------------- */
+.soma-widget-small {
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
+}
+
+/* The card inside fills the square rather than floating in the top of it. */
+.soma-widget-small > * {
+  height: 100%;
+}
+
+/* Type comes down a step so a heading written for a full row still reads as a
+   heading in a quarter of the screen, rather than wrapping to four lines. */
+.soma-widget-small {
+  font-size: 0.92em;
+}

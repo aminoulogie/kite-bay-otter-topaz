@@ -22,21 +22,50 @@
  * bringing it back puts it where it was rather than at the bottom.
  */
 
-export type Span = 1 | 2;
+/**
+ * The three sizes, named after what they are rather than how many columns
+ * they take.
+ *
+ * Borrowed wholesale from the home screen, because that is where everyone
+ * already learned it: SMALL is a square you glance at, MEDIUM is a row you
+ * read, LARGE is a panel you work in. Columns are an implementation detail of
+ * the grid; "small" is a promise about how much fits.
+ */
+export type WidgetSize = "small" | "medium" | "large";
+
+export const SIZES: WidgetSize[] = ["small", "medium", "large"];
+
+/** How many of the two columns each size takes. */
+export function columnsFor(size: WidgetSize): 1 | 2 {
+  return size === "small" ? 1 : 2;
+}
+
+export function nextSize(size: WidgetSize): WidgetSize {
+  const i = SIZES.indexOf(size);
+  return SIZES[(i + 1) % SIZES.length]!;
+}
 
 export interface WidgetDef {
   id: string;
   /** What the edit overlay calls it. */
   label: string;
-  span: Span;
-  /** False for widgets that are all prose and unreadable in half a phone. */
-  resizable: boolean;
+  /** The size it ships at. Every widget can be set to any of the three. */
+  size: WidgetSize;
 }
 
 export interface WidgetPlacement {
   id: string;
-  span: Span;
+  size: WidgetSize;
   hidden: boolean;
+}
+
+/** A stored value read back as a size, whatever shape it was written in. */
+export function asSize(value: unknown): WidgetSize | null {
+  if (value === "small" || value === "medium" || value === "large") return value;
+  // Layouts saved before there were three sizes stored a column count.
+  if (value === 1) return "small";
+  if (value === 2) return "medium";
+  return null;
 }
 
 /**
@@ -47,17 +76,17 @@ export interface WidgetPlacement {
  * mode, and a single grid could not answer it.
  */
 export const DASHBOARD_WIDGETS: WidgetDef[] = [
-  { id: "brief", label: "Coach brief", span: 2, resizable: false },
-  { id: "score", label: "Today's score", span: 2, resizable: true },
-  { id: "cals", label: "Calories", span: 1, resizable: true },
-  { id: "protein", label: "Protein", span: 1, resizable: true },
-  { id: "carbs", label: "Carbs", span: 1, resizable: true },
-  { id: "fat", label: "Fat", span: 1, resizable: true },
-  { id: "water", label: "Water", span: 1, resizable: true },
-  { id: "session", label: "Session", span: 1, resizable: true },
-  { id: "todos", label: "To-do", span: 2, resizable: true },
-  { id: "gap", label: "Log the gap", span: 2, resizable: false },
-  { id: "correlate", label: "Across everything", span: 2, resizable: false },
+  { id: "brief", label: "Coach brief", size: "medium" },
+  { id: "score", label: "Today's score", size: "medium" },
+  { id: "cals", label: "Calories", size: "small" },
+  { id: "protein", label: "Protein", size: "small" },
+  { id: "carbs", label: "Carbs", size: "small" },
+  { id: "fat", label: "Fat", size: "small" },
+  { id: "water", label: "Water", size: "small" },
+  { id: "session", label: "Session", size: "small" },
+  { id: "todos", label: "To-do", size: "medium" },
+  { id: "gap", label: "Log the gap", size: "medium" },
+  { id: "correlate", label: "Across everything", size: "medium" },
 ];
 
 /**
@@ -81,124 +110,141 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   // "mind-book" rather than "mind" because a layout is a layout OF A PAGE, and
   // Reading and Language are not the same page with different cards on it.
   "mind-book": [
-    { id: "goal", label: "Reading goal", span: 2, resizable: false },
-    { id: "shelf", label: "Reading shelf", span: 2, resizable: false },
-    { id: "week", label: "This week", span: 2, resizable: true },
-    { id: "log", label: "Log a book", span: 2, resizable: false },
-    { id: "recent", label: "Recent books", span: 2, resizable: false },
+    { id: "goal", label: "Reading goal", size: "medium" },
+    { id: "shelf", label: "Reading shelf", size: "medium" },
+    { id: "week", label: "This week", size: "medium" },
+    { id: "log", label: "Log a book", size: "medium" },
+    { id: "recent", label: "Recent books", size: "medium" },
   ],
   "mind-language": [
-    { id: "languages", label: "Languages and words", span: 2, resizable: false },
-    { id: "review", label: "Words to review", span: 2, resizable: false },
-    { id: "words", label: "Your own words", span: 2, resizable: false },
-    { id: "week", label: "This week", span: 2, resizable: true },
-    { id: "log", label: "Log a drill", span: 2, resizable: false },
-    { id: "recent", label: "Recent drills", span: 2, resizable: false },
+    { id: "languages", label: "Languages and words", size: "medium" },
+    { id: "review", label: "Words to review", size: "medium" },
+    { id: "words", label: "Your own words", size: "medium" },
+    { id: "week", label: "This week", size: "medium" },
+    { id: "log", label: "Log a drill", size: "medium" },
+    { id: "recent", label: "Recent drills", size: "medium" },
   ],
   "mind-idea": [
-    { id: "week", label: "This week", span: 2, resizable: true },
-    { id: "log", label: "Log an idea", span: 2, resizable: false },
-    { id: "recent", label: "Recent ideas", span: 2, resizable: false },
+    { id: "week", label: "This week", size: "medium" },
+    { id: "log", label: "Log an idea", size: "medium" },
+    { id: "recent", label: "Recent ideas", size: "medium" },
   ],
   "mind-research": [
-    { id: "week", label: "This week", span: 2, resizable: true },
-    { id: "log", label: "Log research", span: 2, resizable: false },
-    { id: "recent", label: "Recent research", span: 2, resizable: false },
+    { id: "week", label: "This week", size: "medium" },
+    { id: "log", label: "Log research", size: "medium" },
+    { id: "recent", label: "Recent research", size: "medium" },
+  ],
+  projects: [
+    { id: "header", label: "On the go", size: "medium" },
+    { id: "new", label: "Start something", size: "medium" },
+    { id: "list", label: "The projects", size: "medium" },
   ],
   money: [
-    { id: "summary", label: "This month", span: 2, resizable: true },
-    { id: "add", label: "Add an entry", span: 2, resizable: false },
-    { id: "grocery", label: "Shopping list", span: 2, resizable: false },
-    { id: "entries", label: "Entries", span: 2, resizable: false },
-    { id: "categories", label: "Categories", span: 2, resizable: false },
+    { id: "summary", label: "This month", size: "medium" },
+    { id: "add", label: "Add an entry", size: "medium" },
+    { id: "grocery", label: "Shopping list", size: "medium" },
+    { id: "entries", label: "Entries", size: "medium" },
+    { id: "categories", label: "Categories", size: "medium" },
   ],
   time: [
-    { id: "header", label: "The day", span: 2, resizable: true },
-    { id: "ring", label: "The ring", span: 2, resizable: false },
-    { id: "screen", label: "Screen time", span: 2, resizable: false },
-    { id: "blocks", label: "The day, in order", span: 2, resizable: false },
+    { id: "header", label: "The day", size: "medium" },
+    { id: "ring", label: "The ring", size: "medium" },
+    { id: "screen", label: "Screen time", size: "medium" },
+    { id: "blocks", label: "The day, in order", size: "medium" },
   ],
   habits: [
-    { id: "header", label: "Consistency", span: 2, resizable: true },
-    { id: "tabs", label: "Today / Matrix / Year", span: 2, resizable: false },
-    { id: "list", label: "The habits", span: 2, resizable: false },
-    { id: "new", label: "New habit", span: 2, resizable: false },
+    { id: "header", label: "Consistency", size: "medium" },
+    { id: "tabs", label: "Today / Matrix / Year", size: "medium" },
+    { id: "list", label: "The habits", size: "medium" },
+    { id: "new", label: "New habit", size: "medium" },
   ],
-  nutrition: [
-    { id: "target", label: "Today's totals", span: 2, resizable: true },
-    { id: "suggest", label: "Suggest from pantry", span: 2, resizable: false },
-    { id: "plan", label: "Plan ahead", span: 2, resizable: false },
-    { id: "actions", label: "Scan / Search / Burn", span: 2, resizable: false },
-    { id: "macros", label: "Macro split", span: 2, resizable: true },
-    { id: "plate", label: "Plate photo", span: 2, resizable: false },
-    { id: "hunger", label: "Hunger", span: 2, resizable: false },
-    { id: "add", label: "Add food", span: 2, resizable: false },
-    { id: "meal", label: "Meal builder", span: 2, resizable: false },
-    { id: "preworkout", label: "Pre-workout", span: 2, resizable: false },
-    { id: "diary", label: "The diary", span: 2, resizable: false },
-    { id: "graphs", label: "The week", span: 2, resizable: false },
-    { id: "minerals", label: "Minerals", span: 2, resizable: false },
+  // Fuel is four pages behind one tab. The old single page held thirteen cards
+  // and you scrolled past the ones you were not using to reach the ones you
+  // were — logging a meal and reviewing the week are different jobs done at
+  // different times of day, and stacking them made both worse.
+  "nutrition-dash": [
+    { id: "target", label: "Today's totals", size: "medium" },
+    { id: "suggest", label: "Suggest from pantry", size: "medium" },
+    { id: "plan", label: "Plan ahead", size: "medium" },
+    { id: "actions", label: "Scan / Search / Burn", size: "medium" },
+    { id: "plate", label: "Plate photo", size: "medium" },
+    { id: "hunger", label: "Hunger", size: "medium" },
+    { id: "add", label: "Add food", size: "medium" },
+    { id: "meal", label: "Meal builder", size: "medium" },
+    { id: "preworkout", label: "Pre-workout", size: "medium" },
+  ],
+  "nutrition-week": [
+    { id: "weekly", label: "The last seven days", size: "medium" },
+    { id: "graphs", label: "Charts", size: "medium" },
+  ],
+  "nutrition-log": [
+    { id: "diary", label: "Meal by meal", size: "medium" },
+    { id: "water", label: "Water", size: "medium" },
+    { id: "minerals", label: "Micronutrients", size: "medium" },
+  ],
+  "nutrition-weight": [
+    { id: "weight", label: "Weight", size: "medium" },
   ],
   workout: [
-    { id: "header", label: "Session header", span: 2, resizable: true },
-    { id: "date", label: "The date", span: 2, resizable: false },
-    { id: "quick", label: "Undo / Save", span: 2, resizable: false },
-    { id: "session", label: "Rest timer", span: 2, resizable: false },
-    { id: "chips", label: "Add exercise", span: 2, resizable: false },
+    { id: "header", label: "Session header", size: "medium" },
+    { id: "date", label: "The date", size: "medium" },
+    { id: "quick", label: "Undo / Save", size: "medium" },
+    { id: "session", label: "Rest timer", size: "medium" },
+    { id: "chips", label: "Add exercise", size: "medium" },
   ],
   looks: [
-    { id: "latest", label: "Latest front", span: 2, resizable: true },
-    { id: "scan", label: "Scan button", span: 2, resizable: false },
-    { id: "gallery", label: "Captures", span: 2, resizable: false },
-    { id: "guide", label: "What it measures", span: 2, resizable: false },
-    { id: "note", label: "What the mesh is", span: 2, resizable: false },
+    { id: "latest", label: "Latest front", size: "medium" },
+    { id: "scan", label: "Scan button", size: "medium" },
+    { id: "gallery", label: "Captures", size: "medium" },
+    { id: "guide", label: "What it measures", size: "medium" },
+    { id: "note", label: "What the mesh is", size: "medium" },
   ],
   // Stats is eight pages behind one tab, like Mind. Only the two that are
   // genuinely card stacks get a layout; the rest delegate to whole other
   // views, which bring their own.
   "insights-overview": [
-    { id: "brief", label: "Coach brief", span: 2, resizable: false },
-    { id: "meso", label: "Block review", span: 2, resizable: false },
-    { id: "consistency", label: "Training consistency", span: 2, resizable: true },
-    { id: "volume", label: "Weekly volume", span: 2, resizable: false },
-    { id: "axial", label: "Axial load", span: 2, resizable: true },
-    { id: "ratings", label: "Exercise ratings", span: 2, resizable: false },
+    { id: "brief", label: "Coach brief", size: "medium" },
+    { id: "meso", label: "Block review", size: "medium" },
+    { id: "consistency", label: "Training consistency", size: "medium" },
+    { id: "volume", label: "Weekly volume", size: "medium" },
+    { id: "axial", label: "Axial load", size: "medium" },
+    { id: "ratings", label: "Exercise ratings", size: "medium" },
   ],
   "insights-strength": [
-    { id: "estimates", label: "Strength estimates", span: 2, resizable: false },
-    { id: "prs", label: "Recent PRs", span: 2, resizable: true },
+    { id: "estimates", label: "Strength estimates", size: "medium" },
+    { id: "prs", label: "Recent PRs", size: "medium" },
   ],
   "insights-heatmap": [
-    { id: "intro", label: "What the map shows", span: 2, resizable: true },
-    { id: "range", label: "Front / back", span: 2, resizable: false },
-    { id: "grid", label: "The map", span: 2, resizable: false },
+    { id: "intro", label: "What the map shows", size: "medium" },
+    { id: "range", label: "Front / back", size: "medium" },
+    { id: "grid", label: "The map", size: "medium" },
   ],
   body: [
-    { id: "tabs", label: "Weight / Sleep / Measure / Supplements", span: 2, resizable: false },
-    { id: "panel", label: "The panel", span: 2, resizable: false },
+    { id: "tabs", label: "Sleep / Measure / Supplements", size: "medium" },
+    { id: "panel", label: "The panel", size: "medium" },
   ],
   estimates: [
-    { id: "weight", label: "Bodyweight", span: 2, resizable: false },
-    { id: "composition", label: "Muscle vs fat", span: 2, resizable: true },
-    { id: "measures", label: "Measurements", span: 2, resizable: false },
-    { id: "strength", label: "Strength", span: 2, resizable: false },
-    { id: "note", label: "How these are made", span: 2, resizable: true },
+    { id: "weight", label: "Bodyweight", size: "medium" },
+    { id: "composition", label: "Muscle vs fat", size: "medium" },
+    { id: "measures", label: "Measurements", size: "medium" },
+    { id: "strength", label: "Strength", size: "medium" },
+    { id: "note", label: "How these are made", size: "medium" },
   ],
   settings: [
-    { id: "phase", label: "Phase", span: 2, resizable: true },
-    { id: "goal", label: "Training goal", span: 2, resizable: true },
-    { id: "appearance", label: "Appearance", span: 2, resizable: false },
-    { id: "training", label: "Training", span: 2, resizable: false },
-    { id: "nutrition", label: "Nutrition", span: 2, resizable: false },
-    { id: "routines", label: "Routines", span: 2, resizable: false },
-    { id: "report", label: "Report", span: 2, resizable: true },
-    { id: "data", label: "Backup and restore", span: 2, resizable: false },
-    { id: "csv", label: "Export as CSV", span: 2, resizable: true },
-    { id: "foods", label: "Import foods", span: 2, resizable: false },
-    { id: "programme", label: "Training programme", span: 2, resizable: false },
-    { id: "targets", label: "Daily nutrition targets", span: 2, resizable: false },
-    { id: "habit-history", label: "Habit history", span: 2, resizable: true },
-    { id: "about", label: "About", span: 2, resizable: true },
+    { id: "phase", label: "Phase", size: "medium" },
+    { id: "goal", label: "Training goal", size: "medium" },
+    { id: "appearance", label: "Appearance", size: "medium" },
+    { id: "training", label: "Training", size: "medium" },
+    { id: "nutrition", label: "Nutrition", size: "medium" },
+    { id: "routines", label: "Routines", size: "medium" },
+    { id: "report", label: "Report", size: "medium" },
+    { id: "data", label: "Backup and restore", size: "medium" },
+    { id: "csv", label: "Export as CSV", size: "medium" },
+    { id: "foods", label: "Import foods", size: "medium" },
+    { id: "programme", label: "Training programme", size: "medium" },
+    { id: "targets", label: "Daily nutrition targets", size: "medium" },
+    { id: "habit-history", label: "Habit history", size: "medium" },
+    { id: "about", label: "About", size: "medium" },
   ],
 };
 
@@ -236,13 +282,22 @@ export function widgetDef(tab: string, id: string): WidgetDef | undefined {
 }
 
 export function defaultLayout(tab = "dashboard"): WidgetPlacement[] {
-  return widgetsFor(tab).map((w) => ({ id: w.id, span: w.span, hidden: false }));
+  return widgetsFor(tab).map((w) => ({ id: w.id, size: w.size, hidden: false }));
 }
 
-function cleanSpan(tab: string, id: string, span: unknown): Span {
-  const def = widgetDef(tab, id);
-  if (def && !def.resizable) return def.span;
-  return span === 1 ? 1 : 2;
+/**
+ * Every widget takes every size.
+ *
+ * There used to be a `resizable: false` on anything that was mostly prose,
+ * which is a real concern — a paragraph in a quarter of a phone is unreadable.
+ * But it was the app deciding, for the user, which of THEIR cards were
+ * important enough to keep full width, and the answer to "this one looks bad
+ * small" is to size it back up, not to have the button refuse. The grid clips
+ * an over-stuffed small widget behind a fade rather than letting it break the
+ * row, so the worst case is a card that reads as a preview of itself.
+ */
+function cleanSize(tab: string, id: string, value: unknown): WidgetSize {
+  return asSize(value) ?? widgetDef(tab, id)?.size ?? "medium";
 }
 
 /**
@@ -261,7 +316,14 @@ export function reconcile(stored: WidgetPlacement[] | undefined, tab = "dashboar
     if (!p || typeof p.id !== "string") continue;
     if (!known.has(p.id) || seen.has(p.id)) continue;
     seen.add(p.id);
-    out.push({ id: p.id, span: cleanSpan(tab, p.id, p.span), hidden: p.hidden === true });
+    // `span` is read too: layouts saved before the three sizes existed hold a
+    // column count, and dropping them would reset everyone's page.
+    const stored_ = (p as { size?: unknown; span?: unknown });
+    out.push({
+      id: p.id,
+      size: cleanSize(tab, p.id, stored_.size ?? stored_.span),
+      hidden: p.hidden === true,
+    });
   }
 
   // Anything the registry has gained since this layout was saved, in its own
@@ -271,7 +333,7 @@ export function reconcile(stored: WidgetPlacement[] | undefined, tab = "dashboar
       const w = widgets[i]!;
       if (seen.has(w.id)) continue;
       const at = Math.min(i, out.length);
-      out.splice(at, 0, { id: w.id, span: w.span, hidden: false });
+      out.splice(at, 0, { id: w.id, size: w.size, hidden: false });
       seen.add(w.id);
     }
   }
@@ -290,19 +352,20 @@ export function move(layout: WidgetPlacement[], id: string, to: number): WidgetP
   return next;
 }
 
-/** Half the row, or the whole of it. A locked widget does not budge. */
+/** Set one widget to one of the three sizes. */
 export function resize(
-  layout: WidgetPlacement[], id: string, span: Span, tab = "dashboard",
+  layout: WidgetPlacement[], id: string, size: WidgetSize, tab = "dashboard",
 ): WidgetPlacement[] {
-  return layout.map((p) => (p.id === id ? { ...p, span: cleanSpan(tab, id, span) } : p));
+  return layout.map((p) => (p.id === id ? { ...p, size: cleanSize(tab, id, size) } : p));
 }
 
-export function toggleSpan(
+/** Small → medium → large → small, for a single control that cycles. */
+export function cycleSize(
   layout: WidgetPlacement[], id: string, tab = "dashboard",
 ): WidgetPlacement[] {
   const cur = layout.find((p) => p.id === id);
   if (!cur) return layout;
-  return resize(layout, id, cur.span === 2 ? 1 : 2, tab);
+  return resize(layout, id, nextSize(cur.size), tab);
 }
 
 /** Hidden, not removed: it keeps its place for when it comes back. */
@@ -329,6 +392,6 @@ export function isDefault(layout: WidgetPlacement[], tab = "dashboard"): boolean
   if (layout.length !== base.length) return false;
   return layout.every((p, i) => {
     const b = base[i]!;
-    return p.id === b.id && p.span === b.span && p.hidden === b.hidden;
+    return p.id === b.id && p.size === b.size && p.hidden === b.hidden;
   });
 }

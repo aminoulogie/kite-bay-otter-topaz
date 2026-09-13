@@ -5,7 +5,7 @@ import { CoachBrief } from "@/components/CoachBrief";
 import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
 import { ratingTone } from "@/lib/stimulus";
 import { scoreDay } from "@/lib/day-score";
@@ -27,6 +27,67 @@ import { cn } from "@/lib/utils";
  * nothing was logged, and saying so is more useful than a zero that reads like
  * a failure.
  */
+/**
+ * The score, at whatever size it was given.
+ *
+ * The one card on Home where the three sizes mean genuinely different things:
+ * SMALL is the number, MEDIUM is the number with where it came from, LARGE
+ * adds the rows that scored nothing. Drawing the breakdown at small and
+ * letting the grid fade it off the bottom edge would show four rows and cut
+ * the fifth in half, which looks like a rendering bug rather than a summary.
+ */
+function ScoreCard({
+  score, lines,
+}: {
+  score: number;
+  lines: { id: string; label: string; earned: number | null; possible: number }[];
+}) {
+  const size = useWidgetSize();
+  const shown = lines.filter((l) => l.earned != null);
+  return (
+    <Card>
+      <CardTitle>Today</CardTitle>
+      {/* Wraps rather than overflowing: this card can be dragged to a quarter
+          of a phone, and a number beside a caption has a wide min-content. */}
+      <div className="flex flex-wrap items-end gap-x-3">
+        <div
+          className={cn(
+            "font-display font-extrabold tabular",
+            size === "small" ? "text-4xl" : "text-5xl",
+            ratingTone(score),
+          )}
+        >
+          {Math.round(score)}
+        </div>
+        <div className="min-w-0 pb-1.5 text-xs text-muted">
+          out of 100
+          {size !== "small" && (
+            <div className="text-[0.65rem] text-faint">of what you tracked</div>
+          )}
+        </div>
+      </div>
+      {size !== "small" && (
+        <div className="mt-3 space-y-1">
+          {shown.slice(0, size === "large" ? 12 : 5).map((l) => (
+            <div key={l.id} className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="truncate text-muted">{l.label}</span>
+              <span className="shrink-0 tabular font-bold">
+                {Math.round(l.earned ?? 0)}
+                <span className="text-faint">/{l.possible}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {size === "small" && shown.length > 0 && (
+        <div className="mt-2 text-[0.62rem] font-bold uppercase tracking-wide text-faint">
+          {shown.length} things counted
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export function DashboardView() {
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
@@ -117,34 +178,7 @@ export function DashboardView() {
   return (
     <WidgetGrid tab="dashboard">
       <div key="brief"><CoachBrief horizon="today" /></div>
-      <Card key="score">
-        <CardTitle>Today</CardTitle>
-        {/* Wraps rather than overflowing: this card can be dragged to half a
-            phone, and a number beside a caption has a wide min-content. */}
-        <div className="flex flex-wrap items-end gap-x-3">
-          <div className={cn("font-display text-5xl font-extrabold tabular", ratingTone(score))}>
-            {Math.round(score)}
-          </div>
-          <div className="min-w-0 pb-1.5 text-xs text-muted">
-            out of 100
-            <div className="text-[0.65rem] text-faint">of what you tracked</div>
-          </div>
-        </div>
-        <div className="mt-3 space-y-1">
-          {lines
-            .filter((l) => l.earned != null)
-            .slice(0, 5)
-            .map((l) => (
-              <div key={l.id} className="flex items-baseline justify-between gap-2 text-xs">
-                <span className="truncate text-muted">{l.label}</span>
-                <span className="shrink-0 tabular font-bold">
-                  {Math.round(l.earned ?? 0)}
-                  <span className="text-faint">/{l.possible}</span>
-                </span>
-              </div>
-            ))}
-        </div>
-      </Card>
+      <ScoreCard key="score" score={score} lines={lines} />
 
       {/* The ticked ones are done — that is the whole point of a tile, and it
           is why only CONFIRMED food counts towards them. */}

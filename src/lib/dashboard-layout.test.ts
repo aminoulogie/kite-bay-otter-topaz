@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  DASHBOARD_WIDGETS as WIDGETS, WIDGETS_BY_TAB, defaultLayout, isArrangeable, widgetsFor, hidden, isDefault, move, reconcile, resize, setHidden, toggleHidden,
-  toggleSpan, visible, widgetDef, type WidgetPlacement,
+  DASHBOARD_WIDGETS as WIDGETS, SIZES, WIDGETS_BY_TAB, asSize, columnsFor, cycleSize,
+  defaultLayout, isArrangeable, widgetsFor, hidden, isDefault, move, nextSize, reconcile,
+  resize, setHidden, toggleHidden, visible, widgetDef,
+  type WidgetPlacement, type WidgetSize,
 } from "./dashboard-layout.ts";
 import { TAB_ORDER } from "./tab-order.ts";
 
@@ -40,18 +42,45 @@ test("an unknown id moves nothing", () => {
   assert.equal(move(l, "ghost", 3), l);
 });
 
-test("a widget is half a row or the whole of it, never anything else", () => {
-  const l = resize(defaultLayout(), "score", 1);
-  assert.equal(l.find((p) => p.id === "score")?.span, 1);
-  const back = toggleSpan(l, "score");
-  assert.equal(back.find((p) => p.id === "score")?.span, 2);
+test("a widget takes any of the three sizes", () => {
+  for (const size of SIZES) {
+    const l = resize(defaultLayout(), "score", size);
+    assert.equal(l.find((p) => p.id === "score")?.size, size);
+  }
 });
 
-test("a prose widget refuses to be squeezed into half a phone", () => {
-  assert.equal(widgetDef("dashboard", "brief")?.resizable, false);
-  const l = resize(defaultLayout(), "brief", 1, "dashboard");
-  assert.equal(l.find((p) => p.id === "brief")?.span, 2, "it stays full width");
-  assert.equal(toggleSpan(l, "brief", "dashboard").find((p) => p.id === "brief")?.span, 2);
+test("every widget on every page can be set to every size", () => {
+  // The old registry locked prose cards to full width. That was the app
+  // deciding which of the user's cards mattered enough to stay big, which is
+  // not its call — a card that looks bad small is one tap from being medium.
+  for (const [tab, list] of Object.entries(WIDGETS_BY_TAB)) {
+    for (const w of list) {
+      for (const size of SIZES) {
+        const l = resize(defaultLayout(tab), w.id, size, tab);
+        assert.equal(l.find((p) => p.id === w.id)?.size, size, `${tab}/${w.id} → ${size}`);
+      }
+    }
+  }
+});
+
+test("the size cycles small to medium to large and round again", () => {
+  assert.equal(nextSize("small"), "medium");
+  assert.equal(nextSize("medium"), "large");
+  assert.equal(nextSize("large"), "small");
+  let l = resize(defaultLayout(), "score", "small");
+  l = cycleSize(l, "score");
+  assert.equal(l.find((p) => p.id === "score")?.size, "medium");
+});
+
+test("cycling a widget that is not there changes nothing", () => {
+  const l = defaultLayout();
+  assert.equal(cycleSize(l, "ghost"), l);
+});
+
+test("only small takes one column; medium and large take the row", () => {
+  assert.equal(columnsFor("small"), 1);
+  assert.equal(columnsFor("medium"), 2);
+  assert.equal(columnsFor("large"), 2);
 });
 
 test("hiding keeps the widget's place for when it comes back", () => {
@@ -97,7 +126,7 @@ test("a new widget lands near its registry position, not dumped at the end", () 
 
 test("a widget that no longer exists leaves no hole", () => {
   const l = reconcile([
-    { id: "ghost", span: 2, hidden: false },
+    { id: "ghost", size: "medium", hidden: false },
     ...defaultLayout(),
   ]);
   assert.equal(l.length, WIDGETS.length);
@@ -106,18 +135,17 @@ test("a widget that no longer exists leaves no hole", () => {
 
 test("a duplicated id in storage is taken once", () => {
   const l = reconcile([
-    { id: "score", span: 1, hidden: false },
-    { id: "score", span: 2, hidden: true },
+    { id: "score", size: "small", hidden: false },
+    { id: "score", size: "medium", hidden: true },
     ...defaultLayout(),
   ]);
   assert.equal(ids(l).filter((x) => x === "score").length, 1);
-  assert.equal(l.find((p) => p.id === "score")?.span, 1, "the first one wins");
+  assert.equal(l.find((p) => p.id === "score")?.size, "small", "the first one wins");
 });
 
-test("a span a widget no longer supports is pulled back", () => {
-  // "brief" was resizable in an imagined earlier version and got saved at half.
-  const l = reconcile([{ id: "brief", span: 1, hidden: false }]);
-  assert.equal(l.find((p) => p.id === "brief")?.span, 2);
+test("a size a widget was saved at is kept, whatever it was", () => {
+  const l = reconcile([{ id: "brief", size: "small", hidden: false }]);
+  assert.equal(l.find((p) => p.id === "brief")?.size, "small", "the user's choice stands");
 });
 
 test("rubbish in storage does not throw or leak through", () => {
@@ -127,7 +155,7 @@ test("rubbish in storage does not throw or leak through", () => {
 });
 
 test("a non-boolean hidden reads as showing", () => {
-  const l = reconcile([{ id: "fat", span: 1, hidden: "yes" as unknown as boolean }]);
+  const l = reconcile([{ id: "fat", size: "small", hidden: "yes" as unknown as boolean }]);
   assert.equal(l.find((p) => p.id === "fat")?.hidden, false);
 });
 
@@ -141,11 +169,24 @@ test("every widget in the registry has a distinct id", () => {
   assert.equal(new Set(WIDGETS.map((w) => w.id)).size, WIDGETS.length);
 });
 
-test("a locked widget's declared span is the one it keeps", () => {
-  for (const w of WIDGETS.filter((x) => !x.resizable)) {
-    const l = resize(defaultLayout(), w.id, w.span === 2 ? 1 : 2, "dashboard");
-    assert.equal(l.find((p) => p.id === w.id)?.span, w.span, w.id);
+test("a size nobody recognises falls back to the widget's own", () => {
+  for (const w of WIDGETS) {
+    const l = reconcile([{ id: w.id, size: "enormous" as unknown as WidgetSize, hidden: false }]);
+    assert.equal(l.find((p) => p.id === w.id)?.size, w.size, w.id);
   }
+});
+
+test("a layout saved as column counts still reads as sizes", () => {
+  // Everyone with a saved layout has one of these. Dropping them would reset
+  // the page of every user who had ever arranged one.
+  assert.equal(asSize(1), "small");
+  assert.equal(asSize(2), "medium");
+  assert.equal(asSize("large"), "large");
+  assert.equal(asSize(0), null);
+  assert.equal(asSize(undefined), null);
+
+  const old = [{ id: "cals", size: "small", hidden: false }] as unknown as WidgetPlacement[];
+  assert.equal(reconcile(old).find((p) => p.id === "cals")?.size, "small");
 });
 
 test("every arrangeable tab has widgets, and ids are unique within it", () => {

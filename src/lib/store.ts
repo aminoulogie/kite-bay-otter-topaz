@@ -88,6 +88,9 @@ import {
 } from "./pantry";
 import { deloadSetCount } from "./autoregulate";
 import { defaultPlan, normalise, type TimeBlock } from "./day-plan";
+import {
+  addStep, cleanProject, newProjectId, removeStep, setStep, stepsOf, type Project,
+} from "./projects";
 import { lastSetAt, lastTimeFor } from "./last-time";
 
 /**
@@ -228,6 +231,16 @@ export interface SomaStore {
   setEditingDashboard: (on: boolean) => void;
   /** The short list of things to do. Nothing clever: a line and a box. */
   todos: TodoItem[];
+  /** Things with a finish line. See lib/projects.ts. */
+  projects: Project[];
+  addProject: (name: string, color: string) => string;
+  patchProject: (id: string, patch: Partial<Omit<Project, "id">>) => void;
+  removeProject: (id: string) => void;
+  restoreProject: (idx: number, project: Project) => void;
+  addProjectStep: (id: string, label: string) => void;
+  setProjectStep: (id: string, stepId: string, done: boolean) => void;
+  renameProjectStep: (id: string, stepId: string, label: string) => void;
+  removeProjectStep: (id: string, stepId: string) => void;
   addTodo: (text: string) => void;
   toggleTodo: (id: string) => void;
   renameTodo: (id: string, text: string) => void;
@@ -378,6 +391,17 @@ function newId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * A projects list read back from a backup.
+ *
+ * Every field is repaired rather than trusted: a backup is a file the user can
+ * edit, and one malformed step should cost that step, not the whole board.
+ */
+function asProjects(raw: unknown): Project[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(cleanProject).filter((p): p is Project => p !== null);
+}
+
 /** Fold two id-keyed lists together, with `mine` winning a collision. */
 function mergeById<T extends { id: string }>(incoming: T[], mine: T[]): T[] {
   const out = new Map<string, T>();
@@ -408,6 +432,7 @@ export const useSoma = create<SomaStore>()(
       pantry: [],
       grocery: [],
       todos: [],
+      projects: [],
       dayPlans: {},
       screenTime: {},
       layouts: {},
@@ -1020,6 +1045,59 @@ export const useSoma = create<SomaStore>()(
         set({ screenTime: next });
       },
 
+      addProject: (name, color) => {
+        const id = newProjectId();
+        set((s) => ({
+          projects: [
+            ...s.projects,
+            {
+              id,
+              name: name.trim() || "Untitled",
+              color,
+              steps: [],
+              status: "active" as const,
+              createdAt: Date.now(),
+            },
+          ],
+        }));
+        return id;
+      },
+      patchProject: (id, patch) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+        })),
+      removeProject: (id) => set((s) => ({ projects: s.projects.filter((p) => p.id !== id) })),
+      restoreProject: (idx, project) =>
+        set((s) => {
+          const next = [...s.projects];
+          next.splice(Math.max(0, Math.min(next.length, idx)), 0, project);
+          return { projects: next };
+        }),
+      addProjectStep: (id, label) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? addStep(p, label) : p)),
+        })),
+      setProjectStep: (id, stepId, done) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? setStep(p, stepId, done) : p)),
+        })),
+      renameProjectStep: (id, stepId, label) =>
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id === id
+              ? {
+                  ...p,
+                  steps: stepsOf(p).map((st) =>
+                    st.id === stepId ? { ...st, label: label.trim() || st.label } : st,
+                  ),
+                }
+              : p,
+          ),
+        })),
+      removeProjectStep: (id, stepId) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? removeStep(p, stepId) : p)),
+        })),
       addTodo: (text) => {
         const t = text.trim();
         if (!t) return;
@@ -1904,6 +1982,7 @@ export const useSoma = create<SomaStore>()(
             pantry: get().pantry,
             grocery: get().grocery,
             todos: get().todos,
+            projects: get().projects,
             dayPlans: get().dayPlans,
             screenTime: get().screenTime,
             layouts: get().layouts,
@@ -1954,6 +2033,7 @@ export const useSoma = create<SomaStore>()(
               pantry: data.pantry || [],
               grocery: data.grocery || [],
               todos: data.todos || [],
+              projects: asProjects(data.projects),
               dayPlans: data.dayPlans || {},
               screenTime: data.screenTime || {},
               layouts: asLayouts(data.layouts),
@@ -2052,6 +2132,7 @@ export const useSoma = create<SomaStore>()(
             pantry: mergeById(data.pantry || [], cur.pantry),
             grocery: mergeById(data.grocery || [], cur.grocery),
             todos: mergeById(data.todos || [], cur.todos),
+            projects: mergeById(asProjects(data.projects), cur.projects),
             // Incoming days fill gaps; a plan on the device is the newer edit.
             dayPlans: { ...(data.dayPlans || {}), ...cur.dayPlans },
             screenTime: { ...(data.screenTime || {}), ...cur.screenTime },
@@ -2123,6 +2204,7 @@ export const useSoma = create<SomaStore>()(
         pantry: s.pantry,
         grocery: s.grocery,
         todos: s.todos,
+        projects: s.projects,
         dayPlans: s.dayPlans,
         screenTime: s.screenTime,
         layouts: s.layouts,

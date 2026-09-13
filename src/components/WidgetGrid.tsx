@@ -1,8 +1,9 @@
-import { Eye, EyeOff, Maximize2, Minimize2, RotateCcw } from "lucide-react";
+import { Eye, EyeOff, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Children, isValidElement, useMemo } from "react";
+import { Children, createContext, isValidElement, useContext, useMemo } from "react";
 import {
-  hidden as hiddenOf, isDefault, move, reconcile, toggleHidden, toggleSpan, visible, widgetDef,
+  SIZES, hidden as hiddenOf, isDefault, move, reconcile, resize, toggleHidden, visible,
+  widgetDef, type WidgetSize,
 } from "@/lib/dashboard-layout";
 import { useSoma } from "@/lib/store";
 import { useLongPressDrag } from "@/lib/use-long-press-drag";
@@ -26,6 +27,52 @@ import { cn } from "@/lib/utils";
  * that iOS fires no drag events for touch and starts scrolling out from under
  * a held card unless a non-passive touchmove listener stops it.
  */
+/**
+ * The size the widget being rendered was given.
+ *
+ * Published so a card CAN answer the question — the macro tiles drop their
+ * label at small, the score card drops its breakdown — without every card
+ * being forced to. One that ignores it is simply clipped by its box, which is
+ * a reasonable default and much better than sixty cards each needing three
+ * hand-written variants before any of them could be resized at all.
+ */
+const SizeContext = createContext<WidgetSize>("medium");
+
+export function useWidgetSize(): WidgetSize {
+  return useContext(SizeContext);
+}
+
+/** The boxes the three sizes draw, in the grid's own two columns. */
+const SIZE_CLASS: Record<WidgetSize, string> = {
+  // A square, like the home screen's. Anything that does not fit is clipped
+  // behind a fade rather than allowed to push the row out of shape.
+  small: "col-span-1 [&>*]:max-h-full",
+  medium: "col-span-2",
+  large: "col-span-2",
+};
+
+const SIZE_LABEL: Record<WidgetSize, string> = {
+  small: "Small",
+  medium: "Medium",
+  large: "Large",
+};
+
+/** The glyph in the size picker: a filled box at the shape of each size. */
+function SizeGlyph({ size, on }: { size: WidgetSize; on: boolean }) {
+  const box =
+    size === "small" ? "h-2.5 w-2.5" : size === "medium" ? "h-2 w-4" : "h-3.5 w-4";
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "block rounded-[3px] border",
+        box,
+        on ? "border-accent-ink bg-accent-ink" : "border-fg/60",
+      )}
+    />
+  );
+}
+
 export function WidgetGrid({
   tab, children, innerRef,
 }: {
@@ -96,8 +143,9 @@ export function WidgetGrid({
             Hold a widget to pick it up, drag to move it.
           </p>
           <p className="mt-0.5 text-[0.68rem] leading-snug text-muted">
-            Tap the arrows to make one half or full width, the eye to take it off the
-            page. Nothing here is deleted — hidden widgets wait at the bottom.
+            Every card takes three sizes — small, medium, large. Pick one from the row on
+            the card, or the eye to take it off the page. Nothing here is deleted —
+            hidden widgets wait at the bottom.
           </p>
           <div className="mt-2 flex gap-2">
             <Button variant="primary" className="flex-1" onClick={() => setEditing(false)}>
@@ -140,7 +188,7 @@ export function WidgetGrid({
                 // a target: the review queue renders null when no word is due,
                 // and a zero-height cell cannot be dragged onto or tapped.
                 editing && "min-h-16",
-                p.span === 2 ? "col-span-2" : "col-span-1",
+                SIZE_CLASS[p.size],
                 held && "scale-[0.97] opacity-60",
                 target && "ring-2 ring-accent ring-offset-2 ring-offset-bg rounded-3xl",
               )}
@@ -150,7 +198,22 @@ export function WidgetGrid({
                 {/* The widget still draws itself, but stops answering taps: in
                     edit mode the card is a thing you move, not a thing you
                     press. */}
-                <div className={cn(editing && "pointer-events-none opacity-45")}>{node}</div>
+                <SizeContext.Provider value={p.size}>
+                  <div
+                    className={cn(
+                      editing && "pointer-events-none opacity-45",
+                      // Small is a square you glance at, so it gets a hard box
+                      // and a fade where the content runs out. Large is a panel
+                      // you work in, so it gets a floor rather than a ceiling —
+                      // a card told to be large and given nothing to fill it
+                      // should still LOOK large.
+                      p.size === "small" && "soma-widget-small",
+                      p.size === "large" && "min-h-72",
+                    )}
+                  >
+                    {node}
+                  </div>
+                </SizeContext.Provider>
 
                 {/* No grip glyph: the whole card is the handle, so an icon in
                     one corner would both cover the widget's title and imply you
@@ -158,25 +221,29 @@ export function WidgetGrid({
                 {editing && (
                   <>
                     <div className="pointer-events-none absolute inset-0 rounded-3xl border-2 border-dashed border-accent-line" />
-                    <div className="absolute right-1.5 top-1.5 flex gap-1">
-                      {def?.resizable && (
-                        <button
-                          type="button"
-                          onClick={() => setDashboard(toggleSpan(layout, p.id, tab))}
-                          className="flex size-7 items-center justify-center rounded-full border border-border bg-surface-3 text-fg shadow-lg"
-                          aria-label={
-                            p.span === 2
-                              ? `Make ${def.label} half width`
-                              : `Make ${def.label} full width`
-                          }
-                        >
-                          {p.span === 2 ? (
-                            <Minimize2 className="size-3.5" />
-                          ) : (
-                            <Maximize2 className="size-3.5" />
-                          )}
-                        </button>
-                      )}
+                    {/* Three sizes shown at once rather than one button that
+                        cycles. A cycling control hides what the options ARE
+                        and makes the third one three taps away; the home
+                        screen shows all of them side by side for the same
+                        reason. */}
+                    <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
+                      <div className="flex items-center gap-0.5 rounded-full border border-border bg-surface-3 p-0.5 shadow-lg">
+                        {SIZES.map((sz) => (
+                          <button
+                            key={sz}
+                            type="button"
+                            onClick={() => setDashboard(resize(layout, p.id, sz, tab))}
+                            className={cn(
+                              "flex size-6 items-center justify-center rounded-full transition-colors",
+                              p.size === sz ? "bg-accent" : "active:bg-surface-2",
+                            )}
+                            aria-label={`${SIZE_LABEL[sz]} ${def?.label ?? p.id}`}
+                            aria-pressed={p.size === sz}
+                          >
+                            <SizeGlyph size={sz} on={p.size === sz} />
+                          </button>
+                        ))}
+                      </div>
                       <button
                         type="button"
                         onClick={() => setDashboard(toggleHidden(layout, p.id))}
