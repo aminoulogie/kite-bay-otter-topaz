@@ -209,7 +209,43 @@ export function AppShell() {
   }
 
   return (
-    <div className="relative mx-auto min-h-dvh max-w-lg bg-bg pb-28">
+    <div className="relative mx-auto min-h-dvh max-w-lg bg-bg pb-28 lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
+      {/* The dock becomes a rail. On a phone the bottom edge is where the thumb
+          is; on a desktop it is the furthest point from where anyone is looking,
+          and a pill floating there is a phone app in a window. The rail is the
+          same TAB_ORDER, so the two can never disagree. */}
+      <nav className="sticky top-0 hidden h-dvh shrink-0 flex-col gap-1 border-r border-border bg-surface/40 p-3 lg:flex lg:w-[13.5rem]">
+        <div className="mb-3 px-2 pt-2">
+          <div className="font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
+            SOMA
+          </div>
+          <div className="text-[0.6rem] font-bold uppercase tracking-[0.16em] text-faint">
+            Smart Coach
+          </div>
+        </div>
+        {TABS.map((t) => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={cn(
+                "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition-colors",
+                active
+                  ? "bg-accent text-accent-ink"
+                  : "text-muted hover:bg-surface-2 hover:text-fg",
+              )}
+            >
+              <Icon className="size-4 shrink-0" strokeWidth={active ? 2.4 : 2} />
+              {t.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="soma-desk relative min-w-0 flex-1 lg:mx-auto lg:pb-10">
       {/* The native webview fills the screen including the area behind the
           status bar, so without the safe-area inset the clock, wifi and battery
           sit on top of the header. Harmless in a browser, where the inset is 0. */}
@@ -225,7 +261,14 @@ export function AppShell() {
           >
             <PanelLeft className="size-4" />
           </button>
-          <div className="min-w-0">
+          {/* The rail carries the lockup on a desktop, so the header says where
+              you are instead of repeating the app's own name at you. */}
+          <div className="hidden min-w-0 lg:block">
+            <div className="font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
+              {TAB_META[tab].label}
+            </div>
+          </div>
+          <div className="min-w-0 lg:hidden">
             <div className="font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
               SOMA
             </div>
@@ -301,7 +344,7 @@ export function AppShell() {
         {tab === "settings" && <SettingsView />}
       </main>
 
-      <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(12px,env(safe-area-inset-bottom))]">
+      <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(12px,env(safe-area-inset-bottom))] lg:hidden">
         {/* Scrollable: seven tabs no longer fit at a legible size, and
             shrinking them further would make the labels unreadable before it
             made them fit. snap-x keeps a tab from ending up half off-screen. */}
@@ -349,6 +392,7 @@ export function AppShell() {
           })}
         </div>
       </nav>
+      </div>
       <Toaster position="top-center" theme={settings.theme === "light" ? "light" : "dark"} />
     </div>
   );

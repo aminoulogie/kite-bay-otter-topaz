@@ -98,7 +98,17 @@ export function WidgetGrid({ tab, children }: { tab: string; children: React.Rea
         </div>
       )}
 
-      <div className={cn("grid grid-cols-2 items-start gap-2", editing && "select-none")}>
+      {/* Two columns on a phone, four on a desktop — and the SAME stored span
+          means "half" and "full" on the phone but "quarter" and "half" on the
+          desktop. A wide screen should hold two cards side by side, not one
+          card stretched to two thousand pixels, and this gets that without the
+          layout being stored twice. */}
+      <div
+        className={cn(
+          "grid grid-cols-2 items-start gap-2 lg:grid-cols-4 lg:gap-3",
+          editing && "select-none",
+        )}
+      >
         {shown.map((p, i) => {
           const def = widgetDef(tab, p.id);
           const node = nodes[p.id];

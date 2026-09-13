@@ -369,3 +369,68 @@ html.soma-dragging body {
     break-inside: avoid;
   }
 }
+
+/* ==========================================================================
+   Desktop.
+   
+   The app is phone-first and stays that way: the breakpoints below ADD to a
+   layout that already works rather than replacing it, so nothing here can
+   break the build that matters most.
+   ========================================================================== */
+
+/*
+ * A pointer on anything clickable.
+ *
+ * Browsers do not put one on <button> by default, which on a phone costs
+ * nothing and on a desktop makes half the app look inert — you cannot tell
+ * what is a control until you click it.
+ */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label:has(> input[type="checkbox"]),
+summary {
+  cursor: pointer;
+}
+
+/*
+ * Sheets become dialogs.
+ *
+ * On a phone a panel that slides up from the bottom edge is right: the edge is
+ * where the thumb is. On a desktop the bottom edge is the furthest point from
+ * where anyone is looking, and a full-width panel pinned there reads as a
+ * browser notification rather than as part of the app.
+ *
+ * Hooked off the panel's own animation class via :has, so every sheet in the
+ * app gets this without fifteen call sites having to agree on a second one.
+ */
+@media (min-width: 700px) {
+  div:has(> .soma-expand) {
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .soma-expand {
+    margin-inline: auto;
+    width: 100%;
+    max-width: 34rem;
+    max-height: min(85vh, 46rem);
+    border-radius: 1.5rem;
+    border-width: 1px;
+    /* The slide-from-below origin is wrong once it is centred. */
+    transform-origin: center;
+    padding-bottom: 20px;
+  }
+}
+
+/*
+ * A wider ceiling for reading.
+ *
+ * Not the full width of a monitor: a card of prose stretched to 2000px is a
+ * line nobody can track back to the start of. The grid inside gains columns
+ * instead, which is what actually uses a big screen.
+ */
+@media (min-width: 1024px) {
+  .soma-desk {
+    max-width: 76rem;
+  }
+}
