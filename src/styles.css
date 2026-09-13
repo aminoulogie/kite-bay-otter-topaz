@@ -94,6 +94,29 @@ html[data-soma-theme="light"] {
     background: var(--color-bg);
     color: var(--color-fg);
   }
+  /*
+   * The page never scrolls sideways.
+   *
+   * Nothing in this app is meant to be reached by scrolling right, so any
+   * horizontal scroll is a bug — and it is a bug with an outsized blast
+   * radius: a single row that cannot wrap widens the whole document, and then
+   * every OTHER screen looks shifted with its right-hand controls hanging off
+   * the edge. Working out that the header was not the thing that was wrong
+   * took three screenshots.
+   *
+   * `clip` rather than `hidden` on purpose. `hidden` makes the element a
+   * scroll container, which breaks `position: sticky` for the header and the
+   * viewing-a-past-day banner. `clip` just stops the paint.
+   *
+   * This is a floor, not a fix: it stops a stray element from dragging the
+   * page sideways, and the element is still in the wrong place. `scrollWidth`
+   * is unaffected by clipping, so the browser sweep across widths and text
+   * sizes still catches the real thing.
+   */
+  html,
+  body {
+    overflow-x: clip;
+  }
   h1, h2, h3 {
     text-wrap: balance;
   }

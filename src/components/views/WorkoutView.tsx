@@ -428,9 +428,13 @@ export function WorkoutView() {
         />
       </div>
 
-      <Card key="session" className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="relative size-14">
+      {/* Wraps. At the phone's larger text sizes the dial, the label and three
+          buttons are wider than the screen, and a row that cannot wrap pushes
+          the whole PAGE wider than the viewport — which is what made every
+          other card on the tab look clipped at the right edge. */}
+      <Card key="session" className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="relative size-14 shrink-0">
             <svg viewBox="0 0 54 54" className="size-14 -rotate-90">
               <circle cx="27" cy="27" r="22" fill="none" stroke="var(--color-surface-3)" strokeWidth="4" />
               <circle
@@ -449,12 +453,12 @@ export function WorkoutView() {
               {restLeft >= 60 ? formatRest(restLeft) : `${restLeft}s`}
             </div>
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-sm font-bold">Rest</div>
             <div className="text-xs text-muted">Starts when you tick a set</div>
           </div>
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           <Button size="pill" onClick={() => startRest(60)}>
             60s
           </Button>
@@ -660,7 +664,13 @@ export function WorkoutView() {
             style={color ? { borderLeft: `4px solid ${color}` } : undefined}
           >
             <div className="flex items-start justify-between gap-2">
-              <div>
+              {/* min-w-0 so a long exercise name wraps instead of setting the
+                  row's minimum width. Without it the title, the rating and two
+                  icon buttons together were wider than a phone at the larger
+                  text sizes, and a flex row that cannot shrink widens the whole
+                  PAGE — which is why every card on the tab looked cut off at
+                  the right edge rather than just this one. */}
+              <div className="min-w-0">
                 <div className="font-display text-[0.95rem] font-bold">
                   {exIdx + 1}. {ex.name}
                 </div>
@@ -673,7 +683,7 @@ export function WorkoutView() {
                   {ex.isAxial && <Badge tone="danger">Axial</Badge>}
                 </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex shrink-0 items-center gap-1">
                 {/* The exercise's own rating: the mean of its rated sets, nudged
                     by the pump. Live, so it moves as you rate each set. */}
                 {(() => {

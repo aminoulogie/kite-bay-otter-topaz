@@ -332,12 +332,16 @@ export function SettingsView() {
         {editing === null ? (
           <div className="space-y-1">
             {Object.keys(routines).map((name) => (
-              <div key={name} className="flex items-center justify-between border-b border-border py-2">
-                <div>
+              <div key={name} className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 border-b border-border py-2">
+                {/* A routine name the user chose plus two buttons is not a
+                    width this app controls. Wrapping keeps both reachable;
+                    without it the Delete button went off the right edge of
+                    the screen and took the rest of the page with it. */}
+                <div className="min-w-0">
                   <div className="text-sm font-bold">{name}</div>
                   <div className="text-[0.7rem] text-faint">{routines[name]?.length || 0} movements</div>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex shrink-0 gap-1">
                   <Button size="sm" onClick={() => openEdit(name)}>
                     Edit
                   </Button>

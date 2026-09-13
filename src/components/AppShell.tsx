@@ -85,8 +85,39 @@ export function AppShell() {
   // Measured rather than computed from an index, because the dock scrolls and
   // the tabs are not evenly spaced once it does.
   const dockRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const [pill, setPill] = useState({ x: 0, w: 0 });
+
+  /**
+   * The dock's real height, published so the page can leave room for it.
+   *
+   * It used to be a fixed `pb-28`, which is right at one text size and wrong
+   * at every other: the dock grows with the phone's text setting and with the
+   * home-indicator inset, and once it is taller than 112px the last card on
+   * every page sits behind it with no way to scroll further. Measured rather
+   * than guessed, because the two things that change it are both outside this
+   * app's control.
+   */
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const publish = () => {
+      document.documentElement.style.setProperty(
+        "--dock-h",
+        `${Math.round(el.getBoundingClientRect().height)}px`,
+      );
+    };
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    window.addEventListener("resize", publish);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", publish);
+      document.documentElement.style.removeProperty("--dock-h");
+    };
+  }, [ready]);
 
   useEffect(() => {
     const move = () => {
@@ -224,7 +255,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="relative mx-auto min-h-dvh max-w-lg bg-bg pb-28 lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
+    <div className="relative mx-auto min-h-dvh max-w-lg bg-bg pb-[calc(var(--dock-h,7rem)+0.75rem)] lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
       {/* The dock becomes a rail. On a phone the bottom edge is where the thumb
           is; on a desktop it is the furthest point from where anyone is looking,
           and a pill floating there is a phone app in a window. The rail is the
@@ -264,8 +295,15 @@ export function AppShell() {
       {/* The native webview fills the screen including the area behind the
           status bar, so without the safe-area inset the clock, wifi and battery
           sit on top of the header. Harmless in a browser, where the inset is 0. */}
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-border bg-bg/85 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-xl">
-        <div className="flex min-w-0 items-center gap-2.5">
+      {/* Wraps rather than overflowing. Four controls and a wordmark fit a
+          393px phone at the default text size and do not fit a 320px one at
+          the largest — and a header that cannot wrap does not clip itself, it
+          widens the PAGE, which is what put every screen slightly off to the
+          left with the Calendar button hanging past the edge. A media query
+          cannot see this coming, because the trigger is the text size rather
+          than the viewport. */}
+      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-bg/85 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-xl">
+        <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {/* The swipe is not discoverable on its own, so the drawer also has
               a visible control. */}
           <button
@@ -290,8 +328,8 @@ export function AppShell() {
               screen has already said the rest. */}
           {/* shrink-0: four characters have no sensible truncation, and the
               flex row was clipping the last one by a pixel on a 360px phone. */}
-          <div className="shrink-0 lg:hidden">
-            <div className="font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
+          <div className="min-w-0 lg:hidden">
+            <div className="truncate font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
               SOMA
             </div>
           </div>
@@ -385,7 +423,14 @@ export function AppShell() {
       {/* soma-dock is the hook the keyboard rules use to fade this out: it
           sits under the keys while one is open, where it cannot be tapped and
           only gives the browser one more fixed element to fight with. */}
-      <nav className="soma-dock pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(12px,env(safe-area-inset-bottom))] transition-opacity duration-150 lg:hidden">
+      {/* The inset is the home-indicator zone, not a wall: the indicator is a
+          thin line in the middle of it, so clearing the whole 34px left the
+          dock visibly stranded above the bottom of the screen. Sixteen less
+          puts it where a floating bar belongs and still never touches it. */}
+      <nav
+        ref={navRef}
+        className="soma-dock pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(10px,calc(env(safe-area-inset-bottom)-16px))] transition-opacity duration-150 lg:hidden"
+      >
         {/* Scrollable: seven tabs no longer fit at a legible size, and
             shrinking them further would make the labels unreadable before it
             made them fit. snap-x keeps a tab from ending up half off-screen. */}

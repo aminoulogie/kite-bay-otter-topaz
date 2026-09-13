@@ -722,7 +722,12 @@ export function NutritionView() {
           >
             <button
               type="button"
-              className="flex w-full items-center justify-between"
+              // Wraps. "Breakfast" beside "1685 kcal · 88g P +1359 planned" is
+              // wider than a phone once the text size goes up, and a row that
+              // can neither wrap nor shrink simply has its right-hand end cut
+              // off by the card — so the planned figure, which is the whole
+              // point of the line, was the part that disappeared.
+              className="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-left"
               onClick={() => toggleMeal(m)}
             >
               <span className="font-display text-sm font-bold">{m}</span>
