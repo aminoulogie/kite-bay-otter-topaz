@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BodyHeatmap } from "@/components/BodyHeatmap";
+import { BodyView } from "@/components/views/BodyView";
+import { EstimatesView } from "@/components/views/EstimatesView";
+import { TopTabs } from "@/components/TopTabs";
 import { DatabaseView } from "@/components/views/DatabaseView";
 import { ExerciseRatings } from "@/components/ExerciseRatings";
 import { GraphsView, MicroMuscleView } from "@/components/views/GraphsView";
@@ -18,6 +21,8 @@ import { cn } from "@/lib/utils";
 type InsightTab =
   | "overview"
   | "strength"
+  | "body"
+  | "ahead"
   | "database"
   | "micro"
   | "exercise"
@@ -30,63 +35,24 @@ export function InsightsView() {
   const tabs: { id: InsightTab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "strength", label: "Strength" },
+    // Body and Ahead were top-level tabs of their own. They are measurements
+    // and projections of the same training, so they belong beside it rather
+    // than two more places to look.
+    { id: "body", label: "Body" },
+    { id: "ahead", label: "Ahead" },
     { id: "database", label: "Database" },
     { id: "micro", label: "Micro-muscle" },
     { id: "exercise", label: "Exercises" },
     { id: "heatmap", label: "Heatmap" },
   ];
 
-  // Measured, not derived from an index, because the bar scrolls once six tabs
-  // no longer fit at a legible size.
-  const barRef = useRef<HTMLDivElement>(null);
-  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const [pill, setPill] = useState({ x: 0, w: 0 });
-
-  useEffect(() => {
-    const move = () => {
-      const el = refs.current[tab];
-      if (el) setPill({ x: el.offsetLeft, w: el.offsetWidth });
-    };
-    move();
-    const id = requestAnimationFrame(move);
-    return () => cancelAnimationFrame(id);
-  }, [tab]);
-
   return (
     <div className="space-y-3 pb-4">
-      <div
-        ref={barRef}
-        className="relative flex snap-x gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        <span
-          aria-hidden
-          className="pointer-events-none absolute left-0 top-1 rounded-full bg-accent transition-[transform,width] duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
-          style={{
-            width: pill.w,
-            height: "calc(100% - 0.5rem)",
-            transform: `translateX(${pill.x}px)`,
-            opacity: pill.w ? 1 : 0,
-          }}
-        />
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            ref={(el) => {
-              refs.current[t.id] = el;
-            }}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "relative z-10 h-10 shrink-0 snap-center rounded-full px-3 text-xs font-bold transition-colors duration-200",
-              tab === t.id ? "text-accent-ink" : "text-muted",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TopTabs tabs={tabs} value={tab} onChange={setTab} />
       {tab === "overview" && <OverviewPanel />}
       {tab === "strength" && <StrengthPanel />}
+      {tab === "body" && <BodyView />}
+      {tab === "ahead" && <EstimatesView />}
       {tab === "database" && <DatabaseView />}
       {tab === "micro" && <MicroMuscleView />}
       {tab === "exercise" && <GraphsView />}

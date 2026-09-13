@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import { Bookshelf } from "@/components/Bookshelf";
 import { WidgetGrid } from "@/components/WidgetGrid";
+import { TopTabs } from "@/components/TopTabs";
+import { LanguageStudy } from "@/components/LanguageStudy";
 import { ReadingGoal } from "@/components/ReadingGoal";
 import { WordBook } from "@/components/WordBook";
 import { getLocalDateKey } from "@/lib/soma";
@@ -26,11 +28,19 @@ import type { MindEntry } from "@/lib/types";
  * different — they are ongoing, and a chapter does not owe you a thesis — so
  * the requirement is on the kind that is actually easy to fake.
  */
+/**
+ * The four things this tab is for, and the order they sit in the top bar.
+ *
+ * Reading first because it is the one with a shelf, a goal and a dial behind
+ * it; ideas before research because an idea is a line you jot and research is
+ * a session you sit down for, and the quick one should not be the furthest to
+ * reach.
+ */
 const KINDS = [
-  { id: "book", label: "Book", icon: BookOpen, unit: "pages", placeholder: "Title" },
-  { id: "article", label: "Article", icon: Newspaper, unit: "min", placeholder: "Headline or source" },
+  { id: "book", label: "Reading", icon: BookOpen, unit: "pages", placeholder: "Title" },
   { id: "language", label: "Language", icon: Languages, unit: "words", placeholder: "What you drilled" },
-  { id: "idea", label: "Idea", icon: Lightbulb, unit: "", placeholder: "The idea, in a line" },
+  { id: "idea", label: "Ideas", icon: Lightbulb, unit: "", placeholder: "The idea, in a line" },
+  { id: "research", label: "Research", icon: Newspaper, unit: "min", placeholder: "What you were digging into" },
 ] as const;
 
 type Kind = (typeof KINDS)[number]["id"];
@@ -42,6 +52,8 @@ export function MindView() {
   const restoreMind = useSoma((s) => s.restoreMind);
 
   const today = getLocalDateKey(new Date());
+  // The sub-tab IS the kind. Reading covers books, and the shelf and the dial
+  // live there too — the whole of reading in one place, which is the point.
   const [kind, setKind] = useState<Kind>("book");
   const [title, setTitle] = useState("");
   const [count, setCount] = useState("");
@@ -51,7 +63,17 @@ export function MindView() {
   const [editing, setEditing] = useState<MindEntry | null>(null);
 
   const meta = KINDS.find((k) => k.id === kind)!;
-  const rows = useMemo(() => [...mind].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 60), [mind]);
+  // Only this sub-tab's entries. "article" still reads as research: entries
+  // logged under the old name are already in people's diaries, and hiding them
+  // because a label changed would look like data loss.
+  const rows = useMemo(
+    () =>
+      mind
+        .filter((m) => m.kind === kind || (kind === "research" && m.kind === "article"))
+        .sort((a, b) => (a.date < b.date ? 1 : -1))
+        .slice(0, 60),
+    [mind, kind],
+  );
 
   // Days in the last week with anything logged. A streak of "read something"
   // is the only number here worth chasing; pages per day is not comparable
@@ -72,7 +94,7 @@ export function MindView() {
       toast.error("Give it a title.");
       return;
     }
-    if (kind === "article" && !takeaway.trim()) {
+    if (kind === "research" && !takeaway.trim()) {
       toast.error("One line on what you took from it — otherwise you skimmed it.");
       return;
     }
@@ -99,14 +121,20 @@ export function MindView() {
   };
 
   return (
-    <WidgetGrid tab="mind">
-      <ReviewQueue key="review" />
+    <>
+      <TopTabs
+        tabs={KINDS.map((k) => ({ id: k.id, label: k.label }))}
+        value={kind}
+        onChange={setKind}
+        className="mb-3"
+      />
 
-      <WordBook key="words" />
-
-      <ReadingGoal key="goal" />
-
-      <Bookshelf key="shelf" />
+      <WidgetGrid tab={`mind-${kind}`}>
+        {kind === "book" && <ReadingGoal key="goal" />}
+        {kind === "book" && <Bookshelf key="shelf" />}
+        {kind === "language" && <LanguageStudy key="languages" />}
+        {kind === "language" && <ReviewQueue key="review" />}
+        {kind === "language" && <WordBook key="words" />}
 
       <Card key="week">
         <CardTitle>This week</CardTitle>
@@ -119,28 +147,10 @@ export function MindView() {
         </div>
       </Card>
 
+      {/* The picker that used to sit here is the top bar now: the sub-tab you
+          are on IS the kind you are logging, and asking twice was asking twice. */}
       <Card key="log">
-        <CardTitle>Log</CardTitle>
-        <div className="mb-2 grid grid-cols-4 gap-1.5">
-          {KINDS.map((k) => {
-            const Icon = k.icon;
-            return (
-              <button
-                key={k.id}
-                type="button"
-                onClick={() => setKind(k.id)}
-                className={cn(
-                  "flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-[0.6rem] font-bold transition-colors",
-                  kind === k.id ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted",
-                )}
-              >
-                <Icon className="size-4" />
-                {k.label}
-              </button>
-            );
-          })}
-        </div>
-
+        <CardTitle>{meta.id === "book" ? "Log a book" : `Log ${meta.label.toLowerCase()}`}</CardTitle>
         <Input
           className="mb-2"
           placeholder={meta.placeholder}
@@ -159,12 +169,12 @@ export function MindView() {
         )}
         <Input
           className="mb-2"
-          placeholder={kind === "article" ? "What you took from it (required)" : "Takeaway (optional)"}
+          placeholder={kind === "research" ? "What you found (required)" : "Takeaway (optional)"}
           value={takeaway}
           onChange={(e) => setTakeaway(e.target.value)}
         />
         <Button variant="primary" className="w-full" onClick={submit}>
-          <Plus className="size-4" /> Log {meta.label.toLowerCase()}
+          <Plus className="size-4" /> Log it
         </Button>
       </Card>
 
@@ -172,7 +182,7 @@ export function MindView() {
         <CardTitle>{rows.length ? `Last ${rows.length}` : "Nothing yet"}</CardTitle>
         {rows.length === 0 ? (
           <p className="py-3 text-center text-xs text-faint">
-            Books, articles, language drills and ideas land here.
+            Nothing logged under {meta.label.toLowerCase()} yet.
           </p>
         ) : (
           <div className="space-y-1.5">
@@ -232,7 +242,8 @@ export function MindView() {
       <p className="px-1 text-center text-[0.7rem] text-faint">
         Swipe an entry left to edit or delete it.
       </p>
-    </WidgetGrid>
+      </WidgetGrid>
+    </>
   );
 }
 

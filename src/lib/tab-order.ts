@@ -23,11 +23,30 @@ export const TAB_ORDER: TabId[] = [
   "nutrition",
   "habits",
   "time",
-  "body",
   "insights",
-  "estimates",
   "settings",
 ];
+
+/**
+ * Tabs that used to have a place in the dock and no longer do.
+ *
+ * Body and Ahead are measurements and projections of the same training that
+ * Stats reports on, so they are sub-tabs of it now. The mapping exists because
+ * the last-open tab is PERSISTED: without it, anyone who closed the app on
+ * Body would reopen to a tab that is not in the dock and see nothing at all.
+ */
+export const FOLDED_INTO: Partial<Record<TabId, TabId>> = {
+  body: "insights",
+  estimates: "insights",
+};
+
+/** The tab to actually show for a stored one. */
+export function resolveTab(tab: TabId | undefined): TabId {
+  if (!tab) return HOME_TAB;
+  const folded = FOLDED_INTO[tab];
+  if (folded) return folded;
+  return TAB_ORDER.includes(tab) ? tab : HOME_TAB;
+}
 
 /** Where the app opens. */
 export const HOME_TAB: TabId = "dashboard";

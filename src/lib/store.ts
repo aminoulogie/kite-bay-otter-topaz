@@ -35,6 +35,30 @@ import { collectSideStores, restoreSideStores, type SideStores } from "./side-st
 import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
 import { logAmount, rungOn, setRamp } from "./habit-ramp";
 import { followsSettings, resolveGoals, sameGoals } from "./goals";
+import { learn, unlearn, type LangTrack } from "./lang/study";
+import type { LangCode, Level } from "./lang/words";
+import { resolveTab } from "./tab-order";
+
+/** One entry per language, with the words taken on either device kept. */
+function mergeLangs(incoming: unknown, mine: LangTrack[]): LangTrack[] {
+  const by = new Map<string, LangTrack>();
+  for (const l of (Array.isArray(incoming) ? incoming : []) as LangTrack[]) {
+    if (l?.code) by.set(l.code, { ...l, learned: [...(l.learned ?? [])] });
+  }
+  for (const l of mine ?? []) {
+    const prior = by.get(l.code);
+    if (!prior) {
+      by.set(l.code, l);
+      continue;
+    }
+    by.set(l.code, {
+      ...prior,
+      ...l,
+      learned: [...new Set([...(prior.learned ?? []), ...(l.learned ?? [])])],
+    });
+  }
+  return [...by.values()];
+}
 import { reconcile, type WidgetPlacement } from "./dashboard-layout";
 
 /** Only tabs the registry knows survive; each is reconciled against its own. */
@@ -163,6 +187,8 @@ export interface SomaStore {
   layouts: Record<string, WidgetPlacement[]>;
   /** Minutes read per day. See lib/reading-goal.ts. */
   reading: Record<string, number>;
+  /** Languages being learned, the level in each, and the words taken. */
+  langs: LangTrack[];
   /**
    * When the reading timer was started, or null.
    *
@@ -186,6 +212,12 @@ export interface SomaStore {
   logReading: (minutes: number, date?: string) => void;
   /** Add to a day's reading minutes. */
   addReading: (minutes: number, date?: string) => void;
+  /** Start learning a language. A language already on the list is left alone. */
+  addLang: (code: LangCode, level: Level) => void;
+  setLangLevel: (code: LangCode, level: Level) => void;
+  removeLang: (code: LangCode) => void;
+  learnWord: (code: LangCode, word: string) => void;
+  unlearnWord: (code: LangCode, word: string) => void;
   startReading: () => void;
   stopReading: () => number;
   /** A tab's layout, reconciled against its registry. Never stored raw. */
@@ -380,6 +412,7 @@ export const useSoma = create<SomaStore>()(
       screenTime: {},
       layouts: {},
       reading: {},
+      langs: [],
       readingSince: null,
       editingDashboard: false,
       programs: [],
@@ -793,7 +826,7 @@ export const useSoma = create<SomaStore>()(
       // Leaving a page leaves its edit mode. Coming back a day later to find
       // every card wearing a dashed border reads as a bug — and an edit mode
       // that survived a tab change would be editing the wrong page's layout.
-      setTab: (tab) => set({ tab, editingDashboard: false }),
+      setTab: (tab) => set({ tab: resolveTab(tab), editingDashboard: false }),
       setActiveDate: (d) => set({ activeDate: d }),
       /**
        * Change a setting, and let the open days follow it.
@@ -951,6 +984,17 @@ export const useSoma = create<SomaStore>()(
         const cur = get().reading[key] ?? 0;
         get().logReading(cur + clampReading(minutes), key);
       },
+      addLang: (code, level) => {
+        if (get().langs.some((l) => l.code === code)) return;
+        set({ langs: [...get().langs, { code, level, learned: [] }] });
+      },
+      setLangLevel: (code, level) =>
+        set({ langs: get().langs.map((l) => (l.code === code ? { ...l, level } : l)) }),
+      removeLang: (code) => set({ langs: get().langs.filter((l) => l.code !== code) }),
+      learnWord: (code, word) =>
+        set({ langs: get().langs.map((l) => (l.code === code ? learn(l, word) : l)) }),
+      unlearnWord: (code, word) =>
+        set({ langs: get().langs.map((l) => (l.code === code ? unlearn(l, word) : l)) }),
       startReading: () => set({ readingSince: Date.now() }),
       /** Bank whatever the timer holds and stop it. Returns the minutes kept. */
       stopReading: () => {
@@ -1864,6 +1908,7 @@ export const useSoma = create<SomaStore>()(
             screenTime: get().screenTime,
             layouts: get().layouts,
             reading: get().reading,
+            langs: get().langs,
             live: get().live,
             activeDate: get().activeDate,
             sideStores: collectSideStores(),
@@ -1913,6 +1958,7 @@ export const useSoma = create<SomaStore>()(
               screenTime: data.screenTime || {},
               layouts: asLayouts(data.layouts),
               reading: data.reading || {},
+              langs: Array.isArray(data.langs) ? data.langs : [],
               seeded: true,
               // A backup from before these were exported has neither, and the
               // device keeps whatever it is on rather than being emptied.
@@ -2014,6 +2060,10 @@ export const useSoma = create<SomaStore>()(
             // phone you are holding.
             layouts: asLayouts(cur.layouts),
             reading: { ...(data.reading || {}), ...cur.reading },
+            // Merged by language, and the LEARNED WORDS union: a word taken on
+            // either device was taken, and dropping it would put it back in the
+            // pool to be drawn a second time.
+            langs: mergeLangs(data.langs, cur.langs),
             seeded: true,
           });
           // `live` and `activeDate` are deliberately not merged: the device is
@@ -2077,6 +2127,7 @@ export const useSoma = create<SomaStore>()(
         screenTime: s.screenTime,
         layouts: s.layouts,
         reading: s.reading,
+        langs: s.langs,
         readingSince: s.readingSince,
         live: s.live,
         activeDate: s.activeDate,

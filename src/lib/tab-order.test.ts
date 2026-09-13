@@ -1,15 +1,28 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
-import { HOME_TAB, TAB_ORDER, tabAt } from "./tab-order.ts";
+import { FOLDED_INTO, HOME_TAB, TAB_ORDER, resolveTab, tabAt } from "./tab-order.ts";
 
-test("every tab in the union is in the order, and nothing extra", () => {
-  // The dock is built by mapping TAB_ORDER, so a tab missing here is a tab
-  // that exists in the type and is unreachable in the app.
+test("every tab in the union is reachable, and nothing extra is in the dock", () => {
+  // The dock is built by mapping TAB_ORDER, so a tab in neither the order nor
+  // the folded list is a tab that exists in the type and cannot be opened.
+  // Folding is why this is not simply "the order equals the union": Body and
+  // Ahead are still valid stored values, they just resolve somewhere else now.
   const types = readFileSync(new URL("./types.ts", import.meta.url), "utf8");
   const union = types.match(/export type TabId =([\s\S]*?);/)?.[1] ?? "";
   const declared = [...union.matchAll(/"([a-z]+)"/g)].map((m) => m[1]!);
-  assert.deepEqual([...TAB_ORDER].sort(), [...declared].sort());
+
+  const reachable = new Set([...TAB_ORDER, ...Object.keys(FOLDED_INTO)]);
+  assert.deepEqual(
+    declared.filter((t) => !reachable.has(t as never)),
+    [],
+    "a tab in the type that nothing can open",
+  );
+  assert.deepEqual(
+    TAB_ORDER.filter((t) => !declared.includes(t)),
+    [],
+    "the dock draws a tab the type does not have",
+  );
 });
 
 test("the dock draws the same order a swipe walks", () => {
@@ -40,4 +53,30 @@ test("the ends are hard stops, not a wrap-around", () => {
 
 test("an unknown tab does not walk anywhere", () => {
   assert.equal(tabAt("nonsense" as never, 1), null);
+});
+
+test("a tab folded into another resolves to the one that now shows it", () => {
+  assert.equal(resolveTab("body"), "insights");
+  assert.equal(resolveTab("estimates"), "insights");
+});
+
+test("a tab still in the dock resolves to itself", () => {
+  for (const t of TAB_ORDER) assert.equal(resolveTab(t), t, t);
+});
+
+test("nothing stored, or something unknown, opens where the app opens", () => {
+  assert.equal(resolveTab(undefined), HOME_TAB);
+  assert.equal(resolveTab("nonsense" as never), HOME_TAB);
+});
+
+test("the folded tabs are gone from the dock and from the swipe path", () => {
+  assert.ok(!TAB_ORDER.includes("body"));
+  assert.ok(!TAB_ORDER.includes("estimates"));
+  assert.equal(tabAt("body" as never, 1), null, "a tab off the list has no neighbour");
+});
+
+test("every folded tab points at a tab that really is in the dock", () => {
+  for (const [from, to] of Object.entries(FOLDED_INTO)) {
+    assert.ok(TAB_ORDER.includes(to as never), `${from} -> ${to}`);
+  }
 });

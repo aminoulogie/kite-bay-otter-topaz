@@ -19,7 +19,7 @@ import { useSoma } from "@/lib/store";
 import { isArrangeable } from "@/lib/dashboard-layout";
 import { cn } from "@/lib/utils";
 import type { TabId } from "@/lib/types";
-import { TAB_ORDER } from "@/lib/tab-order";
+import { TAB_ORDER, resolveTab } from "@/lib/tab-order";
 import { DashboardView } from "@/components/views/DashboardView";
 import { MoneyView } from "@/components/views/MoneyView";
 import { MindView } from "@/components/views/MindView";
@@ -55,7 +55,10 @@ export function AppShell() {
   useEdgeSwipe(openDrawer, ready && !drawerOpen);
 
   const hydrated = useSoma((s) => s.hydrated);
-  const tab = useSoma((s) => s.tab);
+  // Resolved on the way out, not only in setTab: the last-open tab is restored
+  // straight from storage on boot, so a phone closed on Body would otherwise
+  // reopen to a tab that is no longer in the dock.
+  const tab = useSoma((s) => resolveTab(s.tab));
   // The calendar lives here rather than inside WorkoutView so one instance
   // serves the header button on every tab. The swipe stays scoped to Train,
   // where it was asked for, and the 40px edge is wide enough for a thumb

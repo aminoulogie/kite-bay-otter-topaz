@@ -434,7 +434,11 @@ export interface TodoItem {
 export interface MindEntry {
   id: string;
   date: string;
-  kind: "book" | "article" | "language" | "idea";
+  /**
+   * "article" is the old name for "research" and still reads, because entries
+   * logged under it are already in people's diaries. Nothing writes it.
+   */
+  kind: "book" | "research" | "language" | "idea" | "article";
   title: string;
   /** Minutes spent, pages read, words learned — whatever the kind counts. */
   count?: number;

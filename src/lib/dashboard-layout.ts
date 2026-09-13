@@ -71,14 +71,33 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
  */
 export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   dashboard: DASHBOARD_WIDGETS,
-  mind: [
-    { id: "review", label: "Words to review", span: 2, resizable: false },
-    { id: "words", label: "New words", span: 2, resizable: false },
+  // Mind is four pages behind one tab, so each keeps its own arrangement.
+  // "mind-book" rather than "mind" because a layout is a layout OF A PAGE, and
+  // Reading and Language are not the same page with different cards on it.
+  "mind-book": [
     { id: "goal", label: "Reading goal", span: 2, resizable: false },
     { id: "shelf", label: "Reading shelf", span: 2, resizable: false },
     { id: "week", label: "This week", span: 2, resizable: true },
-    { id: "log", label: "Log something", span: 2, resizable: false },
-    { id: "recent", label: "Recent entries", span: 2, resizable: false },
+    { id: "log", label: "Log a book", span: 2, resizable: false },
+    { id: "recent", label: "Recent books", span: 2, resizable: false },
+  ],
+  "mind-language": [
+    { id: "languages", label: "Languages and words", span: 2, resizable: false },
+    { id: "review", label: "Words to review", span: 2, resizable: false },
+    { id: "words", label: "Your own words", span: 2, resizable: false },
+    { id: "week", label: "This week", span: 2, resizable: true },
+    { id: "log", label: "Log a drill", span: 2, resizable: false },
+    { id: "recent", label: "Recent drills", span: 2, resizable: false },
+  ],
+  "mind-idea": [
+    { id: "week", label: "This week", span: 2, resizable: true },
+    { id: "log", label: "Log an idea", span: 2, resizable: false },
+    { id: "recent", label: "Recent ideas", span: 2, resizable: false },
+  ],
+  "mind-research": [
+    { id: "week", label: "This week", span: 2, resizable: true },
+    { id: "log", label: "Log research", span: 2, resizable: false },
+    { id: "recent", label: "Recent research", span: 2, resizable: false },
   ],
   money: [
     { id: "summary", label: "This month", span: 2, resizable: true },
@@ -106,9 +125,17 @@ const BY_ID = new Map(
   Object.values(WIDGETS_BY_TAB).flatMap((list) => list.map((w) => [`${w.id}`, w] as const)),
 );
 
-/** Tabs that can be rearranged. Anything else has no edit button. */
+/**
+ * Whether a tab can be rearranged at all.
+ *
+ * A prefix counts, because a tab with sub-pages registers one layout per page
+ * ("mind-book", "mind-language") and the header button only knows which TAB it
+ * is on. Without this, Mind would lose its edit button the moment it gained
+ * sub-tabs — which would be the feature removing itself.
+ */
 export function isArrangeable(tab: string): boolean {
-  return Object.prototype.hasOwnProperty.call(WIDGETS_BY_TAB, tab);
+  if (Object.prototype.hasOwnProperty.call(WIDGETS_BY_TAB, tab)) return true;
+  return Object.keys(WIDGETS_BY_TAB).some((k) => k.startsWith(`${tab}-`));
 }
 
 export function widgetsFor(tab: string): WidgetDef[] {
