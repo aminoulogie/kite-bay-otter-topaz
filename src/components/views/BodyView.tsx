@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Camera, Check, Moon, Pill, Ruler, Scale } from "lucide-react";
+import { CalendarDays, Camera, Check, Moon, Pill, Ruler } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import {
 import { useDayDraft } from "@/lib/use-day-draft";
 import { useSideStoreRevision } from "@/lib/use-side-stores";
 import { WidgetGrid } from "@/components/WidgetGrid";
+import { TopTabs } from "@/components/TopTabs";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -50,26 +51,11 @@ export function BodyView() {
   ];
   return (
     <WidgetGrid tab="body">
-      <div key="tabs" className="flex gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1">
-        {tabs.map((t) => {
-          const Icon = t.icon;
-          const on = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-bold",
-                on ? "bg-accent text-accent-ink" : "text-muted",
-              )}
-            >
-              <Icon className="size-3.5" />
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Was its own bar, with its own height and its own idea of a selected
+          tab. One component now, so Body, Mind, Stats, Fuel and Habits cannot
+          drift apart again. */}
+      <TopTabs key="tabs" tabs={tabs} value={tab} onChange={setTab} />
+
       <div key="panel" className="space-y-3">
         {tab === "sleep" && <SleepPanel />}
         {tab === "measure" && <MeasurePanel />}

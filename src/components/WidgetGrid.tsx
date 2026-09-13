@@ -70,8 +70,11 @@ const ROW: Record<1 | 2 | 3, { tile: string; wide: string }> = {
   3: { tile: "h-[17rem]", wide: "min-h-[17rem]" },
 };
 
-function boxFor(size: WidgetSize): string {
+function boxFor(size: WidgetSize, natural: boolean): string {
   const spec = specFor(size);
+  // Furniture takes its width from the size and its height from itself. A tab
+  // bar is 48px tall because that is how tall a tab bar is.
+  if (natural) return COL[spec.w];
   const h = ROW[spec.h];
   return cn(COL[spec.w], isTile(size) ? h.tile : h.wide);
 }
@@ -188,9 +191,10 @@ export function WidgetGrid({
           layout being stored twice. */}
       <div
         className={cn(
-          "grid grid-cols-4 items-start gap-2 lg:grid-cols-8 lg:gap-3",
+          "soma-grid grid grid-cols-4 items-start gap-2 lg:grid-cols-8 lg:gap-3",
           editing && "select-none",
         )}
+        data-editing={editing ? "true" : "false"}
       >
         {shown.map((p, i) => {
           const def = widgetDef(tab, p.id);
@@ -214,7 +218,7 @@ export function WidgetGrid({
                 // a target: the review queue renders null when no word is due,
                 // and a zero-height cell cannot be dragged onto or tapped.
                 editing && "min-h-16",
-                boxFor(p.size),
+                boxFor(p.size, def?.natural === true),
                 held && "scale-[0.97] opacity-60",
                 target && "ring-2 ring-accent ring-offset-2 ring-offset-bg rounded-3xl",
               )}
@@ -227,7 +231,7 @@ export function WidgetGrid({
                 <SizeContext.Provider value={p.size}>
                   <div
                     className={cn(
-                      "soma-widget-box",
+                      def?.natural ? "soma-widget-natural" : "soma-widget-box",
                       editing && "pointer-events-none opacity-45",
                       // Small is a square you glance at, so it gets a hard box
                       // and a fade where the content runs out. Large is a panel
@@ -237,8 +241,8 @@ export function WidgetGrid({
                       // A tile is a glance and gets a hard box with a fade
                       // where its content runs out; a full-width card keeps
                       // its natural height and only gains a floor.
-                      isTile(p.size) && "soma-widget-tile",
-                      specFor(p.size).w === 1 && "soma-tile-1",
+                      !def?.natural && isTile(p.size) && "soma-widget-tile",
+                      !def?.natural && specFor(p.size).w === 1 && "soma-tile-1",
                     )}
                   >
                     {node}

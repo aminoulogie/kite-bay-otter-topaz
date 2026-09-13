@@ -105,6 +105,20 @@ export interface WidgetDef {
   label: string;
   /** The size it ships at. Every widget can be set to any of the six. */
   size: WidgetSize;
+  /**
+   * Page furniture, not a card: it keeps its own height and the size decides
+   * only its width.
+   *
+   * A card should fill the box it was given — a 2x4 with a short paragraph in
+   * it looks deliberate when the card is 2x4 and looks like a layout bug when
+   * the card is 87px tall in a 176px cell. A tab bar is the opposite: it is
+   * 48px tall because that is how tall a tab bar is, and stretching one to
+   * 176px produced a pill the size of a thumb and a bar with a hole in it.
+   *
+   * There is no way to tell the two apart from the outside, so the registry
+   * says which is which.
+   */
+  natural?: boolean;
 }
 
 export interface WidgetPlacement {
@@ -228,7 +242,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   habits: [
     { id: "header", label: "Consistency", size: "2x4" },
-    { id: "tabs", label: "Today / Matrix / Year", size: "2x4" },
+    { id: "tabs", label: "Today / Matrix / Year", size: "2x4", natural: true },
     { id: "list", label: "The habits", size: "2x4" },
     { id: "new", label: "New habit", size: "2x4" },
   ],
@@ -240,7 +254,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "target", label: "Today's totals", size: "2x4" },
     { id: "suggest", label: "Suggest from pantry", size: "2x4" },
     { id: "plan", label: "Plan ahead", size: "2x4" },
-    { id: "actions", label: "Scan / Search / Burn", size: "2x4" },
+    { id: "actions", label: "Scan / Search / Burn", size: "2x4", natural: true },
     { id: "plate", label: "Plate photo", size: "2x4" },
     { id: "hunger", label: "Hunger", size: "2x4" },
     { id: "add", label: "Add food", size: "2x4" },
@@ -261,17 +275,17 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   workout: [
     { id: "header", label: "Session header", size: "2x4" },
-    { id: "date", label: "The date", size: "2x4" },
-    { id: "quick", label: "Undo / Save", size: "2x4" },
+    { id: "date", label: "The date", size: "2x4", natural: true },
+    { id: "quick", label: "Undo / Save", size: "2x4", natural: true },
     { id: "session", label: "Rest timer", size: "2x4" },
-    { id: "chips", label: "Add exercise", size: "2x4" },
+    { id: "chips", label: "Add exercise", size: "2x4", natural: true },
   ],
   looks: [
     { id: "latest", label: "Latest front", size: "2x4" },
-    { id: "scan", label: "Scan button", size: "2x4" },
+    { id: "scan", label: "Scan button", size: "2x4", natural: true },
     { id: "gallery", label: "Captures", size: "2x4" },
     { id: "guide", label: "What it measures", size: "2x4" },
-    { id: "note", label: "What the mesh is", size: "2x4" },
+    { id: "note", label: "What the mesh is", size: "2x4", natural: true },
   ],
   // Stats is eight pages behind one tab, like Mind. Only the two that are
   // genuinely card stacks get a layout; the rest delegate to whole other
@@ -290,11 +304,11 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   "insights-heatmap": [
     { id: "intro", label: "What the map shows", size: "2x4" },
-    { id: "range", label: "Front / back", size: "2x4" },
+    { id: "range", label: "Front / back", size: "2x4", natural: true },
     { id: "grid", label: "The map", size: "2x4" },
   ],
   body: [
-    { id: "tabs", label: "Sleep / Measure / Supplements", size: "2x4" },
+    { id: "tabs", label: "Sleep / Measure / Supplements", size: "2x4", natural: true },
     { id: "panel", label: "The panel", size: "2x4" },
   ],
   estimates: [
@@ -302,7 +316,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "composition", label: "Muscle vs fat", size: "2x4" },
     { id: "measures", label: "Measurements", size: "2x4" },
     { id: "strength", label: "Strength", size: "2x4" },
-    { id: "note", label: "How these are made", size: "2x4" },
+    { id: "note", label: "How these are made", size: "2x4", natural: true },
   ],
   settings: [
     { id: "phase", label: "Phase", size: "2x4" },

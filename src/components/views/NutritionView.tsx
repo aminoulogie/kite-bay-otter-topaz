@@ -40,10 +40,17 @@ import type { FoodItem, Goals } from "@/lib/types";
 // everything the pre-workout card adds — was invisible in the diary.
 const MEALS = ["Breakfast", "Lunch", "Dinner", "Pre-Workout", "Post-Workout", "Snacks"];
 
+/**
+ * Log before Week, because that is the order of the day.
+ *
+ * You write the diary as you eat and read the week afterwards. Putting the
+ * review between the dashboard and the thing being reviewed meant passing
+ * through a summary of data you had not entered yet.
+ */
 const FUEL_TABS = [
   { id: "dash" as const, label: "Dashboard" },
-  { id: "week" as const, label: "Week" },
   { id: "log" as const, label: "Log" },
+  { id: "week" as const, label: "Week" },
   { id: "weight" as const, label: "Weight" },
 ];
 

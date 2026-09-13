@@ -17,6 +17,7 @@ import {
 } from "@/lib/habit-ramp";
 import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { WidgetGrid } from "@/components/WidgetGrid";
+import { TopTabs } from "@/components/TopTabs";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
@@ -49,21 +50,7 @@ export function HabitsView() {
         </p>
       </Card>
 
-      <div key="tabs" className="flex gap-1 overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "h-9 shrink-0 rounded-full px-4 text-xs font-bold transition-colors",
-              tab === t.id ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TopTabs key="tabs" tabs={TABS} value={tab} onChange={setTab} />
 
       <div key="list" className="space-y-3">
       {tab === "today" && <TodayPanel />}

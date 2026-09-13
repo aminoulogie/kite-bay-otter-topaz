@@ -1,19 +1,34 @@
 import { useEffect, useRef, useState } from "react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface TopTab<T extends string> {
   id: T;
   label: string;
+  /** Optional, for bars that carried icons before this component existed. */
+  icon?: LucideIcon;
 }
 
 /**
- * The segmented bar Stats uses, extracted so every page that needs one is the
- * same one.
+ * The segmented bar every page with sub-pages uses.
  *
- * The pill is MEASURED from the selected button rather than derived from its
- * index. Tabs are different widths because labels are different lengths, and
- * once there are more than four the bar scrolls — an index-based pill drifts
- * further from the tab it is meant to be under with every label added.
+ * There were three of these — this one, Body's, and Habits' — and they had
+ * drifted into three different heights, three different alignments and two
+ * different ideas of what a selected tab looks like. One implementation is the
+ * only way that stays fixed.
+ *
+ * **The tabs share the bar equally when they fit.** `flex: 1 1 0` with a
+ * `min-width` of their own text: with room, four tabs are four equal quarters,
+ * which is symmetrical and centred without `justify-content` — and centring
+ * with `justify-content` is what would break, because a centred flex row that
+ * overflows clips its own first item and puts it out of reach. Once there are
+ * too many to fit (Stats has eight) each falls back to its natural width and
+ * the bar scrolls, which is the only honest thing a bar can do at that point.
+ *
+ * **The pill is MEASURED from the selected button** rather than derived from
+ * its index. Tabs are different widths once the bar scrolls, and an
+ * index-based pill drifts further from the tab it is meant to be under with
+ * every label added.
  */
 export function TopTabs<T extends string>({
   tabs, value, onChange, className,
@@ -73,10 +88,13 @@ export function TopTabs<T extends string>({
           }}
           onClick={() => onChange(t.id)}
           className={cn(
-            "relative z-10 h-10 shrink-0 snap-center rounded-full px-3 text-xs font-bold transition-colors duration-200",
+            // basis-0 so the share is equal rather than proportional to the
+            // label, min-w-max so a long one is never squeezed to an ellipsis.
+            "relative z-10 flex h-10 min-w-max flex-1 basis-0 snap-center items-center justify-center gap-1.5 rounded-full px-2 text-xs font-bold transition-colors duration-200",
             value === t.id ? "text-accent-ink" : "text-muted",
           )}
         >
+          {t.icon ? <t.icon className="size-3.5 shrink-0" /> : null}
           {t.label}
         </button>
       ))}

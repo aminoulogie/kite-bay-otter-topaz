@@ -130,8 +130,14 @@ export function LooksView() {
         <Camera className="size-4" /> Scan · front, 45°, profile
       </Button>
 
-      <div key="gallery">{latest.size > 0 && (
-        <div className="grid grid-cols-3 gap-2">
+      {/* The key goes on the element the condition produces, not on a wrapper
+          around it. A wrapper renders as an empty div when the condition is
+          false, and an empty div still takes the height its size asks for —
+          which is a hole in the page with nothing to say what it is. With the
+          key here the whole expression is simply absent and the grid skips
+          the cell. */}
+      {latest.size > 0 && (
+        <div key="gallery" className="grid grid-cols-3 gap-2">
           {["face_front_true", "face_oblique", "face_side"].map((k) => {
             const sc = latest.get(k);
             return (
@@ -155,7 +161,7 @@ export function LooksView() {
             );
           })}
         </div>
-      )}</div>
+      )}
 
       <Card key="guide">
         <div className="mb-2 flex items-center justify-between gap-2">

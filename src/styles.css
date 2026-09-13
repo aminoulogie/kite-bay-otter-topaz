@@ -582,3 +582,34 @@ select,
      exactly what a tile needs it to do before the fade can hide anything. */
   min-height: 0;
 }
+
+/* Furniture does not stretch; it just sits where it was put. */
+.soma-widget-natural {
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   A widget with nothing to show takes no space.
+
+   Several widgets render null when they have nothing to say — the pantry
+   suggestion with an empty pantry, the review queue with no word due. That
+   cost nothing while cells were sized by their content; now that a size
+   carries a minimum height, an empty one holds a 176px hole in the middle of
+   the page with no way to tell what it is.
+
+   `:empty` is exactly the question being asked — the widget rendered no
+   element and no text — and `:has` puts the answer on the cell, which is the
+   thing that has to disappear.
+
+   Not in edit mode: there the empty cell is the only handle on a widget you
+   might want to move or hide before it has anything in it.
+--------------------------------------------------------------------------- */
+.soma-grid[data-editing="false"] > [data-drag-index]:has(.soma-widget-box:empty),
+.soma-grid[data-editing="false"] > [data-drag-index]:has(.soma-widget-natural:empty),
+/* And the same thing one level in: a widget written as a wrapper around a
+   condition renders an empty div rather than nothing at all. Putting the key
+   on the conditional element itself is the better fix and is what the views
+   do — this is the net underneath, for the next one written the other way. */
+.soma-grid[data-editing="false"] > [data-drag-index]:has(.soma-widget-box > :only-child:empty) {
+  display: none;
+}

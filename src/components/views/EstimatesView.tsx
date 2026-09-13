@@ -109,8 +109,8 @@ export function EstimatesView() {
         <p className="text-xs leading-snug text-muted">{leanMassNote()}</p>
       </Card>
 
-      <div key="measures">{measures.length > 0 && (
-        <Card>
+      {measures.length > 0 && (
+        <Card key="measures">
           <CardTitle>Measurements</CardTitle>
           <div className="space-y-3">
             {measures.map((m) => (
@@ -118,7 +118,7 @@ export function EstimatesView() {
             ))}
           </div>
         </Card>
-      )}</div>
+      )}
 
       <Card key="strength">
         <CardTitle>Strength</CardTitle>
