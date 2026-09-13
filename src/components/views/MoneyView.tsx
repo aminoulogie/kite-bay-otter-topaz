@@ -12,6 +12,7 @@ import {
 import { getLocalDateKey } from "@/lib/soma";
 import { RowEditSheet } from "@/components/RowEditSheet";
 import { numOf, textOf } from "@/lib/row-edit";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { LedgerEntry } from "@/lib/types";
@@ -99,8 +100,8 @@ export function MoneyView() {
   const money = (n: number) => `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`;
 
   return (
-    <div className="space-y-3 pb-4">
-      <Card>
+    <WidgetGrid tab="money">
+      <Card key="summary">
         <div className="mb-3 flex items-center justify-between">
           <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>
             <ChevronLeft className="size-5 text-muted" />
@@ -181,11 +182,11 @@ export function MoneyView() {
         )}
       </Card>
 
-      <GroceryCard money={money} />
+      <GroceryCard key="grocery" money={money} />
 
       <PantryCard />
 
-      <Card>
+      <Card key="add">
         <CardTitle>Log</CardTitle>
         <div className="mb-2 flex gap-1.5">
           {(["spend", "income"] as const).map((k) => (
@@ -284,7 +285,7 @@ export function MoneyView() {
         />
       )}
 
-      <Card>
+      <Card key="entries">
         <CardTitle>{rows.length} entries</CardTitle>
         {rows.length === 0 ? (
           <p className="py-3 text-center text-xs text-faint">Nothing logged this month.</p>
@@ -323,7 +324,7 @@ export function MoneyView() {
         )}
       </Card>
 
-      <Card>
+      <Card key="categories">
         <CardTitle>Budget</CardTitle>
         <p className="mb-2 text-[0.7rem] leading-snug text-faint">
           A monthly ceiling to measure against. Leave it empty and this tab reports what
@@ -409,6 +410,6 @@ export function MoneyView() {
       <p className="px-1 text-center text-[0.7rem] text-faint">
         Swipe an entry left to delete it.
       </p>
-    </div>
+    </WidgetGrid>
   );
 }

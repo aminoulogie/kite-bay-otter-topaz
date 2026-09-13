@@ -6,6 +6,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import { Bookshelf } from "@/components/Bookshelf";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { ReadingGoal } from "@/components/ReadingGoal";
 import { WordBook } from "@/components/WordBook";
 import { getLocalDateKey } from "@/lib/soma";
@@ -98,16 +99,16 @@ export function MindView() {
   };
 
   return (
-    <div className="space-y-3 pb-4">
-      <ReviewQueue />
+    <WidgetGrid tab="mind">
+      <ReviewQueue key="review" />
 
-      <WordBook />
+      <WordBook key="words" />
 
-      <ReadingGoal />
+      <ReadingGoal key="goal" />
 
-      <Bookshelf />
+      <Bookshelf key="shelf" />
 
-      <Card>
+      <Card key="week">
         <CardTitle>This week</CardTitle>
         <div className="flex items-end gap-3">
           <div className="font-display text-5xl font-extrabold tabular">{week}</div>
@@ -118,7 +119,7 @@ export function MindView() {
         </div>
       </Card>
 
-      <Card>
+      <Card key="log">
         <CardTitle>Log</CardTitle>
         <div className="mb-2 grid grid-cols-4 gap-1.5">
           {KINDS.map((k) => {
@@ -167,7 +168,7 @@ export function MindView() {
         </Button>
       </Card>
 
-      <Card>
+      <Card key="recent">
         <CardTitle>{rows.length ? `Last ${rows.length}` : "Nothing yet"}</CardTitle>
         {rows.length === 0 ? (
           <p className="py-3 text-center text-xs text-faint">
@@ -231,7 +232,7 @@ export function MindView() {
       <p className="px-1 text-center text-[0.7rem] text-faint">
         Swipe an entry left to edit or delete it.
       </p>
-    </div>
+    </WidgetGrid>
   );
 }
 

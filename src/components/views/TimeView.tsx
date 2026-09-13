@@ -14,6 +14,7 @@ import {
   type TimeBlock,
 } from "@/lib/day-plan";
 import { getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -58,8 +59,8 @@ export function TimeView() {
   const isToday = activeDate === getLocalDateKey(new Date());
 
   return (
-    <div className="space-y-3 pb-4">
-      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_14%,transparent),transparent_55%),var(--color-surface)]">
+    <WidgetGrid tab="time">
+      <Card key="header" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_14%,transparent),transparent_55%),var(--color-surface)]">
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="text-[0.6rem] font-bold uppercase tracking-[0.14em] text-faint">
@@ -90,6 +91,7 @@ export function TimeView() {
         )}
       </Card>
 
+      <div key="ring">
       <DayRing
         blocks={plan.blocks}
         selectedId={editing?.id ?? null}
@@ -104,9 +106,11 @@ export function TimeView() {
       {/* The phone belongs on the tab that asks where the day went, and it is
           measured against the flexible hours rather than the whole 24: sleep
           and work are not time the phone was competing for. */}
-      <ScreenTimeCard flexibleHours={freeLeft} />
+      </div>
 
-      <Card>
+      <ScreenTimeCard key="screen" flexibleHours={freeLeft} />
+
+      <Card key="blocks">
         <div className="mb-2 flex items-center justify-between gap-2">
           <CardTitle className="mb-0">The day, in order</CardTitle>
           <button
@@ -226,7 +230,7 @@ export function TimeView() {
           }}
         />
       )}
-    </div>
+    </WidgetGrid>
   );
 }
 

@@ -35,7 +35,18 @@ import { collectSideStores, restoreSideStores, type SideStores } from "./side-st
 import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
 import { logAmount, rungOn, setRamp } from "./habit-ramp";
 import { followsSettings, resolveGoals, sameGoals } from "./goals";
-import { defaultLayout, reconcile, type WidgetPlacement } from "./dashboard-layout";
+import { reconcile, type WidgetPlacement } from "./dashboard-layout";
+
+/** Only tabs the registry knows survive; each is reconciled against its own. */
+function asLayouts(raw: unknown): Record<string, WidgetPlacement[]> {
+  const out: Record<string, WidgetPlacement[]> = {};
+  for (const [tab, list] of Object.entries((raw ?? {}) as Record<string, WidgetPlacement[]>)) {
+    if (!Array.isArray(list)) continue;
+    const clean = reconcile(list, tab);
+    if (clean.length) out[tab] = clean;
+  }
+  return out;
+}
 import { clampMinutes as clampReading, elapsedMinutes } from "./reading-goal";
 import { clampMinutes } from "./screen-time";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
@@ -145,8 +156,11 @@ export interface SomaStore {
    * lib/screen-time.ts for why that is a wall and not an oversight.
    */
   screenTime: Record<string, ScreenTimeDay>;
-  /** Where the Home widgets sit, and how wide. See lib/dashboard-layout.ts. */
-  dashboard: WidgetPlacement[];
+  /**
+   * Where each arrangeable tab's widgets sit, and how wide. Keyed by tab, so
+   * rearranging Mind cannot disturb Home. See lib/dashboard-layout.ts.
+   */
+  layouts: Record<string, WidgetPlacement[]>;
   /** Minutes read per day. See lib/reading-goal.ts. */
   reading: Record<string, number>;
   /**
@@ -174,9 +188,11 @@ export interface SomaStore {
   addReading: (minutes: number, date?: string) => void;
   startReading: () => void;
   stopReading: () => number;
-  /** Replace the Home layout. Always reconciled against the widget registry. */
-  setDashboard: (layout: WidgetPlacement[]) => void;
-  resetDashboard: () => void;
+  /** A tab's layout, reconciled against its registry. Never stored raw. */
+  layoutFor: (tab: string) => WidgetPlacement[];
+  setLayout: (tab: string, layout: WidgetPlacement[]) => void;
+  /** Back to the shipped arrangement for that tab, by forgetting the stored one. */
+  resetLayout: (tab: string) => void;
   setEditingDashboard: (on: boolean) => void;
   /** The short list of things to do. Nothing clever: a line and a box. */
   todos: TodoItem[];
@@ -362,7 +378,7 @@ export const useSoma = create<SomaStore>()(
       todos: [],
       dayPlans: {},
       screenTime: {},
-      dashboard: defaultLayout(),
+      layouts: {},
       reading: {},
       readingSince: null,
       editingDashboard: false,
@@ -774,7 +790,10 @@ export const useSoma = create<SomaStore>()(
       },
       // Leaving the page leaves its edit mode. Coming back to Home a day later
       // and finding every card wearing a dashed border reads as a bug.
-      setTab: (tab) => set(tab === "dashboard" ? { tab } : { tab, editingDashboard: false }),
+      // Leaving a page leaves its edit mode. Coming back a day later to find
+      // every card wearing a dashed border reads as a bug — and an edit mode
+      // that survived a tab change would be editing the wrong page's layout.
+      setTab: (tab) => set({ tab, editingDashboard: false }),
       setActiveDate: (d) => set({ activeDate: d }),
       /**
        * Change a setting, and let the open days follow it.
@@ -941,9 +960,15 @@ export const useSoma = create<SomaStore>()(
         if (mins > 0) get().addReading(mins);
         return mins;
       },
-      setDashboard: (layout) => set({ dashboard: reconcile(layout) }),
+      layoutFor: (tab) => reconcile(get().layouts[tab], tab),
+      setLayout: (tab, layout) =>
+        set({ layouts: { ...get().layouts, [tab]: reconcile(layout, tab) } }),
+      resetLayout: (tab) => {
+        const next = { ...get().layouts };
+        delete next[tab];
+        set({ layouts: next });
+      },
       setEditingDashboard: (on) => set({ editingDashboard: on }),
-      resetDashboard: () => set({ dashboard: defaultLayout() }),
       clearScreenTime: (date) => {
         const key = date || get().activeDate;
         const next = { ...get().screenTime };
@@ -1837,7 +1862,7 @@ export const useSoma = create<SomaStore>()(
             todos: get().todos,
             dayPlans: get().dayPlans,
             screenTime: get().screenTime,
-            dashboard: get().dashboard,
+            layouts: get().layouts,
             reading: get().reading,
             live: get().live,
             activeDate: get().activeDate,
@@ -1886,7 +1911,7 @@ export const useSoma = create<SomaStore>()(
               todos: data.todos || [],
               dayPlans: data.dayPlans || {},
               screenTime: data.screenTime || {},
-              dashboard: reconcile(data.dashboard),
+              layouts: asLayouts(data.layouts),
               reading: data.reading || {},
               seeded: true,
               // A backup from before these were exported has neither, and the
@@ -1987,7 +2012,7 @@ export const useSoma = create<SomaStore>()(
             // The device's own arrangement wins. A layout is a preference about
             // this screen, not history, and a restore should not rearrange the
             // phone you are holding.
-            dashboard: reconcile(cur.dashboard),
+            layouts: asLayouts(cur.layouts),
             reading: { ...(data.reading || {}), ...cur.reading },
             seeded: true,
           });
@@ -2050,7 +2075,7 @@ export const useSoma = create<SomaStore>()(
         todos: s.todos,
         dayPlans: s.dayPlans,
         screenTime: s.screenTime,
-        dashboard: s.dashboard,
+        layouts: s.layouts,
         reading: s.reading,
         readingSince: s.readingSince,
         live: s.live,

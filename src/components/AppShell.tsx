@@ -16,6 +16,7 @@ import { SettingsView } from "@/components/views/SettingsView";
 import { WorkoutView } from "@/components/views/WorkoutView";
 import { accentInk, accentText, normalizeAccent, resolveTheme } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
+import { isArrangeable } from "@/lib/dashboard-layout";
 import { cn } from "@/lib/utils";
 import type { TabId } from "@/lib/types";
 import { TAB_ORDER } from "@/lib/tab-order";
@@ -237,7 +238,7 @@ export function AppShell() {
           {/* Only on the page it edits. A control that does nothing on ten of
               eleven tabs is worse than no control: you learn to ignore it, and
               then you cannot find it on the one tab where it works. */}
-          {tab === "dashboard" && (
+          {isArrangeable(tab) && (
             <button
               type="button"
               onClick={() => setEditingDashboard(!editingDashboard)}

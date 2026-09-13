@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  WIDGETS, defaultLayout, hidden, isDefault, move, reconcile, resize, setHidden, toggleHidden,
+  DASHBOARD_WIDGETS as WIDGETS, WIDGETS_BY_TAB, defaultLayout, isArrangeable, widgetsFor, hidden, isDefault, move, reconcile, resize, setHidden, toggleHidden,
   toggleSpan, visible, widgetDef, type WidgetPlacement,
 } from "./dashboard-layout.ts";
 
@@ -47,10 +47,10 @@ test("a widget is half a row or the whole of it, never anything else", () => {
 });
 
 test("a prose widget refuses to be squeezed into half a phone", () => {
-  assert.equal(widgetDef("brief")?.resizable, false);
-  const l = resize(defaultLayout(), "brief", 1);
+  assert.equal(widgetDef("dashboard", "brief")?.resizable, false);
+  const l = resize(defaultLayout(), "brief", 1, "dashboard");
   assert.equal(l.find((p) => p.id === "brief")?.span, 2, "it stays full width");
-  assert.equal(toggleSpan(l, "brief").find((p) => p.id === "brief")?.span, 2);
+  assert.equal(toggleSpan(l, "brief", "dashboard").find((p) => p.id === "brief")?.span, 2);
 });
 
 test("hiding keeps the widget's place for when it comes back", () => {
@@ -142,7 +142,46 @@ test("every widget in the registry has a distinct id", () => {
 
 test("a locked widget's declared span is the one it keeps", () => {
   for (const w of WIDGETS.filter((x) => !x.resizable)) {
-    const l = resize(defaultLayout(), w.id, w.span === 2 ? 1 : 2);
+    const l = resize(defaultLayout(), w.id, w.span === 2 ? 1 : 2, "dashboard");
     assert.equal(l.find((p) => p.id === w.id)?.span, w.span, w.id);
+  }
+});
+
+test("every arrangeable tab has widgets, and ids are unique within it", () => {
+  for (const [tab, list] of Object.entries(WIDGETS_BY_TAB)) {
+    assert.ok(list.length > 0, tab);
+    assert.equal(new Set(list.map((w) => w.id)).size, list.length, `${tab} has a duplicate id`);
+    assert.equal(isArrangeable(tab), true, tab);
+    assert.deepEqual(widgetsFor(tab), list);
+  }
+});
+
+test("a tab with no registry is not arrangeable, and asks for nothing", () => {
+  for (const tab of ["workout", "nutrition", "settings", "estimates", "nope"]) {
+    assert.equal(isArrangeable(tab), false, tab);
+    assert.deepEqual(widgetsFor(tab), []);
+    assert.deepEqual(defaultLayout(tab), []);
+    assert.deepEqual(reconcile(undefined, tab), []);
+  }
+});
+
+test("the same id on two tabs keeps its own tab's rules", () => {
+  // "header" exists on both Time and Habits, and they are different widgets.
+  assert.ok(widgetDef("time", "header"));
+  assert.ok(widgetDef("habits", "header"));
+  assert.equal(widgetDef("time", "header")?.label, "The day");
+  assert.equal(widgetDef("habits", "header")?.label, "Consistency");
+});
+
+test("a layout saved for one tab cannot leak into another", () => {
+  const mine = defaultLayout("mind");
+  const onTime = reconcile(mine, "time");
+  assert.deepEqual(onTime, defaultLayout("time"), "Mind's widgets are dropped, Time's filled in");
+});
+
+test("each tab's default is its own registry, in order", () => {
+  for (const [tab, list] of Object.entries(WIDGETS_BY_TAB)) {
+    assert.deepEqual(defaultLayout(tab).map((p) => p.id), list.map((w) => w.id), tab);
+    assert.equal(isDefault(defaultLayout(tab), tab), true, tab);
   }
 });

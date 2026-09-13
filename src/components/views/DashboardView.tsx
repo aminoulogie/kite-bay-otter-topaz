@@ -112,13 +112,12 @@ export function DashboardView() {
   const water = totalWaterMl(day);
   const session = history[date];
 
-  // Each widget as a node, keyed by the id the layout arranges. Building the
-  // map rather than the markup is what lets the order live in data: the page
-  // is then just the layout, rendered.
-  const nodes: Record<string, React.ReactNode> = {
-    brief: <CoachBrief horizon="today" />,
-    score: (
-      <Card>
+  // Each widget carries the id the layout arranges as its KEY. The page is
+  // then just its widgets, in whatever order the user put them.
+  return (
+    <WidgetGrid tab="dashboard">
+      <div key="brief"><CoachBrief horizon="today" /></div>
+      <Card key="score">
         <CardTitle>Today</CardTitle>
         {/* Wraps rather than overflowing: this card can be dragged to half a
             phone, and a number beside a caption has a wide min-content. */}
@@ -146,38 +145,25 @@ export function DashboardView() {
             ))}
         </div>
       </Card>
-    ),
-    /* The ticked ones are done — that is the whole point of a tile, and it is
-       why only CONFIRMED food counts towards them. */
-    cals: (
-      <MacroTile macro="cals" label="Calories" unit="kcal"
+
+      {/* The ticked ones are done — that is the whole point of a tile, and it
+          is why only CONFIRMED food counts towards them. */}
+      <MacroTile key="cals" macro="cals" label="Calories" unit="kcal"
                  value={macros.cals} target={goals?.cals} onClick={() => setTab("nutrition")} />
-    ),
-    protein: (
-      <MacroTile macro="p" label="Protein" unit="g"
+      <MacroTile key="protein" macro="p" label="Protein" unit="g"
                  value={macros.p} target={goals?.protein} onClick={() => setTab("nutrition")} />
-    ),
-    carbs: (
-      <MacroTile macro="c" label="Carbs" unit="g"
+      <MacroTile key="carbs" macro="c" label="Carbs" unit="g"
                  value={macros.c} target={goals?.carbs} onClick={() => setTab("nutrition")} />
-    ),
-    fat: (
-      <MacroTile macro="f" label="Fat" unit="g"
+      <MacroTile key="fat" macro="f" label="Fat" unit="g"
                  value={macros.f} target={goals?.fat} onClick={() => setTab("nutrition")} />
-    ),
-    water: (
-      <Tile icon={Moon} label="Water" value={water ? (water / 1000).toFixed(1) : "—"} unit="L"
+      <Tile key="water" icon={Moon} label="Water" value={water ? (water / 1000).toFixed(1) : "—"} unit="L"
             onClick={() => setTab("nutrition")} />
-    ),
-    session: (
-      <Tile icon={ArrowRight} label="Session"
+      <Tile key="session" icon={ArrowRight} label="Session"
             value={session ? String(session.exercises?.length ?? 0) : live.exercises.length ? String(live.exercises.length) : "—"}
             unit="lifts" onClick={() => setTab("workout")} />
-    ),
-    todos: <TodoCard />,
-    gap: <LogTheGap />,
-    correlate: (
-      <Card>
+      <div key="todos"><TodoCard /></div>
+      <div key="gap"><LogTheGap /></div>
+      <Card key="correlate">
         <CardTitle>Across everything</CardTitle>
         {finding.found ? (
           <>
@@ -196,10 +182,8 @@ export function DashboardView() {
           </p>
         )}
       </Card>
-    ),
-  };
-
-  return <WidgetGrid nodes={nodes} />;
+    </WidgetGrid>
+  );
 }
 
 

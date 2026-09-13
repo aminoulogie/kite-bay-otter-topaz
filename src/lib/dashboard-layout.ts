@@ -1,5 +1,5 @@
 /**
- * Which widgets are on the Home page, in what order, and how wide.
+ * Which widgets are on a page, in what order, and how wide.
  *
  * The page was a fixed stack, which is fine until the thing you check first is
  * the thing you have to scroll past four cards to reach. So the order and the
@@ -46,7 +46,7 @@ export interface WidgetPlacement {
  * top and move carbs off the page" is the entire reason someone opens an edit
  * mode, and a single grid could not answer it.
  */
-export const WIDGETS: WidgetDef[] = [
+export const DASHBOARD_WIDGETS: WidgetDef[] = [
   { id: "brief", label: "Coach brief", span: 2, resizable: false },
   { id: "score", label: "Today's score", span: 2, resizable: true },
   { id: "cals", label: "Calories", span: 1, resizable: true },
@@ -60,18 +60,78 @@ export const WIDGETS: WidgetDef[] = [
   { id: "correlate", label: "Across everything", span: 2, resizable: false },
 ];
 
-const BY_ID = new Map(WIDGETS.map((w) => [w.id, w]));
+/**
+ * Every arrangeable page, and what is on it.
+ *
+ * A tab absent from here is a tab with no edit mode, and that is a judgement
+ * rather than an oversight: a live training session, the food diary's search
+ * flow and the settings form are sequences of steps, not collections of cards.
+ * Reordering the steps of a form is not a feature, and a half-working edit
+ * button on those tabs would be worse than none.
+ */
+export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
+  dashboard: DASHBOARD_WIDGETS,
+  mind: [
+    { id: "review", label: "Words to review", span: 2, resizable: false },
+    { id: "words", label: "New words", span: 2, resizable: false },
+    { id: "goal", label: "Reading goal", span: 2, resizable: false },
+    { id: "shelf", label: "Reading shelf", span: 2, resizable: false },
+    { id: "week", label: "This week", span: 2, resizable: true },
+    { id: "log", label: "Log something", span: 2, resizable: false },
+    { id: "recent", label: "Recent entries", span: 2, resizable: false },
+  ],
+  money: [
+    { id: "summary", label: "This month", span: 2, resizable: true },
+    { id: "add", label: "Add an entry", span: 2, resizable: false },
+    { id: "grocery", label: "Shopping list", span: 2, resizable: false },
+    { id: "entries", label: "Entries", span: 2, resizable: false },
+    { id: "categories", label: "Categories", span: 2, resizable: false },
+  ],
+  time: [
+    { id: "header", label: "The day", span: 2, resizable: true },
+    { id: "ring", label: "The ring", span: 2, resizable: false },
+    { id: "screen", label: "Screen time", span: 2, resizable: false },
+    { id: "blocks", label: "The day, in order", span: 2, resizable: false },
+  ],
+  habits: [
+    { id: "header", label: "Consistency", span: 2, resizable: true },
+    { id: "tabs", label: "Today / Matrix / Year", span: 2, resizable: false },
+    { id: "list", label: "The habits", span: 2, resizable: false },
+    { id: "new", label: "New habit", span: 2, resizable: false },
+  ],
+};
 
-export function widgetDef(id: string): WidgetDef | undefined {
-  return BY_ID.get(id);
+/** Every widget id the app knows about, whichever page it sits on. */
+const BY_ID = new Map(
+  Object.values(WIDGETS_BY_TAB).flatMap((list) => list.map((w) => [`${w.id}`, w] as const)),
+);
+
+/** Tabs that can be rearranged. Anything else has no edit button. */
+export function isArrangeable(tab: string): boolean {
+  return Object.prototype.hasOwnProperty.call(WIDGETS_BY_TAB, tab);
 }
 
-export function defaultLayout(): WidgetPlacement[] {
-  return WIDGETS.map((w) => ({ id: w.id, span: w.span, hidden: false }));
+export function widgetsFor(tab: string): WidgetDef[] {
+  return WIDGETS_BY_TAB[tab] ?? [];
 }
 
-function cleanSpan(id: string, span: unknown): Span {
-  const def = BY_ID.get(id);
+/**
+ * A widget's definition WITHIN a tab.
+ *
+ * Looked up per tab rather than globally, because ids only have to be unique on
+ * their own page — "header" means one thing on Time and another on Habits, and
+ * a single flat map would silently give one of them the other's rules.
+ */
+export function widgetDef(tab: string, id: string): WidgetDef | undefined {
+  return widgetsFor(tab).find((w) => w.id === id) ?? BY_ID.get(id);
+}
+
+export function defaultLayout(tab = "dashboard"): WidgetPlacement[] {
+  return widgetsFor(tab).map((w) => ({ id: w.id, span: w.span, hidden: false }));
+}
+
+function cleanSpan(tab: string, id: string, span: unknown): Span {
+  const def = widgetDef(tab, id);
   if (def && !def.resizable) return def.span;
   return span === 1 ? 1 : 2;
 }
@@ -82,22 +142,24 @@ function cleanSpan(id: string, span: unknown): Span {
  * Unknown ids are dropped, missing ones are appended in registry order, and a
  * span that a widget no longer supports is pulled back to its declared one.
  */
-export function reconcile(stored: WidgetPlacement[] | undefined): WidgetPlacement[] {
+export function reconcile(stored: WidgetPlacement[] | undefined, tab = "dashboard"): WidgetPlacement[] {
+  const widgets = widgetsFor(tab);
+  const known = new Set(widgets.map((w) => w.id));
   const seen = new Set<string>();
   const out: WidgetPlacement[] = [];
 
   for (const p of stored ?? []) {
     if (!p || typeof p.id !== "string") continue;
-    if (!BY_ID.has(p.id) || seen.has(p.id)) continue;
+    if (!known.has(p.id) || seen.has(p.id)) continue;
     seen.add(p.id);
-    out.push({ id: p.id, span: cleanSpan(p.id, p.span), hidden: p.hidden === true });
+    out.push({ id: p.id, span: cleanSpan(tab, p.id, p.span), hidden: p.hidden === true });
   }
 
   // Anything the registry has gained since this layout was saved, in its own
   // order, so a new widget lands somewhere sensible rather than at the end.
-  if (out.length !== WIDGETS.length) {
-    for (let i = 0; i < WIDGETS.length; i++) {
-      const w = WIDGETS[i]!;
+  if (out.length !== widgets.length) {
+    for (let i = 0; i < widgets.length; i++) {
+      const w = widgets[i]!;
       if (seen.has(w.id)) continue;
       const at = Math.min(i, out.length);
       out.splice(at, 0, { id: w.id, span: w.span, hidden: false });
@@ -120,14 +182,18 @@ export function move(layout: WidgetPlacement[], id: string, to: number): WidgetP
 }
 
 /** Half the row, or the whole of it. A locked widget does not budge. */
-export function resize(layout: WidgetPlacement[], id: string, span: Span): WidgetPlacement[] {
-  return layout.map((p) => (p.id === id ? { ...p, span: cleanSpan(id, span) } : p));
+export function resize(
+  layout: WidgetPlacement[], id: string, span: Span, tab = "dashboard",
+): WidgetPlacement[] {
+  return layout.map((p) => (p.id === id ? { ...p, span: cleanSpan(tab, id, span) } : p));
 }
 
-export function toggleSpan(layout: WidgetPlacement[], id: string): WidgetPlacement[] {
+export function toggleSpan(
+  layout: WidgetPlacement[], id: string, tab = "dashboard",
+): WidgetPlacement[] {
   const cur = layout.find((p) => p.id === id);
   if (!cur) return layout;
-  return resize(layout, id, cur.span === 2 ? 1 : 2);
+  return resize(layout, id, cur.span === 2 ? 1 : 2, tab);
 }
 
 /** Hidden, not removed: it keeps its place for when it comes back. */
@@ -149,8 +215,8 @@ export function hidden(layout: WidgetPlacement[]): WidgetPlacement[] {
 }
 
 /** True when the layout is exactly what a fresh install would have. */
-export function isDefault(layout: WidgetPlacement[]): boolean {
-  const base = defaultLayout();
+export function isDefault(layout: WidgetPlacement[], tab = "dashboard"): boolean {
+  const base = defaultLayout(tab);
   if (layout.length !== base.length) return false;
   return layout.every((p, i) => {
     const b = base[i]!;

@@ -1,7 +1,8 @@
 import { Eye, EyeOff, Maximize2, Minimize2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Children, isValidElement, useMemo } from "react";
 import {
-  hidden as hiddenOf, isDefault, move, toggleHidden, toggleSpan, visible, widgetDef,
+  hidden as hiddenOf, isDefault, move, reconcile, toggleHidden, toggleSpan, visible, widgetDef,
 } from "@/lib/dashboard-layout";
 import { useSoma } from "@/lib/store";
 import { useLongPressDrag } from "@/lib/use-long-press-drag";
@@ -25,12 +26,40 @@ import { cn } from "@/lib/utils";
  * that iOS fires no drag events for touch and starts scrolling out from under
  * a held card unless a non-passive touchmove listener stops it.
  */
-export function WidgetGrid({ nodes }: { nodes: Record<string, React.ReactNode> }) {
-  const layout = useSoma((s) => s.dashboard);
-  const setDashboard = useSoma((s) => s.setDashboard);
-  const resetDashboard = useSoma((s) => s.resetDashboard);
+export function WidgetGrid({ tab, children }: { tab: string; children: React.ReactNode }) {
+  const layouts = useSoma((s) => s.layouts);
+  const setLayout = useSoma((s) => s.setLayout);
+  const resetLayout = useSoma((s) => s.resetLayout);
   const editing = useSoma((s) => s.editingDashboard);
   const setEditing = useSoma((s) => s.setEditingDashboard);
+
+  /**
+   * A child with an explicit KEY is a widget; anything else is page furniture.
+   *
+   * That is what keeps converting a page to this cheap — a view adds a key per
+   * section and wraps its return, rather than being turned inside out into a
+   * lookup table. And it gives the sheets, dialogs and footnotes a home: they
+   * are not cards, they must not be reorderable, and dropping them on the floor
+   * because they had no key would quietly break every editor on the page.
+   *
+   * React.Children.toArray marks the difference for us: an explicit key comes
+   * back prefixed ".$", a positional one as "." plus its index.
+   */
+  const { nodes, extras } = useMemo(() => {
+    const map: Record<string, React.ReactNode> = {};
+    const rest: React.ReactNode[] = [];
+    for (const child of Children.toArray(children)) {
+      const key = isValidElement(child) ? String(child.key ?? "") : "";
+      const id = key.startsWith(".$") ? key.slice(2) : "";
+      if (id) map[id] = child;
+      else rest.push(child);
+    }
+    return { nodes: map, extras: rest };
+  }, [children]);
+
+  const layout = useMemo(() => reconcile(layouts[tab], tab), [layouts, tab]);
+  const setDashboard = (next: typeof layout) => setLayout(tab, next);
+  const resetDashboard = () => resetLayout(tab);
 
   const shown = visible(layout);
   const off = hiddenOf(layout);
@@ -60,7 +89,7 @@ export function WidgetGrid({ nodes }: { nodes: Record<string, React.ReactNode> }
             <Button variant="primary" className="flex-1" onClick={() => setEditing(false)}>
               Done
             </Button>
-            {!isDefault(layout) && (
+            {!isDefault(layout, tab) && (
               <Button onClick={resetDashboard} aria-label="Reset the layout">
                 <RotateCcw className="size-4" />
               </Button>
@@ -71,7 +100,7 @@ export function WidgetGrid({ nodes }: { nodes: Record<string, React.ReactNode> }
 
       <div className={cn("grid grid-cols-2 items-start gap-2", editing && "select-none")}>
         {shown.map((p, i) => {
-          const def = widgetDef(p.id);
+          const def = widgetDef(tab, p.id);
           const node = nodes[p.id];
           if (!node) return null;
           const held = drag.dragging === i;
@@ -83,6 +112,10 @@ export function WidgetGrid({ nodes }: { nodes: Record<string, React.ReactNode> }
               data-drag-index={i}
               className={cn(
                 "min-w-0 transition-all",
+                // A widget that has nothing to show right now still needs to be
+                // a target: the review queue renders null when no word is due,
+                // and a zero-height cell cannot be dragged onto or tapped.
+                editing && "min-h-16",
                 p.span === 2 ? "col-span-2" : "col-span-1",
                 held && "scale-[0.97] opacity-60",
                 target && "ring-2 ring-accent ring-offset-2 ring-offset-bg rounded-3xl",
@@ -105,7 +138,7 @@ export function WidgetGrid({ nodes }: { nodes: Record<string, React.ReactNode> }
                       {def?.resizable && (
                         <button
                           type="button"
-                          onClick={() => setDashboard(toggleSpan(layout, p.id))}
+                          onClick={() => setDashboard(toggleSpan(layout, p.id, tab))}
                           className="flex size-7 items-center justify-center rounded-full border border-border bg-surface-3 text-fg shadow-lg"
                           aria-label={
                             p.span === 2
@@ -149,15 +182,17 @@ export function WidgetGrid({ nodes }: { nodes: Record<string, React.ReactNode> }
                 type="button"
                 onClick={() => setDashboard(toggleHidden(layout, p.id))}
                 className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.7rem] font-bold text-muted"
-                aria-label={`Show ${widgetDef(p.id)?.label ?? p.id}`}
+                aria-label={`Show ${widgetDef(tab, p.id)?.label ?? p.id}`}
               >
                 <Eye className="size-3.5" />
-                {widgetDef(p.id)?.label ?? p.id}
+                {widgetDef(tab, p.id)?.label ?? p.id}
               </button>
             ))}
           </div>
         </div>
       )}
+
+      {extras}
 
       {editing && shown.length === 0 && (
         <p className="py-10 text-center text-sm text-faint">

@@ -16,6 +16,7 @@ import {
   RAMP_PRESETS, bumpSizes, formatAmount, isBuild, rungLabel, status,
 } from "@/lib/habit-ramp";
 import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
@@ -39,8 +40,8 @@ export function HabitsView() {
   const [name, setName] = useState("");
 
   return (
-    <div className="space-y-3 pb-4">
-      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
+    <WidgetGrid tab="habits">
+      <Card key="header" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <Badge tone="accent">Habits · {activeDate}</Badge>
         <h1 className="mt-2 font-display text-xl font-extrabold tracking-tight">Consistency</h1>
         <p className="mt-1 text-xs text-muted">
@@ -48,7 +49,7 @@ export function HabitsView() {
         </p>
       </Card>
 
-      <div className="flex gap-1 overflow-x-auto">
+      <div key="tabs" className="flex gap-1 overflow-x-auto">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -64,6 +65,7 @@ export function HabitsView() {
         ))}
       </div>
 
+      <div key="list" className="space-y-3">
       {tab === "today" && <TodayPanel />}
 
       {tab === "month" && (
@@ -99,7 +101,9 @@ export function HabitsView() {
         </>
       )}
 
-      <Card>
+      </div>
+
+      <Card key="new">
         <CardTitle>New habit</CardTitle>
         <div className="flex gap-2">
           <Input
@@ -187,7 +191,7 @@ export function HabitsView() {
           </div>
         )}
       </Card>
-    </div>
+    </WidgetGrid>
   );
 }
 
