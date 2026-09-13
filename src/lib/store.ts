@@ -285,7 +285,7 @@ export interface SomaStore {
   updateLedger: (id: string, patch: Partial<LedgerEntry>) => void;
   removeLedger: (id: string) => void;
   restoreLedger: (index: number, entry: LedgerEntry) => void;
-  addMind: (e: Omit<MindEntry, "id">) => void;
+  addMind: (e: Omit<MindEntry, "id">) => string;
   updateMind: (id: string, patch: Partial<MindEntry>) => void;
   removeMind: (id: string) => void;
   restoreMind: (index: number, entry: MindEntry) => void;
@@ -1738,7 +1738,16 @@ export const useSoma = create<SomaStore>()(
         set({ ledger: next });
       },
 
-      addMind: (e) => set({ mind: [...get().mind, { ...e, id: newId() }] }),
+      /**
+       * Returns the id it assigned. Without that the caller had to find the
+       * entry back by title to attach a cover to it, which is wrong the moment
+       * two editions share a name.
+       */
+      addMind: (e) => {
+        const id = newId();
+        set({ mind: [...get().mind, { ...e, id }] });
+        return id;
+      },
       updateMind: (id, patch) =>
         set({ mind: get().mind.map((x) => (x.id === id ? { ...x, ...patch } : x)) }),
       removeMind: (id) => set({ mind: get().mind.filter((x) => x.id !== id) }),

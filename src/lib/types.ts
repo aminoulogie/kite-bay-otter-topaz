@@ -449,6 +449,15 @@ export interface MindEntry {
   page?: number;
   /** Open Library work key, so the same book can be looked up again. */
   sourceKey?: string;
+  /**
+   * Where the artwork came from, kept as a FALLBACK rather than the source.
+   *
+   * The cover itself is stored as bytes in the photo database. This is only
+   * used when that download did not happen — an <img> can render cross-origin
+   * art that a fetch may not be allowed to read, so the shelf can still show a
+   * cover the app was never permitted to save.
+   */
+  coverUrl?: string;
   /** Set once the last page is turned, so a shelf can be read from a log. */
   finished?: string;
   /**
