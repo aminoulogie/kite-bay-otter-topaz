@@ -116,10 +116,18 @@ test("the export carries every section the store persists", () => {
   const exportBody = store.match(/exportJson:[\s\S]*?JSON\.stringify\(\s*\{([\s\S]*?)\n {10}\}/)?.[1];
   assert.ok(exportBody, "exportJson has moved — this test can no longer see what it writes");
 
-  // `seeded` is the only persisted field that is state about the install rather
-  // than the user's data: it records that the demo log has been replaced, and
-  // importJson sets it to true on any restore anyway.
-  const expected = persisted.filter((k) => k !== "seeded");
+  /**
+   * Persisted, but deliberately not in a backup — each with the reason, because
+   * "it is not the user's data" is the only argument that works here and it has
+   * to be made out loud.
+   */
+  const notData: Record<string, string> = {
+    seeded:
+      "state about the install rather than the user's data: it records that the demo log has been replaced, and importJson sets it on any restore anyway",
+    readingSince:
+      "the moment a reading timer was started on THIS device. Restoring it elsewhere would resume a timer nobody is running and bank minutes nobody read",
+  };
+  const expected = persisted.filter((k) => !(k in notData));
   const missing = expected.filter((k) => !new RegExp(`^\\s*${k}:`, "m").test(exportBody));
   assert.deepEqual(missing, [], `persisted but never exported: ${missing.join(", ")}`);
 });

@@ -68,6 +68,10 @@ export interface SessionExercise {
    * added; see lib/training-burn.ts.
    */
   eatBackTraining?: boolean;
+  /** Minutes of reading a day. Unset follows the default. */
+  readingGoalMin?: number;
+  /** Books a year, for the grid on the reading dial. */
+  booksPerYear?: number;
   barWeight: number;
   supersetGroup: string;
   sets: WorkoutSet[];
@@ -320,6 +324,10 @@ export interface Settings {
    * added; see lib/training-burn.ts.
    */
   eatBackTraining?: boolean;
+  /** Minutes of reading a day. Unset follows the default. */
+  readingGoalMin?: number;
+  /** Books a year, for the grid on the reading dial. */
+  booksPerYear?: number;
   barWeight: number;
   restDefault: number;
   autoRest: boolean;

@@ -36,6 +36,7 @@ import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
 import { logAmount, rungOn, setRamp } from "./habit-ramp";
 import { followsSettings, resolveGoals, sameGoals } from "./goals";
 import { defaultLayout, reconcile, type WidgetPlacement } from "./dashboard-layout";
+import { clampMinutes as clampReading, elapsedMinutes } from "./reading-goal";
 import { clampMinutes } from "./screen-time";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 import { tallyMuscles } from "./set-quality";
@@ -146,6 +147,16 @@ export interface SomaStore {
   screenTime: Record<string, ScreenTimeDay>;
   /** Where the Home widgets sit, and how wide. See lib/dashboard-layout.ts. */
   dashboard: WidgetPlacement[];
+  /** Minutes read per day. See lib/reading-goal.ts. */
+  reading: Record<string, number>;
+  /**
+   * When the reading timer was started, or null.
+   *
+   * PERSISTED on purpose: a timer that forgets itself when the app is
+   * backgrounded is a timer nobody trusts, and reading is exactly the activity
+   * during which you put the phone down.
+   */
+  readingSince: number | null;
   /**
    * Whether the Home page is in edit mode. Deliberately NOT persisted: an app
    * that reopens into a mode you forgot you left on looks broken.
@@ -157,6 +168,12 @@ export interface SomaStore {
   /** Record a day's screen time. Replaces whatever was there. */
   logScreenTime: (date: string | undefined, entry: ScreenTimeDay) => void;
   clearScreenTime: (date?: string) => void;
+  /** Set a day's reading minutes outright. Zero clears the day. */
+  logReading: (minutes: number, date?: string) => void;
+  /** Add to a day's reading minutes. */
+  addReading: (minutes: number, date?: string) => void;
+  startReading: () => void;
+  stopReading: () => number;
   /** Replace the Home layout. Always reconciled against the widget registry. */
   setDashboard: (layout: WidgetPlacement[]) => void;
   resetDashboard: () => void;
@@ -345,6 +362,8 @@ export const useSoma = create<SomaStore>()(
       dayPlans: {},
       screenTime: {},
       dashboard: defaultLayout(),
+      reading: {},
+      readingSince: null,
       editingDashboard: false,
       programs: [],
       activeProgramId: null,
@@ -898,6 +917,28 @@ export const useSoma = create<SomaStore>()(
             [key]: { ...entry, total: clampMinutes(entry.total) },
           },
         });
+      },
+      logReading: (minutes, date) => {
+        const key = date || get().activeDate;
+        const next = { ...get().reading };
+        const n = clampReading(minutes);
+        if (n > 0) next[key] = n;
+        else delete next[key];
+        set({ reading: next });
+      },
+      addReading: (minutes, date) => {
+        const key = date || get().activeDate;
+        const cur = get().reading[key] ?? 0;
+        get().logReading(cur + clampReading(minutes), key);
+      },
+      startReading: () => set({ readingSince: Date.now() }),
+      /** Bank whatever the timer holds and stop it. Returns the minutes kept. */
+      stopReading: () => {
+        const since = get().readingSince;
+        const mins = elapsedMinutes(since);
+        set({ readingSince: null });
+        if (mins > 0) get().addReading(mins);
+        return mins;
       },
       setDashboard: (layout) => set({ dashboard: reconcile(layout) }),
       setEditingDashboard: (on) => set({ editingDashboard: on }),
@@ -1791,6 +1832,7 @@ export const useSoma = create<SomaStore>()(
             dayPlans: get().dayPlans,
             screenTime: get().screenTime,
             dashboard: get().dashboard,
+            reading: get().reading,
             live: get().live,
             activeDate: get().activeDate,
             sideStores: collectSideStores(),
@@ -1839,6 +1881,7 @@ export const useSoma = create<SomaStore>()(
               dayPlans: data.dayPlans || {},
               screenTime: data.screenTime || {},
               dashboard: reconcile(data.dashboard),
+              reading: data.reading || {},
               seeded: true,
               // A backup from before these were exported has neither, and the
               // device keeps whatever it is on rather than being emptied.
@@ -1939,6 +1982,7 @@ export const useSoma = create<SomaStore>()(
             // this screen, not history, and a restore should not rearrange the
             // phone you are holding.
             dashboard: reconcile(cur.dashboard),
+            reading: { ...(data.reading || {}), ...cur.reading },
             seeded: true,
           });
           // `live` and `activeDate` are deliberately not merged: the device is
@@ -2001,6 +2045,8 @@ export const useSoma = create<SomaStore>()(
         dayPlans: s.dayPlans,
         screenTime: s.screenTime,
         dashboard: s.dashboard,
+        reading: s.reading,
+        readingSince: s.readingSince,
         live: s.live,
         activeDate: s.activeDate,
       }),

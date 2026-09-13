@@ -6,6 +6,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import { Bookshelf } from "@/components/Bookshelf";
+import { ReadingGoal } from "@/components/ReadingGoal";
 import { WordBook } from "@/components/WordBook";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -97,6 +98,8 @@ export function MindView() {
       <ReviewQueue />
 
       <WordBook />
+
+      <ReadingGoal />
 
       <Bookshelf />
 
