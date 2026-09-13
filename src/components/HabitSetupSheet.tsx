@@ -32,12 +32,16 @@ function shapeOf(habit: Habit): Shape {
  * to that question and no way to choose between them.
  */
 export function HabitSetupSheet({
-  habit, onClose, onSaveSteps, onSaveRamp,
+  habit, onClose, onSaveSteps, onSaveRamp, onSaveSeconds,
 }: {
   habit: Habit;
   onClose: () => void;
   onSaveSteps: (steps: HabitStep[]) => void;
   onSaveRamp: (ramp: HabitRamp | null) => void;
+  /** Roughly how long it takes. Written immediately — it is one tap and has
+      nothing to validate, so holding it until Save would only be a way to
+      lose it. */
+  onSaveSeconds: (seconds: number | null) => void;
 }) {
   const [shape, setShape] = useState<Shape>(() => shapeOf(habit));
   const [draft, setDraft] = useState<HabitStep[]>(() =>
@@ -96,6 +100,37 @@ export function HabitSetupSheet({
           <button type="button" onClick={onClose} aria-label="Close">
             <X className="size-5 text-muted" />
           </button>
+        </div>
+
+        {/* How long it takes, which is not a target and is never scored.
+            Nothing checks whether you came in under it. It exists so a routine
+            can be built out of habits and work out whether five of them fit in
+            twenty minutes — arithmetic the app can only do if someone has said
+            how long each one takes. */}
+        <div className="mb-3">
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+              Roughly how long
+            </span>
+            <span className="text-[0.62rem] text-faint">for routines · not scored</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {[1, 2, 5, 10, 15, 20, 30, 45].map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => onSaveSeconds(habit.seconds === m * 60 ? null : m * 60)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-[0.7rem] font-bold",
+                  habit.seconds === m * 60
+                    ? "border-accent bg-accent text-accent-ink"
+                    : "border-border bg-surface-2 text-muted",
+                )}
+              >
+                {m}m
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex gap-1">

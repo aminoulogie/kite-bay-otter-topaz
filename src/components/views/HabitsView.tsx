@@ -36,6 +36,7 @@ export function HabitsView() {
   const toggleHabit = useSoma((s) => s.toggleHabit);
   const addHabit = useSoma((s) => s.addHabit);
   const removeHabit = useSoma((s) => s.removeHabit);
+  const setHabitSeconds = useSoma((s) => s.setHabitSeconds);
   const activeDate = useSoma((s) => s.activeDate);
 
   const [tab, setTab] = useState<HabitTab>("today");
@@ -191,6 +192,7 @@ function TodayPanel() {
   const setHabitRamp = useSoma((s) => s.setHabitRamp);
   const logHabitAmount = useSoma((s) => s.logHabitAmount);
   const removeHabit = useSoma((s) => s.removeHabit);
+  const setHabitSeconds = useSoma((s) => s.setHabitSeconds);
   const restoreHabit = useSoma((s) => s.restoreHabit);
   const activeDate = useSoma((s) => s.activeDate);
   const today = parseLocalDateKey(activeDate);
@@ -480,6 +482,7 @@ function TodayPanel() {
           onClose={() => setSetupFor(null)}
           onSaveSteps={(next: HabitStep[]) => setHabitSteps(setupFor.id, next)}
           onSaveRamp={(next: HabitRamp | null) => setHabitRamp(setupFor.id, next)}
+          onSaveSeconds={(next) => setHabitSeconds(setupFor.id, next)}
         />
       )}
 

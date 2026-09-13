@@ -239,6 +239,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   time: [
     { id: "header", label: "The day", size: "2x4" },
+    { id: "routines", label: "Routines", size: "2x4" },
     { id: "ring", label: "The ring", size: "2x4" },
     { id: "screen", label: "Screen time", size: "2x4" },
     { id: "blocks", label: "The day, in order", size: "2x4" },

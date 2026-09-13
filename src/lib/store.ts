@@ -88,6 +88,10 @@ import {
 } from "./pantry";
 import { deloadSetCount } from "./autoregulate";
 import { cleanDue } from "./due";
+import {
+  clampStep, cleanRoutine, newRoutineId, newStepId as newRoutineStepId, startRun,
+  stepsOf as routineStepsOf, type Routine, type RoutineStep, type RunState,
+} from "./routine";
 import { defaultPlan, normalise, type TimeBlock } from "./day-plan";
 import {
   addStep, cleanProject, newProjectId, removeStep, setStep, stepsOf, type Project,
@@ -232,6 +236,25 @@ export interface SomaStore {
   setEditingDashboard: (on: boolean) => void;
   /** The short list of things to do. Nothing clever: a line and a box. */
   todos: TodoItem[];
+  /**
+   * Timed runs of several things back to back. See lib/routine.ts.
+   *
+   * `routineRun` is deliberately NOT persisted: a run is a thing happening
+   * now, and restoring one from three days ago would report you as nineteen
+   * minutes behind on a morning that is over.
+   */
+  dayRoutines: Routine[];
+  dayRoutineRun: RunState | null;
+  addDayRoutine: (name: string, windowSeconds: number, color: string) => string;
+  patchDayRoutine: (id: string, patch: Partial<Omit<Routine, "id">>) => void;
+  removeDayRoutine: (id: string) => void;
+  restoreDayRoutine: (idx: number, routine: Routine) => void;
+  addDayRoutineStep: (id: string, step: Omit<RoutineStep, "id">) => void;
+  patchDayRoutineStep: (id: string, stepId: string, patch: Partial<Omit<RoutineStep, "id">>) => void;
+  removeDayRoutineStep: (id: string, stepId: string) => void;
+  moveDayRoutineStep: (id: string, stepId: string, to: number) => void;
+  beginDayRoutine: (id: string) => void;
+  setDayRoutineRun: (run: RunState | null) => void;
   /** Things with a finish line. See lib/projects.ts. */
   projects: Project[];
   addProject: (name: string, color: string) => string;
@@ -298,6 +321,8 @@ export interface SomaStore {
   /** Attach, replace or remove a habit's daily ramp. */
   setHabitRamp: (id: string, ramp: HabitRamp | null) => void;
   addHabit: (h: Omit<Habit, "id" | "history">) => void;
+  /** Roughly how long the habit takes, for building routines out of habits. */
+  setHabitSeconds: (id: string, seconds: number | null) => void;
   removeHabit: (id: string) => void;
   /**
    * Put a deleted habit back where it was, history and all.
@@ -408,6 +433,11 @@ function newId(): string {
  * Every field is repaired rather than trusted: a backup is a file the user can
  * edit, and one malformed step should cost that step, not the whole board.
  */
+function asRoutines(raw: unknown): Routine[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(cleanRoutine).filter((r): r is Routine => r !== null);
+}
+
 function asProjects(raw: unknown): Project[] {
   if (!Array.isArray(raw)) return [];
   return raw.map(cleanProject).filter((p): p is Project => p !== null);
@@ -444,6 +474,8 @@ export const useSoma = create<SomaStore>()(
       grocery: [],
       todos: [],
       projects: [],
+      dayRoutines: [],
+      dayRoutineRun: null,
       dayPlans: {},
       screenTime: {},
       layouts: {},
@@ -1056,6 +1088,86 @@ export const useSoma = create<SomaStore>()(
         set({ screenTime: next });
       },
 
+      addDayRoutine: (name, windowSeconds, color) => {
+        const id = newRoutineId();
+        set((s) => ({
+          dayRoutines: [
+            ...s.dayRoutines,
+            {
+              id,
+              name: name.trim() || "Routine",
+              windowSeconds: Math.max(60, Math.round(windowSeconds) || 20 * 60),
+              steps: [],
+              color,
+              createdAt: Date.now(),
+            },
+          ],
+        }));
+        return id;
+      },
+      patchDayRoutine: (id, patch) =>
+        set((s) => ({ dayRoutines: s.dayRoutines.map((r) => (r.id === id ? { ...r, ...patch } : r)) })),
+      removeDayRoutine: (id) =>
+        set((s) => ({
+          dayRoutines: s.dayRoutines.filter((r) => r.id !== id),
+          // A run of a routine that no longer exists has nothing to measure
+          // itself against, so it ends with it.
+          dayRoutineRun: s.dayRoutineRun?.routineId === id ? null : s.dayRoutineRun,
+        })),
+      restoreDayRoutine: (idx, routine) =>
+        set((s) => {
+          if (s.dayRoutines.some((r) => r.id === routine.id)) return {};
+          const next = [...s.dayRoutines];
+          next.splice(Math.max(0, Math.min(next.length, idx)), 0, routine);
+          return { dayRoutines: next };
+        }),
+      addDayRoutineStep: (id, step) =>
+        set((s) => ({
+          dayRoutines: s.dayRoutines.map((r) =>
+            r.id === id
+              ? { ...r, steps: [...routineStepsOf(r), { ...step, id: newRoutineStepId() }] }
+              : r,
+          ),
+        })),
+      patchDayRoutineStep: (id, stepId, patch) =>
+        set((s) => ({
+          dayRoutines: s.dayRoutines.map((r) =>
+            r.id === id
+              ? {
+                  ...r,
+                  steps: routineStepsOf(r).map((st) =>
+                    st.id === stepId ? { ...st, ...patch } : st,
+                  ),
+                }
+              : r,
+          ),
+        })),
+      removeDayRoutineStep: (id, stepId) =>
+        set((s) => ({
+          dayRoutines: s.dayRoutines.map((r) =>
+            r.id === id ? { ...r, steps: routineStepsOf(r).filter((st) => st.id !== stepId) } : r,
+          ),
+        })),
+      moveDayRoutineStep: (id, stepId, to) =>
+        set((s) => ({
+          dayRoutines: s.dayRoutines.map((r) => {
+            if (r.id !== id) return r;
+            const steps = [...routineStepsOf(r)];
+            const from = steps.findIndex((st) => st.id === stepId);
+            if (from < 0) return r;
+            const target = Math.max(0, Math.min(steps.length - 1, Math.floor(to)));
+            if (target === from) return r;
+            const [item] = steps.splice(from, 1);
+            steps.splice(target, 0, item!);
+            return { ...r, steps };
+          }),
+        })),
+      beginDayRoutine: (id) => {
+        const r = get().dayRoutines.find((x) => x.id === id);
+        if (!r) return;
+        set({ dayRoutineRun: startRun(r) });
+      },
+      setDayRoutineRun: (run) => set({ dayRoutineRun: run }),
       addProject: (name, color) => {
         const id = newProjectId();
         set((s) => ({
@@ -1386,6 +1498,14 @@ export const useSoma = create<SomaStore>()(
           ],
         });
       },
+      setHabitSeconds: (id, seconds) =>
+        set({
+          habits: get().habits.map((h) =>
+            h.id === id
+              ? { ...h, seconds: seconds == null ? undefined : clampStep(seconds) }
+              : h,
+          ),
+        }),
       removeHabit: (id) => set({ habits: get().habits.filter((h) => h.id !== id) }),
       restoreHabit: (idx, habit) =>
         set((st) => {
@@ -2007,6 +2127,7 @@ export const useSoma = create<SomaStore>()(
             grocery: get().grocery,
             todos: get().todos,
             projects: get().projects,
+            dayRoutines: get().dayRoutines,
             dayPlans: get().dayPlans,
             screenTime: get().screenTime,
             layouts: get().layouts,
@@ -2058,6 +2179,7 @@ export const useSoma = create<SomaStore>()(
               grocery: data.grocery || [],
               todos: data.todos || [],
               projects: asProjects(data.projects),
+              dayRoutines: asRoutines(data.dayRoutines),
               dayPlans: data.dayPlans || {},
               screenTime: data.screenTime || {},
               layouts: asLayouts(data.layouts),
@@ -2157,6 +2279,7 @@ export const useSoma = create<SomaStore>()(
             grocery: mergeById(data.grocery || [], cur.grocery),
             todos: mergeById(data.todos || [], cur.todos),
             projects: mergeById(asProjects(data.projects), cur.projects),
+            dayRoutines: mergeById(asRoutines(data.dayRoutines), cur.dayRoutines),
             // Incoming days fill gaps; a plan on the device is the newer edit.
             dayPlans: { ...(data.dayPlans || {}), ...cur.dayPlans },
             screenTime: { ...(data.screenTime || {}), ...cur.screenTime },
@@ -2229,6 +2352,7 @@ export const useSoma = create<SomaStore>()(
         grocery: s.grocery,
         todos: s.todos,
         projects: s.projects,
+        dayRoutines: s.dayRoutines,
         dayPlans: s.dayPlans,
         screenTime: s.screenTime,
         layouts: s.layouts,

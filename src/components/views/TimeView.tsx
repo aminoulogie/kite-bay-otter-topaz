@@ -6,6 +6,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { DayRing } from "@/components/DayRing";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { ScreenTimeCard } from "@/components/ScreenTimeCard";
+import { RoutineCard } from "@/components/RoutineCard";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import {
@@ -110,6 +111,11 @@ export function TimeView() {
           measured against the flexible hours rather than the whole 24: sleep
           and work are not time the phone was competing for. */}
       </div>
+
+      {/* On Time rather than Habits: the question a routine answers is a
+          question about time — do five things fit in twenty minutes — and
+          Habits answers a question about consistency. */}
+      <RoutineCard key="routines" />
 
       <ScreenTimeCard key="screen" flexibleHours={freeLeft} />
 

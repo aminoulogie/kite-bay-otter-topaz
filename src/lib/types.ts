@@ -275,6 +275,15 @@ export interface Habit {
    */
   ramp?: HabitRamp;
   /**
+   * Roughly how long it takes, in seconds.
+   *
+   * Not a target and never scored — nothing checks whether you came in under
+   * it. It exists so a routine can be built out of habits and know whether
+   * five of them fit in twenty minutes, which is arithmetic the app can only
+   * do if someone has said how long each one takes.
+   */
+  seconds?: number;
+  /**
    * date -> what was actually done that day.
    *
    * ZERO IS A VALUE, and on a quit habit it is the best one there is. A date
