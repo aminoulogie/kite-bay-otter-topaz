@@ -1,9 +1,9 @@
 import { Eye, EyeOff, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Children, createContext, isValidElement, useContext, useMemo } from "react";
+import { Children, createContext, isValidElement, useContext, useMemo, useState } from "react";
 import {
-  SIZES, hidden as hiddenOf, isDefault, move, reconcile, resize, toggleHidden, visible,
-  widgetDef, type WidgetSize,
+  SIZE_SPECS, hidden as hiddenOf, isDefault, isTile, move, reconcile, resize, specFor,
+  toggleHidden, visible, widgetDef, type WidgetSize,
 } from "@/lib/dashboard-layout";
 import { useSoma } from "@/lib/store";
 import { useLongPressDrag } from "@/lib/use-long-press-drag";
@@ -36,39 +36,57 @@ import { cn } from "@/lib/utils";
  * a reasonable default and much better than sixty cards each needing three
  * hand-written variants before any of them could be resized at all.
  */
-const SizeContext = createContext<WidgetSize>("medium");
+const SizeContext = createContext<WidgetSize>("2x4");
 
 export function useWidgetSize(): WidgetSize {
   return useContext(SizeContext);
 }
 
-/** The boxes the three sizes draw, in the grid's own two columns. */
-const SIZE_CLASS: Record<WidgetSize, string> = {
-  // A square, like the home screen's. Anything that does not fit is clipped
-  // behind a fade rather than allowed to push the row out of shape.
-  small: "col-span-1 [&>*]:max-h-full",
-  medium: "col-span-2",
-  large: "col-span-2",
+/**
+ * Four columns on a phone, eight on a desktop.
+ *
+ * Two columns could not express a quarter, so a widget was half a row or the
+ * whole of it and nothing else. Four is the home screen's own grid and the
+ * smallest number that makes 1x1, 1x2 and 1x4 all mean something different.
+ * The desktop doubles it so the same stored size stays roughly half the width
+ * it is on a phone, rather than one card stretched across a monitor.
+ */
+const COL: Record<1 | 2 | 4, string> = {
+  1: "col-span-1 lg:col-span-2",
+  2: "col-span-2 lg:col-span-4",
+  4: "col-span-4 lg:col-span-8",
 };
 
-const SIZE_LABEL: Record<WidgetSize, string> = {
-  small: "Small",
-  medium: "Medium",
-  large: "Large",
+/**
+ * A height unit is about one phone column, so 1x1 comes out square.
+ *
+ * Fixed for a tile and a floor for a full-width card — see the note on
+ * WidgetSize for why a 3x4 Routines editor must be allowed to grow past its
+ * own size and a 1x1 must not.
+ */
+const ROW: Record<1 | 2 | 3, { tile: string; wide: string }> = {
+  1: { tile: "h-[5.25rem]", wide: "min-h-[5.25rem]" },
+  2: { tile: "h-[11rem]", wide: "min-h-[11rem]" },
+  3: { tile: "h-[17rem]", wide: "min-h-[17rem]" },
 };
 
-/** The glyph in the size picker: a filled box at the shape of each size. */
+function boxFor(size: WidgetSize): string {
+  const spec = specFor(size);
+  const h = ROW[spec.h];
+  return cn(COL[spec.w], isTile(size) ? h.tile : h.wide);
+}
+
+/** The shape, drawn to scale, for the picker. */
 function SizeGlyph({ size, on }: { size: WidgetSize; on: boolean }) {
-  const box =
-    size === "small" ? "h-2.5 w-2.5" : size === "medium" ? "h-2 w-4" : "h-3.5 w-4";
+  const spec = specFor(size);
   return (
     <span
       aria-hidden
       className={cn(
         "block rounded-[3px] border",
-        box,
-        on ? "border-accent-ink bg-accent-ink" : "border-fg/60",
+        on ? "border-accent-ink bg-accent-ink" : "border-fg/55",
       )}
+      style={{ width: spec.w * 7, height: spec.h * 7 }}
     />
   );
 }
@@ -122,6 +140,9 @@ export function WidgetGrid({
   const setDashboard = (next: typeof layout) => setLayout(tab, next);
   const resetDashboard = () => resetLayout(tab);
 
+  /** Which widget's size picker is open, if any. */
+  const [picking, setPicking] = useState<string | null>(null);
+
   const shown = visible(layout);
   const off = hiddenOf(layout);
 
@@ -143,9 +164,9 @@ export function WidgetGrid({
             Hold a widget to pick it up, drag to move it.
           </p>
           <p className="mt-0.5 text-[0.68rem] leading-snug text-muted">
-            Every card takes three sizes — small, medium, large. Pick one from the row on
-            the card, or the eye to take it off the page. Nothing here is deleted —
-            hidden widgets wait at the bottom.
+            Every card takes six sizes, rows by columns out of four — 1x1 up to 3x4. Tap
+            the shape on a card to change it, or the eye to take it off the page. Nothing
+            here is deleted: hidden widgets wait at the bottom.
           </p>
           <div className="mt-2 flex gap-2">
             <Button variant="primary" className="flex-1" onClick={() => setEditing(false)}>
@@ -167,7 +188,7 @@ export function WidgetGrid({
           layout being stored twice. */}
       <div
         className={cn(
-          "grid grid-cols-2 items-start gap-2 lg:grid-cols-4 lg:gap-3",
+          "grid grid-cols-4 items-start gap-2 lg:grid-cols-8 lg:gap-3",
           editing && "select-none",
         )}
       >
@@ -183,32 +204,41 @@ export function WidgetGrid({
               key={p.id}
               data-drag-index={i}
               className={cn(
-                "min-w-0 transition-all",
+                // A flex column, so the card inside stretches to the box the
+                // size asked for. A percentage height cannot do it: `min-h` is
+                // not a definite height, so `h-full` under one silently
+                // collapses back to the content's own height — which is what
+                // left short cards floating in a taller cell.
+                "flex min-w-0 flex-col transition-all",
                 // A widget that has nothing to show right now still needs to be
                 // a target: the review queue renders null when no word is due,
                 // and a zero-height cell cannot be dragged onto or tapped.
                 editing && "min-h-16",
-                SIZE_CLASS[p.size],
+                boxFor(p.size),
                 held && "scale-[0.97] opacity-60",
                 target && "ring-2 ring-accent ring-offset-2 ring-offset-bg rounded-3xl",
               )}
               {...(editing ? drag.handlers(i) : {})}
             >
-              <div className={cn("relative", editing && "rounded-3xl")}>
+              <div className={cn("relative flex min-h-0 flex-1 flex-col", editing && "rounded-3xl")}>
                 {/* The widget still draws itself, but stops answering taps: in
                     edit mode the card is a thing you move, not a thing you
                     press. */}
                 <SizeContext.Provider value={p.size}>
                   <div
                     className={cn(
+                      "soma-widget-box",
                       editing && "pointer-events-none opacity-45",
                       // Small is a square you glance at, so it gets a hard box
                       // and a fade where the content runs out. Large is a panel
                       // you work in, so it gets a floor rather than a ceiling —
                       // a card told to be large and given nothing to fill it
                       // should still LOOK large.
-                      p.size === "small" && "soma-widget-small",
-                      p.size === "large" && "min-h-72",
+                      // A tile is a glance and gets a hard box with a fade
+                      // where its content runs out; a full-width card keeps
+                      // its natural height and only gains a floor.
+                      isTile(p.size) && "soma-widget-tile",
+                      specFor(p.size).w === 1 && "soma-tile-1",
                     )}
                   >
                     {node}
@@ -221,29 +251,21 @@ export function WidgetGrid({
                 {editing && (
                   <>
                     <div className="pointer-events-none absolute inset-0 rounded-3xl border-2 border-dashed border-accent-line" />
-                    {/* Three sizes shown at once rather than one button that
-                        cycles. A cycling control hides what the options ARE
-                        and makes the third one three taps away; the home
-                        screen shows all of them side by side for the same
-                        reason. */}
+                    {/* One button that opens a picker, not six buttons in a
+                        row. Six inline controls are wider than a 1x1 tile, so
+                        the control would not fit on exactly the widget that
+                        most needs it — and the shapes need labels to be
+                        readable at this size, which a row cannot carry. */}
                     <div className="absolute right-1.5 top-1.5 flex items-center gap-1">
-                      <div className="flex items-center gap-0.5 rounded-full border border-border bg-surface-3 p-0.5 shadow-lg">
-                        {SIZES.map((sz) => (
-                          <button
-                            key={sz}
-                            type="button"
-                            onClick={() => setDashboard(resize(layout, p.id, sz, tab))}
-                            className={cn(
-                              "flex size-6 items-center justify-center rounded-full transition-colors",
-                              p.size === sz ? "bg-accent" : "active:bg-surface-2",
-                            )}
-                            aria-label={`${SIZE_LABEL[sz]} ${def?.label ?? p.id}`}
-                            aria-pressed={p.size === sz}
-                          >
-                            <SizeGlyph size={sz} on={p.size === sz} />
-                          </button>
-                        ))}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setPicking(p.id)}
+                        className="flex h-7 items-center gap-1 rounded-full border border-border bg-surface-3 px-2 text-[0.6rem] font-bold tabular text-fg shadow-lg"
+                        aria-label={`Size of ${def?.label ?? p.id}, currently ${p.size}`}
+                      >
+                        <SizeGlyph size={p.size} on={false} />
+                        {p.size}
+                      </button>
                       <button
                         type="button"
                         onClick={() => setDashboard(toggleHidden(layout, p.id))}
@@ -283,6 +305,15 @@ export function WidgetGrid({
         </div>
       )}
 
+      {picking && (
+        <SizeSheet
+          label={widgetDef(tab, picking)?.label ?? picking}
+          current={layout.find((x) => x.id === picking)?.size ?? "2x4"}
+          onPick={(sz) => setDashboard(resize(layout, picking, sz, tab))}
+          onClose={() => setPicking(null)}
+        />
+      )}
+
       {extras}
 
       {editing && shown.length === 0 && (
@@ -290,6 +321,84 @@ export function WidgetGrid({
           Every widget is off the page. Tap one below to bring it back.
         </p>
       )}
+    </div>
+  );
+}
+
+/**
+ * The size picker.
+ *
+ * A sheet rather than a row of six on the card, because six controls are
+ * wider than a 1x1 tile and the shapes need their names to be readable at
+ * that scale. The shapes are drawn to scale against each other so the
+ * difference between 1x4 and 2x4 is visible before you commit to it —
+ * which is the whole job of a picker.
+ */
+function SizeSheet({
+  label, current, onPick, onClose,
+}: {
+  label: string;
+  current: WidgetSize;
+  onPick: (size: WidgetSize) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col justify-end bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Size of ${label}`}
+      onClick={onClose}
+    >
+      <div
+        className="soma-expand max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 font-display text-base font-extrabold">Size</div>
+        <p className="mb-3 text-[0.68rem] leading-snug text-faint">
+          {label} — rows by columns, out of four. A narrow size is a fixed tile and
+          anything past its edge fades out; a full-width one can grow taller than it
+          says, so a card with controls in it stays usable.
+        </p>
+
+        <div className="grid grid-cols-3 gap-2">
+          {SIZE_SPECS.map((spec) => {
+            const on = spec.id === current;
+            return (
+              <button
+                key={spec.id}
+                type="button"
+                onClick={() => {
+                  onPick(spec.id);
+                  onClose();
+                }}
+                aria-pressed={on}
+                className={cn(
+                  "flex h-24 flex-col items-center justify-center gap-2 rounded-2xl border",
+                  on ? "border-accent bg-accent/10" : "border-border bg-surface-2",
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "block rounded-[4px] border-2",
+                    on ? "border-accent bg-accent/40" : "border-fg/45",
+                  )}
+                  style={{ width: spec.w * 11, height: spec.h * 11 }}
+                />
+                <span
+                  className={cn(
+                    "text-[0.7rem] font-bold tabular",
+                    on ? "text-accent-text" : "text-muted",
+                  )}
+                >
+                  {spec.id}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

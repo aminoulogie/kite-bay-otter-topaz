@@ -23,21 +23,75 @@
  */
 
 /**
- * The three sizes, named after what they are rather than how many columns
- * they take.
+ * The six sizes, named after the shape they are.
  *
- * Borrowed wholesale from the home screen, because that is where everyone
- * already learned it: SMALL is a square you glance at, MEDIUM is a row you
- * read, LARGE is a panel you work in. Columns are an implementation detail of
- * the grid; "small" is a promise about how much fits.
+ * The ids ARE the grid shape — "2x4" is two rows tall and four columns wide —
+ * because that is how everyone already describes a widget, and a translation
+ * layer between "medium" and what it actually draws is one more thing that can
+ * disagree with itself. Four columns on a phone is what makes the narrow
+ * sizes possible: on a two-column grid there is no such thing as a quarter.
+ *
+ * Height is a CEILING for the narrow sizes and a FLOOR for the full-width
+ * ones, which is the one place this departs from the home screen. A 1x1 tile
+ * is a glance and gets a hard box; a 3x4 panel may be the Routines editor, and
+ * capping that would put its buttons somewhere you cannot reach them. So a
+ * wide card can grow past its size, and a narrow one is clipped behind a fade.
  */
-export type WidgetSize = "small" | "medium" | "large";
+export type WidgetSize = "1x1" | "1x2" | "2x2" | "1x4" | "2x4" | "3x4";
 
-export const SIZES: WidgetSize[] = ["small", "medium", "large"];
+export interface SizeSpec {
+  id: WidgetSize;
+  /** Columns out of four. */
+  w: 1 | 2 | 4;
+  /** Height units. One unit is about one column wide, so 1x1 is a square. */
+  h: 1 | 2 | 3;
+}
 
-/** How many of the two columns each size takes. */
-export function columnsFor(size: WidgetSize): 1 | 2 {
-  return size === "small" ? 1 : 2;
+/** Smallest to largest, which is the order the picker shows them in. */
+export const SIZE_SPECS: SizeSpec[] = [
+  { id: "1x1", w: 1, h: 1 },
+  { id: "1x2", w: 2, h: 1 },
+  { id: "2x2", w: 2, h: 2 },
+  { id: "1x4", w: 4, h: 1 },
+  { id: "2x4", w: 4, h: 2 },
+  { id: "3x4", w: 4, h: 3 },
+];
+
+export const SIZES: WidgetSize[] = SIZE_SPECS.map((s) => s.id);
+
+export function specFor(size: WidgetSize): SizeSpec {
+  return SIZE_SPECS.find((s) => s.id === size) ?? SIZE_SPECS[4]!;
+}
+
+/** How many of the four columns this size takes. */
+export function columnsFor(size: WidgetSize): 1 | 2 | 4 {
+  return specFor(size).w;
+}
+
+export function rowsFor(size: WidgetSize): 1 | 2 | 3 {
+  return specFor(size).h;
+}
+
+/**
+ * Room for a second tier of content under the headline.
+ *
+ * Height rather than width, because height is what the user actually chose
+ * when they picked 1x4 over 2x4: "I want this short". A card that answers this
+ * draws less and is therefore genuinely shorter, which is what makes the size
+ * mean something instead of being a floor the content immediately exceeds.
+ */
+export function hasDetailRoom(size: WidgetSize): boolean {
+  return rowsFor(size) >= 2;
+}
+
+/** Room for everything a card could show. Only the tallest size has it. */
+export function hasFullRoom(size: WidgetSize): boolean {
+  return rowsFor(size) >= 3;
+}
+
+/** True when the size is a glance tile, so its height is a hard box. */
+export function isTile(size: WidgetSize): boolean {
+  return specFor(size).w < 4;
 }
 
 export function nextSize(size: WidgetSize): WidgetSize {
@@ -49,7 +103,7 @@ export interface WidgetDef {
   id: string;
   /** What the edit overlay calls it. */
   label: string;
-  /** The size it ships at. Every widget can be set to any of the three. */
+  /** The size it ships at. Every widget can be set to any of the six. */
   size: WidgetSize;
 }
 
@@ -59,12 +113,28 @@ export interface WidgetPlacement {
   hidden: boolean;
 }
 
-/** A stored value read back as a size, whatever shape it was written in. */
+/**
+ * A stored value read back as a size, whatever shape it was written in.
+ *
+ * Three generations of this field are in people's storage now: a column count
+ * from the two-column grid, the small/medium/large names, and the grid shapes.
+ * All three load. Dropping any of them would reset the page of everyone who
+ * had ever arranged one, which is a worse outcome than carrying two lines of
+ * translation forever.
+ */
+const LEGACY: Record<string, WidgetSize> = {
+  small: "2x2",
+  medium: "2x4",
+  large: "3x4",
+};
+
 export function asSize(value: unknown): WidgetSize | null {
-  if (value === "small" || value === "medium" || value === "large") return value;
-  // Layouts saved before there were three sizes stored a column count.
-  if (value === 1) return "small";
-  if (value === 2) return "medium";
+  if (typeof value === "string") {
+    if ((SIZES as string[]).includes(value)) return value as WidgetSize;
+    return LEGACY[value] ?? null;
+  }
+  if (value === 1) return "2x2";
+  if (value === 2) return "2x4";
   return null;
 }
 
@@ -76,17 +146,21 @@ export function asSize(value: unknown): WidgetSize | null {
  * mode, and a single grid could not answer it.
  */
 export const DASHBOARD_WIDGETS: WidgetDef[] = [
-  { id: "brief", label: "Coach brief", size: "medium" },
-  { id: "score", label: "Today's score", size: "medium" },
-  { id: "cals", label: "Calories", size: "small" },
-  { id: "protein", label: "Protein", size: "small" },
-  { id: "carbs", label: "Carbs", size: "small" },
-  { id: "fat", label: "Fat", size: "small" },
-  { id: "water", label: "Water", size: "small" },
-  { id: "session", label: "Session", size: "small" },
-  { id: "todos", label: "To-do", size: "medium" },
-  { id: "gap", label: "Log the gap", size: "medium" },
-  { id: "correlate", label: "Across everything", size: "medium" },
+  // A strip, not a panel: on a good day the brief is one sentence, and a
+  // two-row default left a card mostly empty on the page everyone sees first.
+  // Full-width heights are floors, so it still grows when it has three things
+  // to say.
+  { id: "brief", label: "Coach brief", size: "1x4" },
+  { id: "score", label: "Today's score", size: "2x4" },
+  { id: "cals", label: "Calories", size: "2x2" },
+  { id: "protein", label: "Protein", size: "2x2" },
+  { id: "carbs", label: "Carbs", size: "2x2" },
+  { id: "fat", label: "Fat", size: "2x2" },
+  { id: "water", label: "Water", size: "2x2" },
+  { id: "session", label: "Session", size: "2x2" },
+  { id: "todos", label: "To-do", size: "2x4" },
+  { id: "gap", label: "Log the gap", size: "2x4" },
+  { id: "correlate", label: "Across everything", size: "2x4" },
 ];
 
 /**
@@ -110,141 +184,141 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   // "mind-book" rather than "mind" because a layout is a layout OF A PAGE, and
   // Reading and Language are not the same page with different cards on it.
   "mind-book": [
-    { id: "goal", label: "Reading goal", size: "medium" },
-    { id: "shelf", label: "Reading shelf", size: "medium" },
-    { id: "week", label: "This week", size: "medium" },
-    { id: "log", label: "Log a book", size: "medium" },
-    { id: "recent", label: "Recent books", size: "medium" },
+    { id: "goal", label: "Reading goal", size: "2x4" },
+    { id: "shelf", label: "Reading shelf", size: "2x4" },
+    { id: "week", label: "This week", size: "2x4" },
+    { id: "log", label: "Log a book", size: "2x4" },
+    { id: "recent", label: "Recent books", size: "2x4" },
   ],
   "mind-language": [
-    { id: "languages", label: "Languages and words", size: "medium" },
-    { id: "review", label: "Words to review", size: "medium" },
-    { id: "words", label: "Your own words", size: "medium" },
-    { id: "week", label: "This week", size: "medium" },
-    { id: "log", label: "Log a drill", size: "medium" },
-    { id: "recent", label: "Recent drills", size: "medium" },
+    { id: "languages", label: "Languages and words", size: "2x4" },
+    { id: "review", label: "Words to review", size: "2x4" },
+    { id: "words", label: "Your own words", size: "2x4" },
+    { id: "week", label: "This week", size: "2x4" },
+    { id: "log", label: "Log a drill", size: "2x4" },
+    { id: "recent", label: "Recent drills", size: "2x4" },
   ],
   "mind-idea": [
-    { id: "week", label: "This week", size: "medium" },
-    { id: "log", label: "Log an idea", size: "medium" },
-    { id: "recent", label: "Recent ideas", size: "medium" },
+    { id: "week", label: "This week", size: "2x4" },
+    { id: "log", label: "Log an idea", size: "2x4" },
+    { id: "recent", label: "Recent ideas", size: "2x4" },
   ],
   "mind-research": [
-    { id: "week", label: "This week", size: "medium" },
-    { id: "log", label: "Log research", size: "medium" },
-    { id: "recent", label: "Recent research", size: "medium" },
+    { id: "week", label: "This week", size: "2x4" },
+    { id: "log", label: "Log research", size: "2x4" },
+    { id: "recent", label: "Recent research", size: "2x4" },
   ],
   projects: [
-    { id: "header", label: "On the go", size: "medium" },
-    { id: "new", label: "Start something", size: "medium" },
-    { id: "list", label: "The projects", size: "medium" },
+    { id: "header", label: "On the go", size: "2x4" },
+    { id: "new", label: "Start something", size: "2x4" },
+    { id: "list", label: "The projects", size: "2x4" },
   ],
   money: [
-    { id: "summary", label: "This month", size: "medium" },
-    { id: "add", label: "Add an entry", size: "medium" },
-    { id: "grocery", label: "Shopping list", size: "medium" },
-    { id: "entries", label: "Entries", size: "medium" },
-    { id: "categories", label: "Categories", size: "medium" },
+    { id: "summary", label: "This month", size: "2x4" },
+    { id: "add", label: "Add an entry", size: "2x4" },
+    { id: "grocery", label: "Shopping list", size: "2x4" },
+    { id: "entries", label: "Entries", size: "2x4" },
+    { id: "categories", label: "Categories", size: "2x4" },
   ],
   time: [
-    { id: "header", label: "The day", size: "medium" },
-    { id: "ring", label: "The ring", size: "medium" },
-    { id: "screen", label: "Screen time", size: "medium" },
-    { id: "blocks", label: "The day, in order", size: "medium" },
+    { id: "header", label: "The day", size: "2x4" },
+    { id: "ring", label: "The ring", size: "2x4" },
+    { id: "screen", label: "Screen time", size: "2x4" },
+    { id: "blocks", label: "The day, in order", size: "2x4" },
   ],
   habits: [
-    { id: "header", label: "Consistency", size: "medium" },
-    { id: "tabs", label: "Today / Matrix / Year", size: "medium" },
-    { id: "list", label: "The habits", size: "medium" },
-    { id: "new", label: "New habit", size: "medium" },
+    { id: "header", label: "Consistency", size: "2x4" },
+    { id: "tabs", label: "Today / Matrix / Year", size: "2x4" },
+    { id: "list", label: "The habits", size: "2x4" },
+    { id: "new", label: "New habit", size: "2x4" },
   ],
   // Fuel is four pages behind one tab. The old single page held thirteen cards
   // and you scrolled past the ones you were not using to reach the ones you
   // were — logging a meal and reviewing the week are different jobs done at
   // different times of day, and stacking them made both worse.
   "nutrition-dash": [
-    { id: "target", label: "Today's totals", size: "medium" },
-    { id: "suggest", label: "Suggest from pantry", size: "medium" },
-    { id: "plan", label: "Plan ahead", size: "medium" },
-    { id: "actions", label: "Scan / Search / Burn", size: "medium" },
-    { id: "plate", label: "Plate photo", size: "medium" },
-    { id: "hunger", label: "Hunger", size: "medium" },
-    { id: "add", label: "Add food", size: "medium" },
-    { id: "meal", label: "Meal builder", size: "medium" },
-    { id: "preworkout", label: "Pre-workout", size: "medium" },
+    { id: "target", label: "Today's totals", size: "2x4" },
+    { id: "suggest", label: "Suggest from pantry", size: "2x4" },
+    { id: "plan", label: "Plan ahead", size: "2x4" },
+    { id: "actions", label: "Scan / Search / Burn", size: "2x4" },
+    { id: "plate", label: "Plate photo", size: "2x4" },
+    { id: "hunger", label: "Hunger", size: "2x4" },
+    { id: "add", label: "Add food", size: "2x4" },
+    { id: "meal", label: "Meal builder", size: "2x4" },
+    { id: "preworkout", label: "Pre-workout", size: "2x4" },
   ],
   "nutrition-week": [
-    { id: "weekly", label: "The last seven days", size: "medium" },
-    { id: "graphs", label: "Charts", size: "medium" },
+    { id: "weekly", label: "The last seven days", size: "2x4" },
+    { id: "graphs", label: "Charts", size: "2x4" },
   ],
   "nutrition-log": [
-    { id: "diary", label: "Meal by meal", size: "medium" },
-    { id: "water", label: "Water", size: "medium" },
-    { id: "minerals", label: "Micronutrients", size: "medium" },
+    { id: "diary", label: "Meal by meal", size: "2x4" },
+    { id: "water", label: "Water", size: "2x4" },
+    { id: "minerals", label: "Micronutrients", size: "2x4" },
   ],
   "nutrition-weight": [
-    { id: "weight", label: "Weight", size: "medium" },
+    { id: "weight", label: "Weight", size: "2x4" },
   ],
   workout: [
-    { id: "header", label: "Session header", size: "medium" },
-    { id: "date", label: "The date", size: "medium" },
-    { id: "quick", label: "Undo / Save", size: "medium" },
-    { id: "session", label: "Rest timer", size: "medium" },
-    { id: "chips", label: "Add exercise", size: "medium" },
+    { id: "header", label: "Session header", size: "2x4" },
+    { id: "date", label: "The date", size: "2x4" },
+    { id: "quick", label: "Undo / Save", size: "2x4" },
+    { id: "session", label: "Rest timer", size: "2x4" },
+    { id: "chips", label: "Add exercise", size: "2x4" },
   ],
   looks: [
-    { id: "latest", label: "Latest front", size: "medium" },
-    { id: "scan", label: "Scan button", size: "medium" },
-    { id: "gallery", label: "Captures", size: "medium" },
-    { id: "guide", label: "What it measures", size: "medium" },
-    { id: "note", label: "What the mesh is", size: "medium" },
+    { id: "latest", label: "Latest front", size: "2x4" },
+    { id: "scan", label: "Scan button", size: "2x4" },
+    { id: "gallery", label: "Captures", size: "2x4" },
+    { id: "guide", label: "What it measures", size: "2x4" },
+    { id: "note", label: "What the mesh is", size: "2x4" },
   ],
   // Stats is eight pages behind one tab, like Mind. Only the two that are
   // genuinely card stacks get a layout; the rest delegate to whole other
   // views, which bring their own.
   "insights-overview": [
-    { id: "brief", label: "Coach brief", size: "medium" },
-    { id: "meso", label: "Block review", size: "medium" },
-    { id: "consistency", label: "Training consistency", size: "medium" },
-    { id: "volume", label: "Weekly volume", size: "medium" },
-    { id: "axial", label: "Axial load", size: "medium" },
-    { id: "ratings", label: "Exercise ratings", size: "medium" },
+    { id: "brief", label: "Coach brief", size: "2x4" },
+    { id: "meso", label: "Block review", size: "2x4" },
+    { id: "consistency", label: "Training consistency", size: "2x4" },
+    { id: "volume", label: "Weekly volume", size: "2x4" },
+    { id: "axial", label: "Axial load", size: "2x4" },
+    { id: "ratings", label: "Exercise ratings", size: "2x4" },
   ],
   "insights-strength": [
-    { id: "estimates", label: "Strength estimates", size: "medium" },
-    { id: "prs", label: "Recent PRs", size: "medium" },
+    { id: "estimates", label: "Strength estimates", size: "2x4" },
+    { id: "prs", label: "Recent PRs", size: "2x4" },
   ],
   "insights-heatmap": [
-    { id: "intro", label: "What the map shows", size: "medium" },
-    { id: "range", label: "Front / back", size: "medium" },
-    { id: "grid", label: "The map", size: "medium" },
+    { id: "intro", label: "What the map shows", size: "2x4" },
+    { id: "range", label: "Front / back", size: "2x4" },
+    { id: "grid", label: "The map", size: "2x4" },
   ],
   body: [
-    { id: "tabs", label: "Sleep / Measure / Supplements", size: "medium" },
-    { id: "panel", label: "The panel", size: "medium" },
+    { id: "tabs", label: "Sleep / Measure / Supplements", size: "2x4" },
+    { id: "panel", label: "The panel", size: "2x4" },
   ],
   estimates: [
-    { id: "weight", label: "Bodyweight", size: "medium" },
-    { id: "composition", label: "Muscle vs fat", size: "medium" },
-    { id: "measures", label: "Measurements", size: "medium" },
-    { id: "strength", label: "Strength", size: "medium" },
-    { id: "note", label: "How these are made", size: "medium" },
+    { id: "weight", label: "Bodyweight", size: "2x4" },
+    { id: "composition", label: "Muscle vs fat", size: "2x4" },
+    { id: "measures", label: "Measurements", size: "2x4" },
+    { id: "strength", label: "Strength", size: "2x4" },
+    { id: "note", label: "How these are made", size: "2x4" },
   ],
   settings: [
-    { id: "phase", label: "Phase", size: "medium" },
-    { id: "goal", label: "Training goal", size: "medium" },
-    { id: "appearance", label: "Appearance", size: "medium" },
-    { id: "training", label: "Training", size: "medium" },
-    { id: "nutrition", label: "Nutrition", size: "medium" },
-    { id: "routines", label: "Routines", size: "medium" },
-    { id: "report", label: "Report", size: "medium" },
-    { id: "data", label: "Backup and restore", size: "medium" },
-    { id: "csv", label: "Export as CSV", size: "medium" },
-    { id: "foods", label: "Import foods", size: "medium" },
-    { id: "programme", label: "Training programme", size: "medium" },
-    { id: "targets", label: "Daily nutrition targets", size: "medium" },
-    { id: "habit-history", label: "Habit history", size: "medium" },
-    { id: "about", label: "About", size: "medium" },
+    { id: "phase", label: "Phase", size: "2x4" },
+    { id: "goal", label: "Training goal", size: "2x4" },
+    { id: "appearance", label: "Appearance", size: "2x4" },
+    { id: "training", label: "Training", size: "2x4" },
+    { id: "nutrition", label: "Nutrition", size: "2x4" },
+    { id: "routines", label: "Routines", size: "2x4" },
+    { id: "report", label: "Report", size: "2x4" },
+    { id: "data", label: "Backup and restore", size: "2x4" },
+    { id: "csv", label: "Export as CSV", size: "2x4" },
+    { id: "foods", label: "Import foods", size: "2x4" },
+    { id: "programme", label: "Training programme", size: "2x4" },
+    { id: "targets", label: "Daily nutrition targets", size: "2x4" },
+    { id: "habit-history", label: "Habit history", size: "2x4" },
+    { id: "about", label: "About", size: "2x4" },
   ],
 };
 
@@ -297,7 +371,7 @@ export function defaultLayout(tab = "dashboard"): WidgetPlacement[] {
  * row, so the worst case is a card that reads as a preview of itself.
  */
 function cleanSize(tab: string, id: string, value: unknown): WidgetSize {
-  return asSize(value) ?? widgetDef(tab, id)?.size ?? "medium";
+  return asSize(value) ?? widgetDef(tab, id)?.size ?? "2x4";
 }
 
 /**
@@ -359,7 +433,7 @@ export function resize(
   return layout.map((p) => (p.id === id ? { ...p, size: cleanSize(tab, id, size) } : p));
 }
 
-/** Small → medium → large → small, for a single control that cycles. */
+/** One step along the ladder and round again, for a control that cycles. */
 export function cycleSize(
   layout: WidgetPlacement[], id: string, tab = "dashboard",
 ): WidgetPlacement[] {

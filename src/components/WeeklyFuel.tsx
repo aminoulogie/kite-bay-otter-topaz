@@ -5,6 +5,7 @@ import { getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { barHeights, summariseWeek, type WeekRow } from "@/lib/week-fuel";
 import { useSoma } from "@/lib/store";
 import { useWidgetSize } from "@/components/WidgetGrid";
+import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
 import { cn } from "@/lib/utils";
 
 /**
@@ -107,7 +108,7 @@ export function WeeklyFuel() {
       {/* A small widget is a glance: the headline number and the bars are the
           glance, and four more counts under them would be unreadable at that
           size anyway. */}
-      {size !== "small" && (
+      {hasDetailRoom(size) && (
         <div className="mt-3 grid grid-cols-4 gap-2">
           <Count n={week.loggedDays} of={7} label="Logged" />
           <Count n={week.onTarget} of={week.loggedDays} label="On target" />
@@ -116,7 +117,7 @@ export function WeeklyFuel() {
         </div>
       )}
 
-      {size === "large" && (
+      {hasFullRoom(size) && (
         <div className="mt-3 grid grid-cols-4 gap-2 border-t border-border pt-3">
           <Avg n={week.avg.protein} label="Protein" unit="g" />
           <Avg n={week.avg.carbs} label="Carbs" unit="g" />
@@ -125,7 +126,7 @@ export function WeeklyFuel() {
         </div>
       )}
 
-      {size !== "small" && week.streak > 1 && (
+      {hasFullRoom(size) && week.streak > 1 && (
         <p className="mt-2 text-[0.65rem] text-faint">
           {week.streak} days logged in a row. The average above is over the{" "}
           {week.loggedDays} {week.loggedDays === 1 ? "day" : "days"} you logged, not over

@@ -516,32 +516,69 @@ select,
 }
 
 /* ---------------------------------------------------------------------------
-   Small widgets.
+   Tiles.
 
-   A card set to small is a square you glance at, the way a home-screen widget
-   is. Most cards in this app were written to be full width and will not fit —
-   and that is fine, because the alternative was the app deciding which of the
-   user's cards were allowed to be small, which is a decision it has no
-   standing to make.
+   A widget narrower than the full row is a glance, the way a home-screen
+   widget is: a fixed box, whatever is in it. Most cards in this app were
+   written full width and will not fit — and that is fine, because the
+   alternative was the app deciding which of the user's cards were allowed to
+   be small, which is a decision it has no standing to make.
 
-   So: a hard square, and whatever runs past the bottom edge fades out instead
-   of pushing the row out of shape. It reads as a preview of the card, which is
-   exactly what it is, and sizing it back up is one tap away.
+   So whatever runs past the bottom edge fades out instead of pushing the row
+   out of shape. It reads as a preview of the card, which is exactly what it
+   is, and sizing it back up is two taps away.
+
+   Full-width sizes deliberately do NOT get this: a 3x4 might be the Routines
+   editor, and clipping that would put its buttons somewhere unreachable.
 --------------------------------------------------------------------------- */
-.soma-widget-small {
-  aspect-ratio: 1 / 1;
+.soma-widget-tile {
   overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
   mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
+  /* Type comes down a step so a heading written for a full row still reads as
+     a heading in a quarter of the screen rather than wrapping to four lines. */
+  font-size: 0.92em;
 }
 
-/* The card inside fills the square rather than floating in the top of it. */
-.soma-widget-small > * {
+.soma-widget-tile > * {
   height: 100%;
 }
 
-/* Type comes down a step so a heading written for a full row still reads as a
-   heading in a quarter of the screen, rather than wrapping to four lines. */
-.soma-widget-small {
-  font-size: 0.92em;
+/* At 1x1 there is room for a number and nothing else, so the padding that
+   makes a card breathe at full width is most of the box. */
+.soma-widget-tile:where(.soma-tile-1) {
+  font-size: 0.82em;
+}
+.soma-widget-tile:where(.soma-tile-1) > * {
+  padding: 0.5rem;
+}
+
+/* ---------------------------------------------------------------------------
+   A widget fills the box it was given.
+
+   Without this the card keeps its natural height and sits at the top of a
+   taller cell, so choosing 2x4 for something short produced a card with a
+   band of page showing underneath it. That reads as a layout bug rather than
+   as a size someone picked.
+
+   Flex rather than `height: 100%` on the child: a percentage height needs a
+   definite parent at every step, and the wrappers between the grid cell and
+   the card are auto-height. Stretch does not care.
+--------------------------------------------------------------------------- */
+.soma-widget-box {
+  display: flex;
+  flex-direction: column;
+  /* A flex item AND a flex container. `height: 100%` here resolved to the
+     content height instead of the cell: the box is itself flexed by the cell,
+     and a percentage against a parent whose own height came from flexing is
+     not reliably definite. Growing is. */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.soma-widget-box > * {
+  flex: 1 1 auto;
+  /* Without this a flex child refuses to shrink below its content, which is
+     exactly what a tile needs it to do before the fade can hide anything. */
+  min-height: 0;
 }

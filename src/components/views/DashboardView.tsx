@@ -6,6 +6,7 @@ import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
 import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
 import { ratingTone } from "@/lib/stimulus";
 import { scoreDay } from "@/lib/day-score";
@@ -53,7 +54,7 @@ function ScoreCard({
         <div
           className={cn(
             "font-display font-extrabold tabular",
-            size === "small" ? "text-4xl" : "text-5xl",
+            hasDetailRoom(size) ? "text-5xl" : "text-4xl",
             ratingTone(score),
           )}
         >
@@ -61,14 +62,14 @@ function ScoreCard({
         </div>
         <div className="min-w-0 pb-1.5 text-xs text-muted">
           out of 100
-          {size !== "small" && (
+          {hasDetailRoom(size) && (
             <div className="text-[0.65rem] text-faint">of what you tracked</div>
           )}
         </div>
       </div>
-      {size !== "small" && (
+      {hasDetailRoom(size) && (
         <div className="mt-3 space-y-1">
-          {shown.slice(0, size === "large" ? 12 : 5).map((l) => (
+          {shown.slice(0, hasFullRoom(size) ? 12 : 5).map((l) => (
             <div key={l.id} className="flex items-baseline justify-between gap-2 text-xs">
               <span className="truncate text-muted">{l.label}</span>
               <span className="shrink-0 tabular font-bold">
@@ -79,7 +80,7 @@ function ScoreCard({
           ))}
         </div>
       )}
-      {size === "small" && shown.length > 0 && (
+      {!hasDetailRoom(size) && shown.length > 0 && (
         <div className="mt-2 text-[0.62rem] font-bold uppercase tracking-wide text-faint">
           {shown.length} things counted
         </div>
@@ -177,7 +178,10 @@ export function DashboardView() {
   // then just its widgets, in whatever order the user put them.
   return (
     <WidgetGrid tab="dashboard">
-      <div key="brief"><CoachBrief horizon="today" /></div>
+      {/* Not wrapped in a div: the grid stretches a widget's own root to fill
+          the box it was given, and a bare wrapper would stretch instead of the
+          card, leaving the card floating in a taller empty cell. */}
+      <CoachBrief key="brief" horizon="today" />
       <ScoreCard key="score" score={score} lines={lines} />
 
       {/* The ticked ones are done — that is the whole point of a tile, and it

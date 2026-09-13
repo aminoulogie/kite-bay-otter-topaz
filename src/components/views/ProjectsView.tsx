@@ -12,6 +12,7 @@ import {
   PROJECT_COLORS, daysLeft, doneCount, isComplete, isStale, nextStep, progress,
   sortProjects, stepsOf, summarise, type Project, type ProjectStatus,
 } from "@/lib/projects";
+import { hasDetailRoom } from "@/lib/dashboard-layout";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -135,7 +136,7 @@ function BoardHeader({ board }: { board: ReturnType<typeof summarise> }) {
         </div>
       </div>
 
-      {size !== "small" && (board.overdue > 0 || board.stale > 0) && (
+      {hasDetailRoom(size) && (board.overdue > 0 || board.stale > 0) && (
         <p className="mt-3 rounded-xl border border-warn/40 bg-warn/10 px-3 py-2 text-[0.68rem] font-bold leading-snug text-warn">
           {board.overdue > 0 && `${board.overdue} past its date`}
           {board.overdue > 0 && board.stale > 0 && " · "}
@@ -144,7 +145,7 @@ function BoardHeader({ board }: { board: ReturnType<typeof summarise> }) {
         </p>
       )}
 
-      {size !== "small" && board.done > 0 && (
+      {hasDetailRoom(size) && board.done > 0 && (
         <p className="mt-2 text-[0.65rem] text-faint">
           {board.done} finished.
         </p>

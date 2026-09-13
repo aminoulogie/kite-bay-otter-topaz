@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  DASHBOARD_WIDGETS as WIDGETS, SIZES, WIDGETS_BY_TAB, asSize, columnsFor, cycleSize,
-  defaultLayout, isArrangeable, widgetsFor, hidden, isDefault, move, nextSize, reconcile,
-  resize, setHidden, toggleHidden, visible, widgetDef,
-  type WidgetPlacement, type WidgetSize,
+  DASHBOARD_WIDGETS as WIDGETS, SIZES, SIZE_SPECS, WIDGETS_BY_TAB, asSize, columnsFor,
+  cycleSize, defaultLayout, hasDetailRoom, hasFullRoom, isArrangeable, isTile, widgetsFor,
+  hidden, isDefault, move, nextSize, reconcile, resize, rowsFor, setHidden, specFor,
+  toggleHidden, visible, widgetDef, type WidgetPlacement, type WidgetSize,
 } from "./dashboard-layout.ts";
 import { TAB_ORDER } from "./tab-order.ts";
 
@@ -63,13 +63,14 @@ test("every widget on every page can be set to every size", () => {
   }
 });
 
-test("the size cycles small to medium to large and round again", () => {
-  assert.equal(nextSize("small"), "medium");
-  assert.equal(nextSize("medium"), "large");
-  assert.equal(nextSize("large"), "small");
-  let l = resize(defaultLayout(), "score", "small");
+test("the size cycles along the ladder and round again", () => {
+  assert.deepEqual(SIZES, ["1x1", "1x2", "2x2", "1x4", "2x4", "3x4"]);
+  assert.equal(nextSize("1x1"), "1x2");
+  assert.equal(nextSize("2x2"), "1x4");
+  assert.equal(nextSize("3x4"), "1x1", "the last one wraps to the first");
+  let l = resize(defaultLayout(), "score", "1x1");
   l = cycleSize(l, "score");
-  assert.equal(l.find((p) => p.id === "score")?.size, "medium");
+  assert.equal(l.find((p) => p.id === "score")?.size, "1x2");
 });
 
 test("cycling a widget that is not there changes nothing", () => {
@@ -77,10 +78,52 @@ test("cycling a widget that is not there changes nothing", () => {
   assert.equal(cycleSize(l, "ghost"), l);
 });
 
-test("only small takes one column; medium and large take the row", () => {
-  assert.equal(columnsFor("small"), 1);
-  assert.equal(columnsFor("medium"), 2);
-  assert.equal(columnsFor("large"), 2);
+test("the id says the shape, and the shape says the box", () => {
+  // The id IS the grid shape, so these cannot drift apart without the name
+  // becoming a lie.
+  for (const spec of SIZE_SPECS) {
+    const [h, w] = spec.id.split("x").map(Number);
+    assert.equal(spec.h, h, spec.id);
+    assert.equal(spec.w, w, spec.id);
+    assert.equal(columnsFor(spec.id), w, spec.id);
+    assert.equal(rowsFor(spec.id), h, spec.id);
+  }
+});
+
+test("the six shapes are all different, and all fit four columns", () => {
+  assert.equal(new Set(SIZES).size, 6);
+  for (const spec of SIZE_SPECS) {
+    assert.ok(spec.w === 1 || spec.w === 2 || spec.w === 4, spec.id);
+    assert.ok(spec.h >= 1 && spec.h <= 3, spec.id);
+  }
+});
+
+test("a narrow size is a tile, a full-width one is not", () => {
+  // The distinction that decides whether height is a cap or a floor.
+  assert.equal(isTile("1x1"), true);
+  assert.equal(isTile("1x2"), true);
+  assert.equal(isTile("2x2"), true);
+  assert.equal(isTile("1x4"), false);
+  assert.equal(isTile("2x4"), false);
+  assert.equal(isTile("3x4"), false);
+});
+
+test("how much a card draws follows its height, not its width", () => {
+  // Picking 1x4 over 2x4 means "I want this short", so a wide-but-short card
+  // draws less. Gating on width instead would make 1x4 and 3x4 identical.
+  assert.equal(hasDetailRoom("1x1"), false);
+  assert.equal(hasDetailRoom("1x2"), false);
+  assert.equal(hasDetailRoom("1x4"), false);
+  assert.equal(hasDetailRoom("2x2"), true);
+  assert.equal(hasDetailRoom("2x4"), true);
+  assert.equal(hasDetailRoom("3x4"), true);
+
+  assert.equal(hasFullRoom("2x4"), false);
+  assert.equal(hasFullRoom("3x4"), true);
+});
+
+test("an unknown size falls back to a real spec rather than throwing", () => {
+  assert.ok(SIZES.includes(specFor("9x9" as WidgetSize).id));
 });
 
 test("hiding keeps the widget's place for when it comes back", () => {
@@ -126,7 +169,7 @@ test("a new widget lands near its registry position, not dumped at the end", () 
 
 test("a widget that no longer exists leaves no hole", () => {
   const l = reconcile([
-    { id: "ghost", size: "medium", hidden: false },
+    { id: "ghost", size: "2x4", hidden: false },
     ...defaultLayout(),
   ]);
   assert.equal(l.length, WIDGETS.length);
@@ -135,17 +178,17 @@ test("a widget that no longer exists leaves no hole", () => {
 
 test("a duplicated id in storage is taken once", () => {
   const l = reconcile([
-    { id: "score", size: "small", hidden: false },
-    { id: "score", size: "medium", hidden: true },
+    { id: "score", size: "2x2", hidden: false },
+    { id: "score", size: "2x4", hidden: true },
     ...defaultLayout(),
   ]);
   assert.equal(ids(l).filter((x) => x === "score").length, 1);
-  assert.equal(l.find((p) => p.id === "score")?.size, "small", "the first one wins");
+  assert.equal(l.find((p) => p.id === "score")?.size, "2x2", "the first one wins");
 });
 
 test("a size a widget was saved at is kept, whatever it was", () => {
-  const l = reconcile([{ id: "brief", size: "small", hidden: false }]);
-  assert.equal(l.find((p) => p.id === "brief")?.size, "small", "the user's choice stands");
+  const l = reconcile([{ id: "brief", size: "2x2", hidden: false }]);
+  assert.equal(l.find((p) => p.id === "brief")?.size, "2x2", "the user's choice stands");
 });
 
 test("rubbish in storage does not throw or leak through", () => {
@@ -155,7 +198,7 @@ test("rubbish in storage does not throw or leak through", () => {
 });
 
 test("a non-boolean hidden reads as showing", () => {
-  const l = reconcile([{ id: "fat", size: "small", hidden: "yes" as unknown as boolean }]);
+  const l = reconcile([{ id: "fat", size: "2x2", hidden: "yes" as unknown as boolean }]);
   assert.equal(l.find((p) => p.id === "fat")?.hidden, false);
 });
 
@@ -179,14 +222,14 @@ test("a size nobody recognises falls back to the widget's own", () => {
 test("a layout saved as column counts still reads as sizes", () => {
   // Everyone with a saved layout has one of these. Dropping them would reset
   // the page of every user who had ever arranged one.
-  assert.equal(asSize(1), "small");
-  assert.equal(asSize(2), "medium");
-  assert.equal(asSize("large"), "large");
+  assert.equal(asSize(1), "2x2");
+  assert.equal(asSize(2), "2x4");
+  assert.equal(asSize("3x4"), "3x4");
   assert.equal(asSize(0), null);
   assert.equal(asSize(undefined), null);
 
-  const old = [{ id: "cals", size: "small", hidden: false }] as unknown as WidgetPlacement[];
-  assert.equal(reconcile(old).find((p) => p.id === "cals")?.size, "small");
+  const old = [{ id: "cals", size: "2x2", hidden: false }] as unknown as WidgetPlacement[];
+  assert.equal(reconcile(old).find((p) => p.id === "cals")?.size, "2x2");
 });
 
 test("every arrangeable tab has widgets, and ids are unique within it", () => {
