@@ -119,6 +119,20 @@ export function AppShell() {
     };
   }, [ready]);
 
+  /**
+   * The selected tab is scrolled to the middle of the dock.
+   *
+   * Eleven tabs do not fit a phone, so the dock scrolls — and it used to open
+   * at scrollLeft 0, which put Home 141px right of centre with Mind and
+   * Projects occupying the middle. The app WAS opening on Home; it just did
+   * not look like it, because the dock was showing somewhere else. Centring
+   * the selected tab makes where you are and where the dock is the same
+   * answer, on every tab rather than only the first.
+   *
+   * Instant on the first pass and smooth afterwards: an animation on boot is
+   * the app appearing to slide somewhere before you have touched it.
+   */
+  const centred = useRef(false);
   useEffect(() => {
     const move = () => {
       const el = tabRefs.current[tab];
@@ -127,6 +141,14 @@ export function AppShell() {
       // Offset within the scrollable content, so the pill stays under its tab
       // when the dock is scrolled rather than drifting with the viewport.
       setPill({ x: el.offsetLeft, w: el.offsetWidth });
+
+      const want = el.offsetLeft + el.offsetWidth / 2 - dock.clientWidth / 2;
+      const max = Math.max(0, dock.scrollWidth - dock.clientWidth);
+      const to = Math.max(0, Math.min(max, want));
+      if (Math.abs(dock.scrollLeft - to) > 1) {
+        dock.scrollTo({ left: to, behavior: centred.current ? "smooth" : "auto" });
+      }
+      centred.current = true;
     };
     move();
     // Fonts and layout settle a frame later; without this the pill lands at

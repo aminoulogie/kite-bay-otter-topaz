@@ -5,6 +5,7 @@ import { CoachBrief } from "@/components/CoachBrief";
 import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
+import { HabitRings } from "@/components/HabitRings";
 import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
 import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
@@ -199,6 +200,8 @@ export function DashboardView() {
       <Tile key="session" icon={ArrowRight} label="Session"
             value={session ? String(session.exercises?.length ?? 0) : live.exercises.length ? String(live.exercises.length) : "—"}
             unit="lifts" onClick={() => setTab("workout")} />
+      <HabitRings key="habits" />
+
       <div key="todos"><TodoCard /></div>
       <div key="gap"><LogTheGap /></div>
       <Card key="correlate">

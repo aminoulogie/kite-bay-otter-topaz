@@ -172,6 +172,9 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   { id: "fat", label: "Fat", size: "2x2" },
   { id: "water", label: "Water", size: "2x2" },
   { id: "session", label: "Session", size: "2x2" },
+  // Read-only on this page — see components/HabitRings.tsx for why ticking
+  // lives on one screen only.
+  { id: "habits", label: "Habits", size: "2x4" },
   { id: "todos", label: "To-do", size: "2x4" },
   { id: "gap", label: "Log the gap", size: "2x4" },
   { id: "correlate", label: "Across everything", size: "2x4" },
