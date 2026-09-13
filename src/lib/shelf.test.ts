@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  counts, coverSource, coverWords, finishedIn, hueFor, onlyBooks, percentOf, shelfLabel,
-  sortShelf, statusOf,
+  COVER_RATIO, counts, coverSource, coverWords, finishedIn, hueFor, onlyBooks, percentOf,
+  shelfLabel, sortShelf, statusOf,
 } from "./shelf.ts";
 import type { MindEntry } from "./types.ts";
 
@@ -135,4 +135,11 @@ test("finished-this-year counts only this year", () => {
   assert.equal(finishedIn(list, 2026), 2);
   assert.equal(finishedIn(list, 2025), 1);
   assert.equal(finishedIn(list, 2024), 0);
+});
+
+test("a cover is the shape of a real book, not a square-ish 2:3", () => {
+  // Demy and A-format paperbacks, and the artwork Apple and Amazon ask for.
+  assert.equal(COVER_RATIO, 1 / 1.6);
+  assert.ok(COVER_RATIO < 2 / 3, "narrower than the old ratio, which was the point");
+  assert.ok(COVER_RATIO > 0.55, "and not so narrow it reads as a bookmark");
 });

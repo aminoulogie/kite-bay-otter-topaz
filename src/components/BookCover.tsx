@@ -49,7 +49,7 @@ export function BookCover({
   return (
     <div
       className={cn(
-        "relative isolate aspect-[2/3] w-full overflow-hidden bg-surface-3 shadow-[0_8px_20px_-6px_rgba(0,0,0,0.65)]",
+        "relative isolate aspect-[1/1.6] w-full overflow-hidden bg-surface-3 shadow-[0_8px_20px_-6px_rgba(0,0,0,0.65)]",
         rounded,
         className,
       )}

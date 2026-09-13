@@ -16,8 +16,15 @@ import type { MindEntry } from "./types.ts";
 /** Where a book's cover lives in the photo database. */
 export const coverKey = (id: string) => `book:${id}`;
 
-/** Covers are 2:3. Every cover, at every size, or the shelf looks broken. */
-export const COVER_RATIO = 2 / 3;
+/**
+ * The shape of a real book, which is not 2:3.
+ *
+ * 1:1.6 is what a Demy or A-format paperback actually measures, and it is the
+ * ratio Apple and Amazon both build their cover artwork to — so the art fills
+ * the frame instead of being cropped to fit a shape no book has. Every cover,
+ * at every size, or the shelf looks broken.
+ */
+export const COVER_RATIO = 1 / 1.6;
 
 export type ShelfStatus = "reading" | "unread" | "finished";
 

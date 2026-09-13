@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Check, ImagePlus, Loader2, Plus, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BookCover } from "@/components/BookCover";
@@ -7,7 +7,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { captureImage, savePhoto } from "@/lib/habit-photos";
-import { searchBooks, type BookMatch } from "@/lib/lookup";
+import { searchBooks, upgradeCoverUrl, type BookMatch } from "@/lib/lookup";
 import {
   counts, coverKey, finishedIn, onlyBooks, percentOf, shelfLabel, sortShelf,
 } from "@/lib/shelf";
@@ -51,6 +51,42 @@ export function Bookshelf() {
     [books],
   );
   const open = books.find((b) => b.id === openId) ?? null;
+
+  /**
+   * Re-fetch covers that were saved at the old, smaller size.
+   *
+   * Books added before this was fixed carry a `-M` link and `-M` bytes, so they
+   * would stay soft for ever with nothing to notice. Writing the upgraded link
+   * back is what stops this running twice on the same book: once the URL is
+   * `-L` there is nothing left to upgrade, so the effect no longer matches it.
+   */
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      for (const b of books) {
+        const better = upgradeCoverUrl(b.coverUrl);
+        if (!better || !alive) continue;
+        // The link is written first, so a download that fails still leaves the
+        // book pointing at artwork an <img> can render at full size.
+        updateMind(b.id, { coverUrl: better });
+        try {
+          const res = await fetch(better);
+          if (!res.ok || !alive) continue;
+          const blob = await res.blob();
+          if (blob.size > 0 && alive) {
+            await savePhoto(coverKey(b.id), b.date, blob);
+            updateMind(b.id, { sourceKey: `${b.sourceKey ?? ""}#hd` });
+          }
+        } catch {
+          // Offline. The upgraded link stands and will render when there is a
+          // connection; the old bytes keep the shelf looking right until then.
+        }
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [books, updateMind]);
 
   const add = async (m: BookMatch) => {
     const date = getLocalDateKey(new Date());
@@ -111,7 +147,7 @@ export function Bookshelf() {
           onClick={() => setFinding(true)}
           className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-border-strong bg-surface-2 p-3 text-left"
         >
-          <div className="grid aspect-[2/3] w-[62px] shrink-0 place-items-center rounded-lg border border-dashed border-border-strong">
+          <div className="grid aspect-[1/1.6] w-[62px] shrink-0 place-items-center rounded-lg border border-dashed border-border-strong">
             <Plus className="size-5 text-faint" />
           </div>
           <span className="min-w-0 text-xs leading-snug text-faint">
@@ -135,7 +171,7 @@ export function Bookshelf() {
                 className="w-[108px] shrink-0 snap-start"
                 aria-label="Add a book"
               >
-                <div className="grid aspect-[2/3] w-full place-items-center rounded-lg border border-dashed border-border-strong bg-surface-2">
+                <div className="grid aspect-[1/1.6] w-full place-items-center rounded-lg border border-dashed border-border-strong bg-surface-2">
                   <Plus className="size-6 text-faint" />
                 </div>
                 <div className="mt-1.5 text-[0.7rem] font-bold text-faint">Add</div>

@@ -173,9 +173,33 @@ export async function lookupWord(
 export const OPENLIBRARY_SEARCH = "https://openlibrary.org/search.json";
 export const OPENLIBRARY_COVER = "https://covers.openlibrary.org/b/id";
 
-export function coverUrl(id: unknown, size: "S" | "M" | "L" = "M"): string | undefined {
+/**
+ * Open Library serves three sizes and the middle one is not enough.
+ *
+ * `-M` is about 180px on the long edge. A cover on the shelf is 108 CSS px
+ * wide, which is 324 real pixels on a phone, and the one in the sheet is 450 —
+ * so the medium file was being blown up two or three times and every cover
+ * looked soft. `-L` is the largest available and is what gets fetched now; the
+ * photo store keeps up to 1080px, so nothing else was throwing detail away.
+ */
+export function coverUrl(id: unknown, size: "S" | "M" | "L" = "L"): string | undefined {
   const n = num(id);
   return n ? `${OPENLIBRARY_COVER}/${n}-${size}.jpg` : undefined;
+}
+
+/**
+ * Point an older, smaller cover link at the large file.
+ *
+ * Books added before the size was fixed carry a `-M` link AND a `-M` copy of
+ * the bytes, so they would stay soft for ever without something that notices.
+ * Returns null when there is nothing to upgrade, which is what keeps the fix
+ * from running twice on the same book.
+ */
+export function upgradeCoverUrl(url: string | undefined): string | null {
+  if (!url) return null;
+  if (!url.startsWith(`${OPENLIBRARY_COVER}/`)) return null;
+  const better = url.replace(/-[SM]\.jpg$/, "-L.jpg");
+  return better === url ? null : better;
 }
 
 export function parseBooks(raw: unknown, limit = 5): BookMatch[] {

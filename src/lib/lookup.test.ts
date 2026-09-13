@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   coverUrl, lookupWord, parseBooks, parseWord, progressLabel, readProgress, searchBooks,
+  upgradeCoverUrl,
 } from "./lookup.ts";
 
 /** A real dictionaryapi.dev payload, trimmed to the fields that are read. */
@@ -123,7 +124,7 @@ test("a book match carries what the shelf needs", () => {
   assert.equal(first!.author, "Marcus Aurelius", "the first author, not the translator list");
   assert.equal(first!.pages, 254);
   assert.equal(first!.year, 180);
-  assert.match(first!.coverUrl ?? "", /8231856-M\.jpg$/);
+  assert.match(first!.coverUrl ?? "", /8231856-L\.jpg$/);
 });
 
 test("a book with no cover or author is still a usable match", () => {
@@ -178,4 +179,28 @@ test("progress is a percentage of the book, clamped to it", () => {
   assert.equal(readProgress(400, 254), 100, "you cannot be 157% through a book");
   assert.equal(readProgress(-5, 254), 0);
   assert.equal(progressLabel(127, 254), "127 of 254 · 50%");
+});
+
+test("covers are fetched at the largest size, not the medium one", () => {
+  const url = coverUrl(14627509);
+  assert.ok(url?.endsWith("-L.jpg"), url);
+  assert.ok(coverUrl(14627509, "S")?.endsWith("-S.jpg"), "a caller can still ask for a thumb");
+  assert.equal(coverUrl(undefined), undefined);
+  assert.equal(coverUrl("not a number"), undefined);
+});
+
+test("an older small cover link is upgraded exactly once", () => {
+  const small = "https://covers.openlibrary.org/b/id/1234-M.jpg";
+  assert.equal(upgradeCoverUrl(small), "https://covers.openlibrary.org/b/id/1234-L.jpg");
+  assert.equal(upgradeCoverUrl("https://covers.openlibrary.org/b/id/1234-S.jpg"),
+    "https://covers.openlibrary.org/b/id/1234-L.jpg");
+  // Already large, so there is nothing to do — which is what stops it looping.
+  assert.equal(upgradeCoverUrl("https://covers.openlibrary.org/b/id/1234-L.jpg"), null);
+});
+
+test("a cover that did not come from Open Library is left alone", () => {
+  assert.equal(upgradeCoverUrl("https://example.com/1234-M.jpg"), null);
+  assert.equal(upgradeCoverUrl("https://covers.openlibrary.org.evil.test/b/id/1-M.jpg"), null);
+  assert.equal(upgradeCoverUrl(undefined), null);
+  assert.equal(upgradeCoverUrl(""), null);
 });
