@@ -13,6 +13,7 @@ import type {
   FoodItem,
   Habit,
   HabitStep,
+  HabitRamp,
   ScreenTimeDay,
   HistorySession,
   LiveSession,
@@ -32,6 +33,7 @@ import {
 } from "./programs";
 import { collectSideStores, restoreSideStores, type SideStores } from "./side-stores";
 import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
+import { logAmount, rungOn, setRamp } from "./habit-ramp";
 import { followsSettings, resolveGoals, sameGoals } from "./goals";
 import { clampMinutes } from "./screen-time";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
@@ -197,6 +199,10 @@ export interface SomaStore {
   bumpHabitStep: (id: string, stepId: string, date?: string) => void;
   /** Replace a habit's checklist, re-deriving the days that carry counts. */
   setHabitSteps: (id: string, steps: HabitStep[]) => void;
+  /** Record what was actually done today. Null clears the day back to blank. */
+  logHabitAmount: (id: string, value: number | null, date?: string) => void;
+  /** Attach, replace or remove a habit's daily ramp. */
+  setHabitRamp: (id: string, ramp: HabitRamp | null) => void;
   addHabit: (h: Omit<Habit, "id" | "history">) => void;
   removeHabit: (id: string) => void;
   allExercises: () => ExerciseDef[];
@@ -1113,10 +1119,23 @@ export const useSoma = create<SomaStore>()(
       toggleHabit: (id, date) => {
         const key = date || get().activeDate;
         set({
-          habits: get().habits.map((h) =>
-            h.id === id ? setAllSteps(h, key, !h.history[key]) : h,
-          ),
+          habits: get().habits.map((h) => {
+            if (h.id !== id) return h;
+            const on = !h.history[key];
+            // A ramping habit has no separate notion of done either: ticking it
+            // means "I did exactly what today asked for", so it writes that
+            // number rather than a mark the log would contradict.
+            if (h.ramp) return logAmount(h, key, on ? rungOn(h.ramp, key, h.amountLog) : null);
+            return setAllSteps(h, key, on);
+          }),
         });
+      },
+      logHabitAmount: (id, value, date) => {
+        const key = date || get().activeDate;
+        set({ habits: get().habits.map((h) => (h.id === id ? logAmount(h, key, value) : h)) });
+      },
+      setHabitRamp: (id, ramp) => {
+        set({ habits: get().habits.map((h) => (h.id === id ? setRamp(h, ramp) : h)) });
       },
       bumpHabitStep: (id, stepId, date) => {
         const key = date || get().activeDate;
@@ -1831,11 +1850,15 @@ export const useSoma = create<SomaStore>()(
               }
               stepLog[date] = merged;
             }
+            // Amounts merge per day, with the device's own winning: it is the
+            // copy that was actually being logged into.
+            const amountLog = { ...(prior.amountLog ?? {}), ...(h.amountLog ?? {}) };
             byId.set(h.id, {
               ...prior,
               ...h,
               history: { ...prior.history, ...h.history },
               ...(Object.keys(stepLog).length ? { stepLog } : {}),
+              ...(Object.keys(amountLog).length ? { amountLog } : {}),
             });
           }
 

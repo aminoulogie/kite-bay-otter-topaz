@@ -1,3 +1,6 @@
+import type { HabitRamp } from "./habit-ramp";
+export type { HabitRamp };
+
 import type { TrainingGoal } from "./goal-mode.ts";
 export type SetType = "normal" | "dropset" | "warmup";
 export type Unit = "kg" | "lb";
@@ -261,9 +264,23 @@ export interface Habit {
   steps?: HabitStep[];
   /** date -> step id -> times done that day. Absent means none. */
   stepLog?: Record<string, Record<string, number>>;
+  /**
+   * A number that moves a little every day — up to build something, down to
+   * quit it. See lib/habit-ramp.ts.
+   */
+  ramp?: HabitRamp;
+  /**
+   * date -> what was actually done that day.
+   *
+   * ZERO IS A VALUE, and on a quit habit it is the best one there is. A date
+   * missing from here is a day nobody logged, which is a different thing from
+   * a day that came to nothing, and the two must never be collapsed.
+   */
+  amountLog?: Record<string, number>;
 }
 
 export type { ScreenApp, ScreenTimeDay } from "./screen-time";
+export type { RampAdvance, RampUnit } from "./habit-ramp";
 
 export interface Settings {
   /**

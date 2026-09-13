@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, Camera, Check, ListChecks, Trash2 } from "lucide-react";
+import { CalendarDays, Camera, Check, ListChecks, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
 import { MonthMatrix, MonthStrip, YearlyOverview } from "@/components/HabitHeatmap";
@@ -7,15 +7,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { HabitStepsSheet } from "@/components/HabitStepsSheet";
+import { HabitSetupSheet } from "@/components/HabitSetupSheet";
 import { captureImage, getPhoto, savePhoto } from "@/lib/habit-photos";
 import {
   STEP_PRESETS, hasSteps, newStepId, progress, stepCount, targetOf,
 } from "@/lib/habit-steps";
+import {
+  RAMP_PRESETS, bumpSizes, formatAmount, isBuild, rungLabel, status,
+} from "@/lib/habit-ramp";
 import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import type { Habit, HabitStep } from "@/lib/types";
+import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
 
 type HabitTab = "today" | "month" | "year";
 
@@ -140,6 +143,32 @@ export function HabitsView() {
               {t.name}
             </button>
           ))}
+          {RAMP_PRESETS.filter(
+            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
+          ).map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              onClick={() => {
+                addHabit({
+                  name: t.name,
+                  desc: t.desc,
+                  color: t.color,
+                  goalDaysPerWeek: 7,
+                  ramp: { ...t.ramp, from: activeDate },
+                });
+                toast.success(`${t.name}: ${t.desc.toLowerCase()}`);
+              }}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
+            >
+              {t.ramp.target >= t.ramp.start ? (
+                <TrendingUp className="size-3.5" style={{ color: t.color }} />
+              ) : (
+                <TrendingDown className="size-3.5" style={{ color: t.color }} />
+              )}
+              {t.name}
+            </button>
+          ))}
         </div>
 
         {habits.length > 0 && (
@@ -167,12 +196,14 @@ function TodayPanel() {
   const toggleHabit = useSoma((s) => s.toggleHabit);
   const bumpHabitStep = useSoma((s) => s.bumpHabitStep);
   const setHabitSteps = useSoma((s) => s.setHabitSteps);
+  const setHabitRamp = useSoma((s) => s.setHabitRamp);
+  const logHabitAmount = useSoma((s) => s.logHabitAmount);
   const activeDate = useSoma((s) => s.activeDate);
   const today = parseLocalDateKey(activeDate);
 
   // Which habit's photo calendar is open, and today's thumbnails.
   const [calendarFor, setCalendarFor] = useState<Habit | null>(null);
-  const [stepsFor, setStepsFor] = useState<Habit | null>(null);
+  const [setupFor, setSetupFor] = useState<Habit | null>(null);
   const [shots, setShots] = useState<Map<string, string>>(new Map());
   const [busy, setBusy] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -253,6 +284,7 @@ function TodayPanel() {
         const done = !!h.history[activeDate];
         const steps = h.steps ?? [];
         const list = progress(h, activeDate);
+        const ramp = h.ramp ? status(h.ramp, activeDate, h.amountLog) : null;
 
         return (
           <Card key={h.id} className="space-y-3">
@@ -273,13 +305,16 @@ function TodayPanel() {
                     route in — including the ones that have no steps yet. */}
                 <button
                   type="button"
-                  onClick={() => setStepsFor(h)}
+                  onClick={() => setSetupFor(h)}
                   className="flex min-w-0 items-center gap-1.5 text-left"
-                  aria-label={`Checklist for ${h.name}`}
+                  aria-label={`Set up ${h.name}`}
                 >
                   <span className="truncate font-display text-sm font-bold">{h.name}</span>
                   <ListChecks
-                    className={cn("size-3.5 shrink-0", steps.length ? "text-accent" : "text-faint")}
+                    className={cn(
+                      "size-3.5 shrink-0",
+                      steps.length || h.ramp ? "text-accent" : "text-faint",
+                    )}
                   />
                 </button>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
@@ -340,6 +375,15 @@ function TodayPanel() {
                 </button>
               </div>
             </div>
+            {h.ramp && ramp && (
+              <RampRow
+                habit={h}
+                ramp={h.ramp}
+                state={ramp}
+                onLog={(v: number | null) => logHabitAmount(h.id, v, activeDate)}
+              />
+            )}
+
             {steps.length > 0 && (
               <div className="space-y-1">
                 {steps.map((st) => {
@@ -408,11 +452,12 @@ function TodayPanel() {
         );
       })}
 
-      {stepsFor && (
-        <HabitStepsSheet
-          habit={habits.find((h) => h.id === stepsFor.id) ?? stepsFor}
-          onClose={() => setStepsFor(null)}
-          onSave={(next: HabitStep[]) => setHabitSteps(stepsFor.id, next)}
+      {setupFor && (
+        <HabitSetupSheet
+          habit={habits.find((h) => h.id === setupFor.id) ?? setupFor}
+          onClose={() => setSetupFor(null)}
+          onSaveSteps={(next: HabitStep[]) => setHabitSteps(setupFor.id, next)}
+          onSaveRamp={(next: HabitRamp | null) => setHabitRamp(setupFor.id, next)}
         />
       )}
 
@@ -434,3 +479,91 @@ function TodayPanel() {
  * Tapping a day opens a sheet where it can be ticked or photographed — the
  * "capture the moment" half of the plugin's habit tracker.
  */
+
+/**
+ * Today's rung, and the fastest way to answer it.
+ *
+ * The number leads, because on a ramp "what does today ask for" is the only
+ * question — a tick tells you nothing when the bar moved this morning. The
+ * buttons add rather than set: you log minutes as they happen, not once at
+ * midnight when you are trying to remember.
+ */
+function RampRow({
+  habit, ramp, state, onLog,
+}: {
+  habit: Habit;
+  ramp: HabitRamp;
+  state: ReturnType<typeof status>;
+  onLog: (value: number | null) => void;
+}) {
+  const building = isBuild(ramp);
+  const soFar = state.logged ?? 0;
+
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border px-3 py-2.5",
+        state.done ? "border-accent/40 bg-accent-soft" : "border-border bg-surface-2",
+      )}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+          {building ? "Today, at least" : "Today, at most"}
+        </span>
+        <span className="text-[0.6rem] font-bold tabular text-faint">
+          {state.finished
+            ? "Finished"
+            : `${state.earned}/${state.total} ${building ? "climbed" : "cut"}`}
+        </span>
+      </div>
+
+      <div className="mt-0.5 flex items-baseline justify-between gap-2">
+        <span className="font-display text-lg font-extrabold">
+          {rungLabel(ramp, state.rung)}
+        </span>
+        <span
+          className={cn(
+            "text-sm font-extrabold tabular",
+            state.logged === undefined
+              ? "text-faint"
+              : state.done
+                ? "text-accent-text"
+                : "text-warn",
+          )}
+        >
+          {state.logged === undefined ? "—" : formatAmount(soFar, ramp.unit)}
+        </span>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {bumpSizes(ramp.unit).map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onLog(soFar + n)}
+            className="h-8 min-w-12 rounded-full border border-border bg-surface-3 px-2.5 text-xs font-bold tabular"
+            aria-label={`Add ${n} to ${habit.name}`}
+          >
+            +{n}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => onLog(state.rung)}
+          className="h-8 rounded-full border border-border bg-surface-3 px-3 text-xs font-bold"
+        >
+          {building ? "Hit it" : "Stayed under"}
+        </button>
+        {state.logged !== undefined && (
+          <button
+            type="button"
+            onClick={() => onLog(null)}
+            className="h-8 rounded-full px-3 text-xs font-bold text-faint"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
