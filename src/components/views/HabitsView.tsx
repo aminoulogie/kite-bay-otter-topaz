@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { HabitSetupSheet } from "@/components/HabitSetupSheet";
+import { SwipeRow } from "@/components/SwipeRow";
 import { captureImage, getPhoto, savePhoto } from "@/lib/habit-photos";
 import {
   STEP_PRESETS, hasSteps, newStepId, progress, stepCount, targetOf,
@@ -189,6 +190,8 @@ function TodayPanel() {
   const setHabitSteps = useSoma((s) => s.setHabitSteps);
   const setHabitRamp = useSoma((s) => s.setHabitRamp);
   const logHabitAmount = useSoma((s) => s.logHabitAmount);
+  const removeHabit = useSoma((s) => s.removeHabit);
+  const restoreHabit = useSoma((s) => s.restoreHabit);
   const activeDate = useSoma((s) => s.activeDate);
   const today = parseLocalDateKey(activeDate);
 
@@ -198,6 +201,7 @@ function TodayPanel() {
   const [shots, setShots] = useState<Map<string, string>>(new Map());
   const [busy, setBusy] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [swiped, setSwiped] = useState<string | null>(null);
 
   // Today's photo per habit, so a captured moment shows on the card itself
   // rather than only inside the calendar. URLs are revoked in the cleanup,
@@ -278,7 +282,33 @@ function TodayPanel() {
         const ramp = h.ramp ? status(h.ramp, activeDate, h.amountLog) : null;
 
         return (
-          <Card key={h.id} className="space-y-3">
+          // Swipe left for Edit and Delete, the same tray every other list in
+          // the app uses. Habits were the one list with no way to remove one
+          // at all — a habit you have stopped keeping sat there forever,
+          // dragging its own "0/7 this week" across the page.
+          //
+          // The card holds a month strip, a checklist and three round buttons,
+          // and the swipe has to lose to all of them: use-swipe-action only
+          // takes the gesture once it is clearly horizontal, so a finger
+          // moving down the page still scrolls and a tap still taps.
+          <SwipeRow
+            key={h.id}
+            id={h.id}
+            openId={swiped}
+            setOpenId={setSwiped}
+            editLabel="Set up"
+            onEdit={() => setSetupFor(h)}
+            onDelete={() => {
+              const idx = habits.findIndex((x) => x.id === h.id);
+              removeHabit(h.id);
+              toast.success(`${h.name} removed`, {
+                // The whole habit goes back, history and all: a mis-swipe must
+                // not cost a streak someone has been keeping for months.
+                action: { label: "Undo", onClick: () => restoreHabit(idx, h) },
+              });
+            }}
+          >
+          <Card className="space-y-3">
             <div className="flex items-start justify-between gap-3">
               {shots.get(h.id) && (
                 <button
@@ -440,6 +470,7 @@ function TodayPanel() {
                 brightens and breaking it drops back to the floor. */}
             <MonthStrip habit={h} onToggle={(d) => toggleHabit(h.id, d)} />
           </Card>
+          </SwipeRow>
         );
       })}
 

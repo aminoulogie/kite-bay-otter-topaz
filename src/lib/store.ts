@@ -296,6 +296,14 @@ export interface SomaStore {
   setHabitRamp: (id: string, ramp: HabitRamp | null) => void;
   addHabit: (h: Omit<Habit, "id" | "history">) => void;
   removeHabit: (id: string) => void;
+  /**
+   * Put a deleted habit back where it was, history and all.
+   *
+   * By index rather than appended: a habit removed by a mis-swipe should
+   * reappear in the place the eye left it, and a streak someone has kept for
+   * months must survive the undo intact.
+   */
+  restoreHabit: (idx: number, habit: Habit) => void;
   allExercises: () => ExerciseDef[];
   routines: () => Record<string, { name: string }[]>;
   lastPerformance: (name: string) => WorkoutSet | null;
@@ -1370,6 +1378,13 @@ export const useSoma = create<SomaStore>()(
         });
       },
       removeHabit: (id) => set({ habits: get().habits.filter((h) => h.id !== id) }),
+      restoreHabit: (idx, habit) =>
+        set((st) => {
+          if (st.habits.some((h) => h.id === habit.id)) return {};
+          const next = [...st.habits];
+          next.splice(Math.max(0, Math.min(next.length, idx)), 0, habit);
+          return { habits: next };
+        }),
 
       allExercises: () => [...(BASE_EXERCISE_DB as ExerciseDef[]), ...get().customExercises],
       routines: () =>
