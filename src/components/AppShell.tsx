@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, BrainCircuit, CalendarDays, Clock, Dumbbell, LayoutGrid, LineChart, PanelLeft, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
+import { Activity, BrainCircuit, CalendarDays, Check, Clock, Dumbbell, LayoutGrid, LineChart, PanelLeft, Pencil, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
@@ -60,6 +60,8 @@ export function AppShell() {
   // where it was asked for, and the 40px edge is wide enough for a thumb
   // coming in off the bezel.
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const editingDashboard = useSoma((s) => s.editingDashboard);
+  const setEditingDashboard = useSoma((s) => s.setEditingDashboard);
 
   // Measured rather than computed from an index, because the dock scrolls and
   // the tabs are not evenly spaced once it does.
@@ -231,15 +233,36 @@ export function AppShell() {
         {/* Was a static "Local" badge, which said something the user already
             knew and did nothing. The calendar is the thing worth reaching from
             every screen. */}
-        <button
-          type="button"
-          onClick={() => setCalendarOpen(true)}
-          aria-label="Open training calendar"
-          className="flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-muted active:bg-surface-3"
-        >
-          <CalendarDays className="size-3.5" />
-          Calendar
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* Only on the page it edits. A control that does nothing on ten of
+              eleven tabs is worse than no control: you learn to ignore it, and
+              then you cannot find it on the one tab where it works. */}
+          {tab === "dashboard" && (
+            <button
+              type="button"
+              onClick={() => setEditingDashboard(!editingDashboard)}
+              aria-label={editingDashboard ? "Finish editing the layout" : "Edit the layout"}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-wider",
+                editingDashboard
+                  ? "border-accent bg-accent text-accent-ink"
+                  : "border-border bg-surface-2 text-muted active:bg-surface-3",
+              )}
+            >
+              {editingDashboard ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
+              {editingDashboard ? "Done" : "Edit"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setCalendarOpen(true)}
+            aria-label="Open training calendar"
+            className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-muted active:bg-surface-3"
+          >
+            <CalendarDays className="size-3.5" />
+            Calendar
+          </button>
+        </div>
       </header>
 
       <TrainCalendar open={calendarOpen} onClose={() => setCalendarOpen(false)} />

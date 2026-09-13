@@ -5,6 +5,7 @@ import { CoachBrief } from "@/components/CoachBrief";
 import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
 import { ratingTone } from "@/lib/stimulus";
 import { scoreDay } from "@/lib/day-score";
@@ -111,17 +112,21 @@ export function DashboardView() {
   const water = totalWaterMl(day);
   const session = history[date];
 
-  return (
-    <div className="space-y-3 pb-4">
-      <CoachBrief horizon="today" />
-
+  // Each widget as a node, keyed by the id the layout arranges. Building the
+  // map rather than the markup is what lets the order live in data: the page
+  // is then just the layout, rendered.
+  const nodes: Record<string, React.ReactNode> = {
+    brief: <CoachBrief horizon="today" />,
+    score: (
       <Card>
         <CardTitle>Today</CardTitle>
-        <div className="flex items-end gap-3">
+        {/* Wraps rather than overflowing: this card can be dragged to half a
+            phone, and a number beside a caption has a wide min-content. */}
+        <div className="flex flex-wrap items-end gap-x-3">
           <div className={cn("font-display text-5xl font-extrabold tabular", ratingTone(score))}>
             {Math.round(score)}
           </div>
-          <div className="pb-1.5 text-xs text-muted">
+          <div className="min-w-0 pb-1.5 text-xs text-muted">
             out of 100
             <div className="text-[0.65rem] text-faint">of what you tracked</div>
           </div>
@@ -141,30 +146,37 @@ export function DashboardView() {
             ))}
         </div>
       </Card>
-
-      {/* Four quantities with a target, then two without. The ticked ones are
-          done — that is the whole point of the row, and it is why only
-          CONFIRMED food counts towards them. */}
-      <div className="grid grid-cols-2 gap-2">
-        <MacroTile macro="cals" label="Calories" unit="kcal"
-                   value={macros.cals} target={goals?.cals} onClick={() => setTab("nutrition")} />
-        <MacroTile macro="p" label="Protein" unit="g"
-                   value={macros.p} target={goals?.protein} onClick={() => setTab("nutrition")} />
-        <MacroTile macro="c" label="Carbs" unit="g"
-                   value={macros.c} target={goals?.carbs} onClick={() => setTab("nutrition")} />
-        <MacroTile macro="f" label="Fat" unit="g"
-                   value={macros.f} target={goals?.fat} onClick={() => setTab("nutrition")} />
-        <Tile icon={Moon} label="Water" value={water ? (water / 1000).toFixed(1) : "—"} unit="L"
-              onClick={() => setTab("nutrition")} />
-        <Tile icon={ArrowRight} label="Session"
-              value={session ? String(session.exercises?.length ?? 0) : live.exercises.length ? String(live.exercises.length) : "—"}
-              unit="lifts" onClick={() => setTab("workout")} />
-      </div>
-
-      <TodoCard />
-
-      <LogTheGap />
-
+    ),
+    /* The ticked ones are done — that is the whole point of a tile, and it is
+       why only CONFIRMED food counts towards them. */
+    cals: (
+      <MacroTile macro="cals" label="Calories" unit="kcal"
+                 value={macros.cals} target={goals?.cals} onClick={() => setTab("nutrition")} />
+    ),
+    protein: (
+      <MacroTile macro="p" label="Protein" unit="g"
+                 value={macros.p} target={goals?.protein} onClick={() => setTab("nutrition")} />
+    ),
+    carbs: (
+      <MacroTile macro="c" label="Carbs" unit="g"
+                 value={macros.c} target={goals?.carbs} onClick={() => setTab("nutrition")} />
+    ),
+    fat: (
+      <MacroTile macro="f" label="Fat" unit="g"
+                 value={macros.f} target={goals?.fat} onClick={() => setTab("nutrition")} />
+    ),
+    water: (
+      <Tile icon={Moon} label="Water" value={water ? (water / 1000).toFixed(1) : "—"} unit="L"
+            onClick={() => setTab("nutrition")} />
+    ),
+    session: (
+      <Tile icon={ArrowRight} label="Session"
+            value={session ? String(session.exercises?.length ?? 0) : live.exercises.length ? String(live.exercises.length) : "—"}
+            unit="lifts" onClick={() => setTab("workout")} />
+    ),
+    todos: <TodoCard />,
+    gap: <LogTheGap />,
+    correlate: (
       <Card>
         <CardTitle>Across everything</CardTitle>
         {finding.found ? (
@@ -184,9 +196,12 @@ export function DashboardView() {
           </p>
         )}
       </Card>
-    </div>
-  );
+    ),
+  };
+
+  return <WidgetGrid nodes={nodes} />;
 }
+
 
 function Tile({
   icon: Icon, label, value, unit, onClick,
@@ -201,7 +216,7 @@ function Tile({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-2xl border border-border bg-surface p-3 text-left"
+      className="w-full rounded-2xl border border-border bg-surface p-3 text-left"
     >
       <div className="mb-1 flex items-center gap-1.5 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
         <Icon className="size-3" />
@@ -248,7 +263,7 @@ function MacroTile({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-2xl border border-border bg-surface p-3 text-left"
+      className="w-full rounded-2xl border border-border bg-surface p-3 text-left"
     >
       <div className="mb-1 flex items-center gap-1.5 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
         <span

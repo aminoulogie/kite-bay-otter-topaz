@@ -35,6 +35,7 @@ import { collectSideStores, restoreSideStores, type SideStores } from "./side-st
 import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
 import { logAmount, rungOn, setRamp } from "./habit-ramp";
 import { followsSettings, resolveGoals, sameGoals } from "./goals";
+import { defaultLayout, reconcile, type WidgetPlacement } from "./dashboard-layout";
 import { clampMinutes } from "./screen-time";
 import { defaultLive, defaultSettings, seedHabits, seedHistory, seedNutrition } from "./seed";
 import { tallyMuscles } from "./set-quality";
@@ -143,12 +144,23 @@ export interface SomaStore {
    * lib/screen-time.ts for why that is a wall and not an oversight.
    */
   screenTime: Record<string, ScreenTimeDay>;
+  /** Where the Home widgets sit, and how wide. See lib/dashboard-layout.ts. */
+  dashboard: WidgetPlacement[];
+  /**
+   * Whether the Home page is in edit mode. Deliberately NOT persisted: an app
+   * that reopens into a mode you forgot you left on looks broken.
+   */
+  editingDashboard: boolean;
   planFor: (date?: string) => TimeBlock[];
   setDayPlan: (date: string, blocks: TimeBlock[]) => void;
   resetDayPlan: (date: string) => void;
   /** Record a day's screen time. Replaces whatever was there. */
   logScreenTime: (date: string | undefined, entry: ScreenTimeDay) => void;
   clearScreenTime: (date?: string) => void;
+  /** Replace the Home layout. Always reconciled against the widget registry. */
+  setDashboard: (layout: WidgetPlacement[]) => void;
+  resetDashboard: () => void;
+  setEditingDashboard: (on: boolean) => void;
   /** The short list of things to do. Nothing clever: a line and a box. */
   todos: TodoItem[];
   addTodo: (text: string) => void;
@@ -332,6 +344,8 @@ export const useSoma = create<SomaStore>()(
       todos: [],
       dayPlans: {},
       screenTime: {},
+      dashboard: defaultLayout(),
+      editingDashboard: false,
       programs: [],
       activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
@@ -738,7 +752,9 @@ export const useSoma = create<SomaStore>()(
         get().patchSettings({ nutritionPurgedBefore: cutoff });
         return removed;
       },
-      setTab: (tab) => set({ tab }),
+      // Leaving the page leaves its edit mode. Coming back to Home a day later
+      // and finding every card wearing a dashed border reads as a bug.
+      setTab: (tab) => set(tab === "dashboard" ? { tab } : { tab, editingDashboard: false }),
       setActiveDate: (d) => set({ activeDate: d }),
       /**
        * Change a setting, and let the open days follow it.
@@ -883,6 +899,9 @@ export const useSoma = create<SomaStore>()(
           },
         });
       },
+      setDashboard: (layout) => set({ dashboard: reconcile(layout) }),
+      setEditingDashboard: (on) => set({ editingDashboard: on }),
+      resetDashboard: () => set({ dashboard: defaultLayout() }),
       clearScreenTime: (date) => {
         const key = date || get().activeDate;
         const next = { ...get().screenTime };
@@ -1762,6 +1781,7 @@ export const useSoma = create<SomaStore>()(
             todos: get().todos,
             dayPlans: get().dayPlans,
             screenTime: get().screenTime,
+            dashboard: get().dashboard,
             live: get().live,
             activeDate: get().activeDate,
             sideStores: collectSideStores(),
@@ -1809,6 +1829,7 @@ export const useSoma = create<SomaStore>()(
               todos: data.todos || [],
               dayPlans: data.dayPlans || {},
               screenTime: data.screenTime || {},
+              dashboard: reconcile(data.dashboard),
               seeded: true,
               // A backup from before these were exported has neither, and the
               // device keeps whatever it is on rather than being emptied.
@@ -1905,6 +1926,10 @@ export const useSoma = create<SomaStore>()(
             // Incoming days fill gaps; a plan on the device is the newer edit.
             dayPlans: { ...(data.dayPlans || {}), ...cur.dayPlans },
             screenTime: { ...(data.screenTime || {}), ...cur.screenTime },
+            // The device's own arrangement wins. A layout is a preference about
+            // this screen, not history, and a restore should not rearrange the
+            // phone you are holding.
+            dashboard: reconcile(cur.dashboard),
             seeded: true,
           });
           // `live` and `activeDate` are deliberately not merged: the device is
@@ -1966,6 +1991,7 @@ export const useSoma = create<SomaStore>()(
         todos: s.todos,
         dayPlans: s.dayPlans,
         screenTime: s.screenTime,
+        dashboard: s.dashboard,
         live: s.live,
         activeDate: s.activeDate,
       }),
