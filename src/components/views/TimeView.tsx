@@ -125,6 +125,7 @@ export function TimeView() {
               id={a.block.id}
               openId={swiped}
               setOpenId={setSwiped}
+              onEdit={() => setEditing(a.block)}
               onDelete={() => {
                 const before = plan.blocks;
                 write(removeBlock(plan.blocks, a.block.id));

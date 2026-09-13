@@ -10,6 +10,8 @@ import {
   budgetState, categoriesFor, costPerSession, daysInMonth, inMonth, monthOf, shiftMonth, totals,
 } from "@/lib/money";
 import { getLocalDateKey } from "@/lib/soma";
+import { RowEditSheet } from "@/components/RowEditSheet";
+import { numOf, textOf } from "@/lib/row-edit";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { LedgerEntry } from "@/lib/types";
@@ -25,6 +27,7 @@ import type { LedgerEntry } from "@/lib/types";
 export function MoneyView() {
   const ledger = useSoma((s) => s.ledger);
   const addLedger = useSoma((s) => s.addLedger);
+  const updateLedger = useSoma((s) => s.updateLedger);
   const removeLedger = useSoma((s) => s.removeLedger);
   const restoreLedger = useSoma((s) => s.restoreLedger);
   const history = useSoma((s) => s.history);
@@ -39,6 +42,7 @@ export function MoneyView() {
   const [kind, setKind] = useState<"spend" | "income">("spend");
   const [note, setNote] = useState("");
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [editing, setEditing] = useState<LedgerEntry | null>(null);
 
   const categories = useMemo(
     () => categoriesFor(settings.spendCategories, ledger),
@@ -257,6 +261,29 @@ export function MoneyView() {
         </Card>
       )}
 
+      {editing && (
+        <RowEditSheet
+          title={editing.kind === "income" ? "Edit income" : "Edit spend"}
+          fields={[
+            { key: "amount", label: "Amount", value: editing.amount, kind: "number" },
+            ...(editing.kind === "income"
+              ? []
+              : [{ key: "category", label: "Category", value: editing.category, options: categories }]),
+            { key: "note", label: "Note", value: editing.note },
+          ]}
+          onClose={() => setEditing(null)}
+          onSave={(v) => {
+            const amount = numOf(v, "amount");
+            if (amount === undefined || amount < 0) return;
+            updateLedger(editing.id, {
+              amount,
+              ...(editing.kind === "income" ? {} : { category: textOf(v, "category") ?? editing.category }),
+              note: textOf(v, "note"),
+            });
+          }}
+        />
+      )}
+
       <Card>
         <CardTitle>{rows.length} entries</CardTitle>
         {rows.length === 0 ? (
@@ -264,7 +291,14 @@ export function MoneyView() {
         ) : (
           <div className="space-y-1.5">
             {rows.map((r) => (
-              <SwipeRow key={r.id} id={r.id} openId={swiped} setOpenId={setSwiped} onDelete={() => del(r)}>
+              <SwipeRow
+                key={r.id}
+                id={r.id}
+                openId={swiped}
+                setOpenId={setSwiped}
+                onEdit={() => setEditing(r)}
+                onDelete={() => del(r)}
+              >
                 <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-bold">

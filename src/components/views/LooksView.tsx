@@ -185,6 +185,8 @@ export function LooksView() {
                 id={sc.id}
                 openId={swiped}
                 setOpenId={setSwiped}
+                onEdit={() => setOpen(sc)}
+                editLabel="Open"
                 onDelete={() => del(sc)}
               >
                 <button

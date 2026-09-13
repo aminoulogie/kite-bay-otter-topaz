@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
+import { RowEditSheet } from "@/components/RowEditSheet";
+import { textOf } from "@/lib/row-edit";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import { useSoma } from "@/lib/store";
+import type { TodoItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -22,12 +25,14 @@ export function TodoCard() {
   const todos = useSoma((s) => s.todos);
   const addTodo = useSoma((s) => s.addTodo);
   const toggleTodo = useSoma((s) => s.toggleTodo);
+  const renameTodo = useSoma((s) => s.renameTodo);
   const removeTodo = useSoma((s) => s.removeTodo);
   const restoreTodo = useSoma((s) => s.restoreTodo);
   const clearDoneTodos = useSoma((s) => s.clearDoneTodos);
 
   const [text, setText] = useState("");
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [editing, setEditing] = useState<TodoItem | null>(null);
 
   const done = todos.filter((t) => t.done).length;
 
@@ -51,6 +56,18 @@ export function TodoCard() {
         )}
       </div>
 
+      {editing && (
+        <RowEditSheet
+          title="Edit to-do"
+          fields={[{ key: "text", label: "What needs doing", value: editing.text }]}
+          onClose={() => setEditing(null)}
+          onSave={(v) => {
+            const text = textOf(v, "text");
+            if (text) renameTodo(editing.id, text);
+          }}
+        />
+      )}
+
       {todos.length > 0 && (
         <div className="mb-2 space-y-1">
           {todos.map((t, idx) => (
@@ -59,6 +76,7 @@ export function TodoCard() {
               id={t.id}
               openId={swiped}
               setOpenId={setSwiped}
+              onEdit={() => setEditing(t)}
               onDelete={() => {
                 removeTodo(t.id);
                 toast.success("Removed", {

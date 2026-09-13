@@ -732,6 +732,7 @@ export function NutritionView() {
                       confirmPlanned(idx, planTarget);
                       toast.success(`${it.name} counted`);
                     }}
+                    onEdit={() => setPortion({ item: it, meal: m, mode: "edit", idx, planned: true })}
                     onDelete={() => {
                       removePlanned(idx, planTarget);
                       toast.success(`${it.name} off the plan`, {
@@ -759,6 +760,7 @@ export function NutritionView() {
                     // While a row is held for a drag it belongs to that
                     // gesture; two meanings for one finger is one too many.
                     disabled={mealDrag.dragging !== null}
+                    onEdit={() => setPortion({ item: it, meal: m, mode: "edit", idx })}
                     onDelete={() => deleteFood(idx, it)}
                   >
                     <FoodRow

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  COMMIT_RATIO, CONFIRM_PX, CONFIRM_RATIO, LOCK_PX, REVEAL_PX, decideLock,
+  COMMIT_RATIO, CONFIRM_PX, CONFIRM_RATIO, LOCK_PX, REVEAL_PX, REVEAL_TWO_PX, decideLock,
   decideRelease, offsetFor,
 } from "./use-swipe-action.ts";
 
@@ -130,4 +130,30 @@ test("confirming asks for less travel than deleting", () => {
 test("an unmeasured row never confirms by accident either", () => {
   assert.equal(decideRelease(-10, 0), "closed");
   assert.equal(decideRelease(-CONFIRM_PX, 0), "confirm");
+});
+
+test("a two-button tray parks further out, and rubber-bands from there", () => {
+  assert.equal(offsetFor(-REVEAL_TWO_PX, false, REVEAL_TWO_PX), REVEAL_TWO_PX);
+  const past = offsetFor(-(REVEAL_TWO_PX + 100), false, REVEAL_TWO_PX);
+  assert.ok(past > REVEAL_TWO_PX && past < REVEAL_TWO_PX + 100);
+  // Travel that would have parked a one-button row is still mid-drag here.
+  assert.equal(offsetFor(-REVEAL_PX, false, REVEAL_TWO_PX), REVEAL_PX);
+});
+
+test("the park threshold scales with the tray, not with the old constant", () => {
+  assert.equal(decideRelease(REVEAL_PX / 2 + 1, 360, REVEAL_TWO_PX), "closed",
+    "half a one-button tray is a graze on a two-button one");
+  assert.equal(decideRelease(REVEAL_TWO_PX / 2 + 1, 360, REVEAL_TWO_PX), "open");
+});
+
+test("a wider tray does not change what commits a delete", () => {
+  // The commit is a share of the ROW, so the tray's width cannot move it.
+  assert.equal(decideRelease(360 * COMMIT_RATIO, 360, REVEAL_TWO_PX), "delete");
+  assert.equal(decideRelease(360 * COMMIT_RATIO, 360), "delete");
+});
+
+test("a nonsense tray width cannot divide by zero or invert the rubber", () => {
+  assert.equal(decideRelease(1, 360, 0), "open");
+  assert.equal(offsetFor(-50, false, 0), 50 * 0 + (50 - 1) * 0.55 + 1, "clamped to a 1px park");
+  assert.ok(offsetFor(-50, false, -10) > 0);
 });

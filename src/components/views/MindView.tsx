@@ -9,6 +9,8 @@ import { Bookshelf } from "@/components/Bookshelf";
 import { ReadingGoal } from "@/components/ReadingGoal";
 import { WordBook } from "@/components/WordBook";
 import { getLocalDateKey } from "@/lib/soma";
+import { RowEditSheet } from "@/components/RowEditSheet";
+import { numOf, textOf } from "@/lib/row-edit";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { dueLabel, dueQueue, markReviewed, nextUp, stageLabel } from "@/lib/review-queue";
@@ -43,7 +45,9 @@ export function MindView() {
   const [title, setTitle] = useState("");
   const [count, setCount] = useState("");
   const [takeaway, setTakeaway] = useState("");
+  const updateMind = useSoma((s) => s.updateMind);
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [editing, setEditing] = useState<MindEntry | null>(null);
 
   const meta = KINDS.find((k) => k.id === kind)!;
   const rows = useMemo(() => [...mind].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 60), [mind]);
@@ -175,7 +179,14 @@ export function MindView() {
               const k = KINDS.find((x) => x.id === r.kind);
               const Icon = k?.icon ?? Lightbulb;
               return (
-                <SwipeRow key={r.id} id={r.id} openId={swiped} setOpenId={setSwiped} onDelete={() => del(r)}>
+                <SwipeRow
+                  key={r.id}
+                  id={r.id}
+                  openId={swiped}
+                  setOpenId={setSwiped}
+                  onEdit={() => setEditing(r)}
+                  onDelete={() => del(r)}
+                >
                   <div className="flex items-start gap-2.5 rounded-xl border border-border bg-surface-2 px-3 py-2">
                     <Icon className="mt-0.5 size-4 shrink-0 text-faint" />
                     <div className="min-w-0 flex-1">
@@ -196,8 +207,29 @@ export function MindView() {
         )}
       </Card>
 
+      {editing && (
+        <RowEditSheet
+          title="Edit entry"
+          fields={[
+            { key: "title", label: "Title", value: editing.title },
+            { key: "count", label: "How many", value: editing.count, kind: "number" },
+            { key: "takeaway", label: "Takeaway", value: editing.takeaway },
+          ]}
+          onClose={() => setEditing(null)}
+          onSave={(v) => {
+            const title = textOf(v, "title");
+            if (!title) return;
+            updateMind(editing.id, {
+              title,
+              count: numOf(v, "count"),
+              takeaway: textOf(v, "takeaway"),
+            });
+          }}
+        />
+      )}
+
       <p className="px-1 text-center text-[0.7rem] text-faint">
-        Swipe an entry left to delete it.
+        Swipe an entry left to edit or delete it.
       </p>
     </div>
   );

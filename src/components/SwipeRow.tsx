@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, Trash2 } from "lucide-react";
+import { Check, Pencil, Trash2 } from "lucide-react";
 import {
-  CONFIRM_PX, REVEAL_PX, decideLock, decideRelease, offsetFor, type Lock,
+  CONFIRM_PX, REVEAL_PX, REVEAL_TWO_PX, decideLock, decideRelease, offsetFor, type Lock,
 } from "@/lib/use-swipe-action";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +28,11 @@ import { cn } from "@/lib/utils";
  * because destroying a logged entry deserves a second deliberate tap; confirm
  * is one-shot, because the swipe IS the action and there is nothing to reveal.
  *
+ * Passing `onEdit` puts an Edit button in the same tray, to the LEFT of
+ * Delete. The destructive one stays furthest out, so a finger that overshoots
+ * lands on the harmless button — the opposite arrangement would make the
+ * easiest target the one you cannot take back.
+ *
  * The arbitration lives in lib/use-swipe-action.ts; this holds the pointer,
  * the transform, and the rule that a delete is always undoable.
  */
@@ -36,6 +41,8 @@ export function SwipeRow({
   openId,
   setOpenId,
   onDelete,
+  onEdit,
+  editLabel = "Edit",
   onConfirm,
   confirmLabel = "Confirm",
   disabled,
@@ -45,6 +52,9 @@ export function SwipeRow({
   openId: string | null;
   setOpenId: (id: string | null) => void;
   onDelete: () => void;
+  /** Present on rows that can be edited. Adds a second button to the tray. */
+  onEdit?: () => void;
+  editLabel?: string;
   /** Present on rows that can be swiped right. Absent leaves that side inert. */
   onConfirm?: () => void;
   confirmLabel?: string;
@@ -53,6 +63,7 @@ export function SwipeRow({
   children: React.ReactNode;
 }) {
   const open = openId === id;
+  const reveal = onEdit ? REVEAL_TWO_PX : REVEAL_PX;
   const [dragOffset, setDragOffset] = useState<number | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -71,7 +82,7 @@ export function SwipeRow({
 
   const finish = (offset: number) => {
     const width = wrap.current?.offsetWidth ?? 0;
-    const landing = decideRelease(offset, width);
+    const landing = decideRelease(offset, width, reveal);
     setDragOffset(null);
     if (landing === "delete") {
       setOpenId(null);
@@ -110,21 +121,21 @@ export function SwipeRow({
     }
     // An already-open row starts from its parked position rather than from
     // zero, so a second swipe carries on instead of jumping back.
-    setDragOffset(offsetFor(dx - (open ? REVEAL_PX : 0), !!onConfirm));
+    setDragOffset(offsetFor(dx - (open ? reveal : 0), !!onConfirm, reveal));
   };
 
   const onPointerUp = () => {
     if (dragOffset != null) finish(dragOffset);
-    else if (lock.current === "swipe") finish(open ? REVEAL_PX : 0);
+    else if (lock.current === "swipe") finish(open ? reveal : 0);
     start.current = null;
     lock.current = "undecided";
   };
 
-  const offset = dragOffset ?? (open ? REVEAL_PX : 0);
+  const offset = dragOffset ?? (open ? reveal : 0);
   const swiping = dragOffset != null;
   // The button grows in with the swipe rather than sitting there at full size
   // waiting to be uncovered, so the gesture and the target feel like one thing.
-  const progress = Math.max(0, Math.min(1, offset / REVEAL_PX));
+  const progress = Math.max(0, Math.min(1, offset / reveal));
   // The confirm side has no button to uncover, so its feedback is the tick
   // filling in as the row crosses the distance that would commit it.
   const confirmProgress = Math.max(0, Math.min(1, -offset / CONFIRM_PX));
@@ -151,30 +162,35 @@ export function SwipeRow({
       )}
 
       <div
-        className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end"
-        style={{ width: REVEAL_PX }}
+        className="pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end gap-1.5 pr-2"
+        style={{ width: reveal }}
       >
-        <button
-          type="button"
-          aria-hidden={progress < 0.35}
-          tabIndex={progress < 0.35 ? -1 : 0}
-          aria-label="Delete"
+        {onEdit && (
+          <TrayButton
+            label={editLabel}
+            progress={progress}
+            swiping={swiping}
+            tone="edit"
+            onClick={() => {
+              setOpenId(null);
+              onEdit();
+            }}
+          >
+            <Pencil className="size-[1.05rem]" strokeWidth={2.4} />
+          </TrayButton>
+        )}
+        <TrayButton
+          label="Delete"
+          progress={progress}
+          swiping={swiping}
+          tone="delete"
           onClick={() => {
             setOpenId(null);
             onDelete();
           }}
-          style={{
-            opacity: progress,
-            transform: `scale(${0.6 + progress * 0.4})`,
-            transition: swiping ? "none" : "opacity 180ms, transform 180ms",
-          }}
-          className={cn(
-            "grid size-11 shrink-0 place-items-center rounded-full bg-danger text-white shadow-lg",
-            progress >= 0.35 && "pointer-events-auto",
-          )}
         >
           <Trash2 className="size-[1.15rem]" strokeWidth={2.2} />
-        </button>
+        </TrayButton>
       </div>
 
       <div
@@ -194,5 +210,47 @@ export function SwipeRow({
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * One round button in the tray.
+ *
+ * It grows in with the swipe rather than sitting at full size waiting to be
+ * uncovered, so the gesture and the target read as one thing — and it is inert
+ * until it is most of the way out, so a row mid-swipe cannot be tapped into
+ * doing something.
+ */
+function TrayButton({
+  label, progress, swiping, tone, onClick, children,
+}: {
+  label: string;
+  progress: number;
+  swiping: boolean;
+  tone: "edit" | "delete";
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  const live = progress >= 0.35;
+  return (
+    <button
+      type="button"
+      aria-hidden={!live}
+      tabIndex={live ? 0 : -1}
+      aria-label={label}
+      onClick={onClick}
+      style={{
+        opacity: progress,
+        transform: `scale(${0.6 + progress * 0.4})`,
+        transition: swiping ? "none" : "opacity 180ms, transform 180ms",
+      }}
+      className={cn(
+        "grid size-11 shrink-0 place-items-center rounded-full shadow-lg",
+        tone === "delete" ? "bg-danger text-white" : "bg-surface-3 text-fg border border-border-strong",
+        live && "pointer-events-auto",
+      )}
+    >
+      {children}
+    </button>
   );
 }

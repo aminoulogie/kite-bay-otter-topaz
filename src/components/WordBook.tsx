@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import { lookupWord, type WordLookup } from "@/lib/lookup";
 import { getLocalDateKey } from "@/lib/soma";
+import { RowEditSheet } from "@/components/RowEditSheet";
+import { textOf } from "@/lib/row-edit";
 import { useSoma } from "@/lib/store";
 import type { MindEntry } from "@/lib/types";
 
@@ -27,6 +29,7 @@ import type { MindEntry } from "@/lib/types";
 export function WordBook() {
   const mind = useSoma((s) => s.mind);
   const addMind = useSoma((s) => s.addMind);
+  const updateMind = useSoma((s) => s.updateMind);
   const removeMind = useSoma((s) => s.removeMind);
   const restoreMind = useSoma((s) => s.restoreMind);
 
@@ -36,6 +39,7 @@ export function WordBook() {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [editing, setEditing] = useState<MindEntry | null>(null);
 
   const words = useMemo(
     () =>
@@ -155,6 +159,27 @@ export function WordBook() {
         Save the word
       </button>
 
+      {editing && (
+        <RowEditSheet
+          title="Edit word"
+          fields={[
+            { key: "title", label: "Word", value: editing.title },
+            { key: "takeaway", label: "What it means", value: editing.takeaway },
+            { key: "example", label: "In a sentence", value: editing.example },
+          ]}
+          onClose={() => setEditing(null)}
+          onSave={(v) => {
+            const title = textOf(v, "title");
+            if (!title) return;
+            updateMind(editing.id, {
+              title,
+              takeaway: textOf(v, "takeaway"),
+              example: textOf(v, "example"),
+            });
+          }}
+        />
+      )}
+
       {words.length > 0 && (
         <div className="space-y-1.5">
           {words.map((w) => (
@@ -163,6 +188,7 @@ export function WordBook() {
               id={w.id}
               openId={swiped}
               setOpenId={setSwiped}
+              onEdit={() => setEditing(w)}
               onDelete={() => {
                 const idx = mind.findIndex((m) => m.id === w.id);
                 removeMind(w.id);

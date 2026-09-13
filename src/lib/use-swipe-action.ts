@@ -31,6 +31,16 @@
 export const REVEAL_PX = 72;
 
 /**
+ * The same tray with an Edit button beside the Delete one.
+ *
+ * Not double: the two circles sit closer to each other than either sits to the
+ * row, because they are one group of actions rather than two lone buttons. The
+ * destructive one stays furthest right, so the finger that overshoots lands on
+ * Edit rather than on Delete.
+ */
+export const REVEAL_TWO_PX = 124;
+
+/**
  * Past this share of the row's width, letting go deletes rather than parks.
  *
  * Apple commits at roughly half. Deleting a logged meal is not deleting a mail
@@ -103,21 +113,22 @@ export function decideLock(dx: number, dy: number, allowRight = false): Lock {
  * Past the parked position the delete side gets heavier too, which is the
  * feedback that says "this is as far as it goes" without a hard stop.
  */
-export function offsetFor(dx: number, allowRight = false): number {
+export function offsetFor(dx: number, allowRight = false, reveal = REVEAL_PX): number {
   // Rightward travel comes back NEGATIVE, so one number carries both
   // directions and a caller cannot mistake one for the other.
   // `dx >= 0` rather than `> 0` so a stationary finger returns a plain 0
   // rather than -0, which is the same number and a different string.
   if (dx >= 0) return allowRight && dx > 0 ? -dx * RUBBER_RIGHT : 0;
   const travel = -dx;
-  if (travel <= REVEAL_PX) return travel;
-  return REVEAL_PX + (travel - REVEAL_PX) * RUBBER;
+  const park = Math.max(1, reveal);
+  if (travel <= park) return travel;
+  return park + (travel - park) * RUBBER;
 }
 
 export type Release = "closed" | "open" | "delete" | "confirm";
 
 /** Where the row lands when the finger lifts. */
-export function decideRelease(offset: number, rowWidth: number): Release {
+export function decideRelease(offset: number, rowWidth: number, reveal = REVEAL_PX): Release {
   // Rightward: one-shot. Either far enough to mean it, or back where it was.
   if (offset < 0) {
     const travel = -offset;
@@ -125,7 +136,7 @@ export function decideRelease(offset: number, rowWidth: number): Release {
     return travel >= bar ? "confirm" : "closed";
   }
   if (rowWidth > 0 && offset >= rowWidth * COMMIT_RATIO) return "delete";
-  // Half of the button's width is enough to mean it — below that the row
-  // springs shut, so a graze never leaves a delete button sitting open.
-  return offset >= REVEAL_PX / 2 ? "open" : "closed";
+  // Half of the tray's width is enough to mean it — below that the row springs
+  // shut, so a graze never leaves a delete button sitting open.
+  return offset >= Math.max(1, reveal) / 2 ? "open" : "closed";
 }

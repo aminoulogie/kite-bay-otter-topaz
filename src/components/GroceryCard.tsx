@@ -7,6 +7,9 @@ import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import { listCost, lowItems, matchName } from "@/lib/pantry";
 import { composeLibrary } from "@/lib/foods";
+import { RowEditSheet } from "@/components/RowEditSheet";
+import { numOf, textOf } from "@/lib/row-edit";
+import type { GroceryLine, PantryItem } from "@/lib/pantry";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +41,7 @@ export function GroceryCard({ money }: { money: (n: number) => string }) {
 
   const [name, setName] = useState("");
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [editingLine, setEditingLine] = useState<GroceryLine | null>(null);
 
   const cost = useMemo(() => listCost(grocery), [grocery]);
   const gotCost = useMemo(() => listCost(grocery.filter((l) => l.got)), [grocery]);
@@ -82,12 +86,33 @@ export function GroceryCard({ money }: { money: (n: number) => string }) {
         </p>
       ) : (
         <div className="mb-2 space-y-1.5">
+          {editingLine && (
+            <RowEditSheet
+              title="Edit line"
+              fields={[
+                { key: "name", label: "Item", value: editingLine.name },
+                { key: "qty", label: "How much", value: editingLine.qty, kind: "number" },
+                { key: "price", label: "Price", value: editingLine.price, kind: "number" },
+              ]}
+              onClose={() => setEditingLine(null)}
+              onSave={(v) => {
+                const name = textOf(v, "name");
+                if (!name) return;
+                updateGroceryLine(editingLine.id, {
+                  name,
+                  qty: numOf(v, "qty") ?? editingLine.qty,
+                  price: numOf(v, "price"),
+                });
+              }}
+            />
+          )}
           {grocery.map((line) => (
             <SwipeRow
               key={line.id}
               id={line.id}
               openId={swiped}
               setOpenId={setSwiped}
+              onEdit={() => setEditingLine(line)}
               onDelete={() => {
                 removeGroceryLine(line.id);
                 toast.success(`${line.name} off the list`);
@@ -206,6 +231,7 @@ export function PantryCard() {
   const removeStock = useSoma((s) => s.removeStock);
   const [name, setName] = useState("");
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [editingStock, setEditingStock] = useState<PantryItem | null>(null);
   const [open, setOpen] = useState(false);
 
   const sorted = useMemo(
@@ -215,6 +241,28 @@ export function PantryCard() {
 
   return (
     <Card>
+      {editingStock && (
+        <RowEditSheet
+          title="Edit stock"
+          fields={[
+            { key: "name", label: "Item", value: editingStock.name },
+            { key: "qty", label: "In the cupboard", value: editingStock.qty, kind: "number" },
+            { key: "low", label: "Reorder at", value: editingStock.low, kind: "number" },
+            { key: "price", label: "Price per restock", value: editingStock.price, kind: "number" },
+          ]}
+          onClose={() => setEditingStock(null)}
+          onSave={(v) => {
+            const name = textOf(v, "name");
+            if (!name) return;
+            updateStock(editingStock.id, {
+              name,
+              qty: numOf(v, "qty") ?? editingStock.qty,
+              low: numOf(v, "low") ?? editingStock.low,
+              price: numOf(v, "price"),
+            });
+          }}
+        />
+      )}
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -246,6 +294,7 @@ export function PantryCard() {
                   id={p.id}
                   openId={swiped}
                   setOpenId={setSwiped}
+                  onEdit={() => setEditingStock(p)}
                   onDelete={() => {
                     removeStock(p.id);
                     toast.success(`${p.name} no longer tracked`);

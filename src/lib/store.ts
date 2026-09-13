@@ -182,6 +182,7 @@ export interface SomaStore {
   todos: TodoItem[];
   addTodo: (text: string) => void;
   toggleTodo: (id: string) => void;
+  renameTodo: (id: string, text: string) => void;
   removeTodo: (id: string) => void;
   restoreTodo: (idx: number, todo: TodoItem) => void;
   /** Drop everything already ticked. */
@@ -962,6 +963,11 @@ export const useSoma = create<SomaStore>()(
       },
       toggleTodo: (id) =>
         set({ todos: get().todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) }),
+      renameTodo: (id, text) => {
+        const t = text.trim();
+        if (!t) return;
+        set({ todos: get().todos.map((x) => (x.id === id ? { ...x, text: t } : x)) });
+      },
       removeTodo: (id) => set({ todos: get().todos.filter((t) => t.id !== id) }),
       restoreTodo: (idx, todo) => {
         const next = [...get().todos];

@@ -190,6 +190,8 @@ export function DatabaseView() {
             // slide while its day list is expanded puts two gestures on one
             // finger for no gain.
             disabled={open}
+            onEdit={() => setOpenExercise(ex.name)}
+            editLabel="Open"
             onDelete={() => dropExercise(ex)}
           >
           <div className="overflow-hidden rounded-2xl border border-border bg-surface">
@@ -386,6 +388,7 @@ function ExerciseWindow({
               setOpenId={setSwiped}
               // A day open for editing must not also slide: the two gestures
               // would fight over the same finger on the same row.
+              onEdit={() => setEditDate(editing ? null : row.date)}
               disabled={editing}
               onDelete={() => dropDay(row.date, row.sets, imported, src?.exIdx ?? null)}
             >
