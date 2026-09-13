@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DAY_HOURS, MIN_BLOCK_HOURS, addBlock, arcPath, arcs, blockAtHour, clockAt,
-  defaultPlan, fixedHours, formatHours, normalise, patchBlock, polar, removeBlock,
-  setHours, snap, splitBlock, totalHours, type TimeBlock,
+  dayStartFrom, defaultPlan, fixedHours, formatHours, normalise, parseClock, patchBlock,
+  polar, removeBlock, setHours, setStart, snap, splitBlock, startOf, totalHours, wrapHour,
+  type TimeBlock,
 } from "./day-plan.ts";
 
 const b = (over: Partial<TimeBlock> & { id: string; hours: number }): TimeBlock => ({
@@ -262,4 +263,102 @@ test("the shipped day is a real one that adds up", () => {
   assert.equal(totalHours(plan), DAY_HOURS);
   assert.ok(plan.some((x) => x.fixed && x.label === "Sleep"));
   assert.ok(plan.some((x) => !x.fixed));
+});
+
+// --------------------------------------------------------------- anchor --
+
+test("with no anchor the day still begins at midnight", () => {
+  assert.equal(dayStartFrom(full()), 0);
+  assert.equal(arcs(full())[0]!.startHour, 0);
+});
+
+test("an anchor on the first block moves the whole sequence", () => {
+  const plan = setStart(full(), "sleep", 23);
+  assert.equal(dayStartFrom(plan), 23);
+  const list = arcs(plan);
+  assert.equal(clockAt(list[0]!.startHour), "23:00");
+  assert.equal(clockAt(list[0]!.endHour), "07:00");
+  assert.equal(clockAt(list[1]!.startHour), "07:00");
+});
+
+test("an anchor on a later block works backwards to the day's start", () => {
+  // Work is 8 hours in, so pinning it to 09:00 puts the day's start at 01:00.
+  const plan = setStart(full(), "work", 9);
+  assert.equal(dayStartFrom(plan), 1);
+  assert.equal(startOf(plan, "work"), 9);
+  assert.equal(startOf(plan, "sleep"), 1);
+});
+
+test("a plan holds one anchor, not two", () => {
+  const plan = setStart(setStart(full(), "sleep", 23), "work", 9);
+  assert.equal(plan.filter((x) => x.start !== undefined).length, 1);
+  assert.equal(dayStartFrom(plan), 1, "the newest anchor is the one that counts");
+});
+
+test("clearing the anchor puts the day back at midnight", () => {
+  const plan = setStart(setStart(full(), "sleep", 23), "sleep", null);
+  assert.equal(dayStartFrom(plan), 0);
+  assert.ok(plan.every((x) => x.start === undefined));
+});
+
+test("anchoring a block that is not in the plan changes nothing", () => {
+  const before = setStart(full(), "sleep", 23);
+  assert.deepEqual(setStart(before, "ghost", 4), before);
+});
+
+test("an anchor is snapped and wrapped like every other hour", () => {
+  assert.equal(setStart(full(), "sleep", 23.1)[0]!.start, 23);
+  assert.equal(setStart(full(), "sleep", 25)[0]!.start, 1);
+  assert.equal(setStart(full(), "sleep", -1)[0]!.start, 23);
+});
+
+test("deleting the anchored block keeps the times the rest were shown at", () => {
+  const plan = setStart(full(), "sleep", 23);
+  const after = removeBlock(plan, "sleep");
+  assert.equal(dayStartFrom(after), 23, "the day does not snap back to midnight");
+});
+
+test("the ring stays an absolute clock face however the day starts", () => {
+  const list = arcs(setStart(full(), "sleep", 23));
+  // 23:00 is 345 degrees round from midnight at the top, not 0.
+  assert.equal(list[0]!.startAngle, 345);
+  assert.equal(blockAtHour(list, 2)!.block.id, "sleep");
+  assert.equal(blockAtHour(list, 8)!.block.id, "work");
+});
+
+test("an explicit day start still overrides the anchor", () => {
+  const list = arcs(setStart(full(), "sleep", 23), 6);
+  assert.equal(list[0]!.startHour, 6);
+});
+
+test("the default day is a night someone recognises, not midnight to midnight", () => {
+  const list = arcs(defaultPlan());
+  assert.equal(clockAt(list[0]!.startHour), "23:00");
+  assert.equal(totalHours(defaultPlan()), DAY_HOURS);
+});
+
+test("a clock string reads back as hours", () => {
+  assert.equal(parseClock("23:30"), 23.5);
+  assert.equal(parseClock("00:00"), 0);
+  assert.equal(parseClock("07:15"), 7.25);
+});
+
+test("an unreadable time is null, never a silent midnight", () => {
+  assert.equal(parseClock(""), null);
+  assert.equal(parseClock("nope"), null);
+  assert.equal(parseClock("25:00"), null);
+  assert.equal(parseClock("12:75"), null);
+});
+
+test("clockAt and parseClock are each other's inverse on the quarter hour", () => {
+  for (let h = 0; h < 24; h += 0.25) {
+    assert.equal(parseClock(clockAt(h)), h, `round trip at ${h}`);
+  }
+});
+
+test("hours wrap rather than run off either end of the day", () => {
+  assert.equal(wrapHour(24), 0);
+  assert.equal(wrapHour(26.5), 2.5);
+  assert.equal(wrapHour(-2), 22);
+  assert.equal(wrapHour(Number.NaN), 0);
 });

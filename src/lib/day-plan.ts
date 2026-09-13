@@ -38,6 +38,16 @@ export interface TimeBlock {
    * Variable blocks share whatever is left over.
    */
   fixed: boolean;
+  /**
+   * The clock time this block begins, if the user pinned one.
+   *
+   * At most ONE block in a plan carries this. Durations are sequential and add
+   * to exactly 24, so naming the start of any single block fixes the start of
+   * every other block — a second anchor could only agree with the first or
+   * contradict it, and there is no useful way to resolve a contradiction. So
+   * `setStart` moves the anchor rather than adding one.
+   */
+  start?: number;
 }
 
 /** Quarter-hour grid, and never a negative. */
@@ -217,10 +227,18 @@ export function addBlock(
 }
 
 export function removeBlock(blocks: TimeBlock[], id: string): TimeBlock[] {
+  const base = dayStartFrom(blocks);
   const next = (blocks ?? []).filter((b) => b.id !== id);
   // Deleting a fixed block hands its hours back to free time, which is what
   // normalise does on its own once the block is gone.
-  return normalise(next).blocks;
+  const out = normalise(next).blocks;
+  // Deleting the block that held the anchor must not silently reset the whole
+  // day to midnight. The remaining blocks keep the start time they were shown
+  // at, by handing the anchor to whichever one now comes first.
+  if (base !== 0 && out.length && !out.some((b) => Number.isFinite(b.start))) {
+    return [{ ...out[0]!, start: base }, ...out.slice(1)];
+  }
+  return out;
 }
 
 export function patchBlock(
@@ -273,16 +291,90 @@ export interface Arc {
 
 export const DEG_PER_HOUR = 360 / DAY_HOURS;
 
+/** Wrap any hour into [0, 24). */
+export function wrapHour(hour: number): number {
+  const h = Number(hour);
+  if (!Number.isFinite(h)) return 0;
+  return ((h % DAY_HOURS) + DAY_HOURS) % DAY_HOURS;
+}
+
+/**
+ * The clock time the FIRST block begins.
+ *
+ * Nobody's day starts at midnight. Sleep runs from 23:00, or 01:30, and a ring
+ * that always begins the sequence at 00:00 puts every block at the wrong hour —
+ * which made the clock times under each row and the "now" bead a lie.
+ *
+ * Rather than store a start on every block, where the stored times and the
+ * durations would drift apart on the first edit, exactly one block carries an
+ * anchor and the rest are derived from it. The durations already say how long
+ * everything is; the anchor only says WHEN the sequence begins.
+ *
+ * An anchor on a block that has since been deleted simply stops counting, and
+ * the plan falls back to midnight rather than to a hole.
+ */
+export function dayStartFrom(blocks: TimeBlock[]): number {
+  let before = 0;
+  for (const b of blocks ?? []) {
+    if (Number.isFinite(b?.start)) return wrapHour((b!.start as number) - before);
+    before += Number(b?.hours) || 0;
+  }
+  return 0;
+}
+
+/** The clock time a given block begins, following the plan's anchor. */
+export function startOf(blocks: TimeBlock[], id: string): number {
+  const base = dayStartFrom(blocks);
+  let cursor = 0;
+  for (const b of blocks ?? []) {
+    if (b.id === id) return wrapHour(base + cursor);
+    cursor += Number(b.hours) || 0;
+  }
+  return base;
+}
+
+/**
+ * Pin a block to a clock time, and move the whole sequence with it.
+ *
+ * The anchor is moved, never added: a plan holds one, so setting a start on
+ * the evening replaces the one sleep was holding rather than leaving two
+ * claims that the durations cannot both satisfy. Passing null clears it and
+ * the day goes back to starting at midnight.
+ */
+export function setStart(blocks: TimeBlock[], id: string, hour: number | null): TimeBlock[] {
+  const list = blocks ?? [];
+  if (!list.some((b) => b.id === id)) return list;
+  return list.map((b) => {
+    if (b.id !== id) {
+      if (b.start === undefined) return b;
+      const { start: _drop, ...rest } = b;
+      return rest as TimeBlock;
+    }
+    if (hour === null || !Number.isFinite(hour)) {
+      const { start: _drop, ...rest } = b;
+      return rest as TimeBlock;
+    }
+    // Wrapped BEFORE snapping: snap floors at zero because durations cannot
+    // be negative, but an hour is circular — -1 o'clock is 23:00, not
+    // midnight, and clamping it would move a late night to the wrong end of
+    // the day. Wrapped again after, so a 23:55 that snaps up to 24 is 00:00.
+    return { ...b, start: wrapHour(snap(wrapHour(hour))) };
+  });
+}
+
 /**
  * Where each block sits on the ring.
  *
- * Laid out in array order from midnight. Order is the plan's shape — sleep
- * then work then the evening — so it is carried by the array rather than
+ * Laid out in array order from the plan's anchor. Order is the plan's shape —
+ * sleep then work then the evening — so it is carried by the array rather than
  * stored per block, which would let the two disagree.
+ *
+ * The angles stay ABSOLUTE: 0° is midnight whatever the day starts at, because
+ * the ring is a clock face and a clock face whose midnight moves is not one.
  */
-export function arcs(blocks: TimeBlock[], dayStart = 0): Arc[] {
+export function arcs(blocks: TimeBlock[], dayStart?: number): Arc[] {
   const out: Arc[] = [];
-  let cursor = ((Number(dayStart) || 0) % DAY_HOURS + DAY_HOURS) % DAY_HOURS;
+  let cursor = wrapHour(dayStart ?? dayStartFrom(blocks));
   for (const block of blocks ?? []) {
     const hours = Number(block.hours) || 0;
     if (hours <= 0) continue;
@@ -386,6 +478,22 @@ export function clockAt(hour: number): string {
   return `${String((hh + carry) % DAY_HOURS).padStart(2, "0")}:${String(carry ? 0 : mm).padStart(2, "0")}`;
 }
 
+/**
+ * "23:30" back to 23.5, for a native time picker.
+ *
+ * Returns null rather than 0 for anything unreadable: 0 is a valid midnight
+ * and would silently move someone's sleep to the wrong end of the day.
+ */
+export function parseClock(value: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(value ?? "").trim());
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh > 23 || mm > 59) return null;
+  return wrapHour(hh + mm / 60);
+}
+
 /** Hours since midnight, as a fraction, for the "now" hand. */
 export function hourOfDay(d = new Date()): number {
   return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
@@ -410,10 +518,16 @@ export const PALETTE = [
  * Sleep and work pinned, the rest free — which is the example in the brief and
  * also the only honest default: the app knows those two are non-negotiable for
  * most people and knows nothing at all about the other eight hours.
+ *
+ * Sleep is anchored at 23:00 rather than midnight. A default that begins the
+ * sequence at 00:00 is not neutral — it claims everyone falls asleep exactly
+ * at midnight, and every clock time down the rest of the day inherits that
+ * claim. 23:00 is at least a night someone recognises, and the anchor is one
+ * tap to change.
  */
 export function defaultPlan(): TimeBlock[] {
   return normalise([
-    { id: "sleep", label: "Sleep", hours: 8, color: "#7b6cf0", fixed: true },
+    { id: "sleep", label: "Sleep", hours: 8, color: "#7b6cf0", fixed: true, start: 23 },
     { id: "morning", label: "Morning", hours: 1.5, color: "#f0a63c", fixed: false },
     { id: "work", label: "Work", hours: 8, color: "#5b8cff", fixed: true },
     { id: "free", label: "Free", hours: 6.5, color: FREE_COLOR, fixed: false },

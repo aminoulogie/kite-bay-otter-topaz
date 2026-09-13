@@ -7,6 +7,7 @@ import { NUTRITION_KEEP_FROM } from "@/lib/seed";
 import { requestPersistence } from "@/lib/storage-health";
 import { TrainCalendar } from "@/components/TrainCalendar";
 import { useEdgeSwipe, useRightEdgeSwipe } from "@/lib/use-edge-swipe";
+import { useKeyboardInset } from "@/lib/use-keyboard";
 import { BodyView } from "@/components/views/BodyView";
 import { HabitsView } from "@/components/views/HabitsView";
 import { InsightsView } from "@/components/views/InsightsView";
@@ -49,6 +50,11 @@ const TAB_META: Record<TabId, { label: string; icon: typeof Dumbbell }> = {
 const TABS = TAB_ORDER.map((id) => ({ id, ...TAB_META[id] }));
 
 export function AppShell() {
+  // Installed once for the whole app: the keyboard is a property of the
+  // window, not of whichever field happens to be focused, and every sheet in
+  // every tab needs the same answer about where it now ends.
+  useKeyboardInset();
+
   const [ready, setReady] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
@@ -344,7 +350,10 @@ export function AppShell() {
         {tab === "settings" && <SettingsView />}
       </main>
 
-      <nav className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(12px,env(safe-area-inset-bottom))] lg:hidden">
+      {/* soma-dock is the hook the keyboard rules use to fade this out: it
+          sits under the keys while one is open, where it cannot be tapped and
+          only gives the browser one more fixed element to fight with. */}
+      <nav className="soma-dock pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(12px,env(safe-area-inset-bottom))] transition-opacity duration-150 lg:hidden">
         {/* Scrollable: seven tabs no longer fit at a legible size, and
             shrinking them further would make the labels unreadable before it
             made them fit. snap-x keeps a tab from ending up half off-screen. */}

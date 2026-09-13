@@ -79,10 +79,9 @@ function fitLabel(text: string, room: number): string {
  * the pale fills, so they appear at apparently random hours.
  */
 export function DayRing({
-  blocks, dayStart = 0, selectedId, onSelect, className,
+  blocks, selectedId, onSelect, className,
 }: {
   blocks: TimeBlock[];
-  dayStart?: number;
   selectedId?: string | null;
   onSelect?: (block: TimeBlock) => void;
   className?: string;
@@ -92,7 +91,12 @@ export function DayRing({
   const [dragging, setDragging] = useState(false);
   const [now, setNow] = useState(() => hourOfDay());
 
-  const list = useMemo(() => arcs(blocks, dayStart), [blocks, dayStart]);
+  // Absolute hours, taken from the plan's own anchor. The ring is a clock
+  // face, so midnight is at the top whatever time the day begins — and every
+  // hour below is read straight off it with no day-start offset to apply. An
+  // offset applied in some places and not others is how the "now" bead used to
+  // land an hour out the moment a day did not start at midnight.
+  const list = useMemo(() => arcs(blocks), [blocks]);
 
   // The clock hand, once a minute. Any faster is a redraw nobody can see.
   useEffect(() => {
@@ -169,7 +173,7 @@ export function DayRing({
     // time, so every later pointer event is retargeted to the svg and a handler
     // on the arc would simply never run.
     if (d.moved < TAP_SLOP_DEG && d.radius <= (R_OUTER + 8) / (SIZE / 2)) {
-      const hour = (((d.at - rotation) / DEG_PER_HOUR) % 24 + 24 + dayStart) % 24;
+      const hour = (((d.at - rotation) / DEG_PER_HOUR) % 24 + 24) % 24;
       const hit = blockAtHour(list, hour);
       if (hit) onSelect?.(hit.block);
       return;
@@ -208,8 +212,8 @@ export function DayRing({
   // ------------------------------------------------------------ readout --
   // What sits under the focus mark. This is what the rotation is FOR.
   const focusHour = useMemo(
-    () => (((-rotation / DEG_PER_HOUR) % 24) + 24 + dayStart) % 24,
-    [rotation, dayStart],
+    () => (((-rotation / DEG_PER_HOUR) % 24) + 24) % 24,
+    [rotation],
   );
   const focused = useMemo(() => blockAtHour(list, focusHour), [list, focusHour]);
 
@@ -278,7 +282,7 @@ export function DayRing({
           {/* Where the clock actually is: a bead across the band, not a needle
               sticking out of it. Drawn inside the rotating group so it stays
               pinned to its hour as the day turns under the mark. */}
-          <g transform={`rotate(${(now - dayStart) * DEG_PER_HOUR} ${CX} ${CY})`}>
+          <g transform={`rotate(${now * DEG_PER_HOUR} ${CX} ${CY})`}>
             <line
               x1={CX} y1={CY - R_INNER - 5} x2={CX} y2={CY - R_OUTER + 5}
               stroke="var(--color-accent)"

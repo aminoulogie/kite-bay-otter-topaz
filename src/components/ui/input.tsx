@@ -40,7 +40,17 @@ export const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"in
                 // types is left alone so a half-finished entry is not fought
                 // with mid-keystroke.
                 const fixed = raw.replace(/,/g, ".");
-                if (fixed !== raw) e.target.value = fixed;
+                if (fixed !== raw) {
+                  // Writing to `value` moves the caret to the end of the
+                  // field. Typing a comma at the end never shows it, because
+                  // the end is where the caret already was — but editing into
+                  // the middle of an existing number threw the caret to the
+                  // far end on that one keystroke. Same length in, same
+                  // length out, so the old offset is still the right one.
+                  const at = e.target.selectionStart;
+                  e.target.value = fixed;
+                  if (at !== null) e.target.setSelectionRange(at, at);
+                }
                 onChange(e);
               }
             : onChange

@@ -1025,21 +1025,20 @@ function SetNumberField({
   onCommit: (value: number | "") => void;
   label: string;
 }) {
-  const [raw, setRaw] = useState<string | null>(null);
-
+  // Holding the raw text used to be this component's job. DecimalInput does it
+  // for every field in the app now, so keeping a second copy here would only
+  // give the same string two owners that can disagree.
   return (
     <DecimalInput
       aria-label={label}
       className="h-9 px-1 text-center"
-      value={raw ?? String(value ?? "")}
+      value={String(value ?? "")}
       onValueChange={(parsed, text) => {
-        setRaw(text);
         // An empty field is an empty value; a half-typed one ("12,") parses to
         // null and is left alone until it becomes a number.
         if (text.trim() === "") onCommit("");
         else if (parsed != null) onCommit(parsed);
       }}
-      onBlur={() => setRaw(null)}
     />
   );
 }

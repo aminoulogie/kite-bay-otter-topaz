@@ -9,9 +9,9 @@ import { ScreenTimeCard } from "@/components/ScreenTimeCard";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import {
-  DAY_HOURS, MIN_BLOCK_HOURS, PALETTE, STEP_HOURS, addBlock, arcs, clockAt, defaultPlan,
-  formatHours, normalise, patchBlock, removeBlock, setHours, splitBlock, totalHours,
-  type TimeBlock,
+  DAY_HOURS, MIN_BLOCK_HOURS, PALETTE, STEP_HOURS, addBlock, arcs, clockAt, dayStartFrom,
+  defaultPlan, formatHours, normalise, parseClock, patchBlock, removeBlock, setHours,
+  setStart, splitBlock, startOf, totalHours, type TimeBlock,
 } from "@/lib/day-plan";
 import { getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { WidgetGrid } from "@/components/WidgetGrid";
@@ -46,6 +46,7 @@ export function TimeView() {
 
   const plan = useMemo(() => normalise(blocks), [blocks]);
   const list = useMemo(() => arcs(plan.blocks), [plan.blocks]);
+  const dayStart = dayStartFrom(plan.blocks);
   const flex = plan.blocks.filter((b) => !b.fixed);
   const freeLeft = totalHours(flex);
 
@@ -71,6 +72,7 @@ export function TimeView() {
             </h1>
             <p className="mt-1 text-xs text-muted">
               {day.toLocaleDateString(undefined, { day: "numeric", month: "long" })}
+              <span className="text-faint"> · from {clockAt(dayStart)}</span>
             </p>
           </div>
           <div className="shrink-0 text-right">
@@ -100,7 +102,8 @@ export function TimeView() {
       />
 
       <p className="px-1 text-center text-[0.68rem] leading-snug text-faint">
-        Drag the ring to bring any hour to the marker. Tap a segment to edit it.
+        Drag the ring to bring any hour to the marker. Tap a segment to edit it,
+        or to say what time it starts.
       </p>
 
       {/* The phone belongs on the tab that asks where the day went, and it is
@@ -205,6 +208,11 @@ export function TimeView() {
               ? DAY_HOURS - totalHours(plan.blocks.filter((b) => b.fixed && b.id !== editing.id))
               : freeLeft
           }
+          startHour={startOf(plan.blocks, editing.id)}
+          anchored={
+            (plan.blocks.find((b) => b.id === editing.id)?.start ?? undefined) !== undefined
+          }
+          onStart={(hour) => write(setStart(plan.blocks, editing.id, hour))}
           onClose={() => setEditing(null)}
           onChange={(patch) => write(patchBlock(plan.blocks, editing.id, patch))}
           onHours={(h) => write(setHours(plan.blocks, editing.id, h))}
@@ -267,10 +275,15 @@ function Sheet({
 }
 
 function BlockSheet({
-  block, maxHours, onClose, onChange, onHours, onSplit, onDelete,
+  block, maxHours, startHour, anchored, onStart, onClose, onChange, onHours, onSplit, onDelete,
 }: {
   block: TimeBlock;
   maxHours: number;
+  /** The clock time this block currently begins at. */
+  startHour: number;
+  /** True when this block is the one holding the plan's anchor. */
+  anchored: boolean;
+  onStart: (hour: number | null) => void;
   onClose: () => void;
   onChange: (patch: Partial<Omit<TimeBlock, "id">>) => void;
   onHours: (hours: number) => void;
@@ -292,6 +305,45 @@ function BlockSheet({
           onChange={(e) => onChange({ label: e.target.value })}
           className="h-11"
         />
+      </label>
+
+      {/* The day used to begin at 00:00 and nothing could move it, so every
+          clock time under every row was wrong for anyone who does not fall
+          asleep on the stroke of midnight. Setting a start here moves the
+          whole sequence: the durations already say how long each block is, so
+          one real time is all the ring needs to place the other twenty-three
+          hours. A native time control rather than a text field — it is a wheel
+          on a phone, which means no keyboard and nothing to type. */}
+      <label className="mb-3 block">
+        <span className="mb-1 block text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+          Starts at
+        </span>
+        <div className="flex items-center gap-2">
+          <Input
+            type="time"
+            step={900}
+            value={clockAt(startHour)}
+            onChange={(e) => {
+              const h = parseClock(e.target.value);
+              if (h !== null) onStart(h);
+            }}
+            aria-label={`Time ${block.label} starts`}
+            className="h-11 flex-1 tabular"
+          />
+          {anchored && (
+            <button
+              type="button"
+              onClick={() => onStart(null)}
+              className="h-11 shrink-0 rounded-xl border border-border bg-surface-2 px-3 text-[0.7rem] font-bold text-muted"
+            >
+              Unpin
+            </button>
+          )}
+        </div>
+        <p className="mt-1 text-[0.65rem] leading-snug text-faint">
+          Ends {clockAt(startHour + block.hours)}. Everything after it shifts along —
+          the day is a ring, so one real time places all twenty-four hours.
+        </p>
       </label>
 
       <div className="mb-1 flex items-baseline justify-between">

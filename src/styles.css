@@ -434,3 +434,83 @@ summary {
     max-width: 76rem;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The keyboard.
+
+   iOS keeps the layout viewport at its full height when the keyboard opens and
+   simply draws the keys over the bottom of it. So a sheet pinned with
+   `position: fixed; inset: 0` is still, as far as the browser is concerned,
+   the full height of the screen — and its contents sit happily behind several
+   hundred pixels of keys. The field you just tapped is the one thing you
+   cannot see.
+
+   `--kb` is published by useKeyboardInset and is the measured height of the
+   keyboard, or 0. Ending the overlay `--kb` from the bottom makes the bottom
+   of a sheet the top of the keyboard, which is exactly where a text box being
+   typed into belongs.
+
+   Matched on the overlay's own shape — fixed, and pinned to all four edges —
+   rather than on a class each sheet has to remember to carry, because there
+   are twenty-seven of them in five different shapes and the twenty-eighth is
+   the one that would be forgotten. `[class~="fixed"]` matches the whole class
+   token, not a substring, so it cannot be tripped by something like
+   `fixed-header`. Declared outside `@layer` so it beats Tailwind's own
+   `inset-0`, which is layered.
+
+   Deliberately NOT `:has(> .soma-expand)`: four places in the app use that
+   class on an inline expanding panel that is not an overlay at all, and this
+   would have given a table row inside a card the geometry of a modal.
+--------------------------------------------------------------------------- */
+:root {
+  --kb: 0px;
+}
+
+[class~="fixed"][class~="inset-0"] {
+  bottom: var(--kb, 0px);
+  /* Matches the keyboard's own rise closely enough that the sheet reads as
+     riding on top of it rather than being teleported by a resize event. */
+  transition: bottom 160ms var(--ease-out);
+}
+
+/* A sheet may never be taller than the space left above the keys, or its own
+   top runs off the screen and the close button goes with it. */
+[class~="fixed"][class~="inset-0"] > .soma-expand {
+  max-height: min(85dvh, calc(100dvh - var(--kb, 0px) - 12px));
+}
+
+/* The home-indicator inset is under the keyboard when the keyboard is up, so
+   padding for it there is a strip of dead space between the field and the
+   keys. */
+.soma-kb [class~="fixed"][class~="inset-0"] > .soma-expand {
+  padding-bottom: 12px;
+}
+
+/* The dock is behind the keyboard and cannot be tapped; leaving it there only
+   adds a fixed element for the browser to fight with while it scrolls. */
+.soma-kb .soma-dock {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/*
+ * Room for the browser's own scroll-into-view.
+ *
+ * useKeyboardInset handles the cases it can see, but Safari also reveals
+ * fields on its own — when moving between them with the keyboard's next/prev
+ * arrows, for instance, which fires no event this app can hook. A scroll
+ * margin means that when the browser does it, it lands the field clear of the
+ * header rather than jammed against the top edge.
+ */
+input,
+textarea,
+select,
+[contenteditable="true"] {
+  scroll-margin-block: 96px 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class~="fixed"][class~="inset-0"] {
+    transition: none;
+  }
+}
