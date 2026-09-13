@@ -20,6 +20,7 @@ import {
 } from "@/lib/supplements";
 import { useDayDraft } from "@/lib/use-day-draft";
 import { useSideStoreRevision } from "@/lib/use-side-stores";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -46,8 +47,8 @@ export function BodyView() {
     { id: "supplements", label: "Supps", icon: Pill },
   ];
   return (
-    <div className="space-y-3 pb-4">
-      <div className="flex gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1">
+    <WidgetGrid tab="body">
+      <div key="tabs" className="flex gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1">
         {tabs.map((t) => {
           const Icon = t.icon;
           const on = tab === t.id;
@@ -67,11 +68,13 @@ export function BodyView() {
           );
         })}
       </div>
-      {tab === "weight" && <WeightPanel />}
-      {tab === "sleep" && <SleepPanel />}
-      {tab === "measure" && <MeasurePanel />}
-      {tab === "supplements" && <SupplementsPanel />}
-    </div>
+      <div key="panel" className="space-y-3">
+        {tab === "weight" && <WeightPanel />}
+        {tab === "sleep" && <SleepPanel />}
+        {tab === "measure" && <MeasurePanel />}
+        {tab === "supplements" && <SupplementsPanel />}
+      </div>
+    </WidgetGrid>
   );
 }
 

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { playChime, burstConfetti } from "@/lib/audio";
 import { computeBiologicalReadiness } from "@/lib/recovery";
 import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
@@ -344,8 +345,15 @@ export function WorkoutView() {
   const answered = day.readiness?.soreness !== undefined;
 
   return (
-    <div ref={rootRef} className="relative space-y-3 pb-4">
-      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_18%,transparent),transparent_55%),var(--color-surface)]">
+    // The confetti burst needs a box to fire inside, and the grid is now that
+    // box — so the ref moves onto the wrapper rather than being dropped.
+    //
+    // Only the furniture above the session is arrangeable. The readiness gate,
+    // the exercise list and the set rows keep no key and stay in the order
+    // they are in: a live session is a sequence of steps, and shuffling the
+    // steps of a workout is not a feature anyone wants at rep eight.
+    <WidgetGrid tab="workout" innerRef={rootRef}>
+      <Card key="header" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_18%,transparent),transparent_55%),var(--color-surface)]">
         <div className="flex items-start justify-between gap-3">
           {/* min-w-0 lets a long split name wrap instead of forcing the row
               wider than the card and squeezing the badge beside it. */}
@@ -387,7 +395,7 @@ export function WorkoutView() {
         </div>
       </Card>
 
-      <div className="flex items-center justify-between">
+      <div key="date" className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <Button size="icon" variant="ghost" onClick={undo} aria-label="Undo">
             <Undo2 />
@@ -401,7 +409,7 @@ export function WorkoutView() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div key="quick" className="grid grid-cols-2 gap-2">
         <Stat label="Est. burn" value={`${cals} kcal`} />
         <Stat label={`Volume (${settings.unit})`} value={totalVol.toLocaleString()} />
         <Stat label="Sets done" value={String(totalSets)} />
@@ -420,7 +428,7 @@ export function WorkoutView() {
         />
       </div>
 
-      <Card className="flex items-center justify-between gap-3">
+      <Card key="session" className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="relative size-14">
             <svg viewBox="0 0 54 54" className="size-14 -rotate-90">
@@ -459,7 +467,7 @@ export function WorkoutView() {
         </div>
       </Card>
 
-      <div className="flex flex-wrap gap-2">
+      <div key="chips" className="flex flex-wrap gap-2">
         <Button className="flex-1" onClick={() => setShowSplits((v) => !v)}>
           Load split
         </Button>
@@ -989,7 +997,7 @@ export function WorkoutView() {
           );
         })()}
 
-    </div>
+    </WidgetGrid>
   );
 }
 

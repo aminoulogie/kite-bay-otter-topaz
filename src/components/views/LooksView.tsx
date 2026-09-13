@@ -1,5 +1,6 @@
 import { Suspense, lazy, useMemo, useState } from "react";
 import { ArrowLeftRight, Camera, ChevronRight, ScanFace } from "lucide-react";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -85,8 +86,8 @@ export function LooksView() {
   };
 
   return (
-    <div className="space-y-3 pb-4">
-      <Card>
+    <WidgetGrid tab="looks">
+      <Card key="latest">
         <CardTitle>Latest front</CardTitle>
         {front?.face ? (
           <>
@@ -125,11 +126,11 @@ export function LooksView() {
         </p>
       </Card>
 
-      <Button variant="primary" className="w-full" onClick={() => setScanning(true)}>
+      <Button key="scan" variant="primary" className="w-full" onClick={() => setScanning(true)}>
         <Camera className="size-4" /> Scan · front, 45°, profile
       </Button>
 
-      {latest.size > 0 && (
+      <div key="gallery">{latest.size > 0 && (
         <div className="grid grid-cols-3 gap-2">
           {["face_front_true", "face_oblique", "face_side"].map((k) => {
             const sc = latest.get(k);
@@ -154,9 +155,9 @@ export function LooksView() {
             );
           })}
         </div>
-      )}
+      )}</div>
 
-      <Card>
+      <Card key="guide">
         <div className="mb-2 flex items-center justify-between gap-2">
           <CardTitle className="mb-0">
             {rows.length ? `${rows.length} captures` : "Nothing captured"}
@@ -214,7 +215,7 @@ export function LooksView() {
         )}
       </Card>
 
-      <p className="px-1 text-center text-[0.7rem] leading-relaxed text-faint">
+      <p key="note" className="px-1 text-center text-[0.7rem] leading-relaxed text-faint">
         The mesh is MediaPipe&apos;s monocular depth, not Face ID or TrueDepth. Ratios are 2D
         heuristics on the pose you took, not skeletal cephalometrics.
       </p>
@@ -239,7 +240,7 @@ export function LooksView() {
           <CompareSheet scans={rows} onClose={() => setComparing(false)} />
         </Suspense>
       )}
-    </div>
+    </WidgetGrid>
   );
 }
 

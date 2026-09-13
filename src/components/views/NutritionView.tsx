@@ -17,6 +17,7 @@ import { Progress } from "@/components/ui/progress";
 import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
 import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { useLongPressMove } from "@/lib/use-long-press-move";
 import { SwipeRow } from "@/components/SwipeRow";
@@ -251,8 +252,8 @@ export function NutritionView() {
   const waterPct = Math.min(100, Math.round((water / (goals.water || 3500)) * 100));
 
   return (
-    <div className="space-y-3 pb-4">
-      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
+    <WidgetGrid tab="nutrition">
+      <Card key="target" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <div className="flex items-start justify-between">
           <div>
             <Badge tone="accent">Diary · {activeDate}</Badge>
@@ -354,9 +355,9 @@ export function NutritionView() {
         )}
       </Card>
 
-      <SuggestFromPantry meal={meal} target={planTarget} />
+      <SuggestFromPantry key="suggest" meal={meal} target={planTarget} />
 
-      <PlanCard
+      <PlanCard key="plan" 
         planned={planned}
         totals={totals}
         goals={goals}
@@ -367,13 +368,13 @@ export function NutritionView() {
         }}
       />
 
-      <div className="grid grid-cols-3 gap-2">
+      <div key="actions" className="grid grid-cols-3 gap-2">
         <Macro label="Protein" used={totals.p} goal={goals.protein} unit="g" />
         <Macro label="Carbs" used={totals.c} goal={goals.carbs} unit="g" />
         <Macro label="Fat" used={totals.f} goal={goals.fat} unit="g" />
       </div>
 
-      <Card>
+      <Card key="macros">
         <CardTitle>
           <span>Water</span>
           <span className="tabular text-sm font-bold text-accent-text">
@@ -416,9 +417,9 @@ export function NutritionView() {
         </div>
       </Card>
 
-      <PlatePhoto date={activeDate} />
+      <PlatePhoto key="plate" date={activeDate} />
 
-      <HungerCard
+      <HungerCard key="hunger" 
         entries={hungerOn(hunger, activeDate)}
         phase={settings.phase ?? "maintain"}
         onLog={(level) => {
@@ -436,7 +437,7 @@ export function NutritionView() {
         }}
       />
 
-      <Card>
+      <Card key="add">
         <CardTitle>Add food</CardTitle>
         <div className="mb-2 flex gap-1 overflow-x-auto">
           {MEALS.map((m) => (
@@ -657,10 +658,13 @@ export function NutritionView() {
         </details>
       </Card>
 
-      <MealBuilder meal={meal} />
+      <MealBuilder key="meal" meal={meal} />
 
-      <PreWorkoutCard />
+      <PreWorkoutCard key="preworkout" />
 
+      {/* The diary and its hint move as one: a "swipe left to delete" note
+          parked three cards above the rows it describes explains nothing. */}
+      <div key="diary" className="space-y-3">
       {/* The gesture is invisible without this. */}
       {items.length > 0 && (
         <p className="-mb-1 px-1 text-[0.62rem] text-faint">
@@ -780,6 +784,7 @@ export function NutritionView() {
       <p className="px-1 text-[0.7rem] text-faint">
         Goals: {goals.cals} kcal · P {goals.protein} · C {goals.carbs} · F {goals.fat}. Units {settings.unit}.
       </p>
+      </div>
 
       {quickAdd && (
         <QuickAddSheet
@@ -878,16 +883,14 @@ export function NutritionView() {
 
       {/* Last on the page: it is a review of the week, not part of logging
           today, and it was pushing the meal sections below the fold. */}
-      <NutritionGraphs />
+      <NutritionGraphs key="graphs" />
 
-      <MineralsCard />
+      <MineralsCard key="minerals" />
 
       {editingFood && (
         <FoodEditorSheet food={editingFood} onClose={() => setEditingFood(null)} />
       )}
-
-
-    </div>
+    </WidgetGrid>
   );
 }
 

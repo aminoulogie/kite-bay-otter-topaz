@@ -21,6 +21,7 @@ import {
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import { useBackupDownload } from "@/lib/use-backup";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
@@ -132,8 +133,12 @@ export function SettingsView() {
   };
 
   return (
-    <div className="space-y-3 pb-4">
-      <Card>
+    // Setup is fourteen unrelated panels sharing a screen, not one form. Which
+    // of them you open weekly against never is personal, so they arrange like
+    // any other page. The sheets and the version footer carry no key and stay
+    // put — they are not cards.
+    <WidgetGrid tab="settings">
+      <Card key="phase">
         <CardTitle>Phase</CardTitle>
         <p className="mb-2 text-[0.7rem] leading-snug text-faint">
           Which way you are eating. It decides one thing: whether logging hunger costs you
@@ -163,7 +168,7 @@ export function SettingsView() {
         </div>
       </Card>
 
-      <Card>
+      <Card key="goal">
         <CardTitle>Training goal</CardTitle>
         <p className="mb-2 text-[0.7rem] leading-snug text-faint">
           What the weekly volume landmarks are judged against. It does not move the
@@ -192,7 +197,7 @@ export function SettingsView() {
         </p>
       </Card>
 
-      <Card>
+      <Card key="appearance">
         <CardTitle>Appearance</CardTitle>
         <div className="mb-2 text-xs font-bold text-muted">Theme</div>
         <div className="mb-4 grid grid-cols-3 gap-2">
@@ -239,7 +244,7 @@ export function SettingsView() {
         </div>
       </Card>
 
-      <Card>
+      <Card key="training">
         <CardTitle>Training</CardTitle>
         <Field label="Unit">
           <select
@@ -286,7 +291,7 @@ export function SettingsView() {
         </div>
       </Card>
 
-      <Card>
+      <Card key="nutrition">
         <CardTitle>Nutrition</CardTitle>
         <div className="flex items-center justify-between gap-3">
           <span className="min-w-0 text-sm font-semibold">Auto protein from bodyweight</span>
@@ -309,7 +314,7 @@ export function SettingsView() {
         </Field>
       </Card>
 
-      <Card>
+      <Card key="routines">
         <CardTitle>
           <span>Routines</span>
           <Button
@@ -462,7 +467,7 @@ export function SettingsView() {
         )}
       </Card>
 
-      <Card>
+      <Card key="report">
         <div className="mb-2 flex items-center justify-between gap-2">
           <CardTitle className="mb-0">Report</CardTitle>
           <button
@@ -480,7 +485,7 @@ export function SettingsView() {
         </p>
       </Card>
 
-      <Card>
+      <Card key="data">
         <CardTitle>Data</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Everything lives on this device only, so a backup is the only copy if this phone
@@ -585,9 +590,9 @@ export function SettingsView() {
         </div>
       </Card>
 
-      <FoodImportCard />
+      <FoodImportCard key="foods" />
 
-      <Card>
+      <Card key="csv">
         <CardTitle>Export as CSV</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Three plain spreadsheets — every set, every food, and a day-by-day summary.
@@ -621,7 +626,7 @@ export function SettingsView() {
         </Button>
       </Card>
 
-      <Card>
+      <Card key="programme">
         <CardTitle>Training programme</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Currently on <b className="text-fg">{activeProgram.name}</b> —{" "}
@@ -671,7 +676,7 @@ export function SettingsView() {
         </Button>
       </Card>
 
-      <Card>
+      <Card key="targets">
         <CardTitle>Daily nutrition targets</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Leave a field blank to keep following the default — protein blank also keeps
@@ -714,7 +719,7 @@ export function SettingsView() {
         </Button>
       </Card>
 
-      <Card>
+      <Card key="habit-history">
         <CardTitle>Habit history</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Early builds seeded 48 days of invented habit history. Now that the grid lights
@@ -736,7 +741,7 @@ export function SettingsView() {
         </Button>
       </Card>
 
-      <Card>
+      <Card key="about">
         <CardTitle>About</CardTitle>
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted">Version</span>
@@ -857,7 +862,7 @@ export function SettingsView() {
         SOMA Smart Coach · converted from the Obsidian suite · data never leaves this device
       </p>
       <Badge className="mx-auto flex w-fit">v5.1</Badge>
-    </div>
+    </WidgetGrid>
   );
 }
 

@@ -63,11 +63,17 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
 /**
  * Every arrangeable page, and what is on it.
  *
- * A tab absent from here is a tab with no edit mode, and that is a judgement
- * rather than an oversight: a live training session, the food diary's search
- * flow and the settings form are sequences of steps, not collections of cards.
- * Reordering the steps of a form is not a feature, and a half-working edit
- * button on those tabs would be worse than none.
+ * Every tab is here now, Setup included. The earlier judgement — that a form
+ * is a sequence of steps rather than a collection of cards, so reordering it
+ * is not a feature — was wrong about this app. Setup is not one form; it is
+ * fourteen unrelated panels that happen to share a screen, and which of them
+ * you touch weekly against never is personal. The same goes for Fuel and
+ * Train: the diary and the session are ordered, but the cards AROUND them are
+ * not, and "the one card I check every day is the one I scroll past four
+ * others to reach" is the entire reason this mode exists.
+ *
+ * What stays out is anything inside a step: the set rows of a live session,
+ * the fields of one card. Those have an order that means something.
  */
 export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   dashboard: DASHBOARD_WIDGETS,
@@ -117,6 +123,82 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "tabs", label: "Today / Matrix / Year", span: 2, resizable: false },
     { id: "list", label: "The habits", span: 2, resizable: false },
     { id: "new", label: "New habit", span: 2, resizable: false },
+  ],
+  nutrition: [
+    { id: "target", label: "Today's totals", span: 2, resizable: true },
+    { id: "suggest", label: "Suggest from pantry", span: 2, resizable: false },
+    { id: "plan", label: "Plan ahead", span: 2, resizable: false },
+    { id: "actions", label: "Scan / Search / Burn", span: 2, resizable: false },
+    { id: "macros", label: "Macro split", span: 2, resizable: true },
+    { id: "plate", label: "Plate photo", span: 2, resizable: false },
+    { id: "hunger", label: "Hunger", span: 2, resizable: false },
+    { id: "add", label: "Add food", span: 2, resizable: false },
+    { id: "meal", label: "Meal builder", span: 2, resizable: false },
+    { id: "preworkout", label: "Pre-workout", span: 2, resizable: false },
+    { id: "diary", label: "The diary", span: 2, resizable: false },
+    { id: "graphs", label: "The week", span: 2, resizable: false },
+    { id: "minerals", label: "Minerals", span: 2, resizable: false },
+  ],
+  workout: [
+    { id: "header", label: "Session header", span: 2, resizable: true },
+    { id: "date", label: "The date", span: 2, resizable: false },
+    { id: "quick", label: "Undo / Save", span: 2, resizable: false },
+    { id: "session", label: "Rest timer", span: 2, resizable: false },
+    { id: "chips", label: "Add exercise", span: 2, resizable: false },
+  ],
+  looks: [
+    { id: "latest", label: "Latest front", span: 2, resizable: true },
+    { id: "scan", label: "Scan button", span: 2, resizable: false },
+    { id: "gallery", label: "Captures", span: 2, resizable: false },
+    { id: "guide", label: "What it measures", span: 2, resizable: false },
+    { id: "note", label: "What the mesh is", span: 2, resizable: false },
+  ],
+  // Stats is eight pages behind one tab, like Mind. Only the two that are
+  // genuinely card stacks get a layout; the rest delegate to whole other
+  // views, which bring their own.
+  "insights-overview": [
+    { id: "brief", label: "Coach brief", span: 2, resizable: false },
+    { id: "meso", label: "Block review", span: 2, resizable: false },
+    { id: "consistency", label: "Training consistency", span: 2, resizable: true },
+    { id: "volume", label: "Weekly volume", span: 2, resizable: false },
+    { id: "axial", label: "Axial load", span: 2, resizable: true },
+    { id: "ratings", label: "Exercise ratings", span: 2, resizable: false },
+  ],
+  "insights-strength": [
+    { id: "estimates", label: "Strength estimates", span: 2, resizable: false },
+    { id: "prs", label: "Recent PRs", span: 2, resizable: true },
+  ],
+  "insights-heatmap": [
+    { id: "intro", label: "What the map shows", span: 2, resizable: true },
+    { id: "range", label: "Front / back", span: 2, resizable: false },
+    { id: "grid", label: "The map", span: 2, resizable: false },
+  ],
+  body: [
+    { id: "tabs", label: "Weight / Sleep / Measure / Supplements", span: 2, resizable: false },
+    { id: "panel", label: "The panel", span: 2, resizable: false },
+  ],
+  estimates: [
+    { id: "weight", label: "Bodyweight", span: 2, resizable: false },
+    { id: "composition", label: "Muscle vs fat", span: 2, resizable: true },
+    { id: "measures", label: "Measurements", span: 2, resizable: false },
+    { id: "strength", label: "Strength", span: 2, resizable: false },
+    { id: "note", label: "How these are made", span: 2, resizable: true },
+  ],
+  settings: [
+    { id: "phase", label: "Phase", span: 2, resizable: true },
+    { id: "goal", label: "Training goal", span: 2, resizable: true },
+    { id: "appearance", label: "Appearance", span: 2, resizable: false },
+    { id: "training", label: "Training", span: 2, resizable: false },
+    { id: "nutrition", label: "Nutrition", span: 2, resizable: false },
+    { id: "routines", label: "Routines", span: 2, resizable: false },
+    { id: "report", label: "Report", span: 2, resizable: true },
+    { id: "data", label: "Backup and restore", span: 2, resizable: false },
+    { id: "csv", label: "Export as CSV", span: 2, resizable: true },
+    { id: "foods", label: "Import foods", span: 2, resizable: false },
+    { id: "programme", label: "Training programme", span: 2, resizable: false },
+    { id: "targets", label: "Daily nutrition targets", span: 2, resizable: false },
+    { id: "habit-history", label: "Habit history", span: 2, resizable: true },
+    { id: "about", label: "About", span: 2, resizable: true },
   ],
 };
 

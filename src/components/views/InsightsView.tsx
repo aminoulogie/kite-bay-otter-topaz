@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BodyHeatmap } from "@/components/BodyHeatmap";
 import { BodyView } from "@/components/views/BodyView";
 import { EstimatesView } from "@/components/views/EstimatesView";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { DatabaseView } from "@/components/views/DatabaseView";
 import { ExerciseRatings } from "@/components/ExerciseRatings";
@@ -98,12 +99,12 @@ function OverviewPanel() {
   const axialRatio = Math.round((axial / (total || 1)) * 100);
 
   return (
-    <>
-      <CoachBrief horizon="week" />
+    <WidgetGrid tab="insights-overview">
+      <CoachBrief key="brief" horizon="week" />
 
-      <MesoReviewCard />
+      <MesoReviewCard key="meso" />
 
-      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
+      <Card key="consistency" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <Badge tone="accent">Training consistency</Badge>
         <div className="mt-2 grid grid-cols-3 gap-2">
           <Big n={`${c.currentStreak}`} l="Week streak" />
@@ -130,7 +131,7 @@ function OverviewPanel() {
         </p>
       </Card>
 
-      <Card>
+      <Card key="volume">
         <CardTitle>Weekly volume vs landmarks</CardTitle>
         <p className="-mt-1 mb-3 text-[0.68rem] leading-snug text-faint">
           {goalMode(settings.trainingGoal).label} · {goalMode(settings.trainingGoal).blurb}
@@ -161,7 +162,7 @@ function OverviewPanel() {
         </div>
       </Card>
 
-      <Card>
+      <Card key="axial">
         <CardTitle>CNS / axial load · 14d</CardTitle>
         <div className="mb-2 flex justify-between text-sm font-bold">
           <span>Spinal stress ratio</span>
@@ -181,8 +182,8 @@ function OverviewPanel() {
       </Card>
 
       {/* Last on the overview: it is a place to go looking, not a headline. */}
-      <ExerciseRatings />
-    </>
+      <ExerciseRatings key="ratings" />
+    </WidgetGrid>
   );
 }
 
@@ -194,8 +195,8 @@ function StrengthPanel() {
   const prs = series.filter((p: { isPR: boolean }) => p.isPR).slice(-6).reverse();
 
   return (
-    <>
-      <Card>
+    <WidgetGrid tab="insights-strength">
+      <Card key="estimates">
         <CardTitle>Estimated 1RM</CardTitle>
         {names.length === 0 ? (
           <p className="text-sm text-muted">Log working sets to chart a lift.</p>
@@ -232,7 +233,7 @@ function StrengthPanel() {
           </>
         )}
       </Card>
-      <Card>
+      <Card key="prs">
         <CardTitle>Recent PRs</CardTitle>
         {prs.length === 0 && <p className="text-sm text-muted">No PRs on this lift yet.</p>}
         {prs.map((p: { date: string; est1RM: number; weight: number; reps: number }) => (
@@ -244,7 +245,7 @@ function StrengthPanel() {
           </div>
         ))}
       </Card>
-    </>
+    </WidgetGrid>
   );
 }
 
@@ -265,13 +266,13 @@ function HeatmapPanel() {
   }, [map]);
 
   return (
-    <>
-      <Card>
+    <WidgetGrid tab="insights-heatmap">
+      <Card key="intro">
         <CardTitle>Muscle recovery</CardTitle>
         <BodyHeatmap readiness={recoveryByKey} />
       </Card>
 
-      <div className="flex gap-1 rounded-full border border-border bg-surface p-1">
+      <div key="range" className="flex gap-1 rounded-full border border-border bg-surface p-1">
         {(["front", "back"] as const).map((v) => (
           <button
             key={v}
@@ -286,7 +287,7 @@ function HeatmapPanel() {
           </button>
         ))}
       </div>
-      <Card>
+      <Card key="grid">
         <CardTitle>Readiness</CardTitle>
         <div className="grid grid-cols-2 gap-2">
           {list.map((m) => {
@@ -336,7 +337,7 @@ function HeatmapPanel() {
           </div>
         </Card>
       )}
-    </>
+    </WidgetGrid>
   );
 }
 

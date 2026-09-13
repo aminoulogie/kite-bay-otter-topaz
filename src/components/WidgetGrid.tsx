@@ -26,7 +26,21 @@ import { cn } from "@/lib/utils";
  * that iOS fires no drag events for touch and starts scrolling out from under
  * a held card unless a non-passive touchmove listener stops it.
  */
-export function WidgetGrid({ tab, children }: { tab: string; children: React.ReactNode }) {
+export function WidgetGrid({
+  tab, children, innerRef,
+}: {
+  tab: string;
+  children: React.ReactNode;
+  /**
+   * A handle on the outer box, for a caller that needs one.
+   *
+   * Train fires its confetti INSIDE the page's own element, so converting that
+   * page to a grid would otherwise have dropped the ref — and the celebration
+   * on saving a session would have silently stopped happening, with nothing
+   * failing to say so.
+   */
+  innerRef?: React.Ref<HTMLDivElement>;
+}) {
   const layouts = useSoma((s) => s.layouts);
   const setLayout = useSoma((s) => s.setLayout);
   const resetLayout = useSoma((s) => s.resetLayout);
@@ -75,7 +89,7 @@ export function WidgetGrid({ tab, children }: { tab: string; children: React.Rea
   });
 
   return (
-    <div className="pb-4">
+    <div ref={innerRef} className="pb-4">
       {editing && (
         <div className="mb-3 rounded-2xl border border-accent-line bg-accent-soft px-3 py-2.5">
           <p className="text-xs font-bold leading-snug">

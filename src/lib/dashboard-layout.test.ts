@@ -4,6 +4,7 @@ import {
   DASHBOARD_WIDGETS as WIDGETS, WIDGETS_BY_TAB, defaultLayout, isArrangeable, widgetsFor, hidden, isDefault, move, reconcile, resize, setHidden, toggleHidden,
   toggleSpan, visible, widgetDef, type WidgetPlacement,
 } from "./dashboard-layout.ts";
+import { TAB_ORDER } from "./tab-order.ts";
 
 const ids = (l: WidgetPlacement[]) => l.map((p) => p.id);
 
@@ -156,8 +157,18 @@ test("every arrangeable tab has widgets, and ids are unique within it", () => {
   }
 });
 
-test("a tab with no registry is not arrangeable, and asks for nothing", () => {
-  for (const tab of ["workout", "nutrition", "settings", "estimates", "nope"]) {
+test("every tab in the dock can be rearranged", () => {
+  // The point of the edit button is that it is on every page. A tab added to
+  // the dock without a layout registered gets a button that does nothing when
+  // pressed, which is worse than no button — so this fails at the moment the
+  // dock and the registry disagree, rather than on someone's phone.
+  for (const tab of TAB_ORDER) {
+    assert.equal(isArrangeable(tab), true, `${tab} has no layout registered`);
+  }
+});
+
+test("a tab nobody registered is inert, not half-working", () => {
+  for (const tab of ["nope", "mind-films", ""]) {
     assert.equal(isArrangeable(tab), false, tab);
     assert.deepEqual(widgetsFor(tab), []);
     assert.deepEqual(defaultLayout(tab), []);

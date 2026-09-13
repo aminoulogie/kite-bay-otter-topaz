@@ -5,6 +5,7 @@ import {
   strengthEstimates, type TrendEstimate,
 } from "@/lib/estimates";
 import { useTrainingLog } from "@/lib/use-training-log";
+import { WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -54,8 +55,8 @@ export function EstimatesView() {
   }, [nutrition, customGoals]);
 
   return (
-    <div className="space-y-3">
-      <Card>
+    <WidgetGrid tab="estimates">
+      <Card key="weight">
         <CardTitle>Bodyweight</CardTitle>
         <EstimateBlock est={weight} />
         {intake && (
@@ -100,7 +101,7 @@ export function EstimatesView() {
         )}
       </Card>
 
-      <Card>
+      <Card key="composition">
         <CardTitle>Muscle vs fat</CardTitle>
         {/* Stated rather than estimated. Splitting a weight change needs body
             composition, which nothing here measures — a number would be a guess
@@ -108,7 +109,7 @@ export function EstimatesView() {
         <p className="text-xs leading-snug text-muted">{leanMassNote()}</p>
       </Card>
 
-      {measures.length > 0 && (
+      <div key="measures">{measures.length > 0 && (
         <Card>
           <CardTitle>Measurements</CardTitle>
           <div className="space-y-3">
@@ -117,9 +118,9 @@ export function EstimatesView() {
             ))}
           </div>
         </Card>
-      )}
+      )}</div>
 
-      <Card>
+      <Card key="strength">
         <CardTitle>Strength</CardTitle>
         {strength.length === 0 ? (
           <p className="text-xs text-muted">
@@ -134,12 +135,12 @@ export function EstimatesView() {
         )}
       </Card>
 
-      <p className="px-1 text-[0.6rem] leading-snug text-faint">
+      <p key="note" className="px-1 text-[0.6rem] leading-snug text-faint">
         Projections slow down the further out they go, because gains do. A straight line
         from a good month would have you benching numbers nobody reaches — these are what
         your own trend supports, not what it would extrapolate to.
       </p>
-    </div>
+    </WidgetGrid>
   );
 }
 
