@@ -87,6 +87,7 @@ import {
   deduct, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
 } from "./pantry";
 import { deloadSetCount } from "./autoregulate";
+import { cleanDue } from "./due";
 import { defaultPlan, normalise, type TimeBlock } from "./day-plan";
 import {
   addStep, cleanProject, newProjectId, removeStep, setStep, stepsOf, type Project,
@@ -244,6 +245,8 @@ export interface SomaStore {
   addTodo: (text: string) => void;
   toggleTodo: (id: string) => void;
   renameTodo: (id: string, text: string) => void;
+  /** Set or clear a to-do's deadline. Null clears it. */
+  setTodoDue: (id: string, due: string | null) => void;
   removeTodo: (id: string) => void;
   restoreTodo: (idx: number, todo: TodoItem) => void;
   /** Drop everything already ticked. */
@@ -1123,6 +1126,12 @@ export const useSoma = create<SomaStore>()(
         if (!t) return;
         set({ todos: get().todos.map((x) => (x.id === id ? { ...x, text: t } : x)) });
       },
+      setTodoDue: (id, due) =>
+        set({
+          todos: get().todos.map((t) =>
+            t.id === id ? { ...t, due: cleanDue(due ?? undefined) } : t,
+          ),
+        }),
       removeTodo: (id) => set({ todos: get().todos.filter((t) => t.id !== id) }),
       restoreTodo: (idx, todo) => {
         const next = [...get().todos];

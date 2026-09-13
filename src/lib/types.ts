@@ -430,6 +430,12 @@ export interface TodoItem {
   done: boolean;
   /** The day it was added, so a list can be cleared by age rather than by hand. */
   date: string;
+  /**
+   * When it has to be done by, as a local date key. Optional, and stays that
+   * way: most things on a list have no deadline, and a field that demands one
+   * turns "buy milk" into an appointment.
+   */
+  due?: string;
 }
 
 export interface MindEntry {

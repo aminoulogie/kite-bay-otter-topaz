@@ -141,7 +141,12 @@ export function SwipeRow({
   const confirmProgress = Math.max(0, Math.min(1, -offset / CONFIRM_PX));
 
   return (
-    <div ref={wrap} data-no-swipe-nav className="relative">
+    // Clipped horizontally: the row slides 124px left to uncover the tray, and
+    // with nothing to stop it, it slid straight out of the card it lives in and
+    // off the side of the screen. `clip` rather than `hidden` so this never
+    // becomes a scroll container. The tray sits inside these bounds, so only
+    // the escaping row is cut.
+    <div ref={wrap} data-no-swipe-nav className="relative [overflow-x:clip]">
       {onConfirm && (
         <div
           className="pointer-events-none absolute inset-y-0 left-0 flex items-center justify-start"

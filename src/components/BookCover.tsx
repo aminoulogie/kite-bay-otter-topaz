@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getPhoto } from "@/lib/habit-photos";
 import { coverKey } from "@/lib/shelf";
+import { isSquarish } from "@/lib/fit-image";
 import { coverSource, coverWords, hueFor } from "@/lib/shelf";
 import { cn } from "@/lib/utils";
 import type { MindEntry } from "@/lib/types";
@@ -28,6 +29,15 @@ export function BookCover({
 }) {
   const [local, setLocal] = useState<string | null>(null);
   const [remoteFailed, setRemoteFailed] = useState(false);
+  /**
+   * A cached cover that was stored square, from before covers kept their shape.
+   *
+   * Those were centre-cropped to a square and upscaled, so the artwork's top
+   * and bottom are simply gone and no amount of redrawing brings them back.
+   * The remote URL still has the real thing, so this drops the cache rather
+   * than showing a ruined copy of a file we can just ask for again.
+   */
+  const [cacheIsSquare, setCacheIsSquare] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -43,7 +53,7 @@ export function BookCover({
     };
   }, [book.id, book.date, book.sourceKey]);
 
-  const src = coverSource(local, remoteFailed ? undefined : book.coverUrl);
+  const src = coverSource(cacheIsSquare ? null : local, remoteFailed ? undefined : book.coverUrl);
   const hue = hueFor(book.title);
 
   return (
@@ -76,6 +86,13 @@ export function BookCover({
           alt=""
           loading="lazy"
           onError={() => setRemoteFailed(true)}
+          onLoad={(e) => {
+            if (src.kind !== "local" || !book.coverUrl) return;
+            const img = e.currentTarget;
+            if (isSquarish({ width: img.naturalWidth, height: img.naturalHeight })) {
+              setCacheIsSquare(true);
+            }
+          }}
           className="size-full object-cover"
         />
       )}

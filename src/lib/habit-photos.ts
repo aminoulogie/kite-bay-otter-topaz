@@ -1,3 +1,4 @@
+import { fitWithin } from "./fit-image";
 /**
  * Habit photos.
  *
@@ -74,19 +75,37 @@ function tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<
   );
 }
 
-/** Square centre-crop at `size`, re-encoded as JPEG. */
+/**
+ * The image, fitted to a long-edge budget, re-encoded as JPEG.
+ *
+ * This used to centre-crop to a SQUARE, which was written for habit tiles and
+ * was quietly destroying every book cover: a 500x800 cover lost its top and
+ * bottom to the crop, was then upscaled to 1080x1080, and was finally cropped
+ * back down by the shelf's 1:1.6 box. See lib/fit-image.ts for the arithmetic
+ * and why never upscaling is the half that matters.
+ *
+ * Cropping now happens in CSS, at draw time, against the box the image is
+ * actually in — which is reversible, where destroying the pixels was not. The
+ * habit tiles look identical, because they were already `object-cover`.
+ */
 async function derive(file: Blob, size: number, quality: number): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
-  const side = Math.min(bitmap.width, bitmap.height);
-  const sx = (bitmap.width - side) / 2;
-  const sy = (bitmap.height - side) / 2;
+  const box = fitWithin({ width: bitmap.width, height: bitmap.height }, size);
+  if (!box.width || !box.height) {
+    bitmap.close?.();
+    throw new Error("That image has no size to read.");
+  }
 
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = box.width;
+  canvas.height = box.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas is unavailable on this device.");
-  ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, size, size);
+  // Downscaling in one step is what makes a shrunk photo soft; the browser's
+  // high-quality path is the one thing here that costs nothing to ask for.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, 0, 0, box.width, box.height);
   bitmap.close?.();
 
   return new Promise<Blob>((resolve, reject) => {

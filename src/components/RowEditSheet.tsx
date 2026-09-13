@@ -9,7 +9,7 @@ export interface EditField {
   key: string;
   label: string;
   value: string | number | undefined;
-  kind?: "text" | "number";
+  kind?: "text" | "number" | "date";
   placeholder?: string;
   /** Fixed choices, shown as a row of chips instead of a free-text box. */
   options?: string[];
@@ -94,6 +94,27 @@ export function RowEditSheet({
                       {o}
                     </button>
                   ))}
+                </span>
+              ) : f.kind === "date" ? (
+                // A native picker rather than a typed date: it is a wheel on a
+                // phone, so there is no keyboard, nothing to parse and no way
+                // to enter the 31st of February.
+                <span className="mt-1 flex gap-2">
+                  <Input
+                    type="date"
+                    className="flex-1 tabular"
+                    value={draft[f.key] ?? ""}
+                    onChange={(e) => set(f.key, e.target.value)}
+                  />
+                  {draft[f.key] ? (
+                    <button
+                      type="button"
+                      onClick={() => set(f.key, "")}
+                      className="h-11 shrink-0 rounded-xl border border-border bg-surface-2 px-3 text-[0.7rem] font-bold text-muted"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
                 </span>
               ) : f.kind === "number" ? (
                 <DecimalInput
