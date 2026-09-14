@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft, ChevronRight, Loader2, Minus, Plus, Rows3, Settings2, X,
 } from "lucide-react";
@@ -444,8 +444,29 @@ function EpubPages({
    * is why both directions use a corner on the RIGHT, and why there is one
    * piece of geometry rather than two.
    */
-  const [curl, setCurl] = useState<{ at: Point; corner: Corner; forward: boolean } | null>(null);
+  /**
+   * Which way a page is being folded, and about which corner.
+   *
+   * Direction and corner only — NOT where the finger is. That changes sixty
+   * times a second, and holding it in state meant a React render, of three
+   * copies of a chapter, on every frame of every turn. The frames were going
+   * to reconciling a tree that had not changed.
+   *
+   * So this is set once when a fold starts and cleared when it ends, and
+   * every frame in between is written straight onto the four elements that
+   * actually move — see paintFold.
+   */
+  const [curl, setCurl] = useState<{ corner: Corner; forward: boolean } | null>(null);
   const curling = useRef<number | null>(null);
+  /** Where the held corner is right now. Read by the settle, never rendered. */
+  const foldAt_ = useRef<Point>({ x: 0, y: 0 });
+
+  /** The surfaces a fold moves. Written to directly, never through React. */
+  const flatWrap = useRef<HTMLDivElement>(null);
+  const otherSheet = useRef<HTMLDivElement>(null);
+  const flapOuter = useRef<HTMLDivElement>(null);
+  const flapClip = useRef<HTMLDivElement>(null);
+  const sheen = useRef<HTMLDivElement>(null);
   const theme = themeSpec(prefs.theme);
 
   useEffect(() => {
@@ -512,6 +533,32 @@ function EpubPages({
   }, []);
 
   /**
+   * Draw the flap once, invisibly, as soon as the chapter has a layout.
+   *
+   * A layer that has never been painted has to be painted the first time it
+   * is shown, and for the flap that means rastering a page of text — which
+   * landed on the FIRST frame of every turn, the one frame a gesture cannot
+   * afford to drop. So it is painted here instead, at an opacity nobody can
+   * see, while nothing is moving and a lost frame costs nothing.
+   */
+  const warmFlap = useCallback(() => {
+    const outer = flapOuter.current;
+    const clip = flapClip.current;
+    const b = boxRef.current;
+    if (!outer || !clip || !b.w) return;
+    outer.style.visibility = "visible";
+    outer.style.opacity = "0.01";
+    outer.style.transform = "none";
+    clip.style.clipPath = `polygon(0px 0px, ${b.w}px 0px, ${b.w}px ${b.h}px, 0px ${b.h}px)`;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        outer.style.visibility = "hidden";
+        outer.style.opacity = "1";
+      }),
+    );
+  }, []);
+
+  /**
    * How many pages this chapter came to, at this size, in this box.
    *
    * Re-run on every change that can reflow the text. The double rAF is not
@@ -536,6 +583,7 @@ function EpubPages({
         landOnLast.current = false;
         setPages(count);
 
+        warmFlap();
         if (last) {
           setPage(count - 1);
           return;
@@ -557,7 +605,7 @@ function EpubPages({
       cancelAnimationFrame(raf);
       cancelAnimationFrame(raf2);
     };
-  }, [html, box.w, box.h, prefs.size, prefs.lineHeight, prefs.font, paged, prefs.margin]);
+  }, [html, box.w, box.h, prefs.size, prefs.lineHeight, prefs.font, paged, prefs.margin, warmFlap]);
 
   /**
    * Write down where you are, once the page has settled.
@@ -600,15 +648,79 @@ function EpubPages({
     [prefs.turn, page, pages],
   );
 
-  const fold: Fold | null = useMemo(
-    () => (curl ? foldAt(curl.at, box, curl.corner) : null),
-    [curl, box],
-  );
-
   const curlRef = useRef(curl);
   useEffect(() => {
     curlRef.current = curl;
   });
+
+  const boxRef = useRef(box);
+  useEffect(() => {
+    boxRef.current = box;
+  });
+
+  /**
+   * Which page the spare copy is showing, a frame behind the real one.
+   *
+   * Finishing a turn changes the page, which repaints the column AND this
+   * copy — two pages of text on one frame, right as the fold lands. A fold in
+   * progress needs it immediately, because it is the page you can see; a turn
+   * that has already finished does not, so it waits a frame and the work is
+   * spread over two.
+   */
+  const wantSheet = curl?.forward === false ? page - 1 : page + 1;
+  const [sheetPage, setSheetPage] = useState(wantSheet);
+  useEffect(() => {
+    if (sheetPage === wantSheet) return;
+    if (curl) {
+      setSheetPage(wantSheet);
+      return;
+    }
+    const id = requestAnimationFrame(() => setSheetPage(wantSheet));
+    return () => cancelAnimationFrame(id);
+  }, [wantSheet, curl, sheetPage]);
+
+  /**
+   * One frame of the fold, straight onto the DOM.
+   *
+   * No state, no render, no reconciliation: four style writes and the browser
+   * does the rest. Every element it touches is already mounted and already
+   * laid out, so nothing here can cost a layout — only the repaint of a
+   * page-sized area, which is what a page turn is.
+   */
+  const paintFold = useCallback(
+    (at: Point, c: { corner: Corner; forward: boolean }): Fold | null => {
+      const b = boxRef.current;
+      const f = foldAt(at, b, c.corner);
+      if (!f) return null;
+      foldAt_.current = at;
+      const flat = polygonCss(f.flat);
+      // Going forward the real column is the page being folded; going back it
+      // is the page underneath, and the incoming copy is the one clipped.
+      if (c.forward) {
+        if (flatWrap.current) flatWrap.current.style.clipPath = flat;
+      } else if (otherSheet.current) {
+        otherSheet.current.style.clipPath = flat;
+      }
+      if (flapOuter.current) flapOuter.current.style.transform = matrixCss(f.matrix);
+      if (flapClip.current) flapClip.current.style.clipPath = polygonCss(f.flap);
+      if (sheen.current) sheen.current.style.setProperty("--crease", `${f.angle + 90}deg`);
+      return f;
+    },
+    [],
+  );
+
+  /** Bring the flap in or out, again without a render. */
+  const showFold = useCallback((on: boolean, forward: boolean) => {
+    if (flapOuter.current) flapOuter.current.style.visibility = on ? "visible" : "hidden";
+    if (otherSheet.current) {
+      // Which copy is on top is a fact about the DIRECTION of the turn, and
+      // z-index is the one way of saying it that costs a composite rather
+      // than a repaint.
+      otherSheet.current.style.zIndex = forward ? "0" : "2";
+      if (!on) otherSheet.current.style.clipPath = "";
+    }
+    if (!on && flatWrap.current) flatWrap.current.style.clipPath = "";
+  }, []);
 
   /**
    * Let go of the page and it finishes the turn, or falls back flat.
@@ -623,42 +735,40 @@ function EpubPages({
     (commit: boolean) => {
       const c = curlRef.current;
       if (!c) return;
-      const home = cornerPoint(c.corner, box);
+      const b = boxRef.current;
+      const home = cornerPoint(c.corner, b);
+      const from = foldAt_.current;
       // Forward, "finished" is the corner carried a full page-width past the
       // far edge; backward, it is the corner back where it started.
-      const done = c.forward ? { x: home.x - 2 * box.w, y: c.at.y } : { x: home.x, y: c.at.y };
-      const back = c.forward ? { x: home.x, y: home.y } : { x: home.x - 2 * box.w, y: c.at.y };
+      const done = c.forward ? { x: home.x - 2 * b.w, y: from.y } : { x: home.x, y: from.y };
+      const back = c.forward ? { x: home.x, y: home.y } : { x: home.x - 2 * b.w, y: from.y };
       const to = commit ? done : back;
-      const from = c.at;
       const began = performance.now();
       const run = (now: number) => {
         const k = Math.min(1, (now - began) / 300);
         // Ease out: a page you let go of carries on and stops.
         const e = 1 - (1 - k) ** 3;
-        setCurl((cur) =>
-          cur && {
-            ...cur,
-            at: { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e },
-          },
-        );
+        paintFold({ x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e }, c);
         if (k < 1) {
           curling.current = requestAnimationFrame(run);
           return;
         }
-        if (commit) {
-          goRef.current(c.forward ? 1 : -1);
-          // One frame with the new page AND the curl still mounted, so the
-          // strip jumps to it with no transition running. Clearing both at
-          // once would let the slide animate underneath a turn that has
-          // already visibly happened.
-          curling.current = requestAnimationFrame(() => setCurl(null));
-        } else {
+        // Everything that ends the turn happens on the NEXT frame, not this
+        // one. Changing the page moves the strip and repaints a page of text,
+        // and doing that in the same frame as the fold's last position made
+        // the animation end on a dropped frame — a stumble on the last step.
+        // A frame later the fold is already visually complete and nobody is
+        // watching the pixels.
+        curling.current = requestAnimationFrame(() => {
+          showFold(false, c.forward);
+          if (commit) goRef.current(c.forward ? 1 : -1);
+          curlRef.current = null;
           setCurl(null);
-        }
+        });
       };
       curling.current = requestAnimationFrame(run);
     },
-    [box],
+    [paintFold, showFold],
   );
 
   useEffect(() => () => {
@@ -679,7 +789,7 @@ function EpubPages({
         setDragX(null);
         const c = curlRef.current;
         if (!c) return;
-        const f = foldAt(c.at, box, c.corner);
+        const f = foldAt(foldAt_.current, boxRef.current, c.corner);
         const p = f?.progress ?? 0;
         // Forward, past the halfway fold and it goes; backward, the page has
         // to have come most of the way home before it stays home.
@@ -688,7 +798,11 @@ function EpubPages({
       }
       const forward = at.dx < 0;
       if (!canFold(forward)) {
-        setCurl(null);
+        if (curlRef.current) {
+          showFold(false, curlRef.current.forward);
+          curlRef.current = null;
+          setCurl(null);
+        }
         setDragX(at.dx);
         return;
       }
@@ -703,16 +817,25 @@ function EpubPages({
       // the finger's y means the page arrives already bent at the instant of
       // touch-down, which reads as a glitch rather than as paper.
       const lean = Math.min(1, Math.abs(at.dx) / 70);
-      setCurl({
-        corner,
-        forward,
-        at: {
+      const open = curlRef.current;
+      if (!open || open.corner !== corner || open.forward !== forward) {
+        const next = { corner, forward };
+        // The ref leads the state by a render on purpose: the paint below has
+        // to land on THIS frame, the one the finger moved on, and cannot wait
+        // for React to get round to it.
+        curlRef.current = next;
+        setCurl(next);
+        showFold(true, forward);
+      }
+      paintFold(
+        {
           x: home.x + travel - (forward ? 0 : 2 * box.w),
           y: home.y + (at.y - home.y) * lean,
         },
-      });
+        curlRef.current ?? { corner, forward },
+      );
     },
-    [canFold, box, settleCurl],
+    [canFold, box, paintFold, settleCurl, showFold],
   );
 
   /**
@@ -777,80 +900,96 @@ function EpubPages({
       edges={paged && !curl ? pages - 1 : 0}
       slide={slide}
       turning={dragX !== null}
-      folding={!!fold}
+      folding={!!curl}
     >
       {/* The other page: the one revealed underneath going forward, and the
           one arriving over the top going back. Mounted for as long as curling
           is the chosen style rather than only while a page is in the air —
-          laying out a twenty-eight page chapter twice more is work, and the
-          one moment it must not happen is the instant a finger starts to
+          laying out a twenty-eight page chapter twice more is real work, and
+          the one moment it must not happen is the instant a finger starts to
           move. Hidden costs layout and not paint, which is the trade wanted.
 
-          Stacked by z-index rather than by DOM order, because which of these
-          is on top is a fact about the DIRECTION of the turn, and re-ordering
-          the DOM mid-gesture would tear both copies down and build them
-          again — the very cost this is avoiding. */}
+          Nothing below reads the fold: every part of it that changes during a
+          turn is written onto these elements by paintFold, sixty times a
+          second, without React hearing about it. */}
       {paged && prefs.turn === "curl" && (
         <>
           <Sheet
+            innerRef={otherSheet}
             html={html}
             label={label}
             prefs={prefs}
             box={box}
-            page={curl?.forward === false ? page - 1 : page + 1}
-            clip={fold && curl && !curl.forward ? polygonCss(fold.flat) : undefined}
-            style={{
-              visibility: fold ? "visible" : "hidden",
-              zIndex: curl?.forward === false ? 2 : 0,
-            }}
+            page={sheetPage}
+            // Visible at all times, and never seen: it sits UNDER the page you
+            // are reading, which is opaque. Hiding it would have been tidier
+            // and cost a full raster of a page of text on the first frame of
+            // every turn — the one frame a gesture cannot afford to drop.
+            style={UNDER_SHEET}
           />
 
           {/* The flap: the part that has come up off the table, showing its
               BACK. Which is the same paper reflected across the crease — so it
               is the same markup with the fold's matrix on it, and the text
               comes out mirrored for free, because that is what the back of a
-              page is.
-
-              transformOrigin 0 0 because the matrix is in page coordinates,
-              and drop-shadow rather than box-shadow because the shape being
-              shadowed is the clip silhouette, not the element's box. */}
+              page is. */}
           <div
+            ref={flapOuter}
             aria-hidden
             className="pointer-events-none absolute inset-0"
             style={{
               zIndex: 3,
-              visibility: fold ? "visible" : "hidden",
-              clipPath: fold ? polygonCss(fold.flap) : undefined,
-              transform: fold ? matrixCss(fold.matrix) : undefined,
+              visibility: "hidden",
               transformOrigin: "0 0",
-              filter: `drop-shadow(0 0 18px rgba(0,0,0,${theme.dark ? 0.75 : 0.35}))`,
+              willChange: "transform",
             }}
           >
-            {/* The sheet itself, opaque, because paper is. */}
-            <div className="absolute inset-0" style={{ background: theme.bg }} />
-            {/* What shows through from the other side. Faint: you can see
-                there is print on it and you cannot read it, which is what a
-                page held up to the light does. */}
-            <Sheet
-              html={html}
-              label={label}
-              prefs={prefs}
-              box={box}
-              page={curl?.forward === false ? page - 1 : page}
-              style={{ background: "transparent", opacity: theme.dark ? 0.16 : 0.13 }}
-            />
-            {/* The curve. A sheet lifted off a table is not flat, and a flat
-                rectangle of paper colour is the one thing that gives it away. */}
+            {/* No drop-shadow anywhere near this.
+                The obvious way to shadow a folded sheet is a filter on its
+                silhouette, and it is the wrong way twice over. CSS applies a
+                filter BEFORE a clip-path on the same element, so the browser
+                was blurring the entire laid-out chapter — a strip eleven
+                thousand pixels wide — and then throwing all but a page of it
+                away, sixty times a second. And a blur that size is the single
+                most expensive thing a phone's compositor can be asked for.
+                The shading below is gradients on a surface that is moving
+                anyway, which costs nothing. */}
             <div
-              className="absolute inset-0"
-              style={{
-                background: `linear-gradient(${(fold?.angle ?? 0) + 90}deg, rgba(0,0,0,${
-                  theme.dark ? 0.55 : 0.22
-                }) 0%, rgba(0,0,0,0) 28%, rgba(255,255,255,${
-                  theme.dark ? 0.04 : 0.35
-                }) 100%)`,
-              }}
-            />
+              ref={flapClip}
+              className="absolute inset-0 overflow-hidden"
+              style={{ willChange: "clip-path" }}
+            >
+              {/* The sheet itself, opaque, because paper is. */}
+              <div className="absolute inset-0" style={{ background: theme.bg }} />
+              {/* What shows through from the other side. Faint: you can see
+                  there is print on it and you cannot read it, which is what a
+                  page held up to the light does. */}
+              <Sheet
+                html={html}
+                label={label}
+                prefs={prefs}
+                box={box}
+                page={curl?.forward === false ? page - 1 : page}
+                style={theme.dark ? BACK_SHEET_DARK : BACK_SHEET_LIGHT}
+              />
+              {/* The curve. A sheet lifted off a table is not flat, and a flat
+                  rectangle of paper colour is the one thing that gives it
+                  away. The angle arrives as a custom property so a frame of
+                  the fold can change it without React rebuilding a gradient
+                  string. */}
+              <div
+                ref={sheen}
+                className="absolute inset-0"
+                style={{
+                  ["--crease" as string]: "90deg",
+                  background: `linear-gradient(var(--crease), rgba(0,0,0,${
+                    theme.dark ? 0.82 : 0.45
+                  }) 0%, rgba(0,0,0,${theme.dark ? 0.3 : 0.1}) 12%, rgba(0,0,0,0) 34%, rgba(255,255,255,${
+                    theme.dark ? 0.05 : 0.4
+                  }) 100%)`,
+                }}
+              />
+            </div>
           </div>
         </>
       )}
@@ -859,16 +998,9 @@ function EpubPages({
           the rest of the reader knows about. Clipped to the flat part of the
           sheet only when it is the page being folded. */}
       <div
+        ref={flatWrap}
         className={paged ? "absolute inset-0" : undefined}
-        style={
-          paged
-            ? {
-                zIndex: 1,
-                background: theme.bg,
-                clipPath: fold && curl?.forward ? polygonCss(fold.flat) : undefined,
-              }
-            : undefined
-        }
+        style={paged ? { zIndex: 1, background: theme.bg } : undefined}
       >
       <div
         className="soma-epub"
@@ -928,26 +1060,42 @@ function EpubPages({
  * Inert, and hidden from anything reading the screen: there is one book on
  * this page, not three.
  */
-function Sheet({
-  html, label, prefs, box, page, clip, style,
+/**
+ * Style objects for the curl's copies, made once.
+ *
+ * A fresh object literal is a new prop, and a new prop defeats the memo on
+ * Sheet — so passing `style={{ zIndex: 0 }}` inline meant both copies of the
+ * chapter re-rendered on the frame a fold began, which is precisely the frame
+ * that cannot afford it.
+ */
+const UNDER_SHEET: React.CSSProperties = { zIndex: 0 };
+const BACK_SHEET_DARK: React.CSSProperties = { background: "transparent", opacity: 0.16 };
+const BACK_SHEET_LIGHT: React.CSSProperties = { background: "transparent", opacity: 0.13 };
+
+const Sheet = memo(function Sheet({
+  innerRef, html, label, prefs, box, page, style,
 }: {
+  /** So a fold can write its clip straight onto this, without a render. */
+  innerRef?: React.Ref<HTMLDivElement>;
   html: string;
   label: string;
   prefs: ReaderPrefs;
   box: { w: number; h: number };
   page: number;
-  clip?: string;
   style?: React.CSSProperties;
 }) {
   const theme = themeSpec(prefs.theme);
   return (
     <div
+      ref={innerRef}
       aria-hidden
-      className="pointer-events-none absolute inset-0 select-none"
+      // Clipped to its own box: a column strip is many times wider than the
+      // page it is showing, and leaving it unbounded is many times the paint.
+      className="pointer-events-none absolute inset-0 select-none overflow-hidden"
       // Opaque, because a page is. Without the paper behind it the sheet
       // under this one reads straight through and you get two pages of text
       // printed on top of each other.
-      style={{ background: theme.bg, clipPath: clip, ...style }}
+      style={{ background: theme.bg, ...style }}
     >
       <div
         className="soma-epub"
@@ -968,7 +1116,7 @@ function Sheet({
       </div>
     </div>
   );
-}
+});
 
 /* ==========================================================================
    The surface: gestures, word capture and line focus
