@@ -154,6 +154,30 @@ export function addStep(project: Project, label: string, now = Date.now()): Proj
   };
 }
 
+/**
+ * Move a step one place up or down the list.
+ *
+ * Order matters here in a way it does not in most lists: `nextStep` reads the
+ * first unticked one, and that single line is what the card shows and what the
+ * whole tab is for. Being unable to correct the order meant deleting a step
+ * and retyping it, which threw away its tick and its timestamp — the two
+ * things the momentum read is built from.
+ *
+ * `touchedAt` is deliberately NOT bumped: rearranging the plan is not progress,
+ * and counting it as progress would let anyone clear a drift warning by
+ * shuffling the list.
+ */
+export function moveStep(project: Project, stepId: string, delta: number): Project {
+  const steps = [...stepsOf(project)];
+  const from = steps.findIndex((s) => s.id === stepId);
+  if (from < 0) return project;
+  const to = from + delta;
+  if (to < 0 || to >= steps.length) return project;
+  const [moved] = steps.splice(from, 1);
+  steps.splice(to, 0, moved!);
+  return { ...project, steps };
+}
+
 export function removeStep(project: Project, stepId: string, now = Date.now()): Project {
   return {
     ...project,
@@ -213,4 +237,124 @@ export function cleanProject(raw: unknown): Project | null {
     createdAt: Number(r.createdAt) || Date.now(),
     touchedAt: Number(r.touchedAt) || undefined,
   };
+}
+
+/* ------------------------------------------------------------------ pace --
+ *
+ * "Am I still moving" is the other question this tab exists to answer, and
+ * until now the only answer was a ten-day yes/no. Every tick already carries
+ * its timestamp, so the honest version is free: count the ticks in a window
+ * and compare that rate against the rate the deadline actually demands.
+ *
+ * Both numbers are derived. Nobody types a percentage, an estimate, or a
+ * confidence — the same reason progress is a count of steps and not a slider.
+ */
+
+/** The window the recent rate is read over. Two weeks: long enough that one
+ *  quiet weekend does not read as a stall, short enough to notice one. */
+export const MOMENTUM_DAYS = 14;
+
+/** When a step was last ticked, or undefined if none ever was. */
+export function lastMoveAt(project: Project | undefined): number | undefined {
+  let last: number | undefined;
+  for (const s of stepsOf(project)) {
+    const at = Number(s.at);
+    if (s.done && Number.isFinite(at) && (last === undefined || at > last)) last = at;
+  }
+  return last;
+}
+
+/**
+ * Whole days since the last tick, or null if nothing has ever been ticked.
+ *
+ * Deliberately not measured from `touchedAt`: that moves when a step is added
+ * or renamed, and adding steps to a project is planning it, not progressing
+ * it. Rewriting the list would otherwise read as work.
+ */
+export function daysSinceMove(project: Project | undefined, now = Date.now()): number | null {
+  const last = lastMoveAt(project);
+  if (last === undefined) return null;
+  return Math.max(0, Math.floor((now - last) / 86400000));
+}
+
+/** Steps ticked in the last `days` days. */
+export function ticksSince(project: Project | undefined, days: number, now = Date.now()): number {
+  const cutoff = now - days * 86400000;
+  return stepsOf(project).filter((s) => s.done && Number.isFinite(Number(s.at)) && Number(s.at) >= cutoff).length;
+}
+
+export type PaceVerdict = "no-steps" | "done" | "no-deadline" | "overdue" | "ahead" | "behind";
+
+export interface Pace {
+  /** Steps ticked per day, lately. */
+  actual: number;
+  /** Steps per day needed to hit the deadline; null when there is none. */
+  required: number | null;
+  /** Steps still to tick. */
+  left: number;
+  /** Days until the deadline; null when there is none, negative when over. */
+  days: number | null;
+  verdict: PaceVerdict;
+}
+
+/**
+ * The recent rate, the demanded rate, and how they compare.
+ *
+ * The recent rate is measured over however long the project has existed, up to
+ * MOMENTUM_DAYS — a project started on Tuesday is not judged against a
+ * fortnight it has not had yet, which would report every new project as
+ * behind on its second day.
+ *
+ * A deadline of today still leaves today to work in, so the divisor floors at
+ * one day rather than zero. Dividing by the literal zero days remaining would
+ * demand an infinite rate of someone who has until this evening.
+ */
+export function pace(project: Project | undefined, todayKey: string, now = Date.now()): Pace {
+  const steps = stepsOf(project);
+  const left = steps.filter((s) => !s.done).length;
+  const days = daysLeft(project, todayKey);
+
+  const age = (now - Number(project?.createdAt ?? now)) / 86400000;
+  const window = Math.max(1, Math.min(MOMENTUM_DAYS, Math.floor(age) || 1));
+  const actual = ticksSince(project, window, now) / window;
+
+  if (!steps.length) return { actual, required: null, left, days, verdict: "no-steps" };
+  if (left === 0) return { actual, required: null, left, days, verdict: "done" };
+  if (days === null) return { actual, required: null, left, days, verdict: "no-deadline" };
+  if (days < 0) return { actual, required: null, left, days, verdict: "overdue" };
+
+  const required = left / Math.max(1, days);
+  return { actual, required, left, days, verdict: actual >= required ? "ahead" : "behind" };
+}
+
+/**
+ * The pace as a sentence, because "0.43 steps/day" is not a thing anyone says.
+ *
+ * Phrased as the interval between steps once the rate drops below one a day,
+ * which is where nearly every real project sits.
+ */
+export function paceLabel(p: Pace): string {
+  switch (p.verdict) {
+    case "no-steps":
+      return "No steps yet";
+    case "done":
+      return "Every step ticked";
+    case "overdue":
+      return `${p.left} ${p.left === 1 ? "step" : "steps"} left, past the date`;
+    case "no-deadline":
+      return p.actual > 0 ? `${rateWords(p.actual)}, no deadline` : "Not moving yet";
+    default:
+      return `${rateWords(p.actual)} · ${rateWords(p.required ?? 0)} needed`;
+  }
+}
+
+/** A steps-per-day rate in words. */
+export function rateWords(rate: number): string {
+  if (!Number.isFinite(rate) || rate <= 0) return "nothing lately";
+  if (rate >= 1) {
+    const perDay = Math.round(rate * 10) / 10;
+    return `${perDay}/day`;
+  }
+  const everyDays = Math.round(1 / rate);
+  return everyDays === 1 ? "1/day" : `1 every ${everyDays}d`;
 }

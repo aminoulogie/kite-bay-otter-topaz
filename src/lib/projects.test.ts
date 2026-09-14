@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  PROJECT_COLORS, STALE_DAYS, addStep, cleanProject, daysLeft, doneCount, isComplete,
-  isStale, nextStep, progress, removeStep, setStep, sortProjects, stepsOf, summarise,
+  MOMENTUM_DAYS, PROJECT_COLORS, STALE_DAYS, addStep, cleanProject, daysLeft, daysSinceMove,
+  doneCount, isComplete, isStale, lastMoveAt, nextStep, pace, paceLabel, progress, rateWords,
+  moveStep, removeStep, setStep, sortProjects, stepsOf, summarise, ticksSince,
   type Project,
 } from "./projects.ts";
 
@@ -186,4 +187,161 @@ test("a malformed deadline is dropped, not kept as a broken date", () => {
 test("stepsOf survives a project whose steps are not a list", () => {
   assert.deepEqual(stepsOf({ steps: "nope" } as unknown as Project), []);
   assert.deepEqual(stepsOf(undefined), []);
+});
+
+// ---------------------------------------------------------------- pace --
+
+/** Steps carrying tick times, as days-ago offsets. undefined = not done. */
+const ticked = (...agoDays: (number | undefined)[]) =>
+  agoDays.map((ago, i) => ({
+    id: `s${i}`,
+    label: `step ${i}`,
+    done: ago !== undefined,
+    at: ago === undefined ? undefined : NOW - ago * DAY,
+  }));
+
+test("the last move is the newest tick, not the newest edit", () => {
+  // touchedAt moves when a step is merely added or renamed. Planning a project
+  // is not progressing it, so the momentum read must ignore that.
+  const p = proj({ steps: ticked(9, 2, undefined), touchedAt: NOW });
+  assert.equal(lastMoveAt(p), NOW - 2 * DAY);
+  assert.equal(daysSinceMove(p, NOW), 2);
+});
+
+test("a project nobody has ever ticked has no last move at all", () => {
+  assert.equal(lastMoveAt(proj({ steps: steps(false, false) })), undefined);
+  assert.equal(daysSinceMove(proj({ steps: steps(false) }), NOW), null);
+});
+
+test("ticks are counted only inside the window", () => {
+  const p = proj({ steps: ticked(1, 3, 20, undefined) });
+  assert.equal(ticksSince(p, 14, NOW), 2);
+  assert.equal(ticksSince(p, 30, NOW), 3);
+});
+
+test("a project with no steps is not judged on pace", () => {
+  const p = pace(proj(), TODAY, NOW);
+  assert.equal(p.verdict, "no-steps");
+  assert.equal(p.required, null);
+});
+
+test("a fully ticked project is done rather than behind", () => {
+  const p = pace(proj({ steps: ticked(1, 2), due: "2026-09-01" }), TODAY, NOW);
+  assert.equal(p.verdict, "done");
+  assert.equal(p.left, 0);
+});
+
+test("without a deadline there is a rate but nothing to be behind", () => {
+  const p = pace(proj({ steps: ticked(1, undefined), createdAt: NOW - 14 * DAY }), TODAY, NOW);
+  assert.equal(p.verdict, "no-deadline");
+  assert.equal(p.required, null);
+  assert.ok(p.actual > 0);
+});
+
+test("required pace is the steps left over the days left", () => {
+  // Four to do, ten days: two every five days.
+  const p = pace(
+    proj({ steps: ticked(undefined, undefined, undefined, undefined), due: "2026-09-23" }),
+    TODAY,
+    NOW,
+  );
+  assert.equal(p.left, 4);
+  assert.equal(p.days, 10);
+  assert.equal(p.required, 0.4);
+  assert.equal(p.verdict, "behind", "nothing ticked cannot be ahead of a real deadline");
+});
+
+test("a deadline of today still leaves today to work in", () => {
+  // Dividing by the zero days remaining would demand an infinite rate of
+  // someone who has until this evening.
+  const p = pace(proj({ steps: ticked(undefined, undefined), due: TODAY }), TODAY, NOW);
+  assert.equal(p.days, 0);
+  assert.equal(p.required, 2);
+  assert.ok(Number.isFinite(p.required!));
+});
+
+test("past the date is its own verdict, not a rate to chase", () => {
+  const p = pace(proj({ steps: ticked(undefined), due: "2026-09-01" }), TODAY, NOW);
+  assert.equal(p.verdict, "overdue");
+  assert.equal(p.required, null);
+});
+
+test("a project started on Tuesday is not judged against a fortnight", () => {
+  // Two days old, one step ticked yesterday. Measured over the full window
+  // that is 1/14 a day and reads as a stall; measured over its actual life it
+  // is half a step a day.
+  const p = pace(
+    proj({ createdAt: NOW - 2 * DAY, steps: ticked(1, undefined), due: "2026-09-16" }),
+    TODAY,
+    NOW,
+  );
+  assert.equal(p.actual, 0.5);
+  assert.equal(p.verdict, "ahead");
+});
+
+test("the window never grows past MOMENTUM_DAYS however old the project is", () => {
+  const p = pace(
+    proj({ createdAt: NOW - 400 * DAY, steps: ticked(...Array(14).fill(1), undefined), due: "2026-09-20" }),
+    TODAY,
+    NOW,
+  );
+  assert.equal(p.actual, 14 / MOMENTUM_DAYS);
+});
+
+test("a rate below one a day is spoken as an interval", () => {
+  assert.equal(rateWords(0), "nothing lately");
+  assert.equal(rateWords(0.5), "1 every 2d");
+  assert.equal(rateWords(1), "1/day");
+  assert.equal(rateWords(2.5), "2.5/day");
+});
+
+test("every verdict has a sentence", () => {
+  const verdicts = new Set<string>();
+  for (const p of [
+    pace(proj(), TODAY, NOW),
+    pace(proj({ steps: ticked(1) }), TODAY, NOW),
+    pace(proj({ steps: ticked(undefined), due: "2026-09-01" }), TODAY, NOW),
+    pace(proj({ steps: ticked(undefined) }), TODAY, NOW),
+    pace(proj({ steps: ticked(1, undefined), due: "2026-09-30" }), TODAY, NOW),
+  ]) {
+    verdicts.add(p.verdict);
+    assert.ok(paceLabel(p).length > 0);
+  }
+  assert.equal(verdicts.size, 5);
+});
+
+// ---------------------------------------------------------------- move --
+
+test("a step moves without losing its tick or its timestamp", () => {
+  // The whole point: reordering used to mean delete-and-retype, which threw
+  // away exactly the data the momentum read is built from.
+  const p = proj({ steps: ticked(3, undefined, undefined) });
+  const moved = moveStep(p, "s0", 2);
+  assert.deepEqual(moved.steps.map((s) => s.id), ["s1", "s2", "s0"]);
+  assert.equal(moved.steps[2]!.done, true);
+  assert.equal(moved.steps[2]!.at, NOW - 3 * DAY);
+});
+
+test("a step cannot be moved off either end of the list", () => {
+  const p = proj({ steps: steps(false, false, false) });
+  assert.deepEqual(moveStep(p, "s0", -1).steps.map((s) => s.id), ["s0", "s1", "s2"]);
+  assert.deepEqual(moveStep(p, "s2", 1).steps.map((s) => s.id), ["s0", "s1", "s2"]);
+});
+
+test("moving an unknown step changes nothing", () => {
+  const p = proj({ steps: steps(false, true) });
+  assert.equal(moveStep(p, "nope", 1), p);
+});
+
+test("rearranging the plan is not progress", () => {
+  // Otherwise a drift warning could be cleared by shuffling the list, which
+  // is precisely the self-grading the rest of this file exists to prevent.
+  const p = proj({ steps: steps(false, false), touchedAt: NOW - 30 * DAY });
+  assert.equal(moveStep(p, "s0", 1).touchedAt, NOW - 30 * DAY);
+});
+
+test("the next step follows the order, so moving one changes the card", () => {
+  const p = proj({ steps: steps(false, false) });
+  assert.equal(nextStep(p)!.id, "s0");
+  assert.equal(nextStep(moveStep(p, "s1", -1))!.id, "s1");
 });
