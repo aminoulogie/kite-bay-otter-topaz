@@ -33,6 +33,33 @@ export function pageOffset(page: number, pageWidth: number, gap = PAGE_GAP): num
   return Math.max(0, page) * (pageWidth + gap);
 }
 
+/**
+ * Which page a point in the laid-out strip falls on.
+ *
+ * The inverse of pageOffset, and the half that makes coming back to a book
+ * possible: a stored position is an offset in the text, which the browser can
+ * turn into an x once the chapter is laid out, which this turns into a page.
+ *
+ * The gutter belongs to the page BEFORE it — a word that ends up in the gap
+ * is the last word of the page it was flowing out of, not the first of the
+ * next one.
+ */
+export function pageForX(x: number, pageWidth: number, gap = PAGE_GAP): number {
+  if (!(pageWidth > 0)) return 0;
+  return Math.max(0, Math.floor(x / (pageWidth + gap)));
+}
+
+/**
+ * How far a drag is allowed to move the page.
+ *
+ * Free travel inside the book; a fifth of it at the two ends, so pulling
+ * against the cover says "there is nothing here" the way every list on a
+ * phone does, instead of the page simply refusing to move.
+ */
+export function damp(dx: number, free: boolean): number {
+  return free ? dx : dx * 0.2;
+}
+
 export function clampPage(page: number, count: number): number {
   if (!Number.isFinite(page)) return 0;
   return Math.min(Math.max(0, Math.floor(page)), Math.max(0, count - 1));

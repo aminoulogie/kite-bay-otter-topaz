@@ -509,6 +509,20 @@ export interface MindEntry {
   fileKind?: "pdf" | "epub";
   fileName?: string;
   /**
+   * Exactly where you stopped, as a place in the TEXT.
+   *
+   * `page` holds the chapter; this holds how many characters into it the top
+   * of the page was. A page NUMBER would have been simpler and wrong: it is
+   * not a fact about the book, it is a fact about the book at one font size
+   * on one screen, so coming back after changing the type would put you a
+   * page or two off — small enough to be maddening rather than obviously
+   * broken. An offset in characters is the same sentence whatever it is set
+   * in. See lib/anchor.ts.
+   */
+  readOffset?: number;
+  /** Which line was lit, for anyone reading line by line. */
+  readLine?: number;
+  /**
    * Words: how it sounds, and a sentence using it.
    *
    * The definition itself goes in `takeaway`, which means vocabulary joins the

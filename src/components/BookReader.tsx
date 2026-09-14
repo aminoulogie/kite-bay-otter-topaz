@@ -6,9 +6,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getBookFile } from "@/lib/book-files";
 import type { EpubArchive } from "@/lib/epub-archive";
+import { cleanOffset, locate } from "@/lib/anchor";
 import { linesIn, stepLine, type Rect } from "@/lib/lines";
 import {
-  PAGE_GAP, bookProgress, clampPage, isTurning, pageCount, pageOffset, tapAt, turnFrom,
+  PAGE_GAP, bookProgress, clampPage, damp, isTurning, pageCount, pageForX, pageOffset,
+  tapAt, turnFrom,
 } from "@/lib/paginate";
 import {
   LINE_HEIGHT, MARGIN, READER_FONTS, READER_THEMES, SIZE, cleanReader, fontStack,
@@ -61,19 +63,81 @@ export function BookReader({
   const [total, setTotal] = useState(book.pages ?? 0);
   /** Page within the current chapter, for the counter and the progress bar. */
   const [spread, setSpread] = useState({ page: 0, pages: 1 });
+  /** Characters into the chapter — see lib/anchor.ts for why not a page. */
+  const [offset, setOffset] = useState(book.readOffset);
+  /** Which line was lit, for anyone reading line by line. */
+  const [line, setLine] = useState(book.readLine);
 
   // Written back on a debounce rather than per turn: one page turn is one
   // localStorage write of the entire diary, and a thumb held on the forward
   // button would do fifty of them.
-  const saved = useRef({ at: book.page ?? 0, total: book.pages ?? 0 });
+  const saved = useRef({
+    at: book.page ?? 0,
+    total: book.pages ?? 0,
+    offset: book.readOffset,
+    line: book.readLine,
+  });
+  /**
+   * The latest onChange, held in a ref rather than depended on.
+   *
+   * The shelf passes a fresh arrow function on every render, and a render is
+   * caused by any change to the store — so with `onChange` in the deps below,
+   * the effect tore down and restarted its timer over and over and the write
+   * NEVER happened. The book saved its position once, on opening, and then
+   * silently stopped: close it after twenty pages and it reopened at the
+   * beginning, with nothing anywhere to say why.
+   */
+  const latestChange = useRef(onChange);
+  const saveRef = useRef({ at, total, offset, line });
   useEffect(() => {
-    if (saved.current.at === at && saved.current.total === total) return;
+    latestChange.current = onChange;
+    saveRef.current = { at, total, offset, line };
+  });
+
+  useEffect(() => {
+    const now = { at, total, offset, line };
+    if (
+      saved.current.at === at && saved.current.total === total &&
+      saved.current.offset === offset && saved.current.line === line
+    ) {
+      return;
+    }
     const t = setTimeout(() => {
-      saved.current = { at, total };
-      onChange({ page: at, pages: total || undefined });
+      saved.current = now;
+      latestChange.current({
+        page: at,
+        pages: total || undefined,
+        readOffset: offset,
+        readLine: line,
+      });
     }, 700);
     return () => clearTimeout(t);
-  }, [at, total, onChange]);
+  }, [at, total, offset, line]);
+
+  /**
+   * And once more on the way out.
+   *
+   * A debounce plus a close is a race the close wins: shut the book within
+   * 700ms of the last page turn and that turn was never written down. The
+   * unmount is the last chance to say where you stopped.
+   */
+  useEffect(() => {
+    return () => {
+      const now = saveRef.current;
+      if (
+        saved.current.at === now.at && saved.current.offset === now.offset &&
+        saved.current.line === now.line
+      ) {
+        return;
+      }
+      latestChange.current({
+        page: now.at,
+        pages: now.total || undefined,
+        readOffset: now.offset,
+        readLine: now.line,
+      });
+    };
+  }, []);
 
   /**
    * The renderer's own back and forward.
@@ -142,6 +206,9 @@ export function BookReader({
           chapter={at - 1}
           onChapter={(n) => setAt(n + 1)}
           onSpread={setSpread}
+          onAnchor={setOffset}
+          onLine={setLine}
+          startLine={line}
         />
       ) : (
         <PdfPages {...common} pager={pager} page={at} onPage={setAt} />
@@ -236,6 +303,78 @@ interface RendererProps {
   onChrome: () => void;
 }
 
+/**
+ * Every run of text in the laid-out chapter, in reading order.
+ *
+ * The bridge between "a place in the text" and "a place on the screen". A
+ * Range over one of these reports where the browser actually put it, which is
+ * the only authority on which page a sentence ended up on.
+ */
+function textRuns(host: HTMLElement): Text[] {
+  const out: Text[] = [];
+  const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    if (node.textContent) out.push(node as Text);
+    node = walker.nextNode();
+  }
+  return out;
+}
+
+/** Where a run sits along the laid-out strip, ignoring the current translate. */
+function xOf(range: Range, stripLeft: number): number | null {
+  const rect = range.getBoundingClientRect();
+  if (!rect.width && !rect.height) return null;
+  return rect.left - stripLeft;
+}
+
+/**
+ * The character offset of the first text on a page.
+ *
+ * What gets written down when you stop reading. Taken from the FIRST run that
+ * the browser put on this page or later, because that is the first thing your
+ * eye lands on when the page comes up.
+ */
+function offsetOfPage(host: HTMLElement, stripLeft: number, page: number, w: number): number {
+  const runs = textRuns(host);
+  const range = document.createRange();
+  let acc = 0;
+  for (const run of runs) {
+    const len = run.length;
+    if (len > 0) {
+      range.selectNodeContents(run);
+      const x = xOf(range, stripLeft);
+      if (x !== null && pageForX(x, w, PAGE_GAP) >= page) return acc;
+    }
+    acc += len;
+  }
+  return acc;
+}
+
+/**
+ * Which page an offset ended up on, once the chapter has been laid out.
+ *
+ * Measured one character at a time rather than by the run: a paragraph can
+ * span a page break, so asking where the paragraph starts would send you back
+ * to the page before the one you were on.
+ */
+function pageOfOffset(host: HTMLElement, stripLeft: number, offset: number, w: number): number {
+  const runs = textRuns(host);
+  if (runs.length === 0) return 0;
+  const spot = locate(runs.map((r) => r.length), offset);
+  const range = document.createRange();
+  for (let i = spot.index; i < runs.length; i++) {
+    const run = runs[i]!;
+    const from = i === spot.index ? Math.min(spot.into, Math.max(0, run.length - 1)) : 0;
+    if (run.length === 0) continue;
+    range.setStart(run, from);
+    range.setEnd(run, Math.min(run.length, from + 1));
+    const x = xOf(range, stripLeft);
+    if (x !== null) return pageForX(x, w, PAGE_GAP);
+  }
+  return 0;
+}
+
 /* ==========================================================================
    EPUB
    ========================================================================== */
@@ -257,11 +396,16 @@ interface RendererProps {
  * holds the DOM, the measuring, and the gesture.
  */
 function EpubPages({
-  book, prefs, pager, chapter, onReady, onError, onChrome, onChapter, onSpread,
+  book, prefs, pager, chapter, onReady, onError, onChrome, onChapter, onSpread, onAnchor,
+  onLine, startLine,
 }: RendererProps & {
   chapter: number;
   onChapter: (index: number) => void;
   onSpread: (s: { page: number; pages: number }) => void;
+  /** Characters into the chapter, written down so the book reopens here. */
+  onAnchor: (offset: number) => void;
+  onLine: (index: number) => void;
+  startLine?: number;
 }) {
   const archive = useRef<EpubArchive | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -275,6 +419,17 @@ function EpubPages({
   const [chapters, setChapters] = useState(0);
   /** Set when a chapter is entered backwards, so it opens on its last page. */
   const landOnLast = useRef(false);
+  /**
+   * Where you are, in characters into this chapter.
+   *
+   * The source of truth for the page, not the other way round. Every relayout
+   * — a font change, a rotation, a margin nudge — recomputes the page FROM
+   * this, which is what keeps your place when the type gets bigger instead of
+   * leaving you a page or two adrift.
+   */
+  const anchor = useRef<number | null>(cleanOffset(book.readOffset) ?? null);
+  /** Live finger position during a turn, in px. */
+  const [dragX, setDragX] = useState<number | null>(null);
   const theme = themeSpec(prefs.theme);
 
   useEffect(() => {
@@ -309,9 +464,18 @@ function EpubPages({
   // The chapter's markup. Changing font size does NOT come through here: the
   // HTML is the same, only its layout changes, and re-parsing a chapter to
   // make the type one point bigger would blank the screen every tap.
+  const opened = useRef(chapter);
   useEffect(() => {
     if (!ready) return;
     const part = archive.current?.chapter(chapter);
+    // A stored offset belongs to ONE chapter — the one that was open when it
+    // was written. Turning the page into a different chapter makes it
+    // meaningless, so it is dropped and the new chapter opens at its start
+    // (or its end, if that is the way you came in).
+    if (chapter !== opened.current) {
+      anchor.current = null;
+      opened.current = chapter;
+    }
     setHtml(part?.html ?? "");
     setLabel(part?.title ?? "");
   }, [ready, chapter]);
@@ -355,18 +519,56 @@ function EpubPages({
         const last = landOnLast.current;
         landOnLast.current = false;
         setPages(count);
-        setPage((cur) => (last ? count - 1 : clampPage(cur, count)));
+
+        if (last) {
+          setPage(count - 1);
+          return;
+        }
+        // The anchor decides, when there is one. `stripLeft` is the strip's
+        // own left edge INCLUDING whatever it is currently translated by, so
+        // subtracting it gives untranslated coordinates whatever page we are
+        // sitting on at the moment of measuring.
+        const want = anchor.current;
+        if (want !== null) {
+          const stripLeft = el.getBoundingClientRect().left;
+          setPage(clampPage(pageOfOffset(el, stripLeft, want, box.w), count));
+          return;
+        }
+        setPage((cur) => clampPage(cur, count));
       });
     });
     return () => {
       cancelAnimationFrame(raf);
       cancelAnimationFrame(raf2);
     };
-  }, [html, box.w, box.h, prefs.size, prefs.lineHeight, prefs.font, prefs.paged]);
+  }, [html, box.w, box.h, prefs.size, prefs.lineHeight, prefs.font, prefs.paged, prefs.margin]);
+
+  /**
+   * Write down where you are, once the page has settled.
+   *
+   * After the turn, not during it: measuring mid-animation reads the page
+   * sliding past rather than the one you landed on. Reported up so the shelf
+   * entry carries it, which is what makes closing the book and coming back
+   * tomorrow land on this sentence.
+   */
+  useEffect(() => {
+    const el = column.current;
+    if (!el || !box.w || !pages) return;
+    const t = setTimeout(() => {
+      const stripLeft = el.getBoundingClientRect().left;
+      const at = offsetOfPage(el, stripLeft, page, box.w);
+      anchor.current = at;
+      onAnchor(at);
+    }, 340);
+    return () => clearTimeout(t);
+  }, [page, pages, box.w, onAnchor]);
 
   useEffect(() => {
     onSpread({ page, pages });
   }, [page, pages, onSpread]);
+
+  /** Where the strip sits right now: the settled page, plus the finger. */
+  const slide = -pageOffset(page, box.w) + (dragX ?? 0);
 
   /**
    * One page forward or back, rolling over into the next chapter.
@@ -415,8 +617,16 @@ function EpubPages({
       box={box}
       onTurn={go}
       onChrome={onChrome}
+      onDrag={setDragX}
+      onLine={onLine}
+      startLine={startLine}
       page={page}
       pages={pages}
+      atStart={chapter === 0}
+      atEnd={chapter >= chapters - 1}
+      edges={prefs.paged ? pages - 1 : 0}
+      slide={slide}
+      turning={dragX !== null}
     >
       <div
         className="soma-epub"
@@ -432,8 +642,14 @@ function EpubPages({
                 columnWidth: `${box.w}px`,
                 columnGap: `${PAGE_GAP}px`,
                 columnFill: "auto" as const,
-                transform: `translateX(-${pageOffset(page, box.w)}px)`,
-                transition: "transform 260ms cubic-bezier(.2,.8,.2,1)",
+                transform: `translateX(${slide}px)`,
+                // No transition while the finger is down, or the paper lags
+                // behind it. The settle is a decelerating curve rather than
+                // an ease-in-out: a page you let go of carries on and stops,
+                // it does not accelerate from nothing.
+                transition: dragX === null
+                  ? "transform 320ms cubic-bezier(.22,.61,.36,1)"
+                  : "none",
               }
             : {}),
         }}
@@ -468,7 +684,8 @@ function EpubPages({
  * behave differently depending on what the book happens to be stored as.
  */
 function ReadingSurface({
-  book, prefs, viewportRef, columnRef, box, onTurn, onChrome, page, pages, children,
+  book, prefs, viewportRef, columnRef, box, onTurn, onChrome, onDrag, onLine,
+  startLine, page, pages, atStart, atEnd, edges, slide, turning, children,
 }: {
   book: MindEntry;
   prefs: ReaderPrefs;
@@ -477,19 +694,40 @@ function ReadingSurface({
   box: { w: number; h: number };
   onTurn: (delta: 1 | -1) => void;
   onChrome: () => void;
+  /** The finger's travel while a turn is in progress, or null when it is not. */
+  onDrag?: (dx: number | null) => void;
+  /** Which line is lit, written down so the book reopens on it. */
+  onLine?: (index: number) => void;
+  /** The line to open on, once this page's lines have been measured. */
+  startLine?: number;
   page: number;
   pages: number;
+  /** Whether this is the first or last page of the whole book. */
+  atStart?: boolean;
+  atEnd?: boolean;
+  /** How many page boundaries the strip has, for the sliding paper edges. */
+  edges?: number;
+  /** The strip's current translate, so the edges move in lockstep with it. */
+  slide?: number;
+  /** True while a turn is in progress, which is when the edges show. */
+  turning?: boolean;
   children: React.ReactNode;
 }) {
   const theme = themeSpec(prefs.theme);
   const addMind = useSoma((s) => s.addMind);
   const removeMind = useSoma((s) => s.removeMind);
+  // Whether there is anything beyond this page. Only the very front and back
+  // of the BOOK resist — every other end-of-chapter carries on into the next.
+  const atBookStart = page === 0 && atStart;
+  const atBookEnd = page === pages - 1 && atEnd;
 
   const drag = useRef<{ x: number; y: number; turning: boolean } | null>(null);
   const [lines, setLines] = useState<Rect[]>([]);
   const [line, setLine] = useState(0);
   /** Set when a page is entered backwards, so it opens on its last line. */
   const landOnLastLine = useRef(false);
+  /** The stored line, used once — after that you are reading, not resuming. */
+  const resumeLine = useRef(startLine);
 
   /**
    * A word you highlighted is a word you wanted.
@@ -595,8 +833,18 @@ function ReadingSurface({
     setLines(local);
     // A page you walked backwards into opens at its LAST line, for the same
     // reason a chapter you walked backwards into opens at its last page: that
-    // is where you were standing.
-    setLine(landOnLastLine.current ? Math.max(0, local.length - 1) : 0);
+    // is where you were standing. A book you have just OPENED goes to the
+    // line it was closed on, once and once only — after the first page it is
+    // reading rather than resuming.
+    const resume = resumeLine.current;
+    resumeLine.current = undefined;
+    setLine(
+      landOnLastLine.current
+        ? Math.max(0, local.length - 1)
+        : resume !== undefined
+          ? Math.min(Math.max(0, resume), Math.max(0, local.length - 1))
+          : 0,
+    );
     landOnLastLine.current = false;
   }, [columnRef, viewportRef, prefs.lineFocus]);
 
@@ -610,6 +858,10 @@ function ReadingSurface({
     const t = setTimeout(measureLines, 300);
     return () => clearTimeout(t);
   }, [measureLines, prefs.lineFocus, page, pages, box.w, box.h, prefs.size, prefs.font]);
+
+  useEffect(() => {
+    if (prefs.lineFocus && lines.length > 0) onLine?.(line);
+  }, [line, lines.length, prefs.lineFocus, onLine]);
 
   const advance = useCallback(
     (delta: 1 | -1) => {
@@ -644,20 +896,28 @@ function ReadingSurface({
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d || !prefs.paged) return;
-    if (!d.turning && isTurning(e.clientX - d.x, e.clientY - d.y, box.w || 1)) {
-      d.turning = true;
-    }
-    if (d.turning) document.getSelection()?.removeAllRanges();
+    const dx = e.clientX - d.x;
+    if (!d.turning && isTurning(dx, e.clientY - d.y, box.w || 1)) d.turning = true;
+    if (!d.turning) return;
+    document.getSelection()?.removeAllRanges();
+    // The page goes where the finger goes. This is the whole difference
+    // between a reader that turns pages and one that plays an animation at
+    // you: you are moving the paper, and you can change your mind halfway and
+    // put it back.
+    const free = dx < 0 ? page < pages - 1 || !atBookEnd : page > 0 || !atBookStart;
+    onDrag?.(damp(dx, free));
   };
 
   const onPointerCancel = () => {
     // iOS taking the gesture over for its own selection handles.
     drag.current = null;
+    onDrag?.(null);
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
     const from = drag.current;
     drag.current = null;
+    onDrag?.(null);
     if (!from) return;
 
     const dx = e.clientX - from.x;
@@ -703,6 +963,22 @@ function ReadingSurface({
         paddingBottom: "max(58px, calc(env(safe-area-inset-bottom) + 46px))",
       }}
     >
+      {/* The gutter. Always there, on both sides, because a page in a book is
+          never a rectangle of even light — it curves away at the binding and
+          at the cut edge. Two very soft gradients are enough to say "this is
+          a page in something" rather than "this is a div". */}
+      {prefs.paged && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 right-0 z-10"
+          style={{
+            background: theme.dark
+              ? "linear-gradient(90deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 5%, rgba(0,0,0,0) 95%, rgba(0,0,0,0.5) 100%)"
+              : "linear-gradient(90deg, rgba(0,0,0,0.09) 0%, rgba(0,0,0,0) 5%, rgba(0,0,0,0) 95%, rgba(0,0,0,0.09) 100%)",
+          }}
+        />
+      )}
+
       <div
         ref={viewportRef}
         className={cn("relative h-full", prefs.paged ? "overflow-hidden" : "overflow-y-auto")}
@@ -719,6 +995,41 @@ function ReadingSurface({
         style={{ touchAction: prefs.paged ? "pan-y" : "auto" }}
       >
         {children}
+
+        {/* The edge of the paper.
+            A bar of shadow at every page boundary, carried on a strip that
+            moves with the text, so turning a page sweeps a real edge across
+            the screen instead of cross-fading one block of words into
+            another. This is the whole of the effect: a page turn you can see
+            the seam of reads as paper, and one you cannot reads as a slide
+            deck. It fades in only while a turn is happening — a shadow
+            sitting still on a page you are reading is just a smudge. */}
+        {prefs.paged && (edges ?? 0) > 0 && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-0 w-full"
+            style={{
+              transform: `translateX(${slide ?? 0}px)`,
+              transition: turning ? "none" : "transform 320ms cubic-bezier(.22,.61,.36,1)",
+            }}
+          >
+            {Array.from({ length: edges ?? 0 }, (_, i) => (
+              <span
+                key={i}
+                className="absolute inset-y-0 block"
+                style={{
+                  left: (i + 1) * (box.w + PAGE_GAP) - PAGE_GAP / 2 - 18,
+                  width: 36,
+                  background: theme.dark
+                    ? "linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 48%, rgba(255,255,255,0.05) 52%, rgba(0,0,0,0) 100%)"
+                    : "linear-gradient(90deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.16) 48%, rgba(255,255,255,0.5) 52%, rgba(0,0,0,0) 100%)",
+                  opacity: turning ? 1 : 0,
+                  transition: "opacity 220ms",
+                }}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Line focus lives INSIDE the viewport, so it is clipped with the
             page and needs no coordinate juggling: the page dims above and

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  PAGE_GAP, TURN_PX, bookProgress, clampPage, isTurning, pageCount, pageOffset, tapAt,
-  turnBar, turnFrom,
+  PAGE_GAP, TURN_PX, bookProgress, clampPage, damp, isTurning, pageCount, pageForX,
+  pageOffset, tapAt, turnBar, turnFrom,
 } from "./paginate.ts";
 
 test("a chapter that fits on one screen is one page", () => {
@@ -93,4 +93,33 @@ test("a gesture commits to being a turn as soon as it crosses the bar", () => {
   assert.equal(turnBar(360), 360 * 0.12);
   assert.equal(turnBar(2000), TURN_PX, "capped");
   assert.equal(turnBar(50), 16, "and floored");
+});
+
+test("a point in the strip maps back to the page it is on", () => {
+  const w = 360;
+  assert.equal(pageForX(0, w), 0);
+  assert.equal(pageForX(w - 1, w), 0);
+  assert.equal(pageForX(w + PAGE_GAP, w), 1);
+  assert.equal(pageForX(3 * (w + PAGE_GAP) + 5, w), 3);
+  assert.equal(pageForX(-20, w), 0, "never before the first page");
+  assert.equal(pageForX(100, 0), 0, "nothing measured yet");
+});
+
+test("a word that lands in the gutter belongs to the page it flowed out of", () => {
+  const w = 360;
+  // The gap sits between page 0 and page 1; anything in it is still page 0.
+  assert.equal(pageForX(w + 1, w), 0);
+  assert.equal(pageForX(w + PAGE_GAP - 1, w), 0);
+});
+
+test("pageForX undoes pageOffset", () => {
+  const w = 393;
+  for (let n = 0; n < 20; n++) assert.equal(pageForX(pageOffset(n, w), w), n, `page ${n}`);
+});
+
+test("a drag runs free inside the book and drags its heels at the ends", () => {
+  assert.equal(damp(-120, true), -120);
+  assert.equal(damp(-120, false), -24);
+  assert.equal(damp(0, false), 0);
+  assert.ok(Math.abs(damp(300, false)) < 300, "pulling against the cover is heavy");
 });
