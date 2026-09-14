@@ -1,4 +1,5 @@
 import { fitWithin } from "./fit-image.ts";
+import { pickFiles } from "./file-picker.ts";
 /**
  * Habit photos.
  *
@@ -181,33 +182,16 @@ export async function allPhotoDates(): Promise<Set<string>> {
 }
 
 /**
- * Opens the camera on a phone and the file picker on a desktop. `capture`
- * asks for the rear camera directly; browsers that ignore it fall back to the
- * normal picker, which is the desired behaviour rather than an error.
+ * Opens the camera on a phone and the file picker on a desktop.
+ *
+ * `capture` asks for the rear camera directly; browsers that ignore it fall
+ * back to the normal picker, which is the desired behaviour rather than an
+ * error. The awkward parts of waiting for the answer live in file-picker.ts —
+ * they are the same on a photo from iCloud as on a book from Files.
  */
-export function captureImage(): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/*";
-    input.capture = "environment";
-    input.style.display = "none";
-    document.body.appendChild(input);
-
-    let settled = false;
-    const done = (f: File | null) => {
-      if (settled) return;
-      settled = true;
-      input.remove();
-      resolve(f);
-    };
-
-    input.addEventListener("change", () => done(input.files?.[0] ?? null));
-    // There is no cancel event on a file input. Focus returning to the window
-    // means the picker closed; if no file arrived by then, it was dismissed.
-    window.addEventListener("focus", () => setTimeout(() => done(null), 400), { once: true });
-    input.click();
-  });
+export async function captureImage(): Promise<File | null> {
+  const files = await pickFiles({ accept: "image/*", capture: "environment" });
+  return files[0] ?? null;
 }
 
 /**

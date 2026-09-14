@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
-import { deleteBookFile, getBookFile, sizeLabel } from "@/lib/book-files";
-import { pickBookFiles, readBookFile, storeBookFile } from "@/lib/book-import";
+import {
+  deleteBookFile, getBookFile, kindOf, saveBookFile, sizeLabel, titleFromFilename,
+} from "@/lib/book-files";
+import { pickBookFiles, readBookFile } from "@/lib/book-import";
 import { captureImage, savePhoto } from "@/lib/habit-photos";
 import { searchBooks, upgradeCoverUrl, type BookMatch } from "@/lib/lookup";
 import {
@@ -134,44 +136,66 @@ export function Bookshelf() {
   /**
    * Put a file you already own on the shelf.
    *
-   * The entry is created BEFORE the file is stored, because the file is filed
-   * under the entry's id — and because an import that dies while writing 40MB
-   * should leave you with a book you can rename, not with bytes in a database
-   * nothing points at. Several files at once: nobody imports one book.
+   * The book appears FIRST, under its filename, and is then filled in. Reading
+   * a 40MB PDF far enough to learn its title and render its first page takes
+   * real seconds on a phone, and during those seconds the old order — parse,
+   * then add — left the shelf looking exactly as it had before you tapped
+   * anything. Whether that was slowness or failure was impossible to tell, and
+   * the answer to "did it work" should never be "wait and see".
+   *
+   * So: check it is a book at all, put it on the shelf, store the bytes, and
+   * only then open it for its real title, author, length and cover. Every step
+   * after the first is best effort — a book whose metadata will not parse is
+   * still a book you imported, sitting there under its filename with the
+   * reason on screen.
    */
   const importFiles = async () => {
     const files = await pickBookFiles();
     if (files.length === 0) return;
     setImporting(files.length);
     const date = getLocalDateKey(new Date());
-    let added = 0;
+
     for (const file of files) {
+      const kind = kindOf(file);
+      if (!kind) {
+        toast.error(`${file.name} is not a PDF or an EPUB.`);
+        setImporting((n) => Math.max(0, n - 1));
+        continue;
+      }
+
+      const id = addMind({
+        date,
+        kind: "book",
+        title: titleFromFilename(file.name),
+        page: 0,
+        fileKind: kind,
+        fileName: file.name,
+      } as Omit<MindEntry, "id">);
+
       try {
+        await saveBookFile(id, kind, file.name, file);
         const read = await readBookFile(file);
-        const id = addMind({
-          date,
-          kind: "book",
+        updateMind(id, {
           title: read.title,
           author: read.author,
           pages: read.units,
-          page: 0,
-          fileKind: read.kind,
-          fileName: file.name,
-        } as Omit<MindEntry, "id">);
-        await storeBookFile(id, date, file, read);
-        // The cover component keys its load on sourceKey, so it needs a value
-        // to notice the bytes that were just written under this entry's id.
-        updateMind(id, { sourceKey: `file:${read.kind}:${Date.now().toString(36)}` });
-        added++;
+          // The cover component keys its load on sourceKey, so it needs a value
+          // to notice the bytes just written under this entry's id.
+          sourceKey: `file:${kind}:${Date.now().toString(36)}`,
+        });
+        if (read.cover && read.cover.size > 0) {
+          await savePhoto(coverKey(id), date, read.cover);
+          updateMind(id, { sourceKey: `file:${kind}:${Date.now().toString(36)}#c` });
+        }
       } catch (err) {
         toast.error(
-          `${file.name}: ${err instanceof Error ? err.message : "could not be imported."}`,
+          `${file.name}: ${err instanceof Error ? err.message : "could not be read."}`,
         );
       } finally {
         setImporting((n) => Math.max(0, n - 1));
       }
     }
-    if (added > 0) toast.success(added === 1 ? "On the shelf" : `${added} books on the shelf`);
+    toast.success(files.length === 1 ? "On the shelf" : `${files.length} books on the shelf`);
   };
 
   return (
