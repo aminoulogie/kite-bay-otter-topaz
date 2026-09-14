@@ -348,10 +348,15 @@ export function WorkoutView() {
     // The confetti burst needs a box to fire inside, and the grid is now that
     // box — so the ref moves onto the wrapper rather than being dropped.
     //
-    // Only the furniture above the session is arrangeable. The readiness gate,
-    // the exercise list and the set rows keep no key and stay in the order
-    // they are in: a live session is a sequence of steps, and shuffling the
-    // steps of a workout is not a feature anyone wants at rep eight.
+    // Every card on the page is arrangeable, the exercises included. That was
+    // not the original intent — the reasoning was that a live session is a
+    // sequence of steps and shuffling the steps of a workout is not a feature
+    // anyone wants at rep eight — but it was not what the code did either:
+    // the exercise cards were keyed, and a key inside a `.map` comes back from
+    // Children.toArray in a form the grid did not recognise, so they fell out
+    // of the layout and stacked up underneath it with no gap. Half a rule,
+    // enforced by accident. Order is still the workout's own until someone
+    // deliberately drags a card, which is the part that mattered.
     <WidgetGrid tab="workout" innerRef={rootRef}>
       <Card key="header" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_18%,transparent),transparent_55%),var(--color-surface)]">
         <div className="flex items-start justify-between gap-3">
@@ -504,7 +509,7 @@ export function WorkoutView() {
       </div>
 
       {showSplits && (
-        <Card>
+        <Card key="splits">
           <CardTitle>Routines</CardTitle>
           <div className="flex flex-col gap-1.5">
             {Object.keys(routines).map((name) => (
@@ -526,7 +531,7 @@ export function WorkoutView() {
       )}
 
       {showSearch && (
-        <Card>
+        <Card key="search">
           <CardTitle>Add movement</CardTitle>
           <Input
             autoFocus
@@ -557,7 +562,7 @@ export function WorkoutView() {
       )}
 
       {!answered && !live.readinessDismissed && (
-        <Card>
+        <Card key="readiness">
           <CardTitle>
             <span>Before you start</span>
             <span className="text-[0.62rem] font-bold uppercase tracking-wide text-faint">Optional</span>
@@ -607,7 +612,7 @@ export function WorkoutView() {
       )}
 
       {live.exercises.length === 0 && (
-        <Card className="py-10 text-center">
+        <Card key="empty" className="py-10 text-center">
           <Timer className="mx-auto mb-2 size-8 text-faint" />
           <div className="font-display text-lg font-bold">Empty session</div>
           <p className="mx-auto mt-1 max-w-xs text-sm text-muted">
@@ -659,7 +664,11 @@ export function WorkoutView() {
 
         return (
           <Card
-            key={`${ex.name}-${exIdx}`}
+            // The card's own heading, so the size picker and the "off the
+            // page" list call an exercise what the card calls it. Keyed by
+            // POSITION as well as name, because a session can hold the same
+            // movement twice and two widgets cannot share an id.
+            key={`${exIdx + 1}. ${ex.name}`}
             className="space-y-2"
             style={color ? { borderLeft: `4px solid ${color}` } : undefined}
           >

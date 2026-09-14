@@ -2,8 +2,8 @@ import { Eye, EyeOff, Plus, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Children, createContext, isValidElement, useContext, useMemo, useState } from "react";
 import {
-  SIZE_SPECS, addSpacer, hidden as hiddenOf, isDefault, isNatural, isSpacer, isTile, move,
-  reconcile, removeWidget, resize, specFor, toggleHidden, visible, widgetDef, type WidgetSize,
+  SIZE_SPECS, addSpacer, hidden as hiddenOf, isDefault, isSpacer, isTile, move, reconcile,
+  removeWidget, resize, specFor, toggleHidden, visible, widgetDef, type WidgetSize,
 } from "@/lib/dashboard-layout";
 import { useSoma } from "@/lib/store";
 import { useLongPressDrag } from "@/lib/use-long-press-drag";
@@ -65,19 +65,43 @@ const COL: Record<1 | 2 | 4, string> = {
  * own size and a 1x1 must not.
  */
 const ROW: Record<1 | 2 | 3, { tile: string; wide: string }> = {
-  1: { tile: "h-[5.25rem]", wide: "min-h-[5.25rem]" },
+  // One row, full width, is the one size with NO floor: it means "as tall as
+  // this needs to be". That is what makes a tab bar 48px rather than a 48px
+  // bar sitting in an 84px hole — and it is why the ladder now only ever goes
+  // up. A floor here made 1x4 taller than 2x4 for every piece of furniture on
+  // the page, which is a picker that lies about its own shapes.
+  1: { tile: "h-[5.25rem]", wide: "" },
   2: { tile: "h-[11rem]", wide: "min-h-[11rem]" },
   3: { tile: "h-[17rem]", wide: "min-h-[17rem]" },
 };
 
-function boxFor(size: WidgetSize, natural: boolean): string {
+function boxFor(size: WidgetSize): string {
   const spec = specFor(size);
-  // Furniture left at its default size takes its width from the size and its
-  // height from itself. A tab bar is 48px tall because that is how tall a tab
-  // bar is — but only until someone asks for it to be something else.
-  if (natural) return COL[spec.w];
   const h = ROW[spec.h];
+  // A tile is a glance and gets a hard box; a full-width card gets a floor and
+  // may grow past it, so a card with controls in it stays usable.
   return cn(COL[spec.w], isTile(size) ? h.tile : h.wide);
+}
+
+/**
+ * The widget id inside a key React has already mangled.
+ *
+ * `Children.toArray` rewrites every key so it is unique across the whole tree,
+ * and how it rewrites depends on where the child sits: a direct child with an
+ * explicit key comes back as ".$header", but the SAME child inside a mapped
+ * array comes back as ".5:$header" — the array's own position, then the key.
+ *
+ * Reading only the ".$" form is why Train's exercise cards were not widgets.
+ * They were keyed, they were meant to be arrangeable, and because they were
+ * produced by a `.map` they failed the test and fell through to the unarranged
+ * extras below the grid — with no gap between them, which is exactly what it
+ * looked like. Everything after the last "$" is the key the view wrote; "=0"
+ * and "=2" are React's own escapes for "=" and ":" and are put back.
+ */
+function idOf(key: string): string {
+  const at = key.lastIndexOf("$");
+  if (at < 0) return "";
+  return key.slice(at + 1).replace(/=2/g, ":").replace(/=0/g, "=");
 }
 
 /** The shape, drawn to scale, for the picker. */
@@ -124,23 +148,24 @@ export function WidgetGrid({
    * lookup table. And it gives the sheets, dialogs and footnotes a home: they
    * are not cards, they must not be reorderable, and dropping them on the floor
    * because they had no key would quietly break every editor on the page.
-   *
-   * React.Children.toArray marks the difference for us: an explicit key comes
-   * back prefixed ".$", a positional one as "." plus its index.
    */
-  const { nodes, extras } = useMemo(() => {
+  const { nodes, order, extras } = useMemo(() => {
     const map: Record<string, React.ReactNode> = {};
+    const ids: string[] = [];
     const rest: React.ReactNode[] = [];
     for (const child of Children.toArray(children)) {
-      const key = isValidElement(child) ? String(child.key ?? "") : "";
-      const id = key.startsWith(".$") ? key.slice(2) : "";
-      if (id) map[id] = child;
-      else rest.push(child);
+      const id = idOf(isValidElement(child) ? String(child.key ?? "") : "");
+      if (id) {
+        if (!(id in map)) ids.push(id);
+        map[id] = child;
+      } else rest.push(child);
     }
-    return { nodes: map, extras: rest };
+    return { nodes: map, order: ids, extras: rest };
   }, [children]);
 
-  const layout = useMemo(() => reconcile(layouts[tab], tab), [layouts, tab]);
+  // `order` rather than Object.keys, so the exercise a session just gained
+  // lands where the view put it rather than wherever the object felt like.
+  const layout = useMemo(() => reconcile(layouts[tab], tab, order), [layouts, tab, order]);
   const setDashboard = (next: typeof layout) => setLayout(tab, next);
   const resetDashboard = () => resetLayout(tab);
 
@@ -199,7 +224,11 @@ export function WidgetGrid({
           layout being stored twice. */}
       <div
         className={cn(
-          "soma-grid grid grid-cols-4 items-start gap-2 lg:grid-cols-8 lg:gap-3",
+          // More air between rows than between columns. Two tiles side by side
+          // are one row of a grid and belong close together; two cards stacked
+          // are two separate things and were reading as one block — which is
+          // what the exercise list looked like once it joined the grid.
+          "soma-grid grid grid-cols-4 items-start gap-x-2 gap-y-3 lg:grid-cols-8 lg:gap-x-3 lg:gap-y-4",
           editing && "select-none",
         )}
         data-editing={editing ? "true" : "false"}
@@ -211,9 +240,9 @@ export function WidgetGrid({
           // A spacer has no view behind it — being nothing IS the widget — so
           // the "this page does not draw that one" guard has to let it past.
           if (!node && !spacer) return null;
-          // Furniture only sizes itself while it is where it was put; once a
-          // size has been chosen for it, it gets that size like anything else.
-          const natural = isNatural(def, p.size);
+          // An invented widget has no registry entry to be named by, so it is
+          // called what the view called it — which for an exercise card is the
+          // heading already printed on its face.
           const label = spacer ? "Spacing" : def?.label ?? p.id;
           const held = drag.dragging === i;
           const target = drag.over === i && drag.dragging !== null && !held;
@@ -234,7 +263,7 @@ export function WidgetGrid({
                 // a target: the review queue renders null when no word is due,
                 // and a zero-height cell cannot be dragged onto or tapped.
                 editing && "min-h-16",
-                boxFor(p.size, natural),
+                boxFor(p.size),
                 held && "scale-[0.97] opacity-60",
                 target && "ring-2 ring-accent ring-offset-2 ring-offset-bg rounded-3xl",
               )}
@@ -251,7 +280,7 @@ export function WidgetGrid({
                       // collapses an empty widget keys off .soma-widget-box —
                       // so a gap must not wear that class, or the one widget
                       // whose whole job is to take up room would take none.
-                      spacer ? "soma-spacer" : natural ? "soma-widget-natural" : "soma-widget-box",
+                      spacer ? "soma-spacer" : "soma-widget-box",
                       editing && "pointer-events-none opacity-45",
                       // Small is a square you glance at, so it gets a hard box
                       // and a fade where the content runs out. Large is a panel
@@ -261,8 +290,8 @@ export function WidgetGrid({
                       // A tile is a glance and gets a hard box with a fade
                       // where its content runs out; a full-width card keeps
                       // its natural height and only gains a floor.
-                      !spacer && !natural && isTile(p.size) && "soma-widget-tile",
-                      !spacer && !natural && specFor(p.size).w === 1 && "soma-tile-1",
+                      !spacer && isTile(p.size) && "soma-widget-tile",
+                      !spacer && specFor(p.size).w === 1 && "soma-tile-1",
                     )}
                   >
                     {node}

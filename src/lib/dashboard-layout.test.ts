@@ -4,8 +4,9 @@ import {
   DASHBOARD_WIDGETS as WIDGETS, SIZES, SIZE_SPECS, WIDGETS_BY_TAB, asSize, columnsFor,
   cycleSize, defaultLayout, hasDetailRoom, hasFullRoom, isArrangeable, isTile, widgetsFor,
   hidden, isDefault, move, nextSize, reconcile, resize, rowsFor, setHidden, specFor,
-  toggleHidden, visible, widgetDef, SPACER_SIZE, addSpacer, isNatural, isSpacer,
-  nextSpacerId, removeWidget, type WidgetPlacement, type WidgetSize,
+  toggleHidden, visible, widgetDef, DYNAMIC_SIZE, ONE_ROW_SINCE_V2, SPACER_SIZE, addSpacer,
+  isDynamic, isSpacer, migrateToOneRow, nextSpacerId, removeWidget,
+  type WidgetPlacement, type WidgetSize,
 } from "./dashboard-layout.ts";
 import { TAB_ORDER } from "./tab-order.ts";
 
@@ -283,30 +284,96 @@ test("each tab's default is its own registry, in order", () => {
 });
 
 /* --------------------------------------------------------------------------
-   Furniture that can be resized after all.
+   One row means one row.
    -------------------------------------------------------------------------- */
-test("furniture takes its own height only at the size it was given", () => {
-  const bar = { id: "tabs", label: "Tabs", size: "2x4" as WidgetSize, natural: true };
-  assert.equal(isNatural(bar, "2x4"), true, "left where it was put");
-  assert.equal(isNatural(bar, "3x4"), false, "moved off its default");
-  assert.equal(isNatural(bar, "1x1"), false);
-});
-
-test("a card is never natural, at any size", () => {
-  const card = { id: "score", label: "Score", size: "2x2" as WidgetSize };
-  for (const spec of SIZE_SPECS) assert.equal(isNatural(card, spec.id), false, spec.id);
-  assert.equal(isNatural(undefined, "2x4"), false);
-});
-
-test("every piece of furniture in the registry can be sized off its default", () => {
-  // The bug this guards: three of Train's five widgets showed a size picker
-  // that visibly did nothing, because `natural` was read at every size.
+test("no widget in the registry claims more rows than it wants to fill", () => {
+  // The bug: page furniture defaulted to 2x4 and took its own height there,
+  // so setting it to 1x4 gave it a floor it did not have before and it came
+  // out TALLER than the size above it. Anything that means "as short as this
+  // needs to be" has to SAY one row, because that is what one row now means.
   for (const [tab, list] of Object.entries(WIDGETS_BY_TAB)) {
-    for (const w of list.filter((x) => x.natural)) {
-      const other = SIZE_SPECS.map((s) => s.id).find((s) => s !== w.size)!;
-      assert.equal(isNatural(w, other), false, `${tab}/${w.id}`);
+    for (const w of list) {
+      assert.ok(
+        rowsFor(w.size) >= 1 && rowsFor(w.size) <= 3,
+        `${tab}/${w.id} ships at ${w.size}`,
+      );
     }
   }
+});
+
+test("the furniture that moved to one row is all still there, and is one row", () => {
+  for (const [tab, id] of ONE_ROW_SINCE_V2) {
+    const def = widgetsFor(tab).find((w) => w.id === id);
+    assert.ok(def, `${tab}/${id} has left the registry — drop it from the list too`);
+    assert.equal(def!.size, "1x4", `${tab}/${id}`);
+    assert.equal(rowsFor(def!.size), 1, `${tab}/${id}`);
+  }
+});
+
+test("the migration moves a stored 2x4 down, and leaves every other size alone", () => {
+  const before: Record<string, WidgetPlacement[]> = {
+    workout: [
+      { id: "header", size: "2x4", hidden: false },
+      { id: "date", size: "2x4", hidden: false },
+      { id: "quick", size: "3x4", hidden: false },
+      { id: "chips", size: "2x4", hidden: true },
+    ],
+  };
+  const after = migrateToOneRow(before);
+  assert.equal(after.workout![0]!.size, "2x4", "a card is not furniture and does not move");
+  assert.equal(after.workout![1]!.size, "1x4", "furniture at the old default comes down");
+  assert.equal(after.workout![2]!.size, "3x4", "a size someone chose is left alone");
+  assert.equal(after.workout![3]!.size, "1x4");
+  assert.equal(after.workout![3]!.hidden, true, "nothing else about the placement changes");
+  // Idempotent, and safe on a store that has no layouts at all.
+  assert.deepEqual(migrateToOneRow(after), after);
+  assert.deepEqual(migrateToOneRow(undefined), {});
+});
+
+/* --------------------------------------------------------------------------
+   Widgets the page makes up as it goes along.
+   -------------------------------------------------------------------------- */
+test("an id the registry does not hold is dynamic; a registered one is not", () => {
+  assert.equal(isDynamic("workout", "1. Incline Dumbbell Press"), true);
+  assert.equal(isDynamic("workout", "header"), false);
+  assert.equal(isDynamic("workout", "spacer:1"), false, "a gap is its own thing");
+});
+
+test("an exercise on the page becomes a widget, in the order the view gave it", () => {
+  const present = ["1. Squat", "2. Leg Press", "3. Leg Curl"];
+  const layout = reconcile(undefined, "workout", present);
+  const ids = layout.map((p) => p.id);
+  assert.deepEqual(ids.slice(-3), present, "appended in the workout's own order");
+  assert.deepEqual(ids.slice(0, -3), defaultLayout("workout").map((p) => p.id));
+  for (const id of present) {
+    assert.equal(layout.find((p) => p.id === id)!.size, DYNAMIC_SIZE);
+  }
+});
+
+test("an exercise still on the page keeps where it was dragged to", () => {
+  const present = ["1. Squat", "2. Leg Press"];
+  const first = reconcile(undefined, "workout", present);
+  const moved = move(first, "2. Leg Press", 0);
+  assert.equal(moved[0]!.id, "2. Leg Press");
+  assert.deepEqual(reconcile(moved, "workout", present), moved);
+});
+
+test("an exercise that is no longer in the session leaves the layout", () => {
+  // Otherwise every movement ever performed accumulates in the stored layout,
+  // and the one for a lift you last did in March is between two you are doing
+  // today.
+  const stored = reconcile(undefined, "workout", ["1. Squat", "2. Leg Press"]);
+  const today = reconcile(stored, "workout", ["1. Bench Press"]);
+  const ids = today.map((p) => p.id);
+  assert.ok(ids.includes("1. Bench Press"));
+  assert.ok(!ids.includes("1. Squat"));
+  assert.ok(!ids.includes("2. Leg Press"));
+});
+
+test("a gap survives a session whose exercises have all changed", () => {
+  const stored = addSpacer(reconcile(undefined, "workout", ["1. Squat"]));
+  const next = reconcile(stored, "workout", ["1. Bench Press"]);
+  assert.ok(next.some((p) => isSpacer(p.id)), "a spacer is not an exercise that went away");
 });
 
 /* --------------------------------------------------------------------------
@@ -373,4 +440,17 @@ test("removeWidget takes out exactly one thing", () => {
   const gone = removeWidget(layout, "spacer:1");
   assert.deepEqual(gone, defaultLayout("workout"));
   assert.deepEqual(removeWidget(layout, "nothing:here"), layout);
+});
+
+test("a panel that appears later lands beside its neighbours, not at the bottom", () => {
+  // Tapping "Load split" adds a card between the chips and the exercises. It
+  // has never been in the layout before, and appending it would put the panel
+  // underneath all six exercises — on the one tab where the user has already
+  // rearranged something, and nowhere else, which is the worst kind of bug.
+  const exercises = ["1. Squat", "2. Leg Press"];
+  const stored = reconcile(undefined, "workout", exercises);
+  const withPanel = reconcile(stored, "workout", ["chips", "splits", ...exercises]);
+  const ids = withPanel.map((p) => p.id);
+  assert.equal(ids[ids.indexOf("chips") + 1], "splits", "straight after the chips");
+  assert.ok(ids.indexOf("splits") < ids.indexOf("1. Squat"), "and above the exercises");
 });

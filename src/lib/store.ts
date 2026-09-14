@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { persist, type PersistStorage } from "zustand/middleware";
 import {
   BASE_EXERCISE_DB,
   DEFAULT_GOALS,
@@ -59,7 +59,7 @@ function mergeLangs(incoming: unknown, mine: LangTrack[]): LangTrack[] {
   }
   return [...by.values()];
 }
-import { reconcile, type WidgetPlacement } from "./dashboard-layout";
+import { migrateToOneRow, reconcile, type WidgetPlacement } from "./dashboard-layout";
 
 /** Only tabs the registry knows survive; each is reconciled against its own. */
 function asLayouts(raw: unknown): Record<string, WidgetPlacement[]> {
@@ -452,6 +452,49 @@ function mergeById<T extends { id: string }>(incoming: T[], mine: T[]): T[] {
 }
 
 const SUPERSETS = ["", "A", "B", "C", "D"];
+
+/**
+ * localStorage, with an unversioned entry reported as version 0.
+ *
+ * See the note on `storage` below: this is what makes the first migration
+ * reach the installs that actually need it. Everything else is the default
+ * JSON behaviour, written out because supplying `storage` replaces it whole.
+ */
+/**
+ * The one localStorage key this store owns.
+ *
+ * Named rather than written out at each of the four places that touch it, so
+ * "which key does the app persist under" has a single answer — and so the
+ * backup-coverage guard can still read it. That guard walks the source for
+ * every browser-storage write and resolves a named constant back to its
+ * literal; a bare `name` parameter it can only report as an unaccounted key,
+ * which is the right answer to give and the wrong thing to have written.
+ */
+const PERSIST_KEY = "soma-smart-coach-v1";
+
+const somaStorage: PersistStorage<unknown> = {
+  getItem: () => {
+    try {
+      const raw = localStorage.getItem(PERSIST_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { state: unknown; version?: unknown };
+      return {
+        state: parsed.state,
+        version: typeof parsed.version === "number" ? parsed.version : 0,
+      };
+    } catch {
+      // Unparseable, or storage blocked. Treated as a fresh install, which is
+      // what it is from here: there is nothing to restore.
+      return null;
+    }
+  },
+  setItem: (_name, value) => {
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(value));
+  },
+  removeItem: () => {
+    localStorage.removeItem(PERSIST_KEY);
+  },
+};
 
 export const useSoma = create<SomaStore>()(
   persist(
@@ -2332,8 +2375,39 @@ export const useSoma = create<SomaStore>()(
       },
     }),
     {
-      name: "soma-smart-coach-v1",
+      name: PERSIST_KEY,
       skipHydration: true,
+      /**
+       * The stored shape's version.
+       *
+       * A real migration rather than a fix-up inside reconcile: something that
+       * runs on every load is not a migration, it is a rule — and this one as
+       * a rule would mean nobody could ever set a tab bar to 2x4 again.
+       */
+      version: 2,
+      /**
+       * The same localStorage, with one thing put right on the way in.
+       *
+       * zustand only runs `migrate` when the stored entry carries a NUMBER in
+       * its `version` field — and every entry this app has ever written was
+       * written before it had a version, so none of them do. Which means the
+       * exact set of installs that need migrating is the set zustand silently
+       * skips, and the first migration would have been a no-op on every phone
+       * it was written for.
+       *
+       * Calling an unversioned entry version 0 is the whole fix. It is also
+       * true: 0 is what it is.
+       */
+      storage: somaStorage,
+      migrate: (state, from) => {
+        const s = state as { layouts?: Record<string, WidgetPlacement[]> } | undefined;
+        if (!s || from >= 2) return s;
+        // v2: page furniture went from a 2x4 default to a 1x4 one. A stored
+        // layout holds sizes, so the new default does not reach anyone who
+        // has ever arranged a tab — they would keep a 48px tab bar in a 176px
+        // cell, which is the hole this change exists to close.
+        return { ...s, layouts: migrateToOneRow(s.layouts) };
+      },
       partialize: (s) => ({
         seeded: s.seeded,
         settings: s.settings,

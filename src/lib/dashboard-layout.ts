@@ -103,42 +103,27 @@ export interface WidgetDef {
   id: string;
   /** What the edit overlay calls it. */
   label: string;
-  /** The size it ships at. Every widget can be set to any of the six. */
-  size: WidgetSize;
   /**
-   * Page furniture, not a card: it keeps its own height and the size decides
-   * only its width.
+   * The size it ships at. Every widget can be set to any of the six.
    *
-   * A card should fill the box it was given — a 2x4 with a short paragraph in
-   * it looks deliberate when the card is 2x4 and looks like a layout bug when
-   * the card is 87px tall in a 176px cell. A tab bar is the opposite: it is
-   * 48px tall because that is how tall a tab bar is, and stretching one to
-   * 176px produced a pill the size of a thumb and a bar with a hole in it.
+   * Page furniture is simply a widget whose default is ONE row.
    *
-   * There is no way to tell the two apart from the outside, so the registry
-   * says which is which.
+   * There used to be a `natural` flag beside this, meaning "keeps its own
+   * height, the size decides only its width" — because a tab bar is 48px tall
+   * because that is how tall a tab bar is, and stretching one into a 176px
+   * cell produced a pill the size of a thumb in a band of empty surface.
    *
-   * It describes the DEFAULT size, not the widget for ever — see isNatural.
+   * It was the wrong shape for the problem. Read at every size it made the
+   * widget unresizable. Read only at its default it made 1x4 render TALLER
+   * than 2x4, because one row carried a floor and the default carried none.
+   * A ladder that goes up and then down is not a ladder.
+   *
+   * So there is one rule and no exceptions: height comes from ROWS. One row
+   * is "as tall as it needs to be"; two and three carry a floor. A tab bar
+   * ships at 1x4 and is 48px, a card ships at 2x4 and fills its cell, and
+   * either can be set to anything — with the result the picker's shape shows.
    */
-  natural?: boolean;
-}
-
-/**
- * Whether this widget, at this size, takes its height from its own content.
- *
- * `natural` was read as a property of the widget and applied at every size,
- * which quietly made three of Train's five cards unresizable: set one to 3x4
- * and it snapped straight back to the height of its buttons, with the picker
- * showing 3x4 selected. A control that visibly does nothing is worse than one
- * that is not offered.
- *
- * So it is the DEFAULT that is natural, not the widget. Leave a piece of
- * furniture where it was put and it sizes itself, which is what stops a tab
- * bar being stretched into a 176px band of empty surface. Move it off its
- * default and it gets the box it was asked for, the same as every card.
- */
-export function isNatural(def: WidgetDef | undefined, size: WidgetSize): boolean {
-  return def?.natural === true && size === def.size;
+  size: WidgetSize;
 }
 
 export interface WidgetPlacement {
@@ -266,7 +251,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   habits: [
     { id: "header", label: "Consistency", size: "2x4" },
-    { id: "tabs", label: "Today / Matrix / Year", size: "2x4", natural: true },
+    { id: "tabs", label: "Today / Matrix / Year", size: "1x4" },
     { id: "list", label: "The habits", size: "2x4" },
     { id: "new", label: "New habit", size: "2x4" },
   ],
@@ -278,7 +263,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "target", label: "Today's totals", size: "2x4" },
     { id: "suggest", label: "Suggest from pantry", size: "2x4" },
     { id: "plan", label: "Plan ahead", size: "2x4" },
-    { id: "actions", label: "Scan / Search / Burn", size: "2x4", natural: true },
+    { id: "actions", label: "Scan / Search / Burn", size: "1x4" },
     { id: "plate", label: "Plate photo", size: "2x4" },
     { id: "hunger", label: "Hunger", size: "2x4" },
     { id: "add", label: "Add food", size: "2x4" },
@@ -299,17 +284,17 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   workout: [
     { id: "header", label: "Session header", size: "2x4" },
-    { id: "date", label: "The date", size: "2x4", natural: true },
-    { id: "quick", label: "Undo / Save", size: "2x4", natural: true },
+    { id: "date", label: "The date", size: "1x4" },
+    { id: "quick", label: "Undo / Save", size: "1x4" },
     { id: "session", label: "Rest timer", size: "2x4" },
-    { id: "chips", label: "Add exercise", size: "2x4", natural: true },
+    { id: "chips", label: "Add exercise", size: "1x4" },
   ],
   looks: [
     { id: "latest", label: "Latest front", size: "2x4" },
-    { id: "scan", label: "Scan button", size: "2x4", natural: true },
+    { id: "scan", label: "Scan button", size: "1x4" },
     { id: "gallery", label: "Captures", size: "2x4" },
     { id: "guide", label: "What it measures", size: "2x4" },
-    { id: "note", label: "What the mesh is", size: "2x4", natural: true },
+    { id: "note", label: "What the mesh is", size: "1x4" },
   ],
   // Stats is eight pages behind one tab, like Mind. Only the two that are
   // genuinely card stacks get a layout; the rest delegate to whole other
@@ -328,11 +313,11 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   "insights-heatmap": [
     { id: "intro", label: "What the map shows", size: "2x4" },
-    { id: "range", label: "Front / back", size: "2x4", natural: true },
+    { id: "range", label: "Front / back", size: "1x4" },
     { id: "grid", label: "The map", size: "2x4" },
   ],
   body: [
-    { id: "tabs", label: "Sleep / Measure / Supplements", size: "2x4", natural: true },
+    { id: "tabs", label: "Sleep / Measure / Supplements", size: "1x4" },
     { id: "panel", label: "The panel", size: "2x4" },
   ],
   estimates: [
@@ -340,7 +325,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "composition", label: "Muscle vs fat", size: "2x4" },
     { id: "measures", label: "Measurements", size: "2x4" },
     { id: "strength", label: "Strength", size: "2x4" },
-    { id: "note", label: "How these are made", size: "2x4", natural: true },
+    { id: "note", label: "How these are made", size: "1x4" },
   ],
   settings: [
     { id: "phase", label: "Phase", size: "2x4" },
@@ -394,6 +379,32 @@ export function nextSpacerId(layout: WidgetPlacement[]): string {
     const id = `${SPACER_PREFIX}${n}`;
     if (!used.has(id)) return id;
   }
+}
+
+/**
+ * A widget the page made up as it went along.
+ *
+ * Most widgets are in the registry, because most pages have a fixed set of
+ * cards. Train does not: its cards below the timer are the exercises in
+ * today's session, and there is no registry entry for "Incline Dumbbell
+ * Press" because there is no such thing as a page that always has one.
+ *
+ * So a keyed child the registry has never heard of is a widget anyway, taken
+ * on trust from the view that rendered it and carried in the layout beside
+ * the rest. It is resized, reordered and hidden exactly like a registered one
+ * — the arranging does not care where the id came from.
+ */
+/**
+ * What an invented widget ships at: full width, its own height.
+ *
+ * An exercise card is as tall as the number of sets in it, and no floor the
+ * grid could pick would be right for both a two-set accessory and a five-set
+ * compound.
+ */
+export const DYNAMIC_SIZE: WidgetSize = "1x4";
+
+export function isDynamic(tab: string, id: string): boolean {
+  return !isSpacer(id) && widgetDef(tab, id) === undefined;
 }
 
 /** The default gap: one row tall, the full width of the page. */
@@ -468,9 +479,23 @@ function cleanSize(tab: string, id: string, value: unknown): WidgetSize {
  * Unknown ids are dropped, missing ones are appended in registry order, and a
  * span that a widget no longer supports is pulled back to its declared one.
  */
-export function reconcile(stored: WidgetPlacement[] | undefined, tab = "dashboard"): WidgetPlacement[] {
+export function reconcile(
+  stored: WidgetPlacement[] | undefined,
+  tab = "dashboard",
+  /**
+   * Ids the page is rendering right now that the registry does not hold —
+   * today's exercises, and anything else a view invents per visit.
+   *
+   * Passed in rather than guessed at, because "keep every id you have ever
+   * seen" and "drop every id you do not recognise" are both wrong: the first
+   * grows the layout forever, the second throws away the arrangement of the
+   * cards the user can actually see.
+   */
+  present: readonly string[] = [],
+): WidgetPlacement[] {
   const widgets = widgetsFor(tab);
   const known = new Set(widgets.map((w) => w.id));
+  const here = new Set(present);
   const seen = new Set<string>();
   /** Registry widgets accounted for — spacers do not count towards the set. */
   let found = 0;
@@ -481,7 +506,7 @@ export function reconcile(stored: WidgetPlacement[] | undefined, tab = "dashboar
     // A spacer is not in the registry and never will be — it is a gap the
     // user put there, and dropping it as "unknown" would quietly undo their
     // arrangement on every load.
-    if (!known.has(p.id) && !isSpacer(p.id)) continue;
+    if (!known.has(p.id) && !isSpacer(p.id) && !here.has(p.id)) continue;
     if (seen.has(p.id)) continue;
     seen.add(p.id);
     if (!isSpacer(p.id)) found++;
@@ -507,6 +532,68 @@ export function reconcile(stored: WidgetPlacement[] | undefined, tab = "dashboar
       out.splice(at, 0, { id: w.id, size: w.size, hidden: false });
       seen.add(w.id);
     }
+  }
+
+  // Anything on the page that is neither registered nor already placed is
+  // slotted in beside its neighbours, in the order the view rendered it.
+  //
+  // Beside, not appended. The view's sequence is the only statement anyone
+  // has made about where an invented widget belongs — and appending would
+  // mean that the first time you opened "Load split" after ever rearranging
+  // this tab, the panel arrived underneath all six exercises. `at` tracks the
+  // last place we have seen, so a new card lands after the card it follows in
+  // the view and before the one it precedes.
+  let at = out.length;
+  for (const id of present) {
+    const found = out.findIndex((p) => p.id === id);
+    if (found >= 0) {
+      at = found + 1;
+      continue;
+    }
+    if (known.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.splice(at, 0, { id, size: DYNAMIC_SIZE, hidden: false });
+    at += 1;
+  }
+  return out;
+}
+
+/**
+ * Page furniture that used to default to 2x4 and now defaults to 1x4.
+ *
+ * A stored layout holds sizes, so changing a default does not reach the
+ * layouts people already have: every one of these would keep the 2x4 it was
+ * given back when 2x4 meant "take your own height", and would suddenly be a
+ * 48px tab bar in a 176px cell — the exact hole this change exists to close.
+ *
+ * They are listed rather than detected because the old default is not
+ * recorded anywhere: once the registry says 1x4, there is nothing left in the
+ * code to compare a stored 2x4 against. Run once, by the store's migration,
+ * never on load — a rewrite on every load would mean nobody could ever choose
+ * 2x4 for one of these again.
+ */
+export const ONE_ROW_SINCE_V2: ReadonlyArray<readonly [tab: string, id: string]> = [
+  ["insights-heatmap", "range"],
+  ["habits", "tabs"],
+  ["nutrition-dash", "actions"],
+  ["workout", "date"],
+  ["workout", "quick"],
+  ["workout", "chips"],
+  ["looks", "scan"],
+  ["looks", "note"],
+  ["body", "tabs"],
+  ["estimates", "note"],
+];
+
+/** One pass over stored layouts, moving that furniture back to one row. */
+export function migrateToOneRow(
+  layouts: Record<string, WidgetPlacement[]> | undefined,
+): Record<string, WidgetPlacement[]> {
+  const out: Record<string, WidgetPlacement[]> = { ...(layouts ?? {}) };
+  for (const [tab, id] of ONE_ROW_SINCE_V2) {
+    const layout = out[tab];
+    if (!layout) continue;
+    out[tab] = layout.map((p) => (p.id === id && p.size === "2x4" ? { ...p, size: "1x4" } : p));
   }
   return out;
 }
