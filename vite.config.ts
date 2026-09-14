@@ -6,6 +6,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { nitro } from "nitro/vite";
+import { pdfjsAssetsPlugin } from "./scripts/pdfjs-assets.mjs";
 // @ts-expect-error JS plugin alongside the TS vite config
 import { grokPwaPlugin } from "./scripts/grok-pwa-plugin.mjs";
 // @ts-expect-error JS plugin alongside the TS vite config
@@ -143,6 +144,10 @@ export default defineConfig(({ command, isPreview }) => ({
   },
   resolve: { tsconfigPaths: true },
   plugins: [
+    // Before anything reads public/: pdf.js keeps its fonts, cmaps and wasm
+    // decoders as data files rather than in its bundle, and a PDF opens and
+    // then renders nothing without them. See scripts/pdfjs-assets.mjs.
+    pdfjsAssetsPlugin(),
     pgliteBootstrapPlugin(),
     authPopupPlugin(),
     appEnvPlugin(),

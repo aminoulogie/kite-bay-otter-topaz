@@ -650,3 +650,111 @@ select,
   flex: 1 1 auto;
   min-height: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   A book's own markup, set in the app's typography.
+
+   An EPUB carries a publisher's stylesheet, and those stylesheets are written
+   for a six-inch e-ink page: hard-coded serif faces, justified columns, a
+   text colour that assumes white paper. Dropping them and setting the book
+   here is what makes a chapter readable at 2am on a phone — and is the only
+   way the reader's own text-size control can mean anything.
+
+   Scoped to .soma-epub so nothing here escapes into the app.
+--------------------------------------------------------------------------- */
+.soma-epub {
+  color: rgb(232 230 226);
+  font-family: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  line-height: 1.7;
+  text-rendering: optimizeLegibility;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+}
+
+.soma-epub p {
+  margin: 0 0 1em;
+  /* Ragged right, not justified. Justification on a phone-width column opens
+     rivers of white space that are worse than an uneven edge. */
+  text-align: left;
+}
+
+.soma-epub h1,
+.soma-epub h2,
+.soma-epub h3,
+.soma-epub h4 {
+  margin: 1.6em 0 0.6em;
+  color: #fff;
+  font-family: inherit;
+  font-weight: 700;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+.soma-epub h1 { font-size: 1.5em; }
+.soma-epub h2 { font-size: 1.28em; }
+.soma-epub h3 { font-size: 1.1em; }
+
+.soma-epub a {
+  color: rgb(150 190 255);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.soma-epub img,
+.soma-epub svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.2em auto;
+}
+
+.soma-epub blockquote {
+  margin: 1.2em 0;
+  padding-left: 1em;
+  border-left: 2px solid rgb(255 255 255 / 0.2);
+  color: rgb(232 230 226 / 0.82);
+}
+
+.soma-epub hr {
+  margin: 2em auto;
+  width: 40%;
+  border: 0;
+  border-top: 1px solid rgb(255 255 255 / 0.18);
+}
+
+.soma-epub table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.soma-epub td,
+.soma-epub th {
+  padding: 0.35em 0.6em;
+  border: 1px solid rgb(255 255 255 / 0.15);
+}
+
+.soma-epub pre,
+.soma-epub code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86em;
+}
+
+.soma-epub pre {
+  overflow-x: auto;
+  padding: 0.8em;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.06);
+}
+
+/* A publisher's own colours are written for white paper and are unreadable
+   on this ground. The book keeps its italics and its bold; it does not keep
+   its ink. */
+.soma-epub [style*="color"] {
+  color: inherit !important;
+}
+
+.soma-epub [style*="background"] {
+  background: transparent !important;
+}

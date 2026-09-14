@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Check, ImagePlus, Loader2, Plus, Search, Trash2, X } from "lucide-react";
+import {
+  BookOpen, Check, FileText, ImagePlus, Loader2, Plus, Search, Trash2, Upload, X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { BookCover } from "@/components/BookCover";
+import { BookReader } from "@/components/BookReader";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
+import { deleteBookFile, getBookFile, sizeLabel } from "@/lib/book-files";
+import { pickBookFiles, readBookFile, storeBookFile } from "@/lib/book-import";
 import { captureImage, savePhoto } from "@/lib/habit-photos";
 import { searchBooks, upgradeCoverUrl, type BookMatch } from "@/lib/lookup";
 import {
@@ -43,6 +48,8 @@ export function Bookshelf() {
 
   const [finding, setFinding] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [readingId, setReadingId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(0);
 
   const books = useMemo(() => sortShelf(onlyBooks(mind)), [mind]);
   const tally = useMemo(() => counts(books), [books]);
@@ -51,6 +58,7 @@ export function Bookshelf() {
     [books],
   );
   const open = books.find((b) => b.id === openId) ?? null;
+  const reading = books.find((b) => b.id === readingId) ?? null;
 
   /**
    * Re-fetch covers that were saved at the old, smaller size.
@@ -123,6 +131,49 @@ export function Bookshelf() {
     }
   };
 
+  /**
+   * Put a file you already own on the shelf.
+   *
+   * The entry is created BEFORE the file is stored, because the file is filed
+   * under the entry's id — and because an import that dies while writing 40MB
+   * should leave you with a book you can rename, not with bytes in a database
+   * nothing points at. Several files at once: nobody imports one book.
+   */
+  const importFiles = async () => {
+    const files = await pickBookFiles();
+    if (files.length === 0) return;
+    setImporting(files.length);
+    const date = getLocalDateKey(new Date());
+    let added = 0;
+    for (const file of files) {
+      try {
+        const read = await readBookFile(file);
+        const id = addMind({
+          date,
+          kind: "book",
+          title: read.title,
+          author: read.author,
+          pages: read.units,
+          page: 0,
+          fileKind: read.kind,
+          fileName: file.name,
+        } as Omit<MindEntry, "id">);
+        await storeBookFile(id, date, file, read);
+        // The cover component keys its load on sourceKey, so it needs a value
+        // to notice the bytes that were just written under this entry's id.
+        updateMind(id, { sourceKey: `file:${read.kind}:${Date.now().toString(36)}` });
+        added++;
+      } catch (err) {
+        toast.error(
+          `${file.name}: ${err instanceof Error ? err.message : "could not be imported."}`,
+        );
+      } finally {
+        setImporting((n) => Math.max(0, n - 1));
+      }
+    }
+    if (added > 0) toast.success(added === 1 ? "On the shelf" : `${added} books on the shelf`);
+  };
+
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -132,13 +183,32 @@ export function Bookshelf() {
             Reading
           </span>
         </CardTitle>
-        <button
-          type="button"
-          onClick={() => setFinding(true)}
-          className="shrink-0 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.7rem] font-bold"
-        >
-          Add a book
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* Two ways in, because they are two different intentions: looking a
+              book up by name, and opening one you already have. Putting the
+              second behind the first would hide it from the person who came
+              here holding a file. */}
+          <button
+            type="button"
+            onClick={() => void importFiles()}
+            disabled={importing > 0}
+            className="flex items-center gap-1 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.7rem] font-bold disabled:opacity-60"
+          >
+            {importing > 0 ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Upload className="size-3.5" />
+            )}
+            {importing > 0 ? `Reading ${importing}` : "My files"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setFinding(true)}
+            className="rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.7rem] font-bold"
+          >
+            Add a book
+          </button>
+        </div>
       </div>
 
       {books.length === 0 ? (
@@ -152,7 +222,8 @@ export function Bookshelf() {
           </div>
           <span className="min-w-0 text-xs leading-snug text-faint">
             Nothing on the shelf yet. Adding a book looks up its cover, author and
-            page count — and works without any of them if you are offline.
+            page count — and works without any of them if you are offline. A PDF or
+            EPUB from your files goes on the same shelf and opens here.
           </span>
         </button>
       ) : (
@@ -192,15 +263,38 @@ export function Bookshelf() {
         <BookSheet
           book={open}
           onClose={() => setOpenId(null)}
+          onRead={() => {
+            setOpenId(null);
+            setReadingId(open.id);
+          }}
           onChange={(patch) => updateMind(open.id, patch)}
           onRemove={() => {
             const idx = mind.findIndex((m) => m.id === open.id);
             removeMind(open.id);
             setOpenId(null);
+            // The file goes with the book. Leaving 40MB behind for an entry
+            // nothing points at is how a local-first app quietly fills a phone.
+            // Deleted after the undo window, so undo still has something to
+            // restore for the five seconds it is offered.
+            if (open.fileKind) {
+              setTimeout(() => {
+                if (!useSoma.getState().mind.some((m) => m.id === open.id)) {
+                  void deleteBookFile(open.id);
+                }
+              }, 8000);
+            }
             toast.success(`${open.title} off the shelf`, {
               action: { label: "Undo", onClick: () => restoreMind(idx, open) },
             });
           }}
+        />
+      )}
+
+      {reading && (
+        <BookReader
+          book={reading}
+          onClose={() => setReadingId(null)}
+          onChange={(patch) => updateMind(reading.id, patch)}
         />
       )}
 
@@ -219,7 +313,16 @@ function ShelfBook({ book, onOpen }: { book: MindEntry; onOpen: () => void }) {
       className="w-[108px] shrink-0 snap-start text-left active:scale-[0.97] transition-transform"
       aria-label={`${book.title}${book.author ? `, ${book.author}` : ""}. ${shelfLabel(book)}.`}
     >
-      <BookCover book={book} className={cn(book.finished && "opacity-60")} />
+      <div className="relative">
+        <BookCover book={book} className={cn(book.finished && "opacity-60")} />
+        {/* A book you can open here says so on the shelf. Without it the only
+            way to find out which of forty covers is readable is to tap them. */}
+        {book.fileKind && (
+          <span className="absolute bottom-1 right-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[0.5rem] font-bold uppercase tracking-wider text-white backdrop-blur">
+            {book.fileKind}
+          </span>
+        )}
+      </div>
       {/* Fixed heights, so the progress bars line up across the shelf however
           long the titles are. Ragged rows are what makes a shelf read as a
           list that happens to be sideways. */}
@@ -254,17 +357,34 @@ function ShelfBook({ book, onOpen }: { book: MindEntry; onOpen: () => void }) {
  * every cover is a form with pictures on it.
  */
 function BookSheet({
-  book, onClose, onChange, onRemove,
+  book, onClose, onRead, onChange, onRemove,
 }: {
   book: MindEntry;
   onClose: () => void;
+  /** Open the reader. Only meaningful for a book that came in as a file. */
+  onRead: () => void;
   onChange: (patch: Partial<MindEntry>) => void;
   onRemove: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [bump, setBump] = useState(0);
+  const [file, setFile] = useState<{ name: string; bytes: number } | null>(null);
   const pct = percentOf(book);
   const scroller = useRef<HTMLDivElement>(null);
+
+  // What is actually on the phone, rather than what the entry claims. A book
+  // whose file was cleared by the browser should say so here rather than at
+  // the moment you try to read it on a train.
+  useEffect(() => {
+    if (!book.fileKind) return;
+    let alive = true;
+    void getBookFile(book.id).then((row) => {
+      if (alive) setFile(row ? { name: row.name, bytes: row.bytes } : null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [book.id, book.fileKind]);
 
   // A book the lookup does not know, or whose artwork is wrong, can be given a
   // cover from the camera roll. Stored the same way as a fetched one, so it is
@@ -359,6 +479,24 @@ function BookSheet({
         )}
 
         <div className="mt-3 space-y-2">
+          {/* First, above everything, on a book that can actually be opened.
+              Reading it is the reason it is on the shelf; setting its cover is
+              not. */}
+          {book.fileKind && (
+            <>
+              <Button variant="primary" className="w-full" onClick={onRead}>
+                <BookOpen className="size-4" />
+                {book.page && book.page > 1 ? "Carry on reading" : "Read it"}
+              </Button>
+              <p className="flex items-center justify-center gap-1.5 text-center text-[0.62rem] text-faint">
+                <FileText className="size-3" />
+                {file
+                  ? `${file.name} · ${sizeLabel(file.bytes)}`
+                  : `${book.fileName ?? book.fileKind.toUpperCase()} — the file is not on this device`}
+              </p>
+            </>
+          )}
+
           <Button className="w-full" disabled={busy} onClick={() => void pickCover()}>
             {busy ? <Loader2 className="size-4 animate-spin" /> : <ImagePlus className="size-4" />}
             {busy ? "Saving" : "Use a photo as the cover"}

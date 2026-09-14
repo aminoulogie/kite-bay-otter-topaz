@@ -1,4 +1,4 @@
-import { fitWithin } from "./fit-image";
+import { fitWithin } from "./fit-image.ts";
 /**
  * Habit photos.
  *
@@ -14,16 +14,18 @@ import { fitWithin } from "./fit-image";
 
 const DB_NAME = "soma-habit-photos";
 /**
- * v2 adds the scan store. A SECOND object store in the same database rather
- * than a second database, deliberately: the backup coverage test asserts the
- * app opens exactly one IndexedDB, because a second one is a second thing to
- * remember at backup time and that is precisely how four localStorage keys
- * went missing from every backup for months.
+ * v2 adds the scan store, v3 the book files. Object stores in the SAME
+ * database rather than databases of their own, deliberately: the backup
+ * coverage test asserts the app opens exactly one IndexedDB, because a second
+ * one is a second thing to remember at backup time and that is precisely how
+ * four localStorage keys went missing from every backup for months.
  */
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE = "photos";
 /** Face and posture captures, as data URLs keyed by scan id. */
 const SCAN_STORE = "scans";
+/** Imported PDFs and EPUBs, as Blobs keyed by book id. See lib/book-files.ts. */
+export const BOOK_STORE = "books";
 
 const THUMB_PX = 320;
 const DISPLAY_PX = 1080;
@@ -41,6 +43,18 @@ const keyOf = (habitId: string, date: string) => `${habitId}:${date}`;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+/**
+ * The app's one local blob store.
+ *
+ * Exported so a module that owns a different KIND of blob — book files — can
+ * add a store to it without opening a database of its own. One `indexedDB.open`
+ * in the codebase is a rule the backup test enforces, and it is the right rule:
+ * the second database is the one nobody remembers to back up.
+ */
+export function openBlobDb(): Promise<IDBDatabase> {
+  return open();
+}
+
 function open(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
@@ -55,6 +69,9 @@ function open(): Promise<IDBDatabase> {
         // string, and wrapping it in a record to carry its own key would mean
         // migrating anything already stored.
         db.createObjectStore(SCAN_STORE);
+      }
+      if (!db.objectStoreNames.contains(BOOK_STORE)) {
+        db.createObjectStore(BOOK_STORE, { keyPath: "id" });
       }
     };
     req.onsuccess = () => resolve(req.result);

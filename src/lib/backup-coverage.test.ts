@@ -107,6 +107,35 @@ test("there is exactly one IndexedDB database, and the backup knows about it", (
   assert.ok(backup.includes("allPhotos"), "buildBackup no longer reads the photo store");
 });
 
+test("book files are the one deliberate hole in the backup, and it is written down", () => {
+  /**
+   * The rule above is "everything that survives a wipe is in a backup", and
+   * imported PDFs and EPUBs are the single exception. It is deliberate: one
+   * book is larger than every set, meal and photo this app has ever recorded
+   * about you put together, and a backup you cannot email to yourself is a
+   * backup nobody makes. The shelf ENTRY — title, author, cover, what page you
+   * are on — is backed up like any other reading log. The bytes are the one
+   * thing you already have a copy of, because you imported them from a file.
+   *
+   * This test exists so that stays a decision rather than an oversight: if the
+   * store ever grows a third kind of blob, it fails here and someone has to
+   * say out loud which of the two rules it falls under.
+   */
+  const files = readFileSync(join(SRC, "lib/book-files.ts"), "utf8");
+  assert.ok(
+    /NOT in the JSON backup/i.test(files),
+    "book-files.ts no longer explains why book bytes are out of the backup",
+  );
+
+  const photos = readFileSync(join(SRC, "lib/habit-photos.ts"), "utf8");
+  const stores = [...photos.matchAll(/createObjectStore\(([A-Z_]+|"[a-z]+")/g)].map((m) => m[1]);
+  assert.deepEqual(
+    stores,
+    ["STORE", "SCAN_STORE", "BOOK_STORE"],
+    "a new object store: put it in the backup, or say here why it is out",
+  );
+});
+
 test("the export carries every section the store persists", () => {
   const store = readFileSync(join(SRC, "lib/store.ts"), "utf8");
   const partialize = store.match(/partialize:\s*\(s\)\s*=>\s*\(\{([\s\S]*?)\}\)/)?.[1];

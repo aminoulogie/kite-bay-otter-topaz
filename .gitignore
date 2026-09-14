@@ -12,3 +12,8 @@ node_modules/
 ios/App/App/public/
 ios/App/Pods/
 ios/App/App.xcworkspace/xcuserdata/
+
+# pdf.js's own font, cmap and wasm data, copied out of node_modules by
+# scripts/pdfjs-assets.mjs at dev-server start and at the top of a build.
+# 4MB of somebody else's binaries; npm has them pinned in the lockfile.
+public/pdfjs/

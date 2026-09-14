@@ -489,6 +489,16 @@ export interface MindEntry {
   /** Set once the last page is turned, so a shelf can be read from a log. */
   finished?: string;
   /**
+   * Books you imported as a file: the format, and what the file was called.
+   *
+   * The bytes live in the blob database under this entry's id — see
+   * lib/book-files.ts for why they are there and not in the backup. Only the
+   * KIND is on the entry, so the shelf can offer to open a book without an
+   * async lookup per cover.
+   */
+  fileKind?: "pdf" | "epub";
+  fileName?: string;
+  /**
    * Words: how it sounds, and a sentence using it.
    *
    * The definition itself goes in `takeaway`, which means vocabulary joins the
