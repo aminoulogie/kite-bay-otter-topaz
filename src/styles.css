@@ -626,13 +626,27 @@ select,
 
    Not in edit mode: there the empty cell is the only handle on a widget you
    might want to move or hide before it has anything in it.
+
+   Only the box ITSELF, never one level in. A ":only-child:empty" net was here
+   as well, for a widget written as a wrapper around a condition — but :empty
+   is also true of every void element, so a card whose content was one <img>,
+   <canvas> or <input> matched it and vanished. Putting the key on the
+   conditional element is the right fix, and the views all do that.
 --------------------------------------------------------------------------- */
 .soma-grid[data-editing="false"] > [data-drag-index]:has(.soma-widget-box:empty),
-.soma-grid[data-editing="false"] > [data-drag-index]:has(.soma-widget-natural:empty),
-/* And the same thing one level in: a widget written as a wrapper around a
-   condition renders an empty div rather than nothing at all. Putting the key
-   on the conditional element itself is the better fix and is what the views
-   do — this is the net underneath, for the next one written the other way. */
-.soma-grid[data-editing="false"] > [data-drag-index]:has(.soma-widget-box > :only-child:empty) {
+.soma-grid[data-editing="false"] > [data-drag-index]:has(.soma-widget-natural:empty) {
   display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   A gap the user put there.
+
+   It grows into its cell the same way a widget's box does, because the whole
+   of a spacer is the room it takes up. What it must NOT have is the widget
+   box's class — the rule above collapses an empty .soma-widget-box, and the
+   one card whose job is to be empty would be the first thing it swallowed.
+--------------------------------------------------------------------------- */
+.soma-spacer {
+  flex: 1 1 auto;
+  min-height: 0;
 }

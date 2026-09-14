@@ -157,3 +157,40 @@ test("a nonsense tray width cannot divide by zero or invert the rubber", () => {
   assert.equal(offsetFor(-50, false, 0), 50 * 0 + (50 - 1) * 0.55 + 1, "clamped to a 1px park");
   assert.ok(offsetFor(-50, false, -10) > 0);
 });
+
+/* --------------------------------------------------------------------------
+   Shutting a row that is already open.
+
+   The row is parked at `reveal`, so the finger's travel is measured from
+   there: `dx - reveal` is what the caller hands over. Rightward travel that
+   used to be refused as a scroll is the whole of the gesture here, which is
+   why the row passes `allowRight` as "there is a confirm OR I am open".
+   -------------------------------------------------------------------------- */
+test("an open row treats a rightward move as a swipe, not a scroll", () => {
+  // What SwipeRow passes while open: !!onConfirm || open.
+  assert.equal(decideLock(30, 4, true), "swipe");
+  // And still refuses it when the row is shut and has nothing on that side.
+  assert.equal(decideLock(30, 4, false), "scroll");
+});
+
+test("swiping an open row back walks the offset down to zero", () => {
+  const park = REVEAL_TWO_PX;
+  // Halfway back: the row has moved, and moved towards shut.
+  const half = offsetFor(60 - park, false, park);
+  assert.ok(half < park && half > 0, `expected 0 < ${half} < ${park}`);
+  // All the way back: exactly shut, not past it.
+  assert.equal(offsetFor(park - park, false, park), 0);
+  // Pulled further right than shut, with no confirm on the row: still shut.
+  assert.equal(offsetFor(40, false, park), 0);
+});
+
+test("a reverse swipe only shuts the row once it is most of the way back", () => {
+  const park = REVEAL_TWO_PX;
+  const width = 360;
+  // A graze back leaves it open — otherwise the tray would flicker shut on
+  // the smallest wobble of a finger resting on a parked row.
+  assert.equal(decideRelease(offsetFor(10 - park, false, park), width, park), "open");
+  // Most of the way back shuts it.
+  assert.equal(decideRelease(offsetFor(80 - park, false, park), width, park), "closed");
+  assert.equal(decideRelease(offsetFor(0, false, park), width, park), "closed");
+});

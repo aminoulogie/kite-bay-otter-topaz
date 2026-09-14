@@ -111,7 +111,11 @@ export function SwipeRow({
     const dy = e.clientY - start.current.y;
 
     if (lock.current === "undecided") {
-      lock.current = decideLock(dx, dy, !!onConfirm);
+      // An open row has something on its right too: the closed position. Without
+      // the `|| open` a parked row refused every rightward move as a scroll, so
+      // the reverse swipe that should shut it went to the page instead and the
+      // only way back was to tap somewhere else.
+      lock.current = decideLock(dx, dy, !!onConfirm || open);
       // Locked to scrolling: hand the gesture back to the page for good.
       if (lock.current === "scroll") start.current = null;
       if (lock.current !== "swipe") return;
@@ -120,7 +124,10 @@ export function SwipeRow({
       e.currentTarget.setPointerCapture?.(e.pointerId);
     }
     // An already-open row starts from its parked position rather than from
-    // zero, so a second swipe carries on instead of jumping back.
+    // zero, so a second swipe carries on instead of jumping back — and a
+    // rightward one walks that same number back down to zero. `allowRight`
+    // stays tied to onConfirm so pulling an open row past shut stops at shut
+    // rather than sliding on into the confirm side.
     setDragOffset(offsetFor(dx - (open ? reveal : 0), !!onConfirm, reveal));
   };
 

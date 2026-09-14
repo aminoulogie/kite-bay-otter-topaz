@@ -117,8 +117,28 @@ export interface WidgetDef {
    *
    * There is no way to tell the two apart from the outside, so the registry
    * says which is which.
+   *
+   * It describes the DEFAULT size, not the widget for ever — see isNatural.
    */
   natural?: boolean;
+}
+
+/**
+ * Whether this widget, at this size, takes its height from its own content.
+ *
+ * `natural` was read as a property of the widget and applied at every size,
+ * which quietly made three of Train's five cards unresizable: set one to 3x4
+ * and it snapped straight back to the height of its buttons, with the picker
+ * showing 3x4 selected. A control that visibly does nothing is worse than one
+ * that is not offered.
+ *
+ * So it is the DEFAULT that is natural, not the widget. Leave a piece of
+ * furniture where it was put and it sizes itself, which is what stops a tab
+ * bar being stretched into a 176px band of empty surface. Move it off its
+ * default and it gets the box it was asked for, the same as every card.
+ */
+export function isNatural(def: WidgetDef | undefined, size: WidgetSize): boolean {
+  return def?.natural === true && size === def.size;
 }
 
 export interface WidgetPlacement {
@@ -340,6 +360,55 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
 };
 
+/**
+ * A gap you put there on purpose.
+ *
+ * Every other widget in a layout comes from the registry, so the registry can
+ * decide how many of each there are: exactly one. A spacer is the opposite —
+ * it has no content, its whole job is to be somewhere, and wanting three of
+ * them on one page is the normal case rather than the strange one. So it is
+ * not registered at all. It is minted on demand with a serial number and
+ * carried in the stored layout like anything else.
+ *
+ * The prefix is what tells reconcile to keep an id it has never heard of,
+ * which is the one rule the rest of this file would otherwise enforce against
+ * it. `:` because no registry id contains one.
+ */
+export const SPACER_PREFIX = "spacer:";
+
+export function isSpacer(id: string): boolean {
+  return id.startsWith(SPACER_PREFIX);
+}
+
+/**
+ * The next free spacer id for a layout.
+ *
+ * Serial rather than random: two spacers on a page are "spacer:1" and
+ * "spacer:2", which is legible in an exported backup and stable across a
+ * reload. Reusing a freed number is fine — nothing outside the layout refers
+ * to a spacer, so there is no dangling anything to point at.
+ */
+export function nextSpacerId(layout: WidgetPlacement[]): string {
+  const used = new Set(layout.filter((p) => isSpacer(p.id)).map((p) => p.id));
+  for (let n = 1; ; n++) {
+    const id = `${SPACER_PREFIX}${n}`;
+    if (!used.has(id)) return id;
+  }
+}
+
+/** The default gap: one row tall, the full width of the page. */
+export const SPACER_SIZE: WidgetSize = "1x4";
+
+/** Put a new gap at the end, for the user to drag where they want it. */
+export function addSpacer(layout: WidgetPlacement[]): WidgetPlacement[] {
+  return [...layout, { id: nextSpacerId(layout), size: SPACER_SIZE, hidden: false }];
+}
+
+/** Gaps are removed rather than hidden — there is always another one. */
+export function removeWidget(layout: WidgetPlacement[], id: string): WidgetPlacement[] {
+  return layout.filter((p) => p.id !== id);
+}
+
 /** Every widget id the app knows about, whichever page it sits on. */
 const BY_ID = new Map(
   Object.values(WIDGETS_BY_TAB).flatMap((list) => list.map((w) => [`${w.id}`, w] as const)),
@@ -389,6 +458,7 @@ export function defaultLayout(tab = "dashboard"): WidgetPlacement[] {
  * row, so the worst case is a card that reads as a preview of itself.
  */
 function cleanSize(tab: string, id: string, value: unknown): WidgetSize {
+  if (isSpacer(id)) return asSize(value) ?? SPACER_SIZE;
   return asSize(value) ?? widgetDef(tab, id)?.size ?? "2x4";
 }
 
@@ -402,12 +472,19 @@ export function reconcile(stored: WidgetPlacement[] | undefined, tab = "dashboar
   const widgets = widgetsFor(tab);
   const known = new Set(widgets.map((w) => w.id));
   const seen = new Set<string>();
+  /** Registry widgets accounted for — spacers do not count towards the set. */
+  let found = 0;
   const out: WidgetPlacement[] = [];
 
   for (const p of stored ?? []) {
     if (!p || typeof p.id !== "string") continue;
-    if (!known.has(p.id) || seen.has(p.id)) continue;
+    // A spacer is not in the registry and never will be — it is a gap the
+    // user put there, and dropping it as "unknown" would quietly undo their
+    // arrangement on every load.
+    if (!known.has(p.id) && !isSpacer(p.id)) continue;
+    if (seen.has(p.id)) continue;
     seen.add(p.id);
+    if (!isSpacer(p.id)) found++;
     // `span` is read too: layouts saved before the three sizes existed hold a
     // column count, and dropping them would reset everyone's page.
     const stored_ = (p as { size?: unknown; span?: unknown });
@@ -420,7 +497,9 @@ export function reconcile(stored: WidgetPlacement[] | undefined, tab = "dashboar
 
   // Anything the registry has gained since this layout was saved, in its own
   // order, so a new widget lands somewhere sensible rather than at the end.
-  if (out.length !== widgets.length) {
+  // Counted against the registry widgets found rather than the length of
+  // `out`, which now also carries however many gaps the user added.
+  if (found !== widgets.length) {
     for (let i = 0; i < widgets.length; i++) {
       const w = widgets[i]!;
       if (seen.has(w.id)) continue;

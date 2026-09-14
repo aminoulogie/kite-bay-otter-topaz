@@ -4,7 +4,8 @@ import {
   DASHBOARD_WIDGETS as WIDGETS, SIZES, SIZE_SPECS, WIDGETS_BY_TAB, asSize, columnsFor,
   cycleSize, defaultLayout, hasDetailRoom, hasFullRoom, isArrangeable, isTile, widgetsFor,
   hidden, isDefault, move, nextSize, reconcile, resize, rowsFor, setHidden, specFor,
-  toggleHidden, visible, widgetDef, type WidgetPlacement, type WidgetSize,
+  toggleHidden, visible, widgetDef, SPACER_SIZE, addSpacer, isNatural, isSpacer,
+  nextSpacerId, removeWidget, type WidgetPlacement, type WidgetSize,
 } from "./dashboard-layout.ts";
 import { TAB_ORDER } from "./tab-order.ts";
 
@@ -279,4 +280,97 @@ test("each tab's default is its own registry, in order", () => {
     assert.deepEqual(defaultLayout(tab).map((p) => p.id), list.map((w) => w.id), tab);
     assert.equal(isDefault(defaultLayout(tab), tab), true, tab);
   }
+});
+
+/* --------------------------------------------------------------------------
+   Furniture that can be resized after all.
+   -------------------------------------------------------------------------- */
+test("furniture takes its own height only at the size it was given", () => {
+  const bar = { id: "tabs", label: "Tabs", size: "2x4" as WidgetSize, natural: true };
+  assert.equal(isNatural(bar, "2x4"), true, "left where it was put");
+  assert.equal(isNatural(bar, "3x4"), false, "moved off its default");
+  assert.equal(isNatural(bar, "1x1"), false);
+});
+
+test("a card is never natural, at any size", () => {
+  const card = { id: "score", label: "Score", size: "2x2" as WidgetSize };
+  for (const spec of SIZE_SPECS) assert.equal(isNatural(card, spec.id), false, spec.id);
+  assert.equal(isNatural(undefined, "2x4"), false);
+});
+
+test("every piece of furniture in the registry can be sized off its default", () => {
+  // The bug this guards: three of Train's five widgets showed a size picker
+  // that visibly did nothing, because `natural` was read at every size.
+  for (const [tab, list] of Object.entries(WIDGETS_BY_TAB)) {
+    for (const w of list.filter((x) => x.natural)) {
+      const other = SIZE_SPECS.map((s) => s.id).find((s) => s !== w.size)!;
+      assert.equal(isNatural(w, other), false, `${tab}/${w.id}`);
+    }
+  }
+});
+
+/* --------------------------------------------------------------------------
+   Spacers: a gap you put there on purpose.
+   -------------------------------------------------------------------------- */
+test("a spacer id is told apart from every registered one", () => {
+  assert.equal(isSpacer("spacer:1"), true);
+  for (const list of Object.values(WIDGETS_BY_TAB)) {
+    for (const w of list) assert.equal(isSpacer(w.id), false, w.id);
+  }
+});
+
+test("spacer ids are serial, and a freed number comes back", () => {
+  let layout = defaultLayout("workout");
+  assert.equal(nextSpacerId(layout), "spacer:1");
+  layout = addSpacer(layout);
+  assert.equal(layout.at(-1)!.id, "spacer:1");
+  assert.equal(layout.at(-1)!.size, SPACER_SIZE);
+  layout = addSpacer(layout);
+  assert.equal(layout.at(-1)!.id, "spacer:2");
+  layout = removeWidget(layout, "spacer:1");
+  assert.equal(nextSpacerId(layout), "spacer:1");
+});
+
+test("adding a gap leaves every widget where it was", () => {
+  const before = defaultLayout("dashboard");
+  const after = addSpacer(before);
+  assert.deepEqual(after.slice(0, before.length), before);
+  assert.equal(after.length, before.length + 1);
+});
+
+test("reconcile keeps spacers and still repairs the rest", () => {
+  const layout = addSpacer(addSpacer(defaultLayout("workout")));
+  const round = reconcile(layout, "workout");
+  assert.deepEqual(round, layout, "a layout with gaps survives a reload unchanged");
+
+  // A gap in a layout that is ALSO missing a widget: the widget comes back in
+  // registry order, the gaps stay.
+  const short = round.filter((p) => p.id !== "session");
+  const fixed = reconcile(short, "workout");
+  assert.equal(fixed.filter((p) => isSpacer(p.id)).length, 2);
+  assert.ok(fixed.some((p) => p.id === "session"), "the missing widget returns");
+  assert.equal(fixed.length, defaultLayout("workout").length + 2);
+});
+
+test("a spacer can be any of the six sizes, and a broken one falls back", () => {
+  const layout = addSpacer(defaultLayout("workout"));
+  for (const spec of SIZE_SPECS) {
+    const sized = resize(layout, "spacer:1", spec.id, "workout");
+    assert.equal(sized.find((p) => p.id === "spacer:1")!.size, spec.id);
+    assert.deepEqual(reconcile(sized, "workout"), sized, spec.id);
+  }
+  const junk = [{ id: "spacer:1", size: "9x9" as WidgetSize, hidden: false }];
+  assert.equal(reconcile(junk, "workout").find((p) => p.id === "spacer:1")!.size, SPACER_SIZE);
+});
+
+test("a page with gaps is not the default page", () => {
+  assert.equal(isDefault(defaultLayout("workout"), "workout"), true);
+  assert.equal(isDefault(addSpacer(defaultLayout("workout")), "workout"), false);
+});
+
+test("removeWidget takes out exactly one thing", () => {
+  const layout = addSpacer(defaultLayout("workout"));
+  const gone = removeWidget(layout, "spacer:1");
+  assert.deepEqual(gone, defaultLayout("workout"));
+  assert.deepEqual(removeWidget(layout, "nothing:here"), layout);
 });

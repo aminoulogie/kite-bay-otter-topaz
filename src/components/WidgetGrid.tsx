@@ -1,9 +1,9 @@
-import { Eye, EyeOff, RotateCcw } from "lucide-react";
+import { Eye, EyeOff, Plus, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Children, createContext, isValidElement, useContext, useMemo, useState } from "react";
 import {
-  SIZE_SPECS, hidden as hiddenOf, isDefault, isTile, move, reconcile, resize, specFor,
-  toggleHidden, visible, widgetDef, type WidgetSize,
+  SIZE_SPECS, addSpacer, hidden as hiddenOf, isDefault, isNatural, isSpacer, isTile, move,
+  reconcile, removeWidget, resize, specFor, toggleHidden, visible, widgetDef, type WidgetSize,
 } from "@/lib/dashboard-layout";
 import { useSoma } from "@/lib/store";
 import { useLongPressDrag } from "@/lib/use-long-press-drag";
@@ -72,8 +72,9 @@ const ROW: Record<1 | 2 | 3, { tile: string; wide: string }> = {
 
 function boxFor(size: WidgetSize, natural: boolean): string {
   const spec = specFor(size);
-  // Furniture takes its width from the size and its height from itself. A tab
-  // bar is 48px tall because that is how tall a tab bar is.
+  // Furniture left at its default size takes its width from the size and its
+  // height from itself. A tab bar is 48px tall because that is how tall a tab
+  // bar is — but only until someone asks for it to be something else.
   if (natural) return COL[spec.w];
   const h = ROW[spec.h];
   return cn(COL[spec.w], isTile(size) ? h.tile : h.wide);
@@ -171,9 +172,16 @@ export function WidgetGrid({
             the shape on a card to change it, or the eye to take it off the page. Nothing
             here is deleted: hidden widgets wait at the bottom.
           </p>
+          <p className="mt-0.5 text-[0.68rem] leading-snug text-muted">
+            Spacing adds an empty card you can drag between two others and size like any
+            other, for when the gap is the point.
+          </p>
           <div className="mt-2 flex gap-2">
             <Button variant="primary" className="flex-1" onClick={() => setEditing(false)}>
               Done
+            </Button>
+            <Button className="flex-1" onClick={() => setDashboard(addSpacer(layout))}>
+              <Plus className="size-4" /> Spacing
             </Button>
             {!isDefault(layout, tab) && (
               <Button onClick={resetDashboard} aria-label="Reset the layout">
@@ -198,8 +206,15 @@ export function WidgetGrid({
       >
         {shown.map((p, i) => {
           const def = widgetDef(tab, p.id);
+          const spacer = isSpacer(p.id);
           const node = nodes[p.id];
-          if (!node) return null;
+          // A spacer has no view behind it — being nothing IS the widget — so
+          // the "this page does not draw that one" guard has to let it past.
+          if (!node && !spacer) return null;
+          // Furniture only sizes itself while it is where it was put; once a
+          // size has been chosen for it, it gets that size like anything else.
+          const natural = isNatural(def, p.size);
+          const label = spacer ? "Spacing" : def?.label ?? p.id;
           const held = drag.dragging === i;
           const target = drag.over === i && drag.dragging !== null && !held;
 
@@ -207,6 +222,7 @@ export function WidgetGrid({
             <div
               key={p.id}
               data-drag-index={i}
+              data-widget={p.id}
               className={cn(
                 // A flex column, so the card inside stretches to the box the
                 // size asked for. A percentage height cannot do it: `min-h` is
@@ -218,7 +234,7 @@ export function WidgetGrid({
                 // a target: the review queue renders null when no word is due,
                 // and a zero-height cell cannot be dragged onto or tapped.
                 editing && "min-h-16",
-                boxFor(p.size, def?.natural === true),
+                boxFor(p.size, natural),
                 held && "scale-[0.97] opacity-60",
                 target && "ring-2 ring-accent ring-offset-2 ring-offset-bg rounded-3xl",
               )}
@@ -231,7 +247,11 @@ export function WidgetGrid({
                 <SizeContext.Provider value={p.size}>
                   <div
                     className={cn(
-                      def?.natural ? "soma-widget-natural" : "soma-widget-box",
+                      // A spacer is deliberately empty, and the rule that
+                      // collapses an empty widget keys off .soma-widget-box —
+                      // so a gap must not wear that class, or the one widget
+                      // whose whole job is to take up room would take none.
+                      spacer ? "soma-spacer" : natural ? "soma-widget-natural" : "soma-widget-box",
                       editing && "pointer-events-none opacity-45",
                       // Small is a square you glance at, so it gets a hard box
                       // and a fade where the content runs out. Large is a panel
@@ -241,8 +261,8 @@ export function WidgetGrid({
                       // A tile is a glance and gets a hard box with a fade
                       // where its content runs out; a full-width card keeps
                       // its natural height and only gains a floor.
-                      !def?.natural && isTile(p.size) && "soma-widget-tile",
-                      !def?.natural && specFor(p.size).w === 1 && "soma-tile-1",
+                      !spacer && !natural && isTile(p.size) && "soma-widget-tile",
+                      !spacer && !natural && specFor(p.size).w === 1 && "soma-tile-1",
                     )}
                   >
                     {node}
@@ -252,6 +272,17 @@ export function WidgetGrid({
                 {/* No grip glyph: the whole card is the handle, so an icon in
                     one corner would both cover the widget's title and imply you
                     have to grab it there. The dashed border says it moves. */}
+                {/* A gap is invisible when the page is live, which is the
+                    point — but in edit mode it has to be something you can see
+                    to grab, or it is a hole you can only move by accident. */}
+                {editing && spacer && (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-3xl bg-surface-2/60">
+                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.14em] text-faint">
+                      Spacing
+                    </span>
+                  </div>
+                )}
+
                 {editing && (
                   <>
                     <div className="pointer-events-none absolute inset-0 rounded-3xl border-2 border-dashed border-accent-line" />
@@ -265,19 +296,34 @@ export function WidgetGrid({
                         type="button"
                         onClick={() => setPicking(p.id)}
                         className="flex h-7 items-center gap-1 rounded-full border border-border bg-surface-3 px-2 text-[0.6rem] font-bold tabular text-fg shadow-lg"
-                        aria-label={`Size of ${def?.label ?? p.id}, currently ${p.size}`}
+                        aria-label={`Size of ${label}, currently ${p.size}`}
                       >
                         <SizeGlyph size={p.size} on={false} />
                         {p.size}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setDashboard(toggleHidden(layout, p.id))}
-                        className="flex size-7 items-center justify-center rounded-full border border-border bg-surface-3 text-fg shadow-lg"
-                        aria-label={`Hide ${def?.label ?? p.id}`}
-                      >
-                        <EyeOff className="size-3.5" />
-                      </button>
+                      {/* A gap is thrown away rather than parked off the page:
+                          "Off the page" is a list of widgets you might want
+                          back, and a nameless blank in it is a puzzle. There
+                          is always another gap a tap away. */}
+                      {spacer ? (
+                        <button
+                          type="button"
+                          onClick={() => setDashboard(removeWidget(layout, p.id))}
+                          className="flex size-7 items-center justify-center rounded-full border border-border bg-surface-3 text-fg shadow-lg"
+                          aria-label="Remove this spacing"
+                        >
+                          <X className="size-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setDashboard(toggleHidden(layout, p.id))}
+                          className="flex size-7 items-center justify-center rounded-full border border-border bg-surface-3 text-fg shadow-lg"
+                          aria-label={`Hide ${label}`}
+                        >
+                          <EyeOff className="size-3.5" />
+                        </button>
+                      )}
                     </div>
                   </>
                 )}
@@ -311,7 +357,7 @@ export function WidgetGrid({
 
       {picking && (
         <SizeSheet
-          label={widgetDef(tab, picking)?.label ?? picking}
+          label={isSpacer(picking) ? "Spacing" : widgetDef(tab, picking)?.label ?? picking}
           current={layout.find((x) => x.id === picking)?.size ?? "2x4"}
           onPick={(sz) => setDashboard(resize(layout, picking, sz, tab))}
           onClose={() => setPicking(null)}
