@@ -205,17 +205,22 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   // Mind is four pages behind one tab, so each keeps its own arrangement.
   // "mind-book" rather than "mind" because a layout is a layout OF A PAGE, and
   // Reading and Language are not the same page with different cards on it.
+  // The word book lives HERE, not on Language, because that is where words
+  // come from. Highlighting a word while reading files it instantly, and
+  // having to leave the book and change tab to see what you had collected
+  // made the two halves of one habit feel like two features. Language keeps
+  // the drills and the languages themselves.
   "mind-book": [
     { id: "goal", label: "Reading goal", size: "2x4" },
     { id: "shelf", label: "Reading shelf", size: "2x4" },
+    { id: "review", label: "Words to review", size: "2x4" },
+    { id: "words", label: "Your own words", size: "2x4" },
     { id: "week", label: "This week", size: "2x4" },
     { id: "log", label: "Log a book", size: "2x4" },
     { id: "recent", label: "Recent books", size: "2x4" },
   ],
   "mind-language": [
-    { id: "languages", label: "Languages and words", size: "2x4" },
-    { id: "review", label: "Words to review", size: "2x4" },
-    { id: "words", label: "Your own words", size: "2x4" },
+    { id: "languages", label: "Languages and drills", size: "2x4" },
     { id: "week", label: "This week", size: "2x4" },
     { id: "log", label: "Log a drill", size: "2x4" },
     { id: "recent", label: "Recent drills", size: "2x4" },

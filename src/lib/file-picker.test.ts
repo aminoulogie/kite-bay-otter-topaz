@@ -88,7 +88,7 @@ test("the grace is long enough for a book to come out of iCloud", () => {
   assert.ok(CANCEL_GRACE_MS >= 1500, `${CANCEL_GRACE_MS}ms is not long enough`);
 });
 
-test("the input is laid out, not display:none", () => {
+test("the input is laid out, not display:none", async () => {
   // Safari has refused to open a picker for an input that was never given a
   // box. One pixel and no opacity is the version that works everywhere.
   const picked = pickFiles({ graceMs: 10 });
@@ -98,5 +98,5 @@ test("the input is laid out, not display:none", () => {
   assert.equal(style.position, "fixed");
   fire("blur");
   fire("focus");
-  return picked;
+  await picked;
 });

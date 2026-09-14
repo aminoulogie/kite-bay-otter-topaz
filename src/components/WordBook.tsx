@@ -41,14 +41,25 @@ export function WordBook() {
   const [swiped, setSwiped] = useState<string | null>(null);
   const [editing, setEditing] = useState<MindEntry | null>(null);
 
+  /**
+   * Every word, whether or not it has a meaning yet.
+   *
+   * It used to require a definition, which was right when the only way in was
+   * this form — you typed the word and its meaning together. Highlighting a
+   * word in a book puts it here with no meaning at all, and filtering those
+   * out meant the feature appeared to do nothing: the word was saved, and
+   * invisible. A word waiting for a meaning is exactly the thing this card
+   * should be showing you.
+   */
   const words = useMemo(
     () =>
       mind
-        .filter((m) => m.kind === "language" && !!m.takeaway)
+        .filter((m) => m.kind === "language" && !!m.title)
         .sort((a, b) => (a.date < b.date ? 1 : -1))
         .slice(0, 20),
     [mind],
   );
+  const waiting = useMemo(() => words.filter((w) => !w.takeaway).length, [words]);
 
   const look = async () => {
     setBusy(true);
@@ -91,7 +102,17 @@ export function WordBook() {
           <Languages className="size-3.5" />
           New words
         </span>
+        {waiting > 0 && (
+          <span className="text-[0.62rem] font-bold text-accent-text">
+            {waiting} waiting for a meaning
+          </span>
+        )}
       </CardTitle>
+
+      <p className="mb-2 text-[0.65rem] leading-snug text-faint">
+        Highlight a word while you are reading and it lands here with the sentence it
+        came from. Add what it means and it joins the review queue.
+      </p>
 
       <form
         className="mb-2 flex gap-1.5"
@@ -203,11 +224,28 @@ export function WordBook() {
                   {w.phonetic && (
                     <span className="shrink-0 text-[0.62rem] text-faint">{w.phonetic}</span>
                   )}
+                  {w.source && (
+                    <span className="shrink-0 truncate text-[0.6rem] text-faint">{w.source}</span>
+                  )}
                   <span className="ml-auto shrink-0 text-[0.6rem] text-faint">
-                    {(w.reviews?.length ?? 0)}/3
+                    {w.takeaway ? `${w.reviews?.length ?? 0}/3` : "new"}
                   </span>
                 </div>
-                <div className="mt-0.5 text-[0.72rem] leading-snug text-muted">{w.takeaway}</div>
+                {w.takeaway ? (
+                  <div className="mt-0.5 text-[0.72rem] leading-snug text-muted">{w.takeaway}</div>
+                ) : (
+                  /* Not an error, and not hidden: a word you highlighted while
+                     reading is half done, and saying so is what turns it into
+                     something you will finish. It cannot join the review queue
+                     until it has a meaning — you cannot drill a blank. */
+                  <button
+                    type="button"
+                    onClick={() => setEditing(w)}
+                    className="mt-0.5 text-left text-[0.72rem] font-semibold leading-snug text-accent-text"
+                  >
+                    Add what it means
+                  </button>
+                )}
                 {w.example && (
                   <div className="mt-1 text-[0.66rem] italic leading-snug text-faint">
                     &ldquo;{w.example}&rdquo;

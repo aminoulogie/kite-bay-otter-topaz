@@ -132,9 +132,12 @@ export function MindView() {
       <WidgetGrid tab={`mind-${kind}`}>
         {kind === "book" && <ReadingGoal key="goal" />}
         {kind === "book" && <Bookshelf key="shelf" />}
+        {/* Words sit with the books. Highlighting one while reading files it
+            straight away, and the list of what you have collected belongs on
+            the same page as the thing you collected it from. */}
+        {kind === "book" && <ReviewQueue key="review" />}
+        {kind === "book" && <WordBook key="words" />}
         {kind === "language" && <LanguageStudy key="languages" />}
-        {kind === "language" && <ReviewQueue key="review" />}
-        {kind === "language" && <WordBook key="words" />}
 
       <Card key="week">
         <CardTitle>This week</CardTitle>

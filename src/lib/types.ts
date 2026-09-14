@@ -1,3 +1,4 @@
+import type { ReaderPrefs } from "./reader-prefs.ts";
 import type { HabitRamp } from "./habit-ramp";
 export type { HabitRamp };
 
@@ -297,6 +298,15 @@ export type { ScreenApp, ScreenTimeDay } from "./screen-time";
 export type { RampAdvance, RampUnit } from "./habit-ramp";
 
 export interface Settings {
+  /**
+   * How the book reader looks, and what a tap on the page does.
+   *
+   * In settings rather than a store of its own because it is a preference
+   * like the unit system: set once, applies to every book, and belongs in the
+   * backup so a new phone opens a book the way the old one did. Cleaned by
+   * lib/reader-prefs.ts on the way in — it comes back from a file.
+   */
+  reader?: ReaderPrefs;
   /**
    * Daily nutrition targets the user has set themselves.
    *

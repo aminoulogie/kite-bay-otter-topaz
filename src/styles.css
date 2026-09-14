@@ -652,6 +652,166 @@ select,
 }
 
 /* ---------------------------------------------------------------------------
+   A book's own markup, set in the reader's typography.
+
+   An EPUB carries a publisher's stylesheet, and those stylesheets are written
+   for a six-inch e-ink page: hard-coded serif faces, justified columns, a
+   text colour that assumes white paper. Dropping them and setting the book
+   here is what makes a chapter readable at 2am on a phone — and is the only
+   way the reader's own type controls can mean anything.
+
+   Colour and family are NOT set here: they come from the chosen paper and
+   typeface, as inline styles on the column. This file owns the rules that are
+   true of a book whatever it is set in — and, more importantly, the ones that
+   keep multi-column pagination from falling apart.
+
+   Scoped to .soma-epub so nothing here escapes into the app.
+--------------------------------------------------------------------------- */
+.soma-epub {
+  /* Colour and font come from the reader's settings, inline. */
+  text-rendering: optimizeLegibility;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+  /* A tap on the page turns it; a press-and-hold still selects, which is how
+     a word gets into the word book. Without this, iOS offers to select a
+     whole paragraph on every tap near text. */
+  -webkit-touch-callout: none;
+}
+
+.soma-epub p {
+  margin: 0 0 1em;
+  /* Ragged right, not justified. Justification in a phone-width column opens
+     rivers of white space that are worse than an uneven edge. */
+  text-align: left;
+  /* A paragraph may break across a page; a single line of it stranded alone
+     at the top or bottom of one should not happen. */
+  orphans: 2;
+  widows: 2;
+}
+
+.soma-epub h1,
+.soma-epub h2,
+.soma-epub h3,
+.soma-epub h4 {
+  margin: 1.6em 0 0.6em;
+  font-family: inherit;
+  font-weight: 700;
+  line-height: 1.25;
+  text-wrap: balance;
+  /* A heading at the very bottom of a page, with its paragraph on the next
+     one, is the commonest ugliness in a paginated reader. */
+  break-after: avoid;
+  break-inside: avoid;
+}
+
+.soma-epub h1 { font-size: 1.5em; }
+.soma-epub h2 { font-size: 1.28em; }
+.soma-epub h3 { font-size: 1.1em; }
+
+.soma-epub-label {
+  margin: 0 0 1.4em;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.soma-epub a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Anything with a fixed shape has to fit INSIDE one page, or the column
+   algorithm either overflows it or leaves the rest of the page blank around
+   it. `max-height` is the rule that does it: the column is exactly as tall as
+   the screen, so 88% of that leaves room for a caption. */
+.soma-epub img,
+.soma-epub svg,
+.soma-epub figure {
+  display: block;
+  max-width: 100%;
+  max-height: 88%;
+  height: auto;
+  margin: 1.2em auto;
+  break-inside: avoid;
+}
+
+.soma-epub blockquote {
+  margin: 1.2em 0;
+  padding-left: 1em;
+  border-left: 2px solid currentcolor;
+  opacity: 0.86;
+}
+
+.soma-epub hr {
+  margin: 2em auto;
+  width: 40%;
+  border: 0;
+  border-top: 1px solid currentcolor;
+  opacity: 0.35;
+}
+
+.soma-epub table {
+  max-width: 100%;
+  border-collapse: collapse;
+  break-inside: avoid;
+}
+
+.soma-epub td,
+.soma-epub th {
+  padding: 0.35em 0.6em;
+  border: 1px solid currentcolor;
+}
+
+.soma-epub pre,
+.soma-epub code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86em;
+}
+
+.soma-epub pre {
+  /* Not scrollable: a scroller inside a paged column swallows the swipe that
+     turns the page. Long lines wrap instead, which is the lesser evil in a
+     book. */
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 0.8em;
+  border-radius: 10px;
+  background: currentcolor;
+  break-inside: avoid;
+}
+
+.soma-epub pre > * {
+  /* The background above is currentcolor so it follows the paper; the text on
+     it has to come back. */
+  mix-blend-mode: difference;
+}
+
+/* A publisher's own colours and sizes are written for white paper at their
+   chosen measure, and both fight the reader's settings. The book keeps its
+   italics and its bold; it does not keep its ink, its font or its margins. */
+.soma-epub [style*="color"] { color: inherit !important; }
+.soma-epub [style*="background"] { background: transparent !important; }
+.soma-epub [style*="font-family"] { font-family: inherit !important; }
+.soma-epub [style*="font-size"] { font-size: inherit !important; }
+.soma-epub [style*="margin"] { margin-left: 0 !important; margin-right: 0 !important; }
+.soma-epub [style*="width"] { width: auto !important; }
+
+/* ---------------------------------------------------------------------------
+   A gap the user put there.
+
+   It grows into its cell the same way a widget's box does, because the whole
+   of a spacer is the room it takes up. What it must NOT have is the widget
+   box's class — the rule above collapses an empty .soma-widget-box, and the
+   one card whose job is to be empty would be the first thing it swallowed.
+--------------------------------------------------------------------------- */
+.soma-spacer {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------------------
    A book's own markup, set in the app's typography.
 
    An EPUB carries a publisher's stylesheet, and those stylesheets are written
