@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookOpen, Check, FileText, ImagePlus, Loader2, Plus, Search, Trash2, Upload, X,
+  BookOpen, Check, FileText, ImagePlus, Loader2, MoreHorizontal, Plus, Search, Trash2,
+  Upload, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { BookCover } from "@/components/BookCover";
@@ -52,6 +53,35 @@ export function Bookshelf() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [readingId, setReadingId] = useState<string | null>(null);
   const [importing, setImporting] = useState(0);
+
+  const startReading = useSoma((s) => s.startReading);
+  const stopReading = useSoma((s) => s.stopReading);
+  /**
+   * Whether the READER started the clock, as opposed to the goal card.
+   *
+   * Opening a book starts the reading timer, because opening a book is what
+   * reading is — a timer you have to remember to start is a timer that shows
+   * you did no reading this week. But if you had already started it yourself,
+   * the reader must not restart it, and closing the book must not stop what
+   * you started: the minutes you had banked are yours either way.
+   */
+  const clockIsOurs = useRef(false);
+
+  const openReader = (id: string) => {
+    setReadingId(id);
+    if (!useSoma.getState().readingSince) {
+      startReading();
+      clockIsOurs.current = true;
+    }
+  };
+
+  const closeReader = () => {
+    setReadingId(null);
+    if (!clockIsOurs.current) return;
+    clockIsOurs.current = false;
+    const kept = stopReading();
+    if (kept > 0) toast.success(`${kept} min read`);
+  };
 
   const books = useMemo(() => sortShelf(onlyBooks(mind)), [mind]);
   const tally = useMemo(() => counts(books), [books]);
@@ -258,7 +288,12 @@ export function Bookshelf() {
           <div className="-mx-4 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex snap-x snap-mandatory gap-3">
               {books.map((b) => (
-                <ShelfBook key={b.id} book={b} onOpen={() => setOpenId(b.id)} />
+                <ShelfBook
+                  key={b.id}
+                  book={b}
+                  onRead={() => openReader(b.id)}
+                  onMore={() => setOpenId(b.id)}
+                />
               ))}
               <button
                 type="button"
@@ -289,7 +324,7 @@ export function Bookshelf() {
           onClose={() => setOpenId(null)}
           onRead={() => {
             setOpenId(null);
-            setReadingId(open.id);
+            openReader(open.id);
           }}
           onChange={(patch) => updateMind(open.id, patch)}
           onRemove={() => {
@@ -317,7 +352,7 @@ export function Bookshelf() {
       {reading && (
         <BookReader
           book={reading}
-          onClose={() => setReadingId(null)}
+          onClose={closeReader}
           onChange={(patch) => updateMind(reading.id, patch)}
         />
       )}
@@ -328,48 +363,88 @@ export function Bookshelf() {
 }
 
 /** One book on the shelf: the cover, and the least text that still says where you are. */
-function ShelfBook({ book, onOpen }: { book: MindEntry; onOpen: () => void }) {
+/**
+ * One book on the shelf: the cover, and the least text that still says where
+ * you are.
+ *
+ * The cover OPENS the book. That was not obvious when it was built — the
+ * cover used to open a sheet of controls, because a shelf entry has a page
+ * number, a cover to change, and a way off the shelf — but a cover is a
+ * picture of a book, and the thing you want from a book is to read it. Every
+ * other control moved behind the three dots, which is where a phone puts the
+ * things you do occasionally.
+ *
+ * A book with no file behind it has nothing to open, so for those the cover
+ * goes to the sheet: the alternative is a tap that does nothing, which is
+ * worse than a tap that does the second-best thing.
+ */
+function ShelfBook({
+  book, onRead, onMore,
+}: {
+  book: MindEntry;
+  onRead: () => void;
+  onMore: () => void;
+}) {
   const pct = percentOf(book);
+  const readable = !!book.fileKind;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="w-[108px] shrink-0 snap-start text-left active:scale-[0.97] transition-transform"
-      aria-label={`${book.title}${book.author ? `, ${book.author}` : ""}. ${shelfLabel(book)}.`}
-    >
-      <div className="relative">
-        <BookCover book={book} className={cn(book.finished && "opacity-60")} />
-        {/* A book you can open here says so on the shelf. Without it the only
-            way to find out which of forty covers is readable is to tap them. */}
-        {book.fileKind && (
-          <span className="absolute bottom-1 right-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[0.5rem] font-bold uppercase tracking-wider text-white backdrop-blur">
-            {book.fileKind}
-          </span>
-        )}
-      </div>
-      {/* Fixed heights, so the progress bars line up across the shelf however
-          long the titles are. Ragged rows are what makes a shelf read as a
-          list that happens to be sideways. */}
-      <div className="mt-1.5 h-[1.8rem] overflow-hidden">
-        <span className="line-clamp-2 text-[0.72rem] font-bold leading-tight">{book.title}</span>
-      </div>
-      <div className="h-[0.85rem] truncate text-[0.62rem] text-faint">{book.author ?? ""}</div>
-      <div className="mt-1 flex items-center gap-1.5">
-        {pct !== null && !book.finished && (
-          <span className="h-1 flex-1 overflow-hidden rounded-full bg-surface-3">
-            <span className="block h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
-          </span>
-        )}
-        <span
-          className={cn(
-            "shrink-0 text-[0.6rem] font-bold tabular",
-            book.finished ? "text-accent-text" : "text-faint",
+    <div className="relative w-[108px] shrink-0 snap-start">
+      <button
+        type="button"
+        onClick={readable ? onRead : onMore}
+        className="w-full text-left transition-transform active:scale-[0.97]"
+        aria-label={
+          readable
+            ? `Read ${book.title}. ${shelfLabel(book)}.`
+            : `${book.title}${book.author ? `, ${book.author}` : ""}. ${shelfLabel(book)}.`
+        }
+      >
+        <div className="relative">
+          <BookCover book={book} className={cn(book.finished && "opacity-60")} />
+          {/* A book you can open here says so on the shelf. Without it the only
+              way to find out which of forty covers is readable is to tap them. */}
+          {book.fileKind && (
+            <span className="absolute bottom-1 right-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[0.5rem] font-bold uppercase tracking-wider text-white backdrop-blur">
+              {book.fileKind}
+            </span>
           )}
-        >
-          {shelfLabel(book)}
-        </span>
-      </div>
-    </button>
+        </div>
+        {/* Fixed heights, so the progress bars line up across the shelf however
+            long the titles are. Ragged rows are what makes a shelf read as a
+            list that happens to be sideways. */}
+        <div className="mt-1.5 h-[1.8rem] overflow-hidden">
+          <span className="line-clamp-2 text-[0.72rem] font-bold leading-tight">{book.title}</span>
+        </div>
+        <div className="h-[0.85rem] truncate text-[0.62rem] text-faint">{book.author ?? ""}</div>
+        <div className="mt-1 flex items-center gap-1.5">
+          {pct !== null && !book.finished && (
+            <span className="h-1 flex-1 overflow-hidden rounded-full bg-surface-3">
+              <span className="block h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+            </span>
+          )}
+          <span
+            className={cn(
+              "shrink-0 text-[0.6rem] font-bold tabular",
+              book.finished ? "text-accent-text" : "text-faint",
+            )}
+          >
+            {shelfLabel(book)}
+          </span>
+        </div>
+      </button>
+
+      {/* A sibling of the cover button rather than inside it: a button within
+          a button is not something a browser will render, and the cover is
+          the button now. */}
+      <button
+        type="button"
+        onClick={onMore}
+        aria-label={`More for ${book.title}`}
+        className="absolute right-1 top-1 grid size-7 place-items-center rounded-full bg-black/55 text-white backdrop-blur active:scale-95"
+      >
+        <MoreHorizontal className="size-4" />
+      </button>
+    </div>
   );
 }
 
