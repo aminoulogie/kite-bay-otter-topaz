@@ -7,14 +7,18 @@ import { Button } from "@/components/ui/button";
 import { getBookFile } from "@/lib/book-files";
 import type { EpubArchive } from "@/lib/epub-archive";
 import { cleanOffset, locate } from "@/lib/anchor";
+import {
+  cornerPoint, foldAt, grabbedCorner, matrixCss, polygonCss, type Corner, type Fold,
+  type Point,
+} from "@/lib/curl";
 import { linesIn, stepLine, type Rect } from "@/lib/lines";
 import {
   PAGE_GAP, bookProgress, clampPage, damp, isTurning, pageCount, pageForX, pageOffset,
   tapAt, turnFrom,
 } from "@/lib/paginate";
 import {
-  LINE_HEIGHT, MARGIN, READER_FONTS, READER_THEMES, SIZE, cleanReader, fontStack,
-  step as stepPref, themeSpec, type ReaderPrefs,
+  LINE_HEIGHT, MARGIN, READER_FONTS, READER_THEMES, SIZE, TURN_STYLES, cleanReader,
+  fontStack, isPaged, step as stepPref, themeSpec, type ReaderPrefs,
 } from "@/lib/reader-prefs";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -419,6 +423,7 @@ function EpubPages({
   const [chapters, setChapters] = useState(0);
   /** Set when a chapter is entered backwards, so it opens on its last page. */
   const landOnLast = useRef(false);
+  const paged = isPaged(prefs);
   /**
    * Where you are, in characters into this chapter.
    *
@@ -428,8 +433,19 @@ function EpubPages({
    * leaving you a page or two adrift.
    */
   const anchor = useRef<number | null>(cleanOffset(book.readOffset) ?? null);
-  /** Live finger position during a turn, in px. */
+  /** Live finger travel during a turn, in px. Drives the slide. */
   const [dragX, setDragX] = useState<number | null>(null);
+  /**
+   * Where the fold is, while a page is being folded.
+   *
+   * `corner` is where the held corner STARTED on the flat page, `at` is where
+   * it has been dragged to. Going forward the corner leaves its home and the
+   * page folds; going back it is on its way home and the page unfolds — which
+   * is why both directions use a corner on the RIGHT, and why there is one
+   * piece of geometry rather than two.
+   */
+  const [curl, setCurl] = useState<{ at: Point; corner: Corner; forward: boolean } | null>(null);
+  const curling = useRef<number | null>(null);
   const theme = themeSpec(prefs.theme);
 
   useEffect(() => {
@@ -541,7 +557,7 @@ function EpubPages({
       cancelAnimationFrame(raf);
       cancelAnimationFrame(raf2);
     };
-  }, [html, box.w, box.h, prefs.size, prefs.lineHeight, prefs.font, prefs.paged, prefs.margin]);
+  }, [html, box.w, box.h, prefs.size, prefs.lineHeight, prefs.font, paged, prefs.margin]);
 
   /**
    * Write down where you are, once the page has settled.
@@ -569,6 +585,135 @@ function EpubPages({
 
   /** Where the strip sits right now: the settled page, plus the finger. */
   const slide = -pageOffset(page, box.w) + (dragX ?? 0);
+
+  /**
+   * Can this turn be folded, or does it have to slide?
+   *
+   * Only within a chapter. A fold shows the page underneath, and the page
+   * underneath a chapter's last one is in markup that is not loaded — so at a
+   * chapter boundary the reader slides instead. It happens once per chapter
+   * and is a great deal less work than keeping two chapters laid out at all
+   * times for the sake of one page turn in forty.
+   */
+  const canFold = useCallback(
+    (forward: boolean) => prefs.turn === "curl" && (forward ? page < pages - 1 : page > 0),
+    [prefs.turn, page, pages],
+  );
+
+  const fold: Fold | null = useMemo(
+    () => (curl ? foldAt(curl.at, box, curl.corner) : null),
+    [curl, box],
+  );
+
+  const curlRef = useRef(curl);
+  useEffect(() => {
+    curlRef.current = curl;
+  });
+
+  /**
+   * Let go of the page and it finishes the turn, or falls back flat.
+   *
+   * A hand-run animation rather than a CSS transition, because what is being
+   * animated is a clip polygon whose VERTEX COUNT changes as the crease
+   * crosses a corner of the page — three points, then four, then five. There
+   * is no interpolation a browser can do between those, so the frames are
+   * computed here and the browser is handed a finished shape each time.
+   */
+  const settleCurl = useCallback(
+    (commit: boolean) => {
+      const c = curlRef.current;
+      if (!c) return;
+      const home = cornerPoint(c.corner, box);
+      // Forward, "finished" is the corner carried a full page-width past the
+      // far edge; backward, it is the corner back where it started.
+      const done = c.forward ? { x: home.x - 2 * box.w, y: c.at.y } : { x: home.x, y: c.at.y };
+      const back = c.forward ? { x: home.x, y: home.y } : { x: home.x - 2 * box.w, y: c.at.y };
+      const to = commit ? done : back;
+      const from = c.at;
+      const began = performance.now();
+      const run = (now: number) => {
+        const k = Math.min(1, (now - began) / 300);
+        // Ease out: a page you let go of carries on and stops.
+        const e = 1 - (1 - k) ** 3;
+        setCurl((cur) =>
+          cur && {
+            ...cur,
+            at: { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e },
+          },
+        );
+        if (k < 1) {
+          curling.current = requestAnimationFrame(run);
+          return;
+        }
+        if (commit) {
+          goRef.current(c.forward ? 1 : -1);
+          // One frame with the new page AND the curl still mounted, so the
+          // strip jumps to it with no transition running. Clearing both at
+          // once would let the slide animate underneath a turn that has
+          // already visibly happened.
+          curling.current = requestAnimationFrame(() => setCurl(null));
+        } else {
+          setCurl(null);
+        }
+      };
+      curling.current = requestAnimationFrame(run);
+    },
+    [box],
+  );
+
+  useEffect(() => () => {
+    if (curling.current !== null) cancelAnimationFrame(curling.current);
+  }, []);
+
+  /**
+   * One gesture, two possible animations.
+   *
+   * The curl wants where the finger IS, because the crease runs through it;
+   * the slide only wants how far it has come. Both arrive here, and which one
+   * is driven is decided by the setting and by whether there is a page under
+   * this one to fold away from.
+   */
+  const onDrag = useCallback(
+    (at: { dx: number; dy: number; x: number; y: number } | null) => {
+      if (at === null) {
+        setDragX(null);
+        const c = curlRef.current;
+        if (!c) return;
+        const f = foldAt(c.at, box, c.corner);
+        const p = f?.progress ?? 0;
+        // Forward, past the halfway fold and it goes; backward, the page has
+        // to have come most of the way home before it stays home.
+        settleCurl(c.forward ? p >= 0.45 : p <= 0.55);
+        return;
+      }
+      const forward = at.dx < 0;
+      if (!canFold(forward)) {
+        setCurl(null);
+        setDragX(at.dx);
+        return;
+      }
+      setDragX(null);
+      const corner = grabbedCorner({ x: at.x, y: at.y }, box, true);
+      const home = cornerPoint(corner, box);
+      // Doubled, so half a screen of drag carries the corner the whole width
+      // of the page and finishes the turn. Undoubled, a page took two screens
+      // to turn and nobody would ever have seen the far side of one.
+      const travel = at.dx * 2;
+      // The diagonal eases in with the drag. Mapping the crease straight onto
+      // the finger's y means the page arrives already bent at the instant of
+      // touch-down, which reads as a glitch rather than as paper.
+      const lean = Math.min(1, Math.abs(at.dx) / 70);
+      setCurl({
+        corner,
+        forward,
+        at: {
+          x: home.x + travel - (forward ? 0 : 2 * box.w),
+          y: home.y + (at.y - home.y) * lean,
+        },
+      });
+    },
+    [canFold, box, settleCurl],
+  );
 
   /**
    * One page forward or back, rolling over into the next chapter.
@@ -601,6 +746,11 @@ function EpubPages({
     [page, pages, chapter, chapters, onChapter],
   );
 
+  const goRef = useRef(go);
+  useEffect(() => {
+    goRef.current = go;
+  });
+
   // Published for the chrome's own buttons and the keyboard. In an effect
   // rather than during render: a ref written while rendering is a side effect
   // in a function that is allowed to run twice.
@@ -617,17 +767,109 @@ function EpubPages({
       box={box}
       onTurn={go}
       onChrome={onChrome}
-      onDrag={setDragX}
+      onDrag={onDrag}
       onLine={onLine}
       startLine={startLine}
       page={page}
       pages={pages}
       atStart={chapter === 0}
       atEnd={chapter >= chapters - 1}
-      edges={prefs.paged ? pages - 1 : 0}
+      edges={paged && !curl ? pages - 1 : 0}
       slide={slide}
       turning={dragX !== null}
+      folding={!!fold}
     >
+      {/* The other page: the one revealed underneath going forward, and the
+          one arriving over the top going back. Mounted for as long as curling
+          is the chosen style rather than only while a page is in the air —
+          laying out a twenty-eight page chapter twice more is work, and the
+          one moment it must not happen is the instant a finger starts to
+          move. Hidden costs layout and not paint, which is the trade wanted.
+
+          Stacked by z-index rather than by DOM order, because which of these
+          is on top is a fact about the DIRECTION of the turn, and re-ordering
+          the DOM mid-gesture would tear both copies down and build them
+          again — the very cost this is avoiding. */}
+      {paged && prefs.turn === "curl" && (
+        <>
+          <Sheet
+            html={html}
+            label={label}
+            prefs={prefs}
+            box={box}
+            page={curl?.forward === false ? page - 1 : page + 1}
+            clip={fold && curl && !curl.forward ? polygonCss(fold.flat) : undefined}
+            style={{
+              visibility: fold ? "visible" : "hidden",
+              zIndex: curl?.forward === false ? 2 : 0,
+            }}
+          />
+
+          {/* The flap: the part that has come up off the table, showing its
+              BACK. Which is the same paper reflected across the crease — so it
+              is the same markup with the fold's matrix on it, and the text
+              comes out mirrored for free, because that is what the back of a
+              page is.
+
+              transformOrigin 0 0 because the matrix is in page coordinates,
+              and drop-shadow rather than box-shadow because the shape being
+              shadowed is the clip silhouette, not the element's box. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              zIndex: 3,
+              visibility: fold ? "visible" : "hidden",
+              clipPath: fold ? polygonCss(fold.flap) : undefined,
+              transform: fold ? matrixCss(fold.matrix) : undefined,
+              transformOrigin: "0 0",
+              filter: `drop-shadow(0 0 18px rgba(0,0,0,${theme.dark ? 0.75 : 0.35}))`,
+            }}
+          >
+            {/* The sheet itself, opaque, because paper is. */}
+            <div className="absolute inset-0" style={{ background: theme.bg }} />
+            {/* What shows through from the other side. Faint: you can see
+                there is print on it and you cannot read it, which is what a
+                page held up to the light does. */}
+            <Sheet
+              html={html}
+              label={label}
+              prefs={prefs}
+              box={box}
+              page={curl?.forward === false ? page - 1 : page}
+              style={{ background: "transparent", opacity: theme.dark ? 0.16 : 0.13 }}
+            />
+            {/* The curve. A sheet lifted off a table is not flat, and a flat
+                rectangle of paper colour is the one thing that gives it away. */}
+            <div
+              className="absolute inset-0"
+              style={{
+                background: `linear-gradient(${(fold?.angle ?? 0) + 90}deg, rgba(0,0,0,${
+                  theme.dark ? 0.55 : 0.22
+                }) 0%, rgba(0,0,0,0) 28%, rgba(255,255,255,${
+                  theme.dark ? 0.04 : 0.35
+                }) 100%)`,
+              }}
+            />
+          </div>
+        </>
+      )}
+
+      {/* The real column. Measured, anchored, selected from — the only copy
+          the rest of the reader knows about. Clipped to the flat part of the
+          sheet only when it is the page being folded. */}
+      <div
+        className={paged ? "absolute inset-0" : undefined}
+        style={
+          paged
+            ? {
+                zIndex: 1,
+                background: theme.bg,
+                clipPath: fold && curl?.forward ? polygonCss(fold.flat) : undefined,
+              }
+            : undefined
+        }
+      >
       <div
         className="soma-epub"
         ref={column}
@@ -636,18 +878,19 @@ function EpubPages({
           fontSize: `${prefs.size}px`,
           lineHeight: prefs.lineHeight,
           color: theme.fg,
-          ...(prefs.paged
+          ...(paged
             ? {
                 height: `${box.h}px`,
                 columnWidth: `${box.w}px`,
                 columnGap: `${PAGE_GAP}px`,
                 columnFill: "auto" as const,
-                transform: `translateX(${slide}px)`,
+                transform: `translateX(${curl ? -pageOffset(page, box.w) : slide}px)`,
                 // No transition while the finger is down, or the paper lags
-                // behind it. The settle is a decelerating curve rather than
-                // an ease-in-out: a page you let go of carries on and stops,
-                // it does not accelerate from nothing.
-                transition: dragX === null
+                // behind it. The settle is a decelerating curve rather than an
+                // ease-in-out: a page you let go of carries on and stops, it
+                // does not accelerate from nothing. And none at all during a
+                // fold, where the strip must not move.
+                transition: dragX === null && !curl
                   ? "transform 320ms cubic-bezier(.22,.61,.36,1)"
                   : "none",
               }
@@ -667,7 +910,63 @@ function EpubPages({
             there is no other way to show it. */}
         <div dangerouslySetInnerHTML={{ __html: html }} />
       </div>
+      </div>
     </ReadingSurface>
+  );
+}
+
+/**
+ * Another copy of the chapter, showing one page of it.
+ *
+ * A fold needs three surfaces at once — the page you are leaving, its back,
+ * and the page underneath — and an element can only be in one place, so two
+ * of them are copies. Identical markup to the real column, down to the
+ * chapter label: pagination depends on everything above the text, and a copy
+ * that left the label out would break its pages a line earlier than the page
+ * it is standing in for.
+ *
+ * Inert, and hidden from anything reading the screen: there is one book on
+ * this page, not three.
+ */
+function Sheet({
+  html, label, prefs, box, page, clip, style,
+}: {
+  html: string;
+  label: string;
+  prefs: ReaderPrefs;
+  box: { w: number; h: number };
+  page: number;
+  clip?: string;
+  style?: React.CSSProperties;
+}) {
+  const theme = themeSpec(prefs.theme);
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 select-none"
+      // Opaque, because a page is. Without the paper behind it the sheet
+      // under this one reads straight through and you get two pages of text
+      // printed on top of each other.
+      style={{ background: theme.bg, clipPath: clip, ...style }}
+    >
+      <div
+        className="soma-epub"
+        style={{
+          fontFamily: fontStack(prefs.font),
+          fontSize: `${prefs.size}px`,
+          lineHeight: prefs.lineHeight,
+          color: theme.fg,
+          height: `${box.h}px`,
+          columnWidth: `${box.w}px`,
+          columnGap: `${PAGE_GAP}px`,
+          columnFill: "auto",
+          transform: `translateX(${-pageOffset(Math.max(0, page), box.w)}px)`,
+        }}
+      >
+        {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}
+        <div dangerouslySetInnerHTML={{ __html: html }} />
+      </div>
+    </div>
   );
 }
 
@@ -685,7 +984,7 @@ function EpubPages({
  */
 function ReadingSurface({
   book, prefs, viewportRef, columnRef, box, onTurn, onChrome, onDrag, onLine,
-  startLine, page, pages, atStart, atEnd, edges, slide, turning, children,
+  startLine, page, pages, atStart, atEnd, edges, slide, turning, folding, children,
 }: {
   book: MindEntry;
   prefs: ReaderPrefs;
@@ -694,8 +993,15 @@ function ReadingSurface({
   box: { w: number; h: number };
   onTurn: (delta: 1 | -1) => void;
   onChrome: () => void;
-  /** The finger's travel while a turn is in progress, or null when it is not. */
-  onDrag?: (dx: number | null) => void;
+  /**
+   * Where the finger is during a turn, or null when there is not one.
+   *
+   * Both the travel and the position, because the two page styles want
+   * different things from the same gesture: a slide needs how far, a curl
+   * needs where — the crease runs through the finger, so a curl started low
+   * on the page folds a different corner from one started high.
+   */
+  onDrag?: (at: { dx: number; dy: number; x: number; y: number } | null) => void;
   /** Which line is lit, written down so the book reopens on it. */
   onLine?: (index: number) => void;
   /** The line to open on, once this page's lines have been measured. */
@@ -711,9 +1017,18 @@ function ReadingSurface({
   slide?: number;
   /** True while a turn is in progress, which is when the edges show. */
   turning?: boolean;
+  /**
+   * True while a page is being FOLDED rather than slid.
+   *
+   * The fold decides its own ending — how far it has come is a question about
+   * a crease, not about how far a finger travelled — so the release handler
+   * below stands aside and lets the curl finish the turn.
+   */
+  folding?: boolean;
   children: React.ReactNode;
 }) {
   const theme = themeSpec(prefs.theme);
+  const paged = isPaged(prefs);
   const addMind = useSoma((s) => s.addMind);
   const removeMind = useSoma((s) => s.removeMind);
   // Whether there is anything beyond this page. Only the very front and back
@@ -895,9 +1210,10 @@ function ReadingSurface({
    */
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;
-    if (!d || !prefs.paged) return;
+    if (!d || !paged) return;
     const dx = e.clientX - d.x;
-    if (!d.turning && isTurning(dx, e.clientY - d.y, box.w || 1)) d.turning = true;
+    const dy = e.clientY - d.y;
+    if (!d.turning && isTurning(dx, dy, box.w || 1)) d.turning = true;
     if (!d.turning) return;
     document.getSelection()?.removeAllRanges();
     // The page goes where the finger goes. This is the whole difference
@@ -905,7 +1221,13 @@ function ReadingSurface({
     // you: you are moving the paper, and you can change your mind halfway and
     // put it back.
     const free = dx < 0 ? page < pages - 1 || !atBookEnd : page > 0 || !atBookStart;
-    onDrag?.(damp(dx, free));
+    const rect = viewportRef.current?.getBoundingClientRect();
+    onDrag?.({
+      dx: damp(dx, free),
+      dy,
+      x: e.clientX - (rect?.left ?? 0),
+      y: e.clientY - (rect?.top ?? 0),
+    });
   };
 
   const onPointerCancel = () => {
@@ -919,10 +1241,13 @@ function ReadingSurface({
     drag.current = null;
     onDrag?.(null);
     if (!from) return;
+    // A fold is already on its way somewhere; a second opinion about the same
+    // gesture would turn two pages.
+    if (folding) return;
 
     const dx = e.clientX - from.x;
     const dy = e.clientY - from.y;
-    const turn = prefs.paged && from.turning ? turnFrom(dx, dy, box.w || 1) : "stay";
+    const turn = paged && from.turning ? turnFrom(dx, dy, box.w || 1) : "stay";
     if (turn !== "stay") {
       document.getSelection()?.removeAllRanges();
       return onTurn(turn === "next" ? 1 : -1);
@@ -946,8 +1271,8 @@ function ReadingSurface({
     // Otherwise it is iBooks' arrangement: the outer sixth turns a page, the
     // middle shows the bars.
     const where = tapAt(x, box.w);
-    if (where === "next" && prefs.paged) onTurn(1);
-    else if (where === "prev" && prefs.paged) onTurn(-1);
+    if (where === "next" && paged) onTurn(1);
+    else if (where === "prev" && paged) onTurn(-1);
     else onChrome();
   };
 
@@ -967,7 +1292,7 @@ function ReadingSurface({
           never a rectangle of even light — it curves away at the binding and
           at the cut edge. Two very soft gradients are enough to say "this is
           a page in something" rather than "this is a div". */}
-      {prefs.paged && (
+      {paged && (
         <div
           aria-hidden
           className="pointer-events-none absolute inset-y-0 left-0 right-0 z-10"
@@ -981,7 +1306,7 @@ function ReadingSurface({
 
       <div
         ref={viewportRef}
-        className={cn("relative h-full", prefs.paged ? "overflow-hidden" : "overflow-y-auto")}
+        className={cn("relative h-full", paged ? "overflow-hidden" : "overflow-y-auto")}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -992,7 +1317,7 @@ function ReadingSurface({
         // a few swipes with no error anywhere. Text in a book is for reading,
         // not for dragging into another window.
         onDragStart={(e) => e.preventDefault()}
-        style={{ touchAction: prefs.paged ? "pan-y" : "auto" }}
+        style={{ touchAction: paged ? "pan-y" : "auto" }}
       >
         {children}
 
@@ -1004,7 +1329,7 @@ function ReadingSurface({
             the seam of reads as paper, and one you cannot reads as a slide
             deck. It fades in only while a turn is happening — a shadow
             sitting still on a page you are reading is just a smudge. */}
-        {prefs.paged && (edges ?? 0) > 0 && (
+        {paged && (edges ?? 0) > 0 && (
           <div
             aria-hidden
             className="pointer-events-none absolute inset-y-0 left-0 w-full"
@@ -1373,19 +1698,16 @@ function PrefsSheet({
             <div className="mt-4 text-[0.6rem] font-bold uppercase tracking-[0.14em] text-faint">
               Turning
             </div>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <Toggle
-                on={prefs.paged}
-                onClick={() => onChange({ ...prefs, paged: true })}
-                title="Pages"
-                note="Swipe to turn, like a book."
-              />
-              <Toggle
-                on={!prefs.paged}
-                onClick={() => onChange({ ...prefs, paged: false })}
-                title="Scroll"
-                note="One long chapter."
-              />
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {TURN_STYLES.map((t) => (
+                <Toggle
+                  key={t.id}
+                  on={prefs.turn === t.id}
+                  onClick={() => onChange({ ...prefs, turn: t.id })}
+                  title={t.label}
+                  note={t.note}
+                />
+              ))}
             </div>
           </>
         )}

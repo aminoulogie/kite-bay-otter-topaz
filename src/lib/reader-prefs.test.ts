@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEFAULT_READER, LINE_HEIGHT, MARGIN, READER_FONTS, READER_THEMES, SIZE, cleanReader,
-  fontStack, isDefaultReader, step, themeSpec, type ReaderPrefs,
+  TURN_STYLES, fontStack, isDefaultReader, isPaged, step, themeSpec, type ReaderPrefs,
 } from "./reader-prefs.ts";
 
 test("the shipped preferences are valid ones", () => {
@@ -56,11 +56,31 @@ test("stepping line height does not accumulate floating-point noise", () => {
   assert.equal(p.lineHeight, LINE_HEIGHT.min);
 });
 
-test("the two switches are booleans, whatever was stored", () => {
-  assert.equal(cleanReader({ paged: false }).paged, false);
-  assert.equal(cleanReader({ paged: "yes" }).paged, true, "only an explicit false turns it off");
+test("line focus is opt-in, and only a real boolean turns it on", () => {
   assert.equal(cleanReader({ lineFocus: true }).lineFocus, true);
-  assert.equal(cleanReader({ lineFocus: "true" }).lineFocus, false, "line focus is opt-in");
+  assert.equal(cleanReader({ lineFocus: "true" }).lineFocus, false);
+  assert.equal(cleanReader({ lineFocus: 1 }).lineFocus, false);
+});
+
+test("every turn style is offered, and an unknown one falls back", () => {
+  for (const t of TURN_STYLES) {
+    assert.equal(cleanReader({ turn: t.id }).turn, t.id);
+    assert.ok(t.label && t.note, t.id);
+  }
+  assert.equal(cleanReader({ turn: "flip" }).turn, DEFAULT_READER.turn);
+  assert.equal(isPaged({ ...DEFAULT_READER, turn: "scroll" }), false);
+  assert.equal(isPaged({ ...DEFAULT_READER, turn: "slide" }), true);
+  assert.equal(isPaged({ ...DEFAULT_READER, turn: "curl" }), true);
+});
+
+test("a preference stored before turn styles existed is carried over", () => {
+  // `turn` replaced a `paged` boolean. Anyone who had chosen scrolling had
+  // chosen it deliberately and must not be handed pages back.
+  assert.equal(cleanReader({ paged: false }).turn, "scroll");
+  assert.equal(cleanReader({ paged: true }).turn, DEFAULT_READER.turn);
+  assert.equal(cleanReader({}).turn, DEFAULT_READER.turn);
+  // And an explicit style wins over the old key, whatever it said.
+  assert.equal(cleanReader({ paged: false, turn: "curl" }).turn, "curl");
 });
 
 test("every font names a real family and ends in a generic", () => {

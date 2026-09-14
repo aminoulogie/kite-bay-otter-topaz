@@ -14,6 +14,14 @@
 
 export type ReaderTheme = "paper" | "sepia" | "night";
 
+export type TurnStyle = "curl" | "slide" | "scroll";
+
+export const TURN_STYLES: { id: TurnStyle; label: string; note: string }[] = [
+  { id: "curl", label: "Curl", note: "Folds like paper." },
+  { id: "slide", label: "Slide", note: "Pushes across." },
+  { id: "scroll", label: "Scroll", note: "One long chapter." },
+];
+
 export interface ReaderThemeSpec {
   id: ReaderTheme;
   label: string;
@@ -113,8 +121,15 @@ export interface ReaderPrefs {
   lineHeight: number;
   /** Side margin in px — the white space either side of the column. */
   margin: number;
-  /** Pages you swipe between, or one long scroll. */
-  paged: boolean;
+  /**
+   * How a page gives way to the next one.
+   *
+   * "curl" folds it like paper, "slide" pushes it across, "scroll" admits
+   * that an EPUB has no pages and lets you scroll the chapter. It replaced a
+   * `paged` boolean, which is still read on the way in so nobody's setting is
+   * lost — see cleanReader.
+   */
+  turn: TurnStyle;
   /** Light one line at a time and dim the rest. */
   lineFocus: boolean;
 }
@@ -129,9 +144,14 @@ export const DEFAULT_READER: ReaderPrefs = {
   size: SIZE.default,
   lineHeight: LINE_HEIGHT.default,
   margin: MARGIN.default,
-  paged: true,
+  turn: "curl",
   lineFocus: false,
 };
+
+/** Whether this style cuts the chapter into pages at all. */
+export function isPaged(prefs: ReaderPrefs): boolean {
+  return prefs.turn !== "scroll";
+}
 
 function clamp(value: unknown, range: { min: number; max: number }, fallback: number): number {
   const n = typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -147,7 +167,10 @@ function clamp(value: unknown, range: { min: number; max: number }, fallback: nu
  * font id is unknown is a worse outcome than a reader in the wrong font.
  */
 export function cleanReader(value: unknown): ReaderPrefs {
-  const v = (value ?? {}) as Partial<Record<keyof ReaderPrefs, unknown>>;
+  // `paged` is not a field any more, but a stored preference may still carry
+  // it, so the type here is "whatever was in the file" rather than the type
+  // this version happens to use.
+  const v = (value ?? {}) as Partial<Record<keyof ReaderPrefs | "paged", unknown>>;
   const theme = READER_THEMES.some((t) => t.id === v.theme)
     ? (v.theme as ReaderTheme)
     : DEFAULT_READER.theme;
@@ -162,7 +185,14 @@ export function cleanReader(value: unknown): ReaderPrefs {
     // you, and it reaches the backup file as exactly that.
     lineHeight: Math.round(clamp(v.lineHeight, LINE_HEIGHT, LINE_HEIGHT.default) * 10) / 10,
     margin: Math.round(clamp(v.margin, MARGIN, MARGIN.default)),
-    paged: v.paged !== false,
+    // `turn` replaced a `paged` boolean. A stored `false` meant scrolling and
+    // still does; anything else from before this existed gets the new default,
+    // which is the whole reason the old key is still read here.
+    turn: TURN_STYLES.some((t) => t.id === v.turn)
+      ? (v.turn as TurnStyle)
+      : v.paged === false
+        ? "scroll"
+        : DEFAULT_READER.turn,
     lineFocus: v.lineFocus === true,
   };
 }
