@@ -123,3 +123,23 @@ test("a drag runs free inside the book and drags its heels at the ends", () => {
   assert.equal(damp(0, false), 0);
   assert.ok(Math.abs(damp(300, false)) < 300, "pulling against the cover is heavy");
 });
+
+test("a reader with nothing else to scroll answers a swipe sooner", () => {
+  // The paged reader has no vertical scrolling of its own, so a drag can only
+  // mean one thing and there is no reason to make the reader feel stuck.
+  assert.equal(turnBar(393, true), 14);
+  assert.ok(turnBar(393, true) < turnBar(393), "sooner than where a scroll competes");
+  assert.equal(isTurning(-16, 0, 393, true), true);
+  assert.equal(isTurning(-16, 0, 393, false), false, "still strict where it must be");
+});
+
+test("a thumb that arcs across the screen is still turning a page", () => {
+  // A real swipe is not a straight horizontal line. Insisting that it be more
+  // horizontal than vertical refused about a third of genuine turns.
+  assert.equal(isTurning(-60, 90, 393, true), true, "an arcing sweep");
+  assert.equal(turnFrom(-60, 90, 393, true), "next");
+  assert.equal(isTurning(-60, 90, 393, false), false, "and is refused where a scroll competes");
+  // Straight down is never a page turn, whatever else is going on.
+  assert.equal(isTurning(-10, 200, 393, true), false);
+  assert.equal(turnFrom(-10, 200, 393, true), "stay");
+});

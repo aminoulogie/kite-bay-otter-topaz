@@ -24,16 +24,51 @@ import { useEffect, useRef } from "react";
  */
 let lockCount = 0;
 
-function lockScroll(): () => void {
-  if (lockCount === 0) document.body.style.overflow = "hidden";
+/**
+ * On the ROOT, not just the body.
+ *
+ * `overflow` set on the body only reaches the viewport if the root element's
+ * own overflow is `visible` — that is the propagation rule, and this app's
+ * reset sets `overflow-x: clip` on html to stop horizontal overspill. So the
+ * root's overflow was never `visible`, nothing propagated, and the lock had
+ * been doing nothing at all: every sheet in the app left the page behind it
+ * scrolling, with a scrollbar down the side of it.
+ *
+ * Only the Y axis is touched, so the reset's `overflow-x: clip` survives.
+ */
+export function lockScroll(): () => void {
+  if (lockCount === 0) {
+    document.documentElement.style.overflowY = "hidden";
+    document.body.style.overflow = "hidden";
+  }
   lockCount += 1;
   let released = false;
   return () => {
     if (released) return;
     released = true;
     lockCount = Math.max(0, lockCount - 1);
-    if (lockCount === 0) document.body.style.overflow = "";
+    if (lockCount === 0) {
+      document.documentElement.style.overflowY = "";
+      document.body.style.overflow = "";
+    }
   };
+}
+
+/**
+ * Hold the page still for as long as something is covering it.
+ *
+ * For anything that fills the screen without being a modal sheet — the
+ * reader is the one that matters — which wants the lock and none of the
+ * focus or Escape handling that comes with `useSheet`. Without it the view
+ * underneath keeps its scroll height: a scrollbar sits down the side of the
+ * book, and a drag that starts anywhere the reader has not claimed scrolls
+ * the page behind it.
+ */
+export function useScrollLock(active = true) {
+  useEffect(() => {
+    if (!active) return;
+    return lockScroll();
+  }, [active]);
 }
 
 /** Open sheets, innermost last. Only the last one answers Escape. */

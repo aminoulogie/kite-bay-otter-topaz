@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   ChevronLeft, ChevronRight, Loader2, Minus, Plus, Rows3, Settings2, X,
 } from "lucide-react";
@@ -21,6 +22,7 @@ import {
   fontStack, isPaged, step as stepPref, themeSpec, type ReaderPrefs,
 } from "@/lib/reader-prefs";
 import { getLocalDateKey } from "@/lib/soma";
+import { useScrollLock } from "@/lib/use-sheet";
 import { useSoma } from "@/lib/store";
 import { capture } from "@/lib/word-capture";
 import { cn } from "@/lib/utils";
@@ -48,6 +50,11 @@ export function BookReader({
   onClose: () => void;
   onChange: (patch: Partial<MindEntry>) => void;
 }) {
+  // The page behind a book does not scroll. It is covered by the reader, and
+  // a view underneath that still has somewhere to go puts a scrollbar down
+  // the side of the page and takes any drag the reader has not claimed.
+  useScrollLock();
+
   const stored = useSoma((s) => s.settings.reader);
   const patchSettings = useSoma((s) => s.patchSettings);
   const prefs = useMemo(() => cleanReader(stored), [stored]);
@@ -456,14 +463,26 @@ function EpubPages({
    * every frame in between is written straight onto the four elements that
    * actually move — see paintFold.
    */
-  const [curl, setCurl] = useState<{ corner: Corner; forward: boolean } | null>(null);
+  /**
+   * The fold in flight: which corner, which way, and off which page.
+   *
+   * `from` is the page the fold was STARTED on, and it is carried here rather
+   * than read live because the page changes one frame before the fold is let
+   * go of. Without it the back of the flap re-renders on that frame — an
+   * eleven-thousand pixel strip, restyled, while it is hidden and nobody can
+   * see it — which is exactly the frame that must be free.
+   */
+  const [curl, setCurl] = useState<{ corner: Corner; forward: boolean; from: number } | null>(
+    null,
+  );
   const curling = useRef<number | null>(null);
   /** Where the held corner is right now. Read by the settle, never rendered. */
   const foldAt_ = useRef<Point>({ x: 0, y: 0 });
 
   /** The surfaces a fold moves. Written to directly, never through React. */
   const flatWrap = useRef<HTMLDivElement>(null);
-  const otherSheet = useRef<HTMLDivElement>(null);
+  const nextSheet = useRef<HTMLDivElement>(null);
+  const prevSheet = useRef<HTMLDivElement>(null);
   const flapOuter = useRef<HTMLDivElement>(null);
   const flapClip = useRef<HTMLDivElement>(null);
   const sheen = useRef<HTMLDivElement>(null);
@@ -634,6 +653,9 @@ function EpubPages({
   /** Where the strip sits right now: the settled page, plus the finger. */
   const slide = -pageOffset(page, box.w) + (dragX ?? 0);
 
+  /** The chapter, as one object that only changes when the chapter does. */
+  const markup = useMemo(() => ({ __html: html }), [html]);
+
   /**
    * Can this turn be folded, or does it have to slide?
    *
@@ -659,25 +681,32 @@ function EpubPages({
   });
 
   /**
-   * Which page the spare copy is showing, a frame behind the real one.
+   * The page before and the page after, both painted, both ready.
    *
-   * Finishing a turn changes the page, which repaints the column AND this
-   * copy — two pages of text on one frame, right as the fold lands. A fold in
-   * progress needs it immediately, because it is the page you can see; a turn
-   * that has already finished does not, so it waits a frame and the work is
-   * spread over two.
+   * There used to be ONE spare copy pointed at whichever neighbour the fold
+   * needed. Going forward that was already right, because it had been sitting
+   * on the next page all along; going BACK it had to be moved to the previous
+   * page and a fresh page of text rastered — at the instant the finger
+   * started to move. That is why turning back was the slow direction.
+   *
+   * Two spares cost one more layout when a chapter opens, and nothing at all
+   * when a page turns, which is the trade worth making: a chapter opens once
+   * and its pages turn forty times.
+   *
+   * They still lag a frame behind a COMPLETED turn, so finishing a fold does
+   * not repaint three pages of text on one frame.
    */
-  const wantSheet = curl?.forward === false ? page - 1 : page + 1;
-  const [sheetPage, setSheetPage] = useState(wantSheet);
+  const [neighbours, setNeighbours] = useState({ next: page + 1, prev: page - 1 });
   useEffect(() => {
-    if (sheetPage === wantSheet) return;
-    if (curl) {
-      setSheetPage(wantSheet);
-      return;
-    }
-    const id = requestAnimationFrame(() => setSheetPage(wantSheet));
+    // Never while a fold is up. The last act of a turn is to stand one of
+    // these spares in front of the column and let the column catch up behind
+    // it; re-pointing it at a new page mid-cover would put the wrong page on
+    // screen for a frame, which is the one thing the cover exists to stop.
+    if (curl) return;
+    if (neighbours.next === page + 1 && neighbours.prev === page - 1) return;
+    const id = requestAnimationFrame(() => setNeighbours({ next: page + 1, prev: page - 1 }));
     return () => cancelAnimationFrame(id);
-  }, [wantSheet, curl, sheetPage]);
+  }, [page, neighbours, curl]);
 
   /**
    * One frame of the fold, straight onto the DOM.
@@ -698,8 +727,8 @@ function EpubPages({
       // is the page underneath, and the incoming copy is the one clipped.
       if (c.forward) {
         if (flatWrap.current) flatWrap.current.style.clipPath = flat;
-      } else if (otherSheet.current) {
-        otherSheet.current.style.clipPath = flat;
+      } else if (prevSheet.current) {
+        prevSheet.current.style.clipPath = flat;
       }
       if (flapOuter.current) flapOuter.current.style.transform = matrixCss(f.matrix);
       if (flapClip.current) flapClip.current.style.clipPath = polygonCss(f.flap);
@@ -712,12 +741,12 @@ function EpubPages({
   /** Bring the flap in or out, again without a render. */
   const showFold = useCallback((on: boolean, forward: boolean) => {
     if (flapOuter.current) flapOuter.current.style.visibility = on ? "visible" : "hidden";
-    if (otherSheet.current) {
-      // Which copy is on top is a fact about the DIRECTION of the turn, and
-      // z-index is the one way of saying it that costs a composite rather
-      // than a repaint.
-      otherSheet.current.style.zIndex = forward ? "0" : "2";
-      if (!on) otherSheet.current.style.clipPath = "";
+    // Going back, the page arriving lies OVER the one you are on; going
+    // forward, the page revealed lies under it. z-index is the one way of
+    // saying that which costs a composite rather than a repaint.
+    if (prevSheet.current) {
+      prevSheet.current.style.zIndex = on && !forward ? "2" : "0";
+      if (!on || forward) prevSheet.current.style.clipPath = "";
     }
     if (!on && flatWrap.current) flatWrap.current.style.clipPath = "";
   }, []);
@@ -753,17 +782,37 @@ function EpubPages({
           curling.current = requestAnimationFrame(run);
           return;
         }
-        // Everything that ends the turn happens on the NEXT frame, not this
-        // one. Changing the page moves the strip and repaints a page of text,
-        // and doing that in the same frame as the fold's last position made
-        // the animation end on a dropped frame — a stumble on the last step.
-        // A frame later the fold is already visually complete and nobody is
-        // watching the pixels.
+        // Ending the turn takes two frames, and the order is the whole point.
+        //
+        // The strip carries a 320ms slide, which is switched off whenever a
+        // fold is in progress. Hiding the flap, changing the page and
+        // clearing the fold all at once meant React rendered one frame with
+        // the new page AND no fold — so the slide was live, and the strip
+        // ANIMATED to the page the curl had just finished showing you. That
+        // is the slide you can still see at the end of a turn, and it is
+        // wrong twice over: the page had already arrived, and it arrives
+        // again.
+        //
+        // So: one frame in which the strip moves with the fold still
+        // nominally on and no transition, and nobody sees it happen. Then the
+        // fold is cleared, by which time the transform is where it is staying
+        // and there is nothing left to animate.
+        //
+        // flushSync is what makes that an ORDER rather than a hope. Left to
+        // itself React schedules the page change and commits it whenever it
+        // next gets the main thread — which, on a frame that has just
+        // finished animating a fold, can be after the frame below has already
+        // cleared the fold. Both updates then land in one render, the
+        // transition is live for it, and the strip slides. Forcing the commit
+        // here means the paint with the new page and no transition has
+        // happened before the next frame is even scheduled.
         curling.current = requestAnimationFrame(() => {
           showFold(false, c.forward);
-          if (commit) goRef.current(c.forward ? 1 : -1);
-          curlRef.current = null;
-          setCurl(null);
+          if (commit) flushSync(() => goRef.current(c.forward ? 1 : -1));
+          curling.current = requestAnimationFrame(() => {
+            curlRef.current = null;
+            setCurl(null);
+          });
         });
       };
       curling.current = requestAnimationFrame(run);
@@ -784,17 +833,41 @@ function EpubPages({
    * this one to fold away from.
    */
   const onDrag = useCallback(
-    (at: { dx: number; dy: number; x: number; y: number } | null) => {
+    (at: { dx: number; dy: number; x: number; y: number } | null, flick = 0): boolean => {
       if (at === null) {
         setDragX(null);
         const c = curlRef.current;
-        if (!c) return;
+        if (!c) return false;
         const f = foldAt(foldAt_.current, boxRef.current, c.corner);
         const p = f?.progress ?? 0;
-        // Forward, past the halfway fold and it goes; backward, the page has
-        // to have come most of the way home before it stays home.
-        settleCurl(c.forward ? p >= 0.45 : p <= 0.55);
-        return;
+        // A flick finishes the turn however far it got.
+        //
+        // Distance alone is how this decided before, and it made the fold
+        // feel dead: a page would only go if it had been carried nearly half
+        // the screen, so a quick push — which is how anyone actually turns a
+        // page — bent the corner and let it fall back. Paper does not work
+        // like that. Push it hard enough and it goes, wherever you let go.
+        //
+        // Half a pixel a millisecond is around five hundred a second, which
+        // is well above a deliberate slow drag and well below any flick.
+        // Below that it is distance again: forward, past the halfway fold and
+        // it goes; backward, the page has to have come most of the way home
+        // before it stays home.
+        settleCurl(
+          Math.abs(flick) >= FLICK
+            ? c.forward === flick < 0
+            : c.forward
+              ? p >= 0.45
+              : p <= 0.55,
+        );
+        // Answered rather than left to the caller to work out. The surface
+        // has to know, on THIS event, whether the fold has the gesture — and
+        // the only other way it could tell was a React prop, which lags the
+        // fold by a render. On a quick swipe that render had not happened
+        // yet, so the surface turned the page as well: the fold finished the
+        // turn and the strip then SLID to the same page behind it. Two page
+        // turns for one flick, one of them animated over the other.
+        return true;
       }
       const forward = at.dx < 0;
       if (!canFold(forward)) {
@@ -804,7 +877,7 @@ function EpubPages({
           setCurl(null);
         }
         setDragX(at.dx);
-        return;
+        return false;
       }
       setDragX(null);
       const corner = grabbedCorner({ x: at.x, y: at.y }, box, true);
@@ -817,25 +890,28 @@ function EpubPages({
       // the finger's y means the page arrives already bent at the instant of
       // touch-down, which reads as a glitch rather than as paper.
       const lean = Math.min(1, Math.abs(at.dx) / 70);
+      let took = false;
       const open = curlRef.current;
       if (!open || open.corner !== corner || open.forward !== forward) {
-        const next = { corner, forward };
+        const next = { corner, forward, from: page };
         // The ref leads the state by a render on purpose: the paint below has
         // to land on THIS frame, the one the finger moved on, and cannot wait
         // for React to get round to it.
         curlRef.current = next;
         setCurl(next);
         showFold(true, forward);
+        took = true;
       }
       paintFold(
         {
           x: home.x + travel - (forward ? 0 : 2 * box.w),
           y: home.y + (at.y - home.y) * lean,
         },
-        curlRef.current ?? { corner, forward },
+        curlRef.current ?? { corner, forward, from: page },
       );
+      return took || curlRef.current !== null;
     },
-    [canFold, box, paintFold, settleCurl, showFold],
+    [canFold, box, page, paintFold, settleCurl, showFold],
   );
 
   /**
@@ -897,7 +973,11 @@ function EpubPages({
       pages={pages}
       atStart={chapter === 0}
       atEnd={chapter >= chapters - 1}
-      edges={paged && !curl ? pages - 1 : 0}
+      // Only the SLIDE wants edge markers. Left on for the curl they were
+      // mounted and unmounted — twenty-seven elements for a long chapter — at
+      // both ends of every single turn, which is a good deal of work to do
+      // twice for something that is never drawn.
+      edges={prefs.turn === "slide" && !curl ? pages - 1 : 0}
       slide={slide}
       turning={dragX !== null}
       folding={!!curl}
@@ -914,17 +994,26 @@ function EpubPages({
           second, without React hearing about it. */}
       {paged && prefs.turn === "curl" && (
         <>
+          {/* Visible at all times, and never seen: both sit UNDER the page
+              you are reading, which is opaque. Hiding them would have been
+              tidier and cost a full raster of a page of text on the first
+              frame of every turn — the one frame a gesture cannot afford. */}
           <Sheet
-            innerRef={otherSheet}
+            innerRef={nextSheet}
             html={html}
             label={label}
             prefs={prefs}
             box={box}
-            page={sheetPage}
-            // Visible at all times, and never seen: it sits UNDER the page you
-            // are reading, which is opaque. Hiding it would have been tidier
-            // and cost a full raster of a page of text on the first frame of
-            // every turn — the one frame a gesture cannot afford to drop.
+            page={neighbours.next}
+            style={UNDER_SHEET}
+          />
+          <Sheet
+            innerRef={prevSheet}
+            html={html}
+            label={label}
+            prefs={prefs}
+            box={box}
+            page={neighbours.prev}
             style={UNDER_SHEET}
           />
 
@@ -969,7 +1058,7 @@ function EpubPages({
                 label={label}
                 prefs={prefs}
                 box={box}
-                page={curl?.forward === false ? page - 1 : page}
+                page={curl ? (curl.forward ? curl.from : curl.from - 1) : page}
                 style={theme.dark ? BACK_SHEET_DARK : BACK_SHEET_LIGHT}
               />
               {/* The curve. A sheet lifted off a table is not flat, and a flat
@@ -1039,8 +1128,18 @@ function EpubPages({
         )}
         {/* The chapter's own markup, with scripts stripped and every link
             rewritten to the archive — see lib/epub.ts. It is the book's text;
-            there is no other way to show it. */}
-        <div dangerouslySetInnerHTML={{ __html: html }} />
+            there is no other way to show it.
+
+            The object is memoised, and that is not a micro-optimisation: it
+            is the single most expensive thing in the reader. React compares
+            props by identity, and `dangerouslySetInnerHTML` is an OBJECT — so
+            `{{ __html: html }}` written inline is a new object on every
+            render, React sees a changed prop, and sets innerHTML again. The
+            string is identical; the browser still throws away sixty
+            paragraphs and re-parses them. Four times over, because the two
+            spare sheets and the back of the flap hold the same chapter. It
+            cost the better part of a second on every page turn. */}
+        <div dangerouslySetInnerHTML={markup} />
       </div>
       </div>
     </ReadingSurface>
@@ -1068,6 +1167,9 @@ function EpubPages({
  * chapter re-rendered on the frame a fold began, which is precisely the frame
  * that cannot afford it.
  */
+/** Px per ms of sideways travel that counts as a flick rather than a drag. */
+const FLICK = 0.5;
+
 const UNDER_SHEET: React.CSSProperties = { zIndex: 0 };
 const BACK_SHEET_DARK: React.CSSProperties = { background: "transparent", opacity: 0.16 };
 const BACK_SHEET_LIGHT: React.CSSProperties = { background: "transparent", opacity: 0.13 };
@@ -1085,6 +1187,7 @@ const Sheet = memo(function Sheet({
   style?: React.CSSProperties;
 }) {
   const theme = themeSpec(prefs.theme);
+  const markup = useMemo(() => ({ __html: html }), [html]);
   return (
     <div
       ref={innerRef}
@@ -1112,7 +1215,7 @@ const Sheet = memo(function Sheet({
         }}
       >
         {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}
-        <div dangerouslySetInnerHTML={{ __html: html }} />
+        <div dangerouslySetInnerHTML={markup} />
       </div>
     </div>
   );
@@ -1149,7 +1252,14 @@ function ReadingSurface({
    * needs where — the crease runs through the finger, so a curl started low
    * on the page folds a different corner from one started high.
    */
-  onDrag?: (at: { dx: number; dy: number; x: number; y: number } | null) => void;
+  /**
+   * Returns true when the fold has taken the gesture and owns its ending.
+   * `flick` is the finger's horizontal speed at release, in px per ms.
+   */
+  onDrag?: (
+    at: { dx: number; dy: number; x: number; y: number } | null,
+    flick?: number,
+  ) => boolean | void;
   /** Which line is lit, written down so the book reopens on it. */
   onLine?: (index: number) => void;
   /** The line to open on, once this page's lines have been measured. */
@@ -1184,7 +1294,9 @@ function ReadingSurface({
   const atBookStart = page === 0 && atStart;
   const atBookEnd = page === pages - 1 && atEnd;
 
-  const drag = useRef<{ x: number; y: number; turning: boolean } | null>(null);
+  const drag = useRef<
+    { x: number; y: number; turning: boolean; at: number; lastX: number; vx: number } | null
+  >(null);
   const [lines, setLines] = useState<Rect[]>([]);
   const [line, setLine] = useState(0);
   /** Set when a page is entered backwards, so it opens on its last line. */
@@ -1340,7 +1452,10 @@ function ReadingSurface({
   );
 
   const onPointerDown = (e: React.PointerEvent) => {
-    drag.current = { x: e.clientX, y: e.clientY, turning: false };
+    drag.current = {
+      x: e.clientX, y: e.clientY, turning: false,
+      at: e.timeStamp, lastX: e.clientX, vx: 0,
+    };
   };
 
   /**
@@ -1361,7 +1476,17 @@ function ReadingSurface({
     if (!d || !paged) return;
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
-    if (!d.turning && isTurning(dx, dy, box.w || 1)) d.turning = true;
+    // Speed, smoothed. One pair of samples is mostly noise — pointer events
+    // arrive in bursts and two of them can share a millisecond — so each
+    // reading is folded into the last, which leaves the number steady and
+    // still responsive to the last thing the finger did.
+    const gap = e.timeStamp - d.at;
+    if (gap > 0) {
+      d.vx = d.vx * 0.6 + ((e.clientX - d.lastX) / gap) * 0.4;
+      d.at = e.timeStamp;
+      d.lastX = e.clientX;
+    }
+    if (!d.turning && isTurning(dx, dy, box.w || 1, paged)) d.turning = true;
     if (!d.turning) return;
     document.getSelection()?.removeAllRanges();
     // The page goes where the finger goes. This is the whole difference
@@ -1387,15 +1512,20 @@ function ReadingSurface({
   const onPointerUp = (e: React.PointerEvent) => {
     const from = drag.current;
     drag.current = null;
-    onDrag?.(null);
+    // Stale speed is worse than none: a finger held still for a moment before
+    // letting go has not flicked anything, whatever it was doing before that.
+    const still = from && e.timeStamp - from.at > 90;
+    const folded = onDrag?.(null, still ? 0 : (from?.vx ?? 0));
     if (!from) return;
     // A fold is already on its way somewhere; a second opinion about the same
-    // gesture would turn two pages.
-    if (folding) return;
+    // gesture would turn two pages. `folded` is the fold answering for itself
+    // on this event; `folding` is the same fact a render later, and is kept
+    // for the gesture that started before this one finished.
+    if (folded || folding) return;
 
     const dx = e.clientX - from.x;
     const dy = e.clientY - from.y;
-    const turn = paged && from.turning ? turnFrom(dx, dy, box.w || 1) : "stay";
+    const turn = paged && from.turning ? turnFrom(dx, dy, box.w || 1, paged) : "stay";
     if (turn !== "stay") {
       document.getSelection()?.removeAllRanges();
       return onTurn(turn === "next" ? 1 : -1);
@@ -1465,7 +1595,17 @@ function ReadingSurface({
         // a few swipes with no error anywhere. Text in a book is for reading,
         // not for dragging into another window.
         onDragStart={(e) => e.preventDefault()}
-        style={{ touchAction: paged ? "pan-y" : "auto" }}
+        style={{
+          // NONE, not "pan-y". A paged reader has nothing to scroll — the
+          // viewport is already clipped — so `pan-y` was not describing a
+          // behaviour, it was handing every vertical drag to the browser:
+          // it scrolled the tab behind the book (which is the scrollbar that
+          // appeared down the right-hand side), and it made the browser hold
+          // on to the start of every gesture while it worked out whether it
+          // wanted it, which is why swipes went missing.
+          touchAction: paged ? "none" : "pan-y",
+          overscrollBehavior: "contain",
+        }}
       >
         {children}
 

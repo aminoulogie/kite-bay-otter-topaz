@@ -78,13 +78,35 @@ export type Turn = "prev" | "next" | "stay";
  * wins outright: a book is a column of text and the commonest thing a thumb
  * does on one is scroll, even when the page itself does not.
  */
-export function turnBar(width: number): number {
+/**
+ * How far a finger must travel before it is turning a page.
+ *
+ * `sole` means this gesture has no rival: on a paged reader nothing scrolls,
+ * so a drag can only ever be a page turn, and asking for forty pixels of it
+ * makes the book feel stuck. Where the page DOES scroll — the scrolling
+ * reader, a list — the bar stays high, because a turn stealing a scroll is
+ * far worse than a turn that needs a moment's more travel.
+ */
+export function turnBar(width: number, sole = false): number {
+  if (sole) return 14;
   return Math.min(TURN_PX, Math.max(16, width * 0.12));
 }
 
-export function turnFrom(dx: number, dy: number, width: number): Turn {
-  if (Math.abs(dx) <= Math.abs(dy)) return "stay";
-  const bar = turnBar(width);
+/**
+ * How sideways a drag has to be.
+ *
+ * Same reasoning: with nothing else competing, a drag that is merely MORE
+ * sideways than not is a page turn — a thumb sweeping across a phone arcs,
+ * and insisting it be more horizontal than vertical means a real swipe on a
+ * real hand is refused about a third of the time.
+ */
+function sideways(dx: number, dy: number, sole: boolean): boolean {
+  return Math.abs(dx) > Math.abs(dy) * (sole ? 0.45 : 1);
+}
+
+export function turnFrom(dx: number, dy: number, width: number, sole = false): Turn {
+  if (!sideways(dx, dy, sole)) return "stay";
+  const bar = turnBar(width, sole);
   if (dx <= -bar) return "next";
   if (dx >= bar) return "prev";
   return "stay";
@@ -99,8 +121,8 @@ export function turnFrom(dx: number, dy: number, width: number): Turn {
  * with a paragraph selected and turned no page at all — and "slow" is not
  * something a reader should have to avoid being.
  */
-export function isTurning(dx: number, dy: number, width: number): boolean {
-  return Math.abs(dx) > Math.abs(dy) && Math.abs(dx) >= turnBar(width);
+export function isTurning(dx: number, dy: number, width: number, sole = false): boolean {
+  return sideways(dx, dy, sole) && Math.abs(dx) >= turnBar(width, sole);
 }
 
 /**
