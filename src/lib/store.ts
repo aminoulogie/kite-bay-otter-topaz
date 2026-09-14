@@ -94,7 +94,7 @@ import {
 } from "./routine";
 import { defaultPlan, normalise, type TimeBlock } from "./day-plan";
 import {
-  addStep, cleanProject, newProjectId, removeStep, setStep, stepsOf, type Project,
+  addStep, cleanProject, moveStep, newProjectId, removeStep, setStep, stepsOf, type Project,
 } from "./projects";
 import { lastSetAt, lastTimeFor } from "./last-time";
 
@@ -264,6 +264,7 @@ export interface SomaStore {
   addProjectStep: (id: string, label: string) => void;
   setProjectStep: (id: string, stepId: string, done: boolean) => void;
   renameProjectStep: (id: string, stepId: string, label: string) => void;
+  moveProjectStep: (id: string, stepId: string, delta: number) => void;
   removeProjectStep: (id: string, stepId: string) => void;
   addTodo: (text: string) => void;
   toggleTodo: (id: string) => void;
@@ -1259,6 +1260,10 @@ export const useSoma = create<SomaStore>()(
                 }
               : p,
           ),
+        })),
+      moveProjectStep: (id, stepId, delta) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? moveStep(p, stepId, delta) : p)),
         })),
       removeProjectStep: (id, stepId) =>
         set((s) => ({
