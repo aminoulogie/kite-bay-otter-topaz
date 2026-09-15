@@ -80,59 +80,73 @@ const num = (v: unknown): number | undefined => {
 
 // ------------------------------------------------------------- dictionary --
 
-export const DICTIONARY_URL = "https://api.dictionaryapi.dev/api/v2/entries";
+/**
+ * Wiktionary's REST definition endpoint, with Datamuse (WordNet) as the
+ * fallback when it cannot answer.
+ *
+ * dictionaryapi.dev was the original provider and went away; every lookup
+ * came back "Could not reach the dictionary" through no fault of the app.
+ * Two providers, each queried in turn, means one of them having a bad day
+ * is a slower answer rather than a missing one — and both are public,
+ * keyless and CORS-open, so the app stays anonymous and offline-first.
+ */
+export const WIKTIONARY_URL = "https://en.wiktionary.org/api/rest_v1/page/definition";
+export const DATAMUSE_URL = "https://api.datamuse.com/words";
 
 /**
- * Pull the useful parts out of a dictionaryapi.dev response.
+ * Pull the useful parts out of a Wiktionary rest_v1/page/definition response.
  *
  * Exported separately from the fetch so the shape-handling can be tested
  * against recorded payloads without a network — which matters, because the
  * network is the part that cannot be tested.
  */
 export function parseWord(raw: unknown, fallbackWord: string): WordLookup | null {
-  const list = Array.isArray(raw) ? raw : null;
-  if (!list?.length) return null;
+  const root = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : null;
+  const entries = Array.isArray(root?.en) ? root.en : null;
+  if (!entries?.length) return null;
 
   const senses: WordSense[] = [];
-  let phonetic: string | undefined;
-  let source: string | undefined;
-  let word = fallbackWord;
-
-  for (const entry of list) {
+  for (const entry of entries) {
     if (!entry || typeof entry !== "object") continue;
     const e = entry as Record<string, unknown>;
-    word = str(e.word) ?? word;
-    phonetic ??= str(e.phonetic);
-    if (!phonetic && Array.isArray(e.phonetics)) {
-      for (const p of e.phonetics) {
-        const t = str((p as Record<string, unknown>)?.text);
-        if (t) {
-          phonetic = t;
-          break;
-        }
-      }
-    }
-    if (!source && Array.isArray(e.sourceUrls)) source = str(e.sourceUrls[0]);
-
-    for (const meaning of Array.isArray(e.meanings) ? e.meanings : []) {
-      const m = meaning as Record<string, unknown>;
-      const pos = str(m.partOfSpeech);
-      for (const d of Array.isArray(m.definitions) ? m.definitions : []) {
-        const def = str((d as Record<string, unknown>)?.definition);
-        if (!def) continue;
-        senses.push({
-          partOfSpeech: pos,
-          definition: def,
-          example: str((d as Record<string, unknown>)?.example),
-        });
-      }
+    const pos = str(e.partOfSpeech);
+    for (const d of Array.isArray(e.definitions) ? e.definitions : []) {
+      const dd = (d ?? {}) as Record<string, unknown>;
+      const definition = str(dd.definition);
+      if (!definition) continue;
+      const examples = Array.isArray(dd.examples) ? dd.examples : [];
+      const example = str(examples[0]);
+      senses.push({ partOfSpeech: pos, definition, example });
+      if (senses.length >= 3) return { word: fallbackWord, senses, source: "Wiktionary" };
     }
   }
 
   if (!senses.length) return null;
-  // Three is plenty for a flashcard. A word with nine senses listed in full is
-  // a dictionary page, not something you will review in ten seconds.
-  return { word, phonetic, senses: senses.slice(0, 3), source };
+  return { word: fallbackWord, senses, source: "Wiktionary" };
+}
+
+/**
+ * Pull the useful parts out of a Datamuse response.
+ *
+ * Datamuse's `md=dp` returns definitions as `"pos\tdefinition"` strings, and
+ * `tags` carries the part of speech separately — both are read defensively,
+ * because either may be absent on any given entry.
+ */
+export function parseDatamuse(raw: unknown, fallbackWord: string): WordLookup | null {
+  const list = Array.isArray(raw) ? raw : null;
+  const entry = list?.[0] && typeof list[0] === "object" ? (list[0] as Record<string, unknown>) : null;
+  if (!entry) return null;
+
+  const senses: WordSense[] = [];
+  for (const d of Array.isArray(entry.defs) ? entry.defs.slice(0, 3) : []) {
+    const parts = String(d).split("\t");
+    const pos = str(parts[0]) ?? (Array.isArray(entry.tags) ? str(entry.tags[0]) : undefined);
+    const definition = str(parts[1]) ?? str(parts[0]);
+    if (definition) senses.push({ partOfSpeech: pos, definition });
+  }
+  if (!senses.length) return null;
+  const word = str(entry.word) ?? fallbackWord;
+  return { word, senses, source: "WordNet via Datamuse" };
 }
 
 export async function lookupWord(
@@ -147,25 +161,40 @@ export async function lookupWord(
   }
 
   const lang = (opts.lang || "en").toLowerCase();
-  try {
-    const raw = await getJson(
-      `${DICTIONARY_URL}/${encodeURIComponent(lang)}/${encodeURIComponent(term)}`,
-      doFetch,
-      opts.signal,
-    );
-    const parsed = parseWord(raw, term);
-    if (!parsed) return { ok: false, reason: `No definition found for "${term}".` };
-    return { ok: true, value: parsed };
-  } catch (err) {
-    // Offline is the common case and deserves the plainer sentence.
+  if (lang !== "en") {
+    // Wiktionary's REST definition endpoint is English-only per language
+    // subdomain; other languages have never been wired here and the fallback
+    // below is English too, so refuse plainly rather than answer in the
+    // wrong language.
+    return { ok: false, reason: "Definitions are available in English for now." };
+  }
+
+  const tryFetch = async (url: string): Promise<unknown> => {
+    try {
+      return await getJson(url, doFetch, opts.signal);
+    } catch {
+      return undefined; // network failure — let the next provider try
+    }
+  };
+
+  const wik = await tryFetch(`${WIKTIONARY_URL}/${encodeURIComponent(term)}`);
+  const fromWik = wik === undefined ? undefined : parseWord(wik, term);
+  if (fromWik) return { ok: true, value: fromWik };
+
+  const dm = await tryFetch(`${DATAMUSE_URL}?sp=${encodeURIComponent(term)}&md=dp&max=1`);
+  const fromDm = dm === undefined ? undefined : parseDatamuse(dm, term);
+  if (fromDm) return { ok: true, value: fromDm };
+
+  if (wik === undefined && dm === undefined) {
     const offline = typeof navigator !== "undefined" && navigator.onLine === false;
     return {
       ok: false,
       reason: offline
         ? "You are offline — type the definition and it will be kept."
-        : `Could not reach the dictionary${err instanceof Error && err.message === "404" ? " (no entry)" : ""}. Type it in instead.`,
+        : "Could not reach the dictionary. Type it in instead.",
     };
   }
+  return { ok: false, reason: `No definition found for "${term}".` };
 }
 
 // ------------------------------------------------------------------ books --

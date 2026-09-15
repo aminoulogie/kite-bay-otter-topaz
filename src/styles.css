@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./glass.css";
 
 @theme {
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
@@ -345,6 +346,18 @@ html.soma-dragging * {
   -webkit-user-select: none;
   user-select: none;
   /* Stops iOS raising the copy/define bubble over the row being dragged. */
+  -webkit-touch-callout: none;
+}
+
+/*
+ * The reader answers a selection with its own bar, and iOS's native
+ * copy/define bubble parks itself over exactly that bar. Suppressing the
+ * callout leaves the selection alone — long-press still forms the range and
+ * still fires selectionchange, which is what opens the app's own menu — and
+ * removes the native menu that covered the app's buttons.
+ */
+.soma-epub,
+.soma-epub * {
   -webkit-touch-callout: none;
 }
 

@@ -15,7 +15,7 @@ import {
 } from "@/lib/marks";
 import { WordMenu, type Pick } from "@/components/WordMenu";
 import {
-  ContentsSheet, MarksSheet, PageRail, SearchSheet, TopPills,
+  ContentsSheet, ChapterRail, MarksSheet, SearchSheet, TopPills,
 } from "@/components/BookChrome";
 import { LANGUAGES, defaultLanguage, isLanguage } from "@/lib/translate";
 import {
@@ -305,18 +305,14 @@ export function BookReader({
       />
 
       <Bar edge="bottom" theme={theme} show={chrome}>
-        {/* Thumb through the chapter. Only for an EPUB: a PDF's pages are
-            already pictures and scrubbing them means rendering every one. */}
-        {epub && chrome && spread.box.w > 0 && (
-          <PageRail
+        {/* Jump between chapters. Only for an EPUB: a PDF has no chapters to
+            name, and its pages are the table of contents. */}
+        {epub && chrome && index.titles.length > 1 && (
+          <ChapterRail
             theme={theme}
-            prefs={prefs}
-            html={spread.html}
-            label={spread.label}
-            box={spread.box}
-            pages={spread.pages}
-            page={spread.page}
-            onPick={(n) => pager.current?.to(n)}
+            titles={index.titles}
+            current={at - 1}
+            onPick={(i) => goTo({ chapter: i })}
           />
         )}
         <div
@@ -770,12 +766,25 @@ function EpubPages({
 
   // The page box. Measured rather than assumed, because it is the viewport
   // minus the margins and minus whatever the safe area is on this phone.
+  //
+  // While the keyboard is up (`soma-kb`, published by useKeyboardInset) the
+  // browser reports a shrunken viewport, and measuring it would repaginate the
+  // book under the reader's own search sheet — the page would jump with every
+  // keystroke. The height is frozen at its last keyboard-free value until the
+  // keys are gone, and the next real resize re-measures.
+  const fullH = useRef(0);
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
     const measure = () => {
       const r = el.getBoundingClientRect();
-      setBox({ w: Math.round(r.width), h: Math.round(r.height) });
+      const kbUp =
+        typeof document !== "undefined" && document.documentElement.classList.contains("soma-kb");
+      if (!kbUp && r.height > 0) fullH.current = r.height;
+      setBox({
+        w: Math.round(r.width),
+        h: Math.round(kbUp && fullH.current > 0 ? fullH.current : r.height),
+      });
     };
     measure();
     const ro = new ResizeObserver(measure);

@@ -2,9 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, Highlighter, List, Search, Star, Trash2, X } from "lucide-react";
 import { MIN_QUERY, findIn, tally, type Hit } from "@/lib/book-search";
 import { markChip, type BookMark } from "@/lib/marks";
-import { fontStack, type themeSpec } from "@/lib/reader-prefs";
-import { PAGE_GAP } from "@/lib/paginate";
-import type { ReaderPrefs } from "@/lib/reader-prefs";
+import { type themeSpec } from "@/lib/reader-prefs";
 import type { MindEntry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -356,52 +354,40 @@ export function MarksSheet({
 /* ====================================================================== */
 
 /**
- * The chapter, small, to thumb through.
+ * The chapters, small, to jump between.
  *
- * One copy of the text, scaled down, scrolling sideways — not one thumbnail
- * per page. The obvious build is a row of little page pictures, and on a
- * twenty-eight page chapter that is twenty-eight more copies of the chapter
- * in the document, laid out and rastered, to draw a strip ninety pixels tall.
- * The strip is already ONE element that holds every page side by side, which
- * is precisely the shape of a filmstrip: scale it, put it in a scroller, and
- * the pages are there because the column gaps already put them there.
+ * One chip per chapter rather than a filmstrip of pages. A page strip on a
+ * twenty-eight page chapter is twenty-eight thumbnails to hunt through for
+ * something a table of contents already says in one line; and pages are only
+ * meaningful inside the chapter you are already in, while the question a
+ * reader actually asks at the bottom of a book is "which chapter is next".
+ * Chips are also a single slim row that stays clear of the page, where the
+ * strip was a second copy of the text sitting under the words you were
+ * reading.
  */
-export const PageRail = memo(function PageRail({
-  theme, prefs, html, label, box, pages, page, onPick,
+export const ChapterRail = memo(function ChapterRail({
+  theme, titles, current, onPick,
 }: {
   theme: ReturnType<typeof themeSpec>;
-  prefs: ReaderPrefs;
-  html: string;
-  label: string;
-  box: { w: number; h: number };
-  pages: number;
-  page: number;
-  onPick: (page: number) => void;
+  titles: string[];
+  current: number;
+  onPick: (chapter: number) => void;
 }) {
   const rail = useRef<HTMLDivElement>(null);
-  const markup = useMemo(() => ({ __html: html }), [html]);
-  /** Tall enough to read as a page, short enough to leave the book room. */
-  const HEIGHT = 92;
-  const scale = box.h ? HEIGHT / box.h : 0.12;
-  const cardW = Math.max(18, box.w * scale);
-  const gapW = PAGE_GAP * scale;
-  const stride = cardW + gapW;
 
-  // Keep the page you are on in view, without fighting a finger that is
-  // already scrolling: only when the page changed underneath it.
+  // Keep the chapter you are on in view, without fighting a finger that is
+  // already scrolling: only when the chapter changed underneath it.
   useEffect(() => {
     const el = rail.current;
     if (!el) return;
-    const want = page * stride - el.clientWidth / 2 + cardW / 2;
-    el.scrollTo({ left: Math.max(0, want), behavior: "smooth" });
-  }, [page, stride, cardW]);
-
-  if (!box.w || pages < 1) return null;
+    const chip = el.querySelector<HTMLElement>('[aria-current="true"]');
+    chip?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [current, titles.length]);
 
   return (
     <div
       ref={rail}
-      className="pointer-events-auto mx-auto mb-2 max-w-full overflow-x-auto overscroll-x-contain rounded-2xl px-3 py-2"
+      className="pointer-events-auto mx-auto mb-2 max-w-full overflow-x-auto overscroll-x-contain rounded-full px-2 py-1.5"
       style={{
         background: theme.dark ? "rgba(40,40,44,0.92)" : "rgba(240,238,232,0.94)",
         scrollbarWidth: "none",
@@ -410,72 +396,24 @@ export const PageRail = memo(function PageRail({
       // a drag on it as a page turn would turn the page you are scrubbing past.
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className="relative" style={{ height: HEIGHT, width: stride * pages - gapW }}>
-        {/* Paper, one piece per page, under everything.
-            Without it the filmstrip is text floating on the rail's own colour
-            and reads as a smudge rather than as pages: what makes a thumbnail
-            legible at an eighth of its size is not the words, which are two
-            pixels tall, but the RECTANGLE they sit on. */}
-        {Array.from({ length: pages }, (_, i) => (
-          <span
-            key={`p${i}`}
-            aria-hidden
-            className="absolute top-0 block rounded-[3px]"
-            style={{ left: i * stride, width: cardW, height: HEIGHT, background: theme.bg }}
-          />
-        ))}
-
-        {/* The chapter itself, once, shrunk. `zoom` would be simpler and is
-            not the same thing: a transform does not re-lay-out the text, so
-            every page in here breaks exactly where it breaks in the book. */}
-        <div
-          aria-hidden
-          className="absolute left-0 top-0 origin-top-left overflow-hidden"
-          style={{ width: box.w * pages + PAGE_GAP * pages, height: box.h, transform: `scale(${scale})` }}
-        >
-          <div
-            className="soma-epub"
-            style={{
-              fontFamily: fontStack(prefs.font),
-              fontSize: `${prefs.size}px`,
-              lineHeight: prefs.lineHeight,
-              color: theme.fg,
-              height: `${box.h}px`,
-              columnWidth: `${box.w}px`,
-              columnGap: `${PAGE_GAP}px`,
-              columnFill: "auto",
-            }}
-          >
-            {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}
-            <div dangerouslySetInnerHTML={markup} />
-          </div>
-        </div>
-
-        {/* A frame per page, over the top. These are what you press, and what
-            says which page you are on. */}
-        {Array.from({ length: pages }, (_, i) => (
+      <div className="flex w-max items-center gap-1.5">
+        {titles.map((t, i) => (
           <button
             key={i}
             type="button"
-            aria-label={`Page ${i + 1}`}
-            aria-current={i === page}
+            aria-label={`Chapter ${i + 1}: ${t}`}
+            aria-current={i === current}
             onClick={() => onPick(i)}
-            className="absolute top-0 rounded-[3px]"
-            style={{
-              left: i * stride,
-              width: cardW,
-              height: HEIGHT,
-              boxShadow:
-                i === page
-                  ? `0 0 0 2px ${theme.fg}`
-                  : `0 0 0 1px ${theme.fg}33`,
-              // Every page but the one you are on is held back a little, so
-              // the one you are on is found without reading any of them.
-              background: i === page
-                ? "transparent"
-                : theme.dark ? "rgba(0,0,0,0.42)" : "rgba(255,255,255,0.34)",
-            }}
-          />
+            className="flex max-w-[8.5rem] shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.66rem] font-bold leading-none"
+            style={
+              i === current
+                ? { background: theme.fg, color: theme.bg }
+                : { background: `${theme.fg}14`, color: theme.faint }
+            }
+          >
+            <span className="tabular-nums opacity-70">{i + 1}</span>
+            <span className="truncate">{t}</span>
+          </button>
         ))}
       </div>
     </div>
