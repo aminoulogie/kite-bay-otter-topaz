@@ -39,17 +39,25 @@ export function TopTabs<T extends string>({
   className?: string;
 }) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const [pill, setPill] = useState({ x: 0, w: 0 });
+  // The pill also remembers the widest tab: its width is FIXED to that base
+  // and the per-tab width is expressed as scaleX, so the glide between two
+  // differently-sized tabs stays on the compositor (translateX + scaleX)
+  // instead of animating layout width on the main thread.
+  const [pill, setPill] = useState({ x: 0, w: 0, base: 0 });
 
   useEffect(() => {
-    const move = () => {
+    const measure = () => {
+      const buttons = Object.values(refs.current).filter(
+        (el): el is HTMLButtonElement => el !== null,
+      );
+      const base = Math.max(0, ...buttons.map((el) => el.offsetWidth));
       const el = refs.current[value];
-      if (el) setPill({ x: el.offsetLeft, w: el.offsetWidth });
+      if (el) setPill({ x: el.offsetLeft, w: el.offsetWidth, base });
     };
-    move();
+    measure();
     // A second pass after paint: on the first render the fonts may not have
     // settled, and a pill measured against a fallback face lands short.
-    const id = requestAnimationFrame(move);
+    const id = requestAnimationFrame(measure);
     return () => cancelAnimationFrame(id);
   }, [value, tabs]);
 
@@ -62,18 +70,20 @@ export function TopTabs<T extends string>({
   return (
     <div
       className={cn(
-        "relative flex snap-x gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "glass-chip relative flex snap-x gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         className,
       )}
       role="tablist"
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute left-0 top-1 rounded-full bg-accent transition-[transform,width] duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
+        className="pointer-events-none absolute left-0 top-1 origin-left rounded-full bg-accent transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)] will-change-transform"
         style={{
-          width: pill.w,
+          width: pill.base,
           height: "calc(100% - 0.5rem)",
-          transform: `translateX(${pill.x}px)`,
+          transform: pill.base
+            ? `translateX(${pill.x}px) scaleX(${pill.w / pill.base})`
+            : undefined,
           opacity: pill.w ? 1 : 0,
         }}
       />

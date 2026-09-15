@@ -89,7 +89,7 @@ export function DateDrawer({ open, onClose }: { open: boolean; onClose: () => vo
       <aside
         ref={panelRef}
         className={cn(
-          "fixed inset-y-0 left-0 z-[71] flex w-[82%] max-w-xs flex-col border-r border-border-strong bg-bg transition-transform duration-150 ease-out",
+          "glass-panel fixed inset-y-0 left-0 z-[71] flex w-[82%] max-w-xs flex-col border-r border-border-strong transition-transform duration-150 ease-out",
           open ? "translate-x-0" : "-translate-x-full",
         )}
         aria-hidden={!open}

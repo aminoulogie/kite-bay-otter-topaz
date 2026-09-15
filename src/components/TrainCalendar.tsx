@@ -211,7 +211,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         // calendar was readable by VoiceOver while the user was on Train.
         aria-hidden={!open}
         className={cn(
-          "fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong bg-bg pt-[max(12px,env(safe-area-inset-top))]",
+          "glass-panel fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong pt-[max(12px,env(safe-area-inset-top))]",
           "transition-transform duration-150 ease-out",
           open ? "translate-x-0" : "translate-x-full",
         )}
@@ -968,7 +968,7 @@ function RenewalSheet({
   return (
     <div className="fixed inset-0 z-[59] flex flex-col justify-end bg-black/60" onClick={onClose}>
       <div
-        className="rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
+        className="glass-panel rounded-t-3xl border-t border-border px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
         ref={sheetRef}
         role="dialog"
         aria-modal="true"
