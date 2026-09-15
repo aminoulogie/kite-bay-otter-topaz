@@ -376,6 +376,20 @@ html.soma-dragging body {
 }
 
 /*
+ * Pin the chrome in place on iOS.
+ *
+ * Safari shows and hides its URL bar when the page overscrolls, and every
+ * show/hide moves what `position: fixed` means for a frame — the dock and the
+ * sticky header visibly hop. Refusing overscroll chaining at the root stops
+ * the browser from ever starting that dance, so the bottom bar stays pinned
+ * to the bottom and the header stays put. The app's own scrollers set
+ * overscroll-behavior themselves where they want a bounce of their own.
+ */
+html {
+  overscroll-behavior-y: none;
+}
+
+/*
  * Printing, which is also how a PDF gets made.
  *
  * iOS's print sheet writes a PDF and offers AirDrop from the same panel, so

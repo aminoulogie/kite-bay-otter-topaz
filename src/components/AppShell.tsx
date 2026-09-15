@@ -103,9 +103,13 @@ export function AppShell() {
     const el = navRef.current;
     if (!el) return;
     const publish = () => {
+      // offsetHeight, not getBoundingClientRect().height: the rect follows
+      // the VISUAL viewport, which iOS moves while the URL bar collapses or
+      // the keyboard opens — publishing it made --dock-h wobble and the page
+      // reflow under the user's thumb. The layout box is stable.
       document.documentElement.style.setProperty(
         "--dock-h",
-        `${Math.round(el.getBoundingClientRect().height)}px`,
+        `${Math.round(el.offsetHeight)}px`,
       );
     };
     publish();
