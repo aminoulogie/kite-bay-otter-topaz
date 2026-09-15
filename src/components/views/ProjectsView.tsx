@@ -6,6 +6,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { SwipeRow } from "@/components/SwipeRow";
+import { TopTabs } from "@/components/TopTabs";
 import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
 import { getLocalDateKey } from "@/lib/soma";
 import {
@@ -40,10 +41,28 @@ export function ProjectsView() {
   const [name, setName] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [lens, setLens] = useState<ProjectStatus>("active");
 
   const today = getLocalDateKey();
   const sorted = useMemo(() => sortProjects(projects, today), [projects, today]);
   const board = useMemo(() => summarise(projects, today), [projects, today]);
+
+  // Finished projects used to sort to the bottom and stay there for good, so
+  // the board got longer every time something went right. Three lenses rather
+  // than a "hide done" switch: paused is not a lesser kind of active, it is a
+  // decision, and a list that mixes the two makes the drift warning meaningless.
+  const shown = useMemo(() => sorted.filter((p) => p.status === lens), [sorted, lens]);
+  const counts = useMemo(() => {
+    const n: Record<ProjectStatus, number> = { active: 0, paused: 0, done: 0 };
+    for (const p of projects) n[p.status] += 1;
+    return n;
+  }, [projects]);
+
+  const LENSES = [
+    { id: "active" as const, label: `Active ${counts.active}` },
+    { id: "paused" as const, label: `Paused ${counts.paused}` },
+    { id: "done" as const, label: `Done ${counts.done}` },
+  ];
 
   const nextColor = () =>
     PROJECT_COLORS.find((c) => !projects.some((p) => p.color === c)) ??
@@ -54,6 +73,9 @@ export function ProjectsView() {
     if (!text) return;
     const id = addProject(text, nextColor());
     setName("");
+    // A new project is active, so show the lens it landed in rather than
+    // leaving someone looking at a list it is not in.
+    setLens("active");
     setOpen(id);
     toast.success(`${text} started`);
   };
@@ -82,16 +104,23 @@ export function ProjectsView() {
         </p>
       </Card>
 
+      <TopTabs key="filter" tabs={LENSES} value={lens} onChange={setLens} />
+
       <div key="list" className="space-y-2">
-        {sorted.length === 0 ? (
+        {shown.length === 0 ? (
           <Card>
             <p className="text-xs text-faint">
-              Nothing on the go. A project here is one you could tick off — the steps are
-              the progress bar, so break it into pieces small enough to actually finish.
+              {lens === "active"
+                ? projects.length === 0
+                  ? "Nothing on the go. A project here is one you could tick off — the steps are the progress bar, so break it into pieces small enough to actually finish."
+                  : "Nothing active. Everything you have is paused or finished."
+                : lens === "paused"
+                  ? "Nothing paused. A project you have consciously set down belongs here rather than sitting in the active list going stale."
+                  : "Nothing finished yet."}
             </p>
           </Card>
         ) : (
-          sorted.map((p) => (
+          shown.map((p) => (
             <SwipeRow
               key={p.id}
               id={p.id}
@@ -344,6 +373,23 @@ function ProjectSheet({ id, onClose }: { id: string; onClose: () => void }) {
           <Input
             value={project.name}
             onChange={(e) => patchProject(project.id, { name: e.target.value })}
+            className="h-11"
+          />
+        </label>
+
+        {/* Why it exists. The field has been in the type and the backup since
+            the start with nothing to write it, which meant a project could
+            carry a reason nobody could read or set. One line, not a
+            paragraph: most projects do not need one, and a box big enough to
+            invite an essay turns the sheet into a document. */}
+        <label className="mb-3 block">
+          <span className="mb-1 block text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+            Why
+          </span>
+          <Input
+            value={project.note ?? ""}
+            onChange={(e) => patchProject(project.id, { note: e.target.value || undefined })}
+            placeholder="What finishing this actually gets you"
             className="h-11"
           />
         </label>
