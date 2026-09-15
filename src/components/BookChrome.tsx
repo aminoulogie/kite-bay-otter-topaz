@@ -483,15 +483,17 @@ export const PageScrubber = memo(function PageScrubber({
   scrubTo.current = onPick;
 
   /**
-   * Page-sized, not chip-sized.
+   * The height of the arrows either side of it, and nothing more.
    *
-   * At fifty-six pixels these read as a row of grey ticks. What makes the
-   * native scrubber legible is that the thumbnails are PAGES: tall, portrait,
-   * with white space around them, and the one you are on standing a little
-   * proud of the rest. Eighty-eight is the height where a column of miniature
-   * text stops being a smudge and starts being a page.
+   * This started at fifty-six, went to eighty-eight to make the pages legible,
+   * and both were wrong for the same reason: a scrubber is not something you
+   * read, it is something you drag. Making the thumbnails big enough to read
+   * turned the foot of the page into a band three hundred pixels deep to
+   * steer four pages with. It is one control in a row of three now, the same
+   * height as the buttons beside it, and what tells you where you are is the
+   * raised frame moving along the strip — not the words inside it.
    */
-  const HEIGHT = 88;
+  const HEIGHT = 34;
   const scale = box.h ? HEIGHT / box.h : 0.1;
   const cardW = Math.max(16, Math.round(box.w * scale));
   const gapW = Math.max(3, Math.round(PAGE_GAP * scale));
@@ -536,12 +538,12 @@ export const PageScrubber = memo(function PageScrubber({
   if (!box.w || pages < 1) return null;
 
   return (
-    <div className="pointer-events-auto mx-auto mb-2 w-fit max-w-full">
-      <div className="rounded-[26px] px-3 py-2.5" style={readerGlass(theme)}>
+    <div className="pointer-events-auto min-w-0 flex-1">
+      <div className="rounded-full px-2 py-[5px]" style={readerGlass(theme)}>
         <div
           ref={rail}
           className="overflow-x-auto overscroll-x-contain"
-          style={{ scrollbarWidth: "none", maxWidth: "min(84vw, 344px)" }}
+          style={{ scrollbarWidth: "none" }}
           onPointerDown={onDown}
           onPointerMove={onMove}
           onPointerUp={endScrub}
@@ -554,10 +556,10 @@ export const PageScrubber = memo(function PageScrubber({
               <span
                 key={`p${i}`}
                 aria-hidden
-                className="absolute top-0 block rounded-[4px] transition-transform duration-150"
+                className="absolute top-0 block rounded-[2px] transition-transform duration-150"
                 style={{
                   left: i * stride, width: cardW, height: HEIGHT, background: theme.bg,
-                  transform: i === page ? "scale(1.14)" : "none",
+                  transform: i === page ? "scale(1.22)" : "none",
                 }}
               />
             ))}
@@ -599,7 +601,15 @@ export const PageScrubber = memo(function PageScrubber({
                   textSizeAdjust: "none",
                 }}
               >
-                {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}
+                {/* The chapter label is sized in rem, so it does not shrink
+                    with the rest — at a tenth scale it came out bigger than
+                    the page it was on and made the first thumbnail unreadable.
+                    In em it is a tenth of a label, like everything else here. */}
+                {label && (
+                  <p className="soma-epub-label" style={{ color: theme.faint, fontSize: "0.62em" }}>
+                    {label}
+                  </p>
+                )}
                 <div dangerouslySetInnerHTML={markup} />
               </div>
             </div>
@@ -614,7 +624,7 @@ export const PageScrubber = memo(function PageScrubber({
                 aria-label={`Page ${i + 1}`}
                 aria-current={i === page}
                 onClick={() => onPick(i)}
-                className="absolute top-0 rounded-[4px] transition-transform duration-150"
+                className="absolute top-0 rounded-[2px] transition-transform duration-150"
                 style={{
                   left: i * stride,
                   width: cardW,
@@ -623,7 +633,7 @@ export const PageScrubber = memo(function PageScrubber({
                   // stay flat and held back. That difference is the whole
                   // readability of the strip: you find where you are without
                   // reading a single one of them.
-                  transform: i === page ? "scale(1.14)" : "none",
+                  transform: i === page ? "scale(1.22)" : "none",
                   boxShadow:
                     i === page
                       ? `0 0 0 2px ${theme.fg}, 0 4px 12px rgba(0,0,0,0.45)`

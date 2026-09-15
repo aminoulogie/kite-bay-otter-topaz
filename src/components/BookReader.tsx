@@ -312,29 +312,23 @@ export function BookReader({
         onKept={() => setPanel("kept")}
       />
 
+      {/* One line of type, one bar of controls, and nothing else.
+          The scrubber used to sit in a band of its own above all this, which
+          made the foot of the page four rows deep and the thumbnails far
+          bigger than anything you would thumb through. It belongs IN the row
+          it steers: between the two arrows, the same height as them, so the
+          whole of the bottom is one bar. Where it used to be — a line of its
+          own — now carries the counter, which is the thing you actually read.
+      */}
       <Bar edge="bottom" theme={theme} show={chrome}>
-        {/* The Apple Books scrubber: a floating pill of page thumbnails, the
-            current page centred, drag to scrub. Only for an EPUB: a PDF's
-            pages are already pictures and scrubbing them means rendering
-            every one. */}
-        {epub && chrome && spread.box.w > 0 && (
-          <PageScrubber
-            theme={theme}
-            prefs={prefs}
-            html={spread.html}
-            label={spread.label}
-            box={spread.box}
-            pages={spread.pages}
-            page={spread.page}
-            onPick={(n) => pager.current?.to(n)}
-            onScrub={setScrubbing}
-          />
-        )}
-        {/* No chapter chips under the scrubber. They were a second row of
-            controls saying what the line below already says and what the
-            contents button already does properly, and stacked under the
-            filmstrip and over the progress bar they turned the foot of the
-            page into four bands of furniture. One strip, one line, one bar. */}
+        <div
+          className="tabular mb-2 text-center text-[0.68rem] font-bold"
+          style={{ color: theme.faint }}
+        >
+          {epub
+            ? `Chapter ${at} of ${total || "?"} · ${spread.page + 1}/${spread.pages}`
+            : `Page ${at} of ${total || "?"}`}
+        </div>
         <div
           className="mb-2 h-[3px] w-full overflow-hidden rounded-full"
           style={{ background: `${theme.fg}22` }}
@@ -344,15 +338,27 @@ export function BookReader({
             style={{ width: `${Math.round(progress * 100)}%`, background: `${theme.fg}99` }}
           />
         </div>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
           <RoundButton theme={theme} label="Back" onClick={back}>
             <ChevronLeft className="size-5" />
           </RoundButton>
-          <span className="tabular text-[0.68rem] font-bold" style={{ color: theme.faint }}>
-            {epub
-              ? `Chapter ${at} of ${total || "?"} · ${spread.page + 1}/${spread.pages}`
-              : `Page ${at} of ${total || "?"}`}
-          </span>
+          {/* Only for an EPUB: a PDF's pages are already pictures, and
+              scrubbing them means rendering every one. */}
+          {epub && chrome && spread.box.w > 0 ? (
+            <PageScrubber
+              theme={theme}
+              prefs={prefs}
+              html={spread.html}
+              label={spread.label}
+              box={spread.box}
+              pages={spread.pages}
+              page={spread.page}
+              onPick={(n) => pager.current?.to(n)}
+              onScrub={setScrubbing}
+            />
+          ) : (
+            <div className="flex-1" />
+          )}
           <RoundButton theme={theme} label="Forward" onClick={forward}>
             <ChevronRight className="size-5" />
           </RoundButton>
