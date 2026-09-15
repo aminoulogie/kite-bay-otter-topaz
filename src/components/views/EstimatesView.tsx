@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils";
  * its sample size is just a confident-looking guess.
  */
 export function EstimatesView() {
-  const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
   const customGoals = useSoma((s) => s.settings.customGoals);
 

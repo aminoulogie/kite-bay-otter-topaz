@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useMemo, useState } from "react";
 import { BodyHeatmap } from "@/components/BodyHeatmap";
 import { BodyView } from "@/components/views/BodyView";
 import { EstimatesView } from "@/components/views/EstimatesView";
@@ -15,8 +14,8 @@ import { MesoReviewCard } from "@/components/MesoReviewCard";
 import { Progress } from "@/components/ui/progress";
 import { applyGoal, goalMode } from "@/lib/goal-mode";
 import { computeBiologicalReadiness, heatColor, heatLabel, MUSCLE_REGIONS } from "@/lib/recovery";
-import { SomaIntelligenceEngine, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
-import { useActiveProgram, useSoma } from "@/lib/store";
+import { SomaIntelligenceEngine, parseLocalDateKey } from "@/lib/soma";
+import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type InsightTab =
@@ -338,75 +337,6 @@ function HeatmapPanel() {
         </Card>
       )}
     </WidgetGrid>
-  );
-}
-
-function CalendarPanel() {
-  const history = useSoma((s) => s.history);
-  const settings = useSoma((s) => s.settings);
-  const program = useActiveProgram();
-  const setActiveDate = useSoma((s) => s.setActiveDate);
-  const setTab = useSoma((s) => s.setTab);
-  const [cursor, setCursor] = useState(() => new Date());
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
-  const first = new Date(year, month, 1);
-  const startPad = (first.getDay() + 6) % 7;
-  const daysIn = new Date(year, month + 1, 0).getDate();
-  const cells: (number | null)[] = [...Array(startPad).fill(null), ...Array.from({ length: daysIn }, (_, i) => i + 1)];
-  while (cells.length % 7) cells.push(null);
-  const today = getLocalDateKey();
-
-  return (
-    <Card>
-      <div className="mb-3 flex items-center justify-between">
-        <button type="button" className="size-10 rounded-xl border border-border" onClick={() => setCursor(new Date(year, month - 1, 1))} aria-label="Previous month">
-          <ChevronLeft className="mx-auto size-4" />
-        </button>
-        <div className="font-display font-bold">
-          {cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
-        </div>
-        <button type="button" className="size-10 rounded-xl border border-border" onClick={() => setCursor(new Date(year, month + 1, 1))} aria-label="Next month">
-          <ChevronRight className="mx-auto size-4" />
-        </button>
-      </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[0.62rem] font-bold uppercase text-faint">
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d}>{d}</div>
-        ))}
-      </div>
-      <div className="mt-1 grid grid-cols-7 gap-1">
-        {cells.map((day, i) => {
-          if (!day) return <div key={i} />;
-          const key = getLocalDateKey(new Date(year, month, day));
-          const logged = !!history[key];
-          const proj = SomaIntelligenceEngine.getProgramProjectedDay(
-            new Date(year, month, day, 12),
-            settings.scheduleOverrides,
-            program,
-          );
-          const isToday = key === today;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => {
-                setActiveDate(key);
-                if (logged) setTab("workout");
-              }}
-              className={cn(
-                "flex aspect-square flex-col items-center justify-center rounded-xl text-xs font-bold",
-                isToday && "ring-1 ring-accent",
-                logged ? "bg-accent text-accent-ink" : proj.isRest ? "bg-surface-2 text-faint" : "bg-surface-3 text-muted",
-              )}
-            >
-              {day}
-            </button>
-          );
-        })}
-      </div>
-      <p className="mt-3 text-[0.7rem] text-faint">Accent cells are logged sessions. Tap one to jump to that date.</p>
-    </Card>
   );
 }
 

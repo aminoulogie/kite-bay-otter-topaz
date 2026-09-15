@@ -15,7 +15,6 @@ import { getLocalDateKey } from "@/lib/soma";
 import { RowEditSheet } from "@/components/RowEditSheet";
 import { numOf, textOf } from "@/lib/row-edit";
 import { useSoma } from "@/lib/store";
-import { cn } from "@/lib/utils";
 import { dueLabel, dueQueue, markReviewed, nextUp, stageLabel } from "@/lib/review-queue";
 import type { MindEntry } from "@/lib/types";
 

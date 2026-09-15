@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ==========================================================================
 // The pure training/nutrition maths. No DOM, no Obsidian - which is exactly
 // why it is the part covered by tests.
@@ -8,10 +7,133 @@ import { capForVolume } from "../autoregulate.ts";
 import { getLocalDateKey, parseLocalDateKey } from "./dates.ts";
 import { ROTATION_SEQUENCE } from "./data.ts";
 
+// --------------------------------------------------------------------
+// The shapes this file reads, and the handful of aliases that keep the
+// signatures below readable.
+//
+// The records are deliberately permissive: history and nutrition are user
+// data that has been through imports, exports and several builds, so a set
+// can arrive holding a string where today's own type says number, and a
+// session written by an older version can be missing a field this file now
+// reads. Every reader here already ran those values through parseFloat or
+// parseInt and checked the object before touching it, so these types only
+// describe the tolerance the code has always had. parseFloat and parseInt
+// stringify their argument before parsing it, which is why the String()
+// wrap at those call sites is the same conversion the maths already relied
+// on rather than a change in behaviour.
+// --------------------------------------------------------------------
+
+/** A number as this file receives it: a number, a numeric string, or a
+ *  field that is simply not there in old data. Every reader below already
+ *  tolerated all three — that is what the parse calls and the `|| 0`
+ *  fallbacks are for. */
+type Numeric = number | string | null | undefined;
+
+/** One logged set, as history hands it back. */
+interface LoggedSet {
+  weight?: Numeric;
+  reps?: Numeric;
+  /** The legacy 1-5 rating. */
+  failure?: Numeric;
+  done?: boolean;
+  type?: string;
+}
+
+/** One exercise inside a logged session. */
+interface LoggedExercise {
+  name: string;
+  muscle?: string;
+  subTarget?: string;
+  targetKeys?: string[];
+  sets?: LoggedSet[];
+  usesBar?: boolean;
+  barWeight?: number;
+  isBW?: boolean;
+  isAxial?: boolean;
+  supersetGroup?: string;
+}
+
+/** A logged session, keyed by date in the history map. */
+interface LoggedSession {
+  timestamp?: number;
+  exercises?: LoggedExercise[];
+}
+
+/** One logged food, for the calorie balance. */
+interface LoggedFoodItem {
+  cals?: Numeric;
+}
+
+/** A day of the nutrition log. */
+interface LoggedNutritionDay {
+  items?: LoggedFoodItem[];
+  meals?: Record<string, LoggedFoodItem[]>;
+  bodyWeight?: Numeric;
+}
+
+/** Weekly volume landmarks for one muscle. */
+interface VolumeLandmark {
+  mev: number;
+  mav: number;
+  mrv: number;
+  label: string;
+}
+
+/** Where a set count sits relative to those landmarks. */
+interface VolumeVerdict {
+  tier: string;
+  note: string;
+}
+
+/** The climb/flat/fall verdict on one lift's estimated 1RM. */
+interface VolumeTrend {
+  points: { timestamp: number; est1RM: number }[];
+  direction: string;
+  stalled: boolean;
+  pctChange?: number;
+}
+
+/** One point of the estimated-1RM (or rep) series for a lift. */
+interface StrengthPoint {
+  timestamp: number;
+  date: string;
+  metric: string;
+  est1RM: number;
+  weight: number;
+  reps: number;
+  isPR: boolean;
+}
+
+/** The session context the autoregulation wrapper folds back in. */
+interface AutoregulationOpts {
+  isBW?: boolean;
+  readiness?: number | null;
+  isDeload?: boolean;
+  unit?: string;
+  trend?: VolumeTrend | null;
+  overMrv?: boolean;
+}
+
+/** What maintenance calories came to, or why they could not be worked out. */
+type MaintenanceEstimate =
+  | {
+      ok: true;
+      maintenance: number;
+      avgIntake: number;
+      weightDelta: number;
+      days: number;
+      foodDays: number;
+      weighDays: number;
+      startWeight: number | null;
+      endWeight: number | null;
+      confidence: "good" | "fair" | "rough";
+    }
+  | { ok: false; reason: string; foodDays: number; weighDays: number };
+
 class SomaIntelligenceEngine {
-  static calculate1RM(weight, reps) {
-    const w = parseFloat(weight) || 0;
-    const r = parseInt(reps) || 0;
+  static calculate1RM(weight: Numeric, reps: Numeric): number {
+    const w = parseFloat(String(weight)) || 0;
+    const r = parseInt(String(reps)) || 0;
     if (w <= 0 || r <= 0) return 0;
     if (r === 1) return w;
     const epley = w * (1 + r / 30);
@@ -19,22 +141,22 @@ class SomaIntelligenceEngine {
     return Math.round(((epley + brzycki) / 2) * 10) / 10;
   }
 
-  static calculateWorkVolume(weight, reps, isBW = false, userBodyweight = 75) {
-    const w = parseFloat(weight) || 0;
-    const r = parseInt(reps) || 0;
+  static calculateWorkVolume(weight: Numeric, reps: Numeric, isBW = false, userBodyweight = 75): number {
+    const w = parseFloat(String(weight)) || 0;
+    const r = parseInt(String(reps)) || 0;
     if (isBW && w === 0) return Math.round((userBodyweight * 0.65) * r);
     return Math.round(w * r);
   }
 
-  static calculateCaloriesBurned(minutes, totalVolumeKg, totalSets, avgIntensity = 3) {
+  static calculateCaloriesBurned(minutes: number, totalVolumeKg: number, totalSets: number, avgIntensity = 3): number {
     const baseBurnPerMin = 6.0;
     const intensityMultiplier = 0.8 + (avgIntensity * 0.12);
     const volumeBonus = totalVolumeKg * 0.0055;
     return Math.max(20, Math.round((minutes * baseBurnPerMin * intensityMultiplier) + volumeBonus));
   }
 
-  static calculatePlateStack(targetWeight, barWeight = 20, unit = "kg") {
-    let perSide = (parseFloat(targetWeight) - barWeight) / 2;
+  static calculatePlateStack(targetWeight: Numeric, barWeight = 20, unit = "kg"): { weight: number; color: string }[] {
+    let perSide = (parseFloat(String(targetWeight)) - barWeight) / 2;
     if (perSide <= 0) return [];
     const plateTypes = unit === "kg"
       ? [
@@ -66,11 +188,11 @@ class SomaIntelligenceEngine {
     return plates;
   }
 
-  static calculateWarmupRamp(targetWeight, barWeight = 20, unit = "kg") {
-    const target = parseFloat(targetWeight) || 0;
+  static calculateWarmupRamp(targetWeight: Numeric, barWeight = 20, unit = "kg") {
+    const target = parseFloat(String(targetWeight)) || 0;
     const percentages = [0.4, 0.6, 0.8];
     return percentages.map(pct => {
-      let raw = target * pct;
+      const raw = target * pct;
       // Round to nearest achievable increment (2.5kg / 5lb) so the ramp is loadable
       const increment = unit === "kg" ? 2.5 : 5;
       let rounded = Math.round(raw / increment) * increment;
@@ -83,16 +205,16 @@ class SomaIntelligenceEngine {
     });
   }
 
-  static computeOverloadRecommendation(lastSet, isBW = false) {
+  static computeOverloadRecommendation(lastSet: LoggedSet | null | undefined, isBW = false) {
     if (!lastSet) {
       return isBW
         ? { weight: 0, reps: 10, note: "BW Baseline Start", diffTier: "New" }
         : { weight: 20, reps: 10, note: "Baseline Start (Empty Bar / Light)", diffTier: "New" };
     }
 
-    const lastW = parseFloat(lastSet.weight) || 0;
-    const lastR = parseInt(lastSet.reps) || (isBW ? 10 : 8);
-    const lastFail = parseInt(lastSet.failure) || 3;
+    const lastW = parseFloat(String(lastSet.weight)) || 0;
+    const lastR = parseInt(String(lastSet.reps)) || (isBW ? 10 : 8);
+    const lastFail = parseInt(String(lastSet.failure)) || 3;
 
     if (lastFail === 1) {
       if (isBW && lastW === 0) {
@@ -132,10 +254,14 @@ class SomaIntelligenceEngine {
   // estimated 1RM is climbing, flat, or falling. `stalled` is the signal
   // the caller acts on: three sessions with no meaningful gain means the
   // linear ladder has run out and adding load will just bury the lifter.
-  static computeVolumeTrend(history, exerciseName, lookback = 3) {
+  static computeVolumeTrend(
+    history: Record<string, LoggedSession> | null | undefined,
+    exerciseName: string,
+    lookback = 3,
+  ): VolumeTrend {
     if (!history || !exerciseName) return { points: [], direction: "unknown", stalled: false };
 
-    const points = [];
+    const points: VolumeTrend["points"] = [];
     for (const session of Object.values(history)) {
       if (!session || !Array.isArray(session.exercises)) continue;
       const match = session.exercises.find(
@@ -148,7 +274,7 @@ class SomaIntelligenceEngine {
         // Drop sets are deliberately sub-maximal — counting them would
         // drag the trend line down and fake a stall.
         if (s.type === "dropset" || s.type === "warmup" || !s.done) continue;
-        const raw = parseFloat(s.weight) || 0;
+        const raw = parseFloat(String(s.weight)) || 0;
         const w = (match.usesBar && raw > 0) ? (match.barWeight || 20) + raw : raw;
         const est = this.calculate1RM(w, s.reps);
         if (est > best) best = est;
@@ -182,7 +308,7 @@ class SomaIntelligenceEngine {
   // opts: { isBW, readiness (0-100|null), isDeload, unit, trend }
   // Returns the ladder's shape plus `autoNote` / `adjusted` so the UI can
   // show why the target differs from the raw progression.
-  static computeAutoregulatedTarget(lastSet, opts = {}) {
+  static computeAutoregulatedTarget(lastSet: LoggedSet | null | undefined, opts: AutoregulationOpts = {}) {
     const {
       isBW = false,
       isDeload = false,
@@ -201,10 +327,10 @@ class SomaIntelligenceEngine {
 
     const base = this.computeOverloadRecommendation(lastSet, isBW);
     const inc = this.loadIncrement(unit);
-    const lastW = parseFloat(lastSet && lastSet.weight) || 0;
-    const lastR = parseInt(lastSet && lastSet.reps) || (isBW ? 10 : 8);
+    const lastW = parseFloat(String(lastSet && lastSet.weight)) || 0;
+    const lastR = parseInt(String(lastSet && lastSet.reps)) || (isBW ? 10 : 8);
 
-    const out = { ...base, adjusted: false, autoNote: null, readiness };
+    const out = { ...base, adjusted: false, autoNote: null as string | null, readiness };
 
     // 1. Deload week overrides everything else. Volume and intensity both
     //    come down; the point is to shed fatigue, not to inch forward.
@@ -286,7 +412,7 @@ class SomaIntelligenceEngine {
   // recover). Values are working sets per week, taken from the commonly
   // cited Renaissance Periodization ranges and rounded to whole sets.
   // ====================================================================
-  static get VOLUME_LANDMARKS() {
+  static get VOLUME_LANDMARKS(): Record<string, VolumeLandmark> {
     return {
       chest:          { mev: 8,  mav: 16, mrv: 22, label: "Chest" },
       upper_back:     { mev: 10, mav: 18, mrv: 25, label: "Back" },
@@ -315,7 +441,7 @@ class SomaIntelligenceEngine {
   }
 
   // Where a set count sits relative to that muscle's landmarks.
-  static volumeStatus(sets, lm) {
+  static volumeStatus(sets: number, lm: VolumeLandmark | null | undefined): VolumeVerdict {
     if (!lm) return { tier: "unknown", note: "" };
     if (sets === 0)      return { tier: "none",     note: "Not trained this week" };
     if (sets < lm.mev)   return { tier: "under",    note: `Below MEV (${lm.mev}) — add ${lm.mev - sets} set${lm.mev - sets === 1 ? "" : "s"}` };
@@ -327,9 +453,13 @@ class SomaIntelligenceEngine {
   // Working sets per muscle over the last `days`. Warm-ups and drop sets
   // are excluded: neither is a stimulating working set, and counting them
   // would make you look far better trained than you are.
-  static weeklyVolumeByMuscle(history, days = 7, now = Date.now()) {
+  static weeklyVolumeByMuscle(
+    history: Record<string, LoggedSession> | null | undefined,
+    days = 7,
+    now = Date.now(),
+  ): Record<string, number> {
     const cutoff = now - days * 86400000;
-    const totals = {};
+    const totals: Record<string, number> = {};
 
     for (const session of Object.values(history || {})) {
       if (!session || typeof session !== "object") continue;
@@ -352,7 +482,7 @@ class SomaIntelligenceEngine {
 
   // Full report: one row per muscle that has landmarks, sorted worst first
   // so what needs attention is at the top.
-  static volumeReport(history, days = 7, now = Date.now()) {
+  static volumeReport(history: Record<string, LoggedSession> | null | undefined, days = 7, now = Date.now()) {
     const lms = this.VOLUME_LANDMARKS;
     const cutoff = now - days * 86400000;
 
@@ -360,7 +490,7 @@ class SomaIntelligenceEngine {
     // "triceps" and "triceps_back" are the same muscle wearing two keys, and
     // most pressing movements list both — summing the keys would report
     // double the sets actually performed.
-    const byLabel = {};
+    const byLabel: Record<string, number> = {};
     for (const session of Object.values(history || {})) {
       if (!session || typeof session !== "object") continue;
       if ((session.timestamp || 0) < cutoff) continue;
@@ -371,7 +501,7 @@ class SomaIntelligenceEngine {
         ).length;
         if (!working) continue;
 
-        const labels = new Set();
+        const labels = new Set<string>();
         for (const k of (Array.isArray(ex.targetKeys) ? ex.targetKeys : [])) {
           if (lms[k]) labels.add(lms[k].label);
         }
@@ -379,17 +509,19 @@ class SomaIntelligenceEngine {
       }
     }
 
-    const seen = new Set();
+    const seen = new Set<string>();
     const rows = [];
     for (const key of Object.keys(lms)) {
       const lm = lms[key];
       if (seen.has(lm.label)) continue;
       seen.add(lm.label);
       const sets = byLabel[lm.label] || 0;
-      rows.push({ key, label: lm.label, sets, ...lm, ...this.volumeStatus(sets, lm) });
+      // `label` rides in with the landmarks; naming it again would be the same
+      // value written twice.
+      rows.push({ key, sets, ...lm, ...this.volumeStatus(sets, lm) });
     }
 
-    const order = { over: 0, under: 1, none: 2, high: 3, optimal: 4 };
+    const order: Record<string, number> = { over: 0, under: 1, none: 2, high: 3, optimal: 4 };
     rows.sort((a, b) => (order[a.tier] - order[b.tier]) || (b.sets - a.sets));
     return rows;
   }
@@ -400,7 +532,12 @@ class SomaIntelligenceEngine {
   // The rest timer used to run one duration for everything, which made
   // the superset and drop-set tags decorative.
   // ====================================================================
-  static restForSet(ex, set, allExercises, settings) {
+  static restForSet(
+    ex: LoggedExercise | null | undefined,
+    set: LoggedSet | null | undefined,
+    allExercises: LoggedExercise[] | null | undefined,
+    settings: { restDefault?: number } | null | undefined,
+  ): { seconds: number; reason: string; nextExercise?: string } {
     const def = (settings && settings.restDefault) || 90;
     if (!set) return { seconds: def, reason: "Standard rest" };
 
@@ -435,10 +572,15 @@ class SomaIntelligenceEngine {
   // When a muscle is too fatigued to train hard, name what to do instead
   // rather than just saying "train something else".
   // ====================================================================
-  static suggestAlternatives(exercise, exerciseDB, readinessByMuscle, limit = 3) {
+  static suggestAlternatives(
+    exercise: LoggedExercise | null | undefined,
+    exerciseDB: LoggedExercise[] | null | undefined,
+    readinessByMuscle: Record<string, number> | null | undefined,
+    limit = 3,
+  ) {
     if (!exercise || !Array.isArray(exerciseDB)) return [];
     const own = new Set(Array.isArray(exercise.targetKeys) ? exercise.targetKeys : []);
-    const readinessOf = (keys) => {
+    const readinessOf = (keys: string[] | undefined) => {
       const vals = (keys || [])
         .map(k => (readinessByMuscle || {})[k])
         .filter(v => typeof v === "number");
@@ -492,20 +634,20 @@ class SomaIntelligenceEngine {
   static computeSubjectiveReadiness({ sleepHours = null, sleepQuality = null, soreness = null, stress = null }: { sleepHours?: number | null; sleepQuality?: number | null; soreness?: number | null; stress?: number | null } = {}) {
     const parts = [];
 
-    if (sleepHours !== null && !isNaN(parseFloat(sleepHours))) {
-      const h = parseFloat(sleepHours);
+    if (sleepHours !== null && !isNaN(parseFloat(String(sleepHours)))) {
+      const h = parseFloat(String(sleepHours));
       // 8h is the reference; below ~5h performance falls off a cliff.
       parts.push({ w: 2.0, v: Math.max(0, Math.min(100, ((h - 4) / 4) * 100)) });
     }
-    if (sleepQuality !== null && !isNaN(parseInt(sleepQuality))) {
-      parts.push({ w: 1.0, v: ((Math.min(5, Math.max(1, parseInt(sleepQuality))) - 1) / 4) * 100 });
+    if (sleepQuality !== null && !isNaN(parseInt(String(sleepQuality)))) {
+      parts.push({ w: 1.0, v: ((Math.min(5, Math.max(1, parseInt(String(sleepQuality)))) - 1) / 4) * 100 });
     }
     // Soreness and stress are 1 (none) to 5 (severe) — inverted.
-    if (soreness !== null && !isNaN(parseInt(soreness))) {
-      parts.push({ w: 1.5, v: ((5 - Math.min(5, Math.max(1, parseInt(soreness)))) / 4) * 100 });
+    if (soreness !== null && !isNaN(parseInt(String(soreness)))) {
+      parts.push({ w: 1.5, v: ((5 - Math.min(5, Math.max(1, parseInt(String(soreness))))) / 4) * 100 });
     }
-    if (stress !== null && !isNaN(parseInt(stress))) {
-      parts.push({ w: 1.0, v: ((5 - Math.min(5, Math.max(1, parseInt(stress)))) / 4) * 100 });
+    if (stress !== null && !isNaN(parseInt(String(stress)))) {
+      parts.push({ w: 1.0, v: ((5 - Math.min(5, Math.max(1, parseInt(String(stress))))) / 4) * 100 });
     }
 
     if (!parts.length) return null;
@@ -517,7 +659,10 @@ class SomaIntelligenceEngine {
   // Blends muscle readiness with how the lifter actually feels. Subjective
   // state can only pull the figure down — feeling great does not make an
   // unrecovered muscle recovered.
-  static blendReadiness(muscleReadiness, subjective) {
+  static blendReadiness(
+    muscleReadiness: number | null | undefined,
+    subjective: number | null | undefined,
+  ): number | null {
     if (muscleReadiness === null || muscleReadiness === undefined) return subjective ?? null;
     if (subjective === null || subjective === undefined) return muscleReadiness;
     if (subjective >= 70) return muscleReadiness;
@@ -539,11 +684,11 @@ class SomaIntelligenceEngine {
   // using 7700 kcal per kg of body mass. It self-corrects as metabolism
   // adapts, which no formula can do.
   // ====================================================================
-  static KCAL_PER_KG() { return 7700; }
+  static KCAL_PER_KG(): number { return 7700; }
 
   // Pulls {date, cals, weight} for every day that has data.
-  static nutritionSeries(nutritionDB) {
-    const out = [];
+  static nutritionSeries(nutritionDB: Record<string, LoggedNutritionDay> | null | undefined) {
+    const out: { date: string; cals: number; loggedFood: boolean; weight: number | null }[] = [];
     for (const [key, day] of Object.entries(nutritionDB || {})) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !day || typeof day !== "object") continue;
       const items = Array.isArray(day.items) ? day.items : [];
@@ -551,8 +696,8 @@ class SomaIntelligenceEngine {
         ? Object.values(day.meals).flat().filter(Boolean)
         : [];
       const all = items.concat(meals);
-      const cals = all.reduce((a, i) => a + (parseFloat(i && i.cals) || 0), 0);
-      const weight = parseFloat(day.bodyWeight);
+      const cals = all.reduce((a, i) => a + (parseFloat(String(i && i.cals)) || 0), 0);
+      const weight = parseFloat(String(day.bodyWeight));
       out.push({
         date: key,
         cals: Math.round(cals),
@@ -566,7 +711,10 @@ class SomaIntelligenceEngine {
 
   // Needs both ends of a weight trend and enough food logs in between to
   // mean anything. Returns null rather than a confident-looking guess.
-  static computeMaintenanceCalories(nutritionDB, opts = {}) {
+  static computeMaintenanceCalories(
+    nutritionDB: Record<string, LoggedNutritionDay> | null | undefined,
+    opts: { minDays?: number; minFoodDays?: number; window?: number } = {},
+  ): MaintenanceEstimate | null {
     const { minDays = 10, minFoodDays = 5, window = 28 } = opts;
     const series = this.nutritionSeries(nutritionDB);
     if (!series.length) return null;
@@ -589,7 +737,7 @@ class SomaIntelligenceEngine {
     const first = weighed[0];
     const last = weighed[weighed.length - 1];
     const days = Math.round(
-      (parseLocalDateKey(last.date) - parseLocalDateKey(first.date)) / 86400000
+      (parseLocalDateKey(last.date).getTime() - parseLocalDateKey(first.date).getTime()) / 86400000
     );
     if (days < minDays) {
       return {
@@ -601,7 +749,9 @@ class SomaIntelligenceEngine {
     }
 
     const avgIntake = fed.reduce((a, d) => a + d.cals, 0) / fed.length;
-    const weightDelta = last.weight - first.weight;
+    // The filter above is what guarantees both ends of the trend carry a
+    // weight, so the two reads below are safe to state as non-null.
+    const weightDelta = last.weight! - first.weight!;
     // Positive delta means a surplus was eaten, so maintenance sits below
     // average intake by that much per day.
     const dailyImbalance = (weightDelta * this.KCAL_PER_KG()) / days;
@@ -625,16 +775,16 @@ class SomaIntelligenceEngine {
   }
 
   // The formula estimate, kept for comparison rather than as the answer.
-  static formulaMaintenance(weightKg) {
-    const w = parseFloat(weightKg);
+  static formulaMaintenance(weightKg: Numeric): number | null {
+    const w = parseFloat(String(weightKg));
     return (!isNaN(w) && w > 0) ? Math.round(w * 32) : null;
   }
 
   // Protein target from bodyweight. Central so the Weight tab, the macro
   // diary and the settings screen cannot drift apart.
-  static proteinTargetFor(weightKg, perKg = 2.0) {
-    const w = parseFloat(weightKg);
-    const p = parseFloat(perKg);
+  static proteinTargetFor(weightKg: Numeric, perKg: Numeric = 2.0): number | null {
+    const w = parseFloat(String(weightKg));
+    const p = parseFloat(String(perKg));
     if (isNaN(w) || w <= 0) return null;
     return Math.round(w * (isNaN(p) || p <= 0 ? 2.0 : p));
   }
@@ -649,19 +799,22 @@ class SomaIntelligenceEngine {
 
   // Monday-based week key, so a week is a training block rather than a
   // calendar accident.
-  static weekKeyOf(dateObj) {
+  static weekKeyOf(dateObj: Date): string {
     const d = new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
     const dow = (d.getDay() + 6) % 7;           // Mon = 0
     d.setDate(d.getDate() - dow);
     return getLocalDateKey(d);
   }
 
-  static computeConsistency(history, opts = {}) {
+  static computeConsistency(
+    history: Record<string, LoggedSession> | null | undefined,
+    opts: { sessionsPerWeek?: number; weeks?: number; now?: number } = {},
+  ) {
     const { sessionsPerWeek = 4, weeks = 8, now = Date.now() } = opts;
 
     // Sessions grouped by the week they fall in.
-    const byWeek = {};
-    const dates = [];
+    const byWeek: Record<string, number> = {};
+    const dates: string[] = [];
     for (const [key, session] of Object.entries(history || {})) {
       if (!session || typeof session !== "object" || !Array.isArray(session.exercises)) continue;
       const ts = session.timestamp || (/^\d{4}-\d{2}-\d{2}$/.test(key) ? parseLocalDateKey(key).getTime() : 0);
@@ -674,7 +827,7 @@ class SomaIntelligenceEngine {
 
     // Walk back week by week from the current one.
     const thisWeek = this.weekKeyOf(new Date(now));
-    const weekList = [];
+    const weekList: { week: string; sessions: number; hit: boolean }[] = [];
     for (let i = 0; i < weeks; i++) {
       const d = parseLocalDateKey(thisWeek);
       d.setDate(d.getDate() - i * 7);
@@ -694,10 +847,13 @@ class SomaIntelligenceEngine {
 
     // Best streak across every week that has any data.
     const allWeeks = Object.keys(byWeek).sort();
-    let best = 0, run = 0, cursor = null;
+    let best = 0, run = 0;
+    let cursor: string | null = null;
     for (const w of allWeeks) {
       if (cursor !== null) {
-        const gap = Math.round((parseLocalDateKey(w) - parseLocalDateKey(cursor)) / (7 * 86400000));
+        const gap = Math.round(
+          (parseLocalDateKey(w).getTime() - parseLocalDateKey(cursor).getTime()) / (7 * 86400000)
+        );
         if (gap > 1) run = 0;
       }
       run = byWeek[w] >= sessionsPerWeek ? run + 1 : 0;
@@ -736,9 +892,12 @@ class SomaIntelligenceEngine {
   // Estimated 1RM per session for one lift, with PRs marked. The maths is
   // the same as PR detection uses; this just exposes it as a series.
   // ====================================================================
-  static strengthSeries(history, exerciseName) {
+  static strengthSeries(
+    history: Record<string, LoggedSession> | null | undefined,
+    exerciseName: string,
+  ): StrengthPoint[] {
     if (!history || !exerciseName) return [];
-    const points = [];
+    const points: StrengthPoint[] = [];
 
     for (const session of Object.values(history)) {
       if (!session || !Array.isArray(session.exercises)) continue;
@@ -747,13 +906,15 @@ class SomaIntelligenceEngine {
       );
       if (!match || !Array.isArray(match.sets)) continue;
 
-      let best = 0, bestSet = null, bestReps = 0, repsSet = null;
+      let best = 0, bestReps = 0;
+      let bestSet: { weight: number; reps: number } | null = null;
+      let repsSet: { weight: number; reps: number } | null = null;
       for (const s of match.sets) {
         // Warm-ups and drop sets are not attempts at a maximum.
         if (!s.done || s.type === "warmup" || s.type === "dropset") continue;
-        const raw = parseFloat(s.weight) || 0;
+        const raw = parseFloat(String(s.weight)) || 0;
         const w = (match.usesBar && raw > 0) ? (match.barWeight || 20) + raw : raw;
-        const reps = parseInt(s.reps) || 0;
+        const reps = parseInt(String(s.reps)) || 0;
         const est = this.calculate1RM(w, s.reps);
         if (est > best) { best = est; bestSet = { weight: w, reps }; }
         if (reps > bestReps) { bestReps = reps; repsSet = { weight: w, reps }; }
@@ -765,7 +926,7 @@ class SomaIntelligenceEngine {
         points.push({
           timestamp: ts, date: dateStr, metric: "est1RM",
           est1RM: Math.round(best * 10) / 10,
-          weight: bestSet.weight, reps: bestSet.reps, isPR: false
+          weight: bestSet!.weight, reps: bestSet!.reps, isPR: false
         });
       } else if (bestReps > 0) {
         // Unloaded bodyweight work has no meaningful 1RM — an estimate from
@@ -774,7 +935,7 @@ class SomaIntelligenceEngine {
         points.push({
           timestamp: ts, date: dateStr, metric: "reps",
           est1RM: bestReps,
-          weight: repsSet.weight, reps: repsSet.reps, isPR: false
+          weight: repsSet!.weight, reps: repsSet!.reps, isPR: false
         });
       }
     }
@@ -791,8 +952,8 @@ class SomaIntelligenceEngine {
 
   // Every exercise with at least one completed working set, most recent
   // first — the picker list for the strength chart.
-  static loggedExerciseNames(history) {
-    const seen = new Map();
+  static loggedExerciseNames(history: Record<string, LoggedSession> | null | undefined): string[] {
+    const seen = new Map<string, number>();
     for (const session of Object.values(history || {})) {
       if (!session || !Array.isArray(session.exercises)) continue;
       for (const ex of session.exercises) {
@@ -802,7 +963,8 @@ class SomaIntelligenceEngine {
         );
         if (!has) continue;
         const ts = session.timestamp || 0;
-        if (!seen.has(ex.name) || seen.get(ex.name) < ts) seen.set(ex.name, ts);
+        // The has() on the left is what makes the read on the right a number.
+        if (!seen.has(ex.name) || seen.get(ex.name)! < ts) seen.set(ex.name, ts);
       }
     }
     return [...seen.entries()].sort((a, b) => b[1] - a[1]).map(e => e[0]);
@@ -816,10 +978,13 @@ class SomaIntelligenceEngine {
   // as the fallback and the seed for a first edit, which also means a
   // plugin update can never wipe a routine the user built.
   // ====================================================================
-  static mergeRoutines(builtIn, custom) {
-    const out = {};
+  static mergeRoutines(
+    builtIn: Record<string, unknown> | null | undefined,
+    custom: (Record<string, unknown> & { _removed?: string[] }) | null | undefined,
+  ): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
     // Deleted built-ins are remembered so they do not reappear on reload.
-    const removed = new Set((custom && custom._removed) || []);
+    const removed = new Set<string>((custom && custom._removed) || []);
     for (const [name, list] of Object.entries(builtIn || {})) {
       if (!removed.has(name)) out[name] = list;
     }
@@ -831,11 +996,11 @@ class SomaIntelligenceEngine {
   }
 
   // Anything stored must be {name} objects with a non-empty name.
-  static normalizeRoutine(list) {
+  static normalizeRoutine(list: unknown): { name: string }[] {
     if (!Array.isArray(list)) return [];
-    return list
+    return (list as (string | { name?: unknown })[])
       .map(i => (typeof i === "string" ? { name: i } : i))
-      .filter(i => i && typeof i.name === "string" && i.name.trim())
+      .filter((i): i is { name: string } => !!i && typeof i.name === "string" && !!i.name.trim())
       .map(i => ({ name: i.name.trim() }));
   }
 
@@ -861,12 +1026,20 @@ class SomaIntelligenceEngine {
    * why switching programme needs no other wiring.
    */
   static getProgramProjectedDay(
-    targetDateObj,
-    scheduleOverrides = {},
+    targetDateObj: Date,
+    scheduleOverrides: Record<string, string> = {},
     // Annotated: with only a `null` default TypeScript infers the parameter
     // as `null | undefined` and rejects every real programme passed to it.
     program: { days: string[]; kind?: string; anchor?: string } | null = null,
-  ) {
+  ): {
+    split: string;
+    phase: string;
+    phaseBadge: string;
+    repScheme: string;
+    isDeload: boolean;
+    isRest: boolean;
+    weekNumber?: number;
+  } {
     const anchorDate = new Date(2026, 7, 23, 12, 0, 0); // Aligned to Aug 23 Base Anchor
     const targetMidday = new Date(targetDateObj.getFullYear(), targetDateObj.getMonth(), targetDateObj.getDate(), 12, 0, 0);
     const dateKey = getLocalDateKey(targetMidday);
@@ -923,9 +1096,14 @@ class SomaIntelligenceEngine {
     return { split: splitName, phase, phaseBadge, repScheme, isDeload, isRest, weekNumber: totalWeeks };
   }
 
-  static detectPersonalRecords(history, currentExerciseName, newWeight, newReps) {
-    const w = parseFloat(newWeight) || 0;
-    const r = parseInt(newReps) || 0;
+  static detectPersonalRecords(
+    history: Record<string, LoggedSession> | null | undefined,
+    currentExerciseName: string,
+    newWeight: Numeric,
+    newReps: Numeric,
+  ) {
+    const w = parseFloat(String(newWeight)) || 0;
+    const r = parseInt(String(newReps)) || 0;
     if (w <= 0 || r <= 0) return null;
 
     const currentEst1RM = this.calculate1RM(w, r);
@@ -938,9 +1116,9 @@ class SomaIntelligenceEngine {
         if (ex.name && ex.name.toLowerCase() === currentExerciseName.toLowerCase()) {
           for (const s of ex.sets || []) {
             if (s.done && s.type !== "warmup") {
-              const rawW = parseFloat(s.weight) || 0;
+              const rawW = parseFloat(String(s.weight)) || 0;
               const prevW = (ex.usesBar && rawW > 0) ? (ex.barWeight || 20) + rawW : rawW;
-              const prevR = parseInt(s.reps) || 0;
+              const prevR = parseInt(String(s.reps)) || 0;
               if (prevW > maxPreviousWeight) maxPreviousWeight = prevW;
               if (prevW === w && prevR > maxPreviousRepsAtWeight) maxPreviousRepsAtWeight = prevR;
               const est = this.calculate1RM(prevW, prevR);

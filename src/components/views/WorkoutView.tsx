@@ -15,14 +15,14 @@ import { playChime, burstConfetti } from "@/lib/audio";
 import { computeBiologicalReadiness } from "@/lib/recovery";
 import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { WidgetGrid } from "@/components/WidgetGrid";
-import { useActiveProgram, useSoma } from "@/lib/store";
+import { useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
 import { failureFromQuality, readinessWithSleepDebt } from "@/lib/autoregulate";
 import { applyGoal } from "@/lib/goal-mode";
 import { currentDebt } from "@/lib/sleep-debt";
 import { rateExerciseInstance, rateSession, rateSet, ratingTone } from "@/lib/stimulus";
-import { tapLight, tapMedium, tapSuccess } from "@/lib/haptics";
+import { tapMedium, tapSuccess } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import type { SessionExercise } from "@/lib/types";
 
@@ -45,7 +45,6 @@ const SUPERSET_COLOR: Record<string, string> = {
 export function WorkoutView() {
   const live = useSoma((s) => s.live);
   const settings = useSoma((s) => s.settings);
-  const program = useActiveProgram();
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
   const activeDate = useSoma((s) => s.activeDate);

@@ -6,6 +6,7 @@
  * is exactly how this shipped broken once. The staging step substitutes the
  * placeholders below with the build's content-hashed asset names.
  */
+/* global __PRECACHE__ */
 const CACHE = "__CACHE__";
 const PRECACHE = __PRECACHE__;
 const BASE = "__BASE__";
