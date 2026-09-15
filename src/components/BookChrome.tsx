@@ -2,7 +2,8 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, Highlighter, List, Search, Star, Trash2, X } from "lucide-react";
 import { MIN_QUERY, findIn, tally, type Hit } from "@/lib/book-search";
 import { markChip, type BookMark } from "@/lib/marks";
-import { type themeSpec } from "@/lib/reader-prefs";
+import { fontStack, type ReaderPrefs, type themeSpec } from "@/lib/reader-prefs";
+import { PAGE_GAP } from "@/lib/paginate";
 import type { MindEntry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -415,6 +416,172 @@ export const ChapterRail = memo(function ChapterRail({
             <span className="truncate">{t}</span>
           </button>
         ))}
+      </div>
+    </div>
+  );
+});
+
+/* ====================================================================== */
+
+/**
+ * The page scrubber, in the shape Apple Books settled on.
+ *
+ * A floating pill over the page rather than a full-width bar: translucent
+ * and blurred, with a row of small page thumbnails and the page you are on
+ * centred and framed. Dragging the strip scrubs — the page under the middle
+ * of the pill becomes the page — and the paper dims behind it while the
+ * finger is down, exactly like the native reader.
+ */
+export const PageScrubber = memo(function PageScrubber({
+  theme, prefs, html, label, box, pages, page, onPick, onScrub,
+}: {
+  theme: ReturnType<typeof themeSpec>;
+  prefs: ReaderPrefs;
+  html: string;
+  label: string;
+  box: { w: number; h: number };
+  pages: number;
+  page: number;
+  onPick: (page: number) => void;
+  onScrub?: (active: boolean) => void;
+}) {
+  const rail = useRef<HTMLDivElement>(null);
+  const markup = useMemo(() => ({ __html: html }), [html]);
+  const drag = useRef({ active: false, raf: 0 });
+  const scrubTo = useRef(onPick);
+  scrubTo.current = onPick;
+
+  /** Pill-sized: tall enough to read as pages, short enough to float. */
+  const HEIGHT = 56;
+  const scale = box.h ? HEIGHT / box.h : 0.1;
+  const cardW = Math.max(16, box.w * scale);
+  const gapW = PAGE_GAP * scale;
+  const stride = cardW + gapW;
+
+  // Keep the page you are on centred under the pill.
+  useEffect(() => {
+    const el = rail.current;
+    if (!el) return;
+    const want = page * stride - el.clientWidth / 2 + cardW / 2;
+    el.scrollTo({ left: Math.max(0, want), behavior: "smooth" });
+  }, [page, stride, cardW]);
+
+  /** The page under the middle of the pill, from the strip's own scroll. */
+  const pageUnderCenter = () => {
+    const el = rail.current;
+    if (!el) return 0;
+    const mid = el.scrollLeft + el.clientWidth / 2;
+    return Math.max(0, Math.min(pages - 1, Math.floor(mid / stride)));
+  };
+
+  const onDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    drag.current.active = true;
+    onScrub?.(true);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!drag.current.active) return;
+    e.stopPropagation();
+    cancelAnimationFrame(drag.current.raf);
+    drag.current.raf = requestAnimationFrame(() => {
+      scrubTo.current(pageUnderCenter());
+    });
+  };
+  const endScrub = () => {
+    if (!drag.current.active) return;
+    drag.current.active = false;
+    cancelAnimationFrame(drag.current.raf);
+    onScrub?.(false);
+  };
+
+  if (!box.w || pages < 1) return null;
+
+  return (
+    <div className="pointer-events-auto mx-auto mb-2 w-fit max-w-full">
+      <div
+        className="rounded-full px-2.5 py-2 shadow-[0_14px_38px_rgba(0,0,0,0.45)]"
+        style={{
+          background: theme.dark ? "rgba(44,44,48,0.8)" : "rgba(238,236,230,0.84)",
+          backdropFilter: "blur(18px)",
+          WebkitBackdropFilter: "blur(18px)",
+        }}
+      >
+        <div
+          ref={rail}
+          className="overflow-x-auto overscroll-x-contain"
+          style={{ scrollbarWidth: "none", maxWidth: "min(76vw, 330px)" }}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={endScrub}
+          onPointerCancel={endScrub}
+        >
+          <div className="relative" style={{ height: HEIGHT, width: stride * pages - gapW }}>
+            {/* Paper, one card per page, under everything. Without it the strip
+                is text floating on the pill's own colour and reads as a smudge. */}
+            {Array.from({ length: pages }, (_, i) => (
+              <span
+                key={`p${i}`}
+                aria-hidden
+                className="absolute top-0 block rounded-[4px]"
+                style={{ left: i * stride, width: cardW, height: HEIGHT, background: theme.bg }}
+              />
+            ))}
+
+            {/* The chapter itself, once, shrunk. A transform does not re-lay-out
+                the text, so pages break exactly where they break in the book. */}
+            <div
+              aria-hidden
+              className="absolute left-0 top-0 origin-top-left overflow-hidden"
+              style={{
+                width: box.w * pages + PAGE_GAP * pages,
+                height: box.h,
+                transform: `scale(${scale})`,
+              }}
+            >
+              <div
+                className="soma-epub"
+                style={{
+                  fontFamily: fontStack(prefs.font),
+                  fontSize: `${prefs.size}px`,
+                  lineHeight: prefs.lineHeight,
+                  color: theme.fg,
+                  height: `${box.h}px`,
+                  columnWidth: `${box.w}px`,
+                  columnGap: `${PAGE_GAP}px`,
+                  columnFill: "auto",
+                }}
+              >
+                {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}
+                <div dangerouslySetInnerHTML={markup} />
+              </div>
+            </div>
+
+            {/* Frames over the top: what you press, and which page is centred.
+                Every page but the one you are on is held back a little, so the
+                current one is found without reading any of them. */}
+            {Array.from({ length: pages }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-label={`Page ${i + 1}`}
+                aria-current={i === page}
+                onClick={() => onPick(i)}
+                className="absolute top-0 rounded-[4px]"
+                style={{
+                  left: i * stride,
+                  width: cardW,
+                  height: HEIGHT,
+                  boxShadow:
+                    i === page ? `0 0 0 2px ${theme.fg}` : `0 0 0 1px ${theme.fg}26`,
+                  background:
+                    i === page
+                      ? "transparent"
+                      : theme.dark ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.32)",
+                }}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
