@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ==========================================================================
 // Theme engine: light/dark resolution and contrast-aware accent derivation.
 // ==========================================================================
@@ -20,11 +19,11 @@ const DEFAULT_ACCENT = ACCENT_PRESETS[0].color;
 
 // Relative luminance, so text sitting on the accent stays readable whatever
 // colour is picked — a pale lime needs dark ink, a deep violet needs light.
-function accentInk(hex) {
+function accentInk(hex: string) {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
   if (!m) return "#0b0c10";
   const int = parseInt(m[1], 16);
-  const toLin = (c) => {
+  const toLin = (c: number) => {
     const s = c / 255;
     return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
   };
@@ -38,15 +37,15 @@ function accentInk(hex) {
 // colours: a pale lime reads well behind dark ink but vanishes as text on
 // white. This darkens or lightens the accent until it clears a readable
 // contrast ratio against the surface behind it, preserving the hue.
-function accentText(hex, theme) {
+function accentText(hex: string, theme: string) {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
   if (!m) return theme === "light" ? "#3f6212" : "#d3fd50";
   const int = parseInt(m[1], 16);
   let r = (int >> 16) & 255, g = (int >> 8) & 255, b = int & 255;
 
-  const toLin = (c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
-  const lum = (r, g, b) => 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b);
-  const contrast = (l1, l2) => (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+  const toLin = (c: number) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+  const lum = (r: number, g: number, b: number) => 0.2126 * toLin(r) + 0.7152 * toLin(g) + 0.0722 * toLin(b);
+  const contrast = (l1: number, l2: number) => (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
 
   // Luminance of the surface the text sits on in each theme.
   const surfaceLum = theme === "light" ? lum(255, 255, 255) : lum(20, 23, 32);
@@ -60,30 +59,30 @@ function accentText(hex, theme) {
     b = Math.max(0, Math.min(255, Math.round(b * step)));
     if ((theme === "light" && r + g + b === 0) || (theme !== "light" && r === 255 && g === 255 && b === 255)) break;
   }
-  const hx = (c) => c.toString(16).padStart(2, "0");
+  const hx = (c: number) => c.toString(16).padStart(2, "0");
   return "#" + hx(r) + hx(g) + hx(b);
 }
 
-function normalizeAccent(value) {
+function normalizeAccent(value: string) {
   const v = String(value || "").trim();
   return /^#[0-9a-fA-F]{6}$/.test(v) ? v : DEFAULT_ACCENT;
 }
 
 // "system" follows Obsidian's own light/dark setting.
-function resolveTheme(pref) {
+function resolveTheme(pref: string) {
   if (pref === "light" || pref === "dark") return pref;
   try {
     if (document.body.classList.contains("theme-light")) return "light";
     if (document.body.classList.contains("theme-dark")) return "dark";
     if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) return "light";
-  } catch (e) { /* non-DOM context */ }
+  } catch { /* non-DOM context */ }
   return "dark";
 }
 
-function applySomaTheme(rootEl, settings) {
+function applySomaTheme(rootEl: HTMLElement, settings: { accent?: string; theme?: string }) {
   if (!rootEl) return;
-  const accent = normalizeAccent(settings && settings.accent);
-  const theme = resolveTheme(settings && settings.theme);
+  const accent = normalizeAccent(settings?.accent ?? "");
+  const theme = resolveTheme(settings?.theme ?? "system");
   rootEl.setAttribute("data-soma-theme", theme);
   rootEl.style.setProperty("--soma-accent", accent);
   rootEl.style.setProperty("--soma-accent-ink", accentInk(accent));

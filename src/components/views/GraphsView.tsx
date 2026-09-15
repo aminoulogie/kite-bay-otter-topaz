@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import { Card, CardTitle } from "@/components/ui/card";
 import {
-  dayBest, estimated1RM, groupsOf, type ExerciseLog, type LoggedSet, formatSet,
+  dayBest, groupsOf, type ExerciseLog, type LoggedSet, formatSet,
 } from "@/lib/training-log";
 import { useTrainingLog } from "@/lib/use-training-log";
 import { microMuscleStrength } from "@/lib/micro-muscle";
@@ -335,7 +335,7 @@ export function GraphsView() {
         <CardTitle>Exercises</CardTitle>
         <p className="mb-2 text-[0.7rem] text-muted">Tap to plot several at once.</p>
         <div className="flex flex-wrap gap-1.5">
-          {inGroup.map((e, i) => {
+          {inGroup.map((e) => {
             const on = active.includes(e.name);
             const colour = SERIES_COLORS[active.indexOf(e.name) % SERIES_COLORS.length];
             return (

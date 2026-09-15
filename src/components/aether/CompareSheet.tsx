@@ -209,7 +209,7 @@ function Side({
     <button
       type="button"
       onClick={onPick}
-      className="overflow-hidden rounded-2xl border border-border bg-surface text-left"
+      className="glass-card overflow-hidden rounded-2xl border border-border bg-surface text-left"
     >
       <div className="aspect-[3/4] w-full bg-surface-2">
         {image ? (

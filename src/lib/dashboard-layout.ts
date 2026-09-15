@@ -181,6 +181,9 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   // lives on one screen only.
   { id: "habits", label: "Habits", size: "2x4" },
   { id: "todos", label: "To-do", size: "2x4" },
+  // Next steps, not progress bars. Sits beside the to-do list because the two
+  // answer the same question at different scales — what could I pick up now.
+  { id: "projects", label: "Projects", size: "2x4" },
   { id: "gap", label: "Log the gap", size: "2x4" },
   { id: "correlate", label: "Across everything", size: "2x4" },
 ];
@@ -238,14 +241,29 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   projects: [
     { id: "header", label: "On the go", size: "2x4" },
     { id: "new", label: "Start something", size: "2x4" },
+    // A bar, not a card: one row, the same as Habits' Today/Matrix/Year.
+    { id: "filter", label: "Active / Paused / Done", size: "1x4" },
     { id: "list", label: "The projects", size: "2x4" },
   ],
+  // Money is two pages behind one tab: what you spend, and what you trade.
+  // The spending page keeps the bare "money" key rather than gaining a suffix,
+  // because every layout already saved is stored under it and renaming the
+  // page would reset the arrangement of everyone who had ever tidied it.
   money: [
     { id: "summary", label: "This month", size: "2x4" },
     { id: "add", label: "Add an entry", size: "2x4" },
     { id: "grocery", label: "Shopping list", size: "2x4" },
     { id: "entries", label: "Entries", size: "2x4" },
     { id: "categories", label: "Categories", size: "2x4" },
+  ],
+  "money-trade": [
+    { id: "account", label: "The account", size: "2x4" },
+    { id: "check", label: "Before you click", size: "2x4" },
+    { id: "open", label: "The open trade", size: "2x4" },
+    { id: "systems", label: "Which system is working", size: "2x4" },
+    { id: "stats", label: "The numbers", size: "2x4" },
+    { id: "log", label: "The log", size: "2x4" },
+    { id: "rules", label: "The rules", size: "2x4" },
   ],
   time: [
     { id: "header", label: "The day", size: "2x4" },

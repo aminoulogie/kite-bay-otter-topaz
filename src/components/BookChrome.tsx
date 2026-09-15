@@ -2,9 +2,8 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, Highlighter, List, Search, Star, Trash2, X } from "lucide-react";
 import { MIN_QUERY, findIn, tally, type Hit } from "@/lib/book-search";
 import { markChip, type BookMark } from "@/lib/marks";
-import { fontStack, type themeSpec } from "@/lib/reader-prefs";
+import { fontStack, type ReaderPrefs, type themeSpec } from "@/lib/reader-prefs";
 import { PAGE_GAP } from "@/lib/paginate";
-import type { ReaderPrefs } from "@/lib/reader-prefs";
 import type { MindEntry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -356,29 +355,85 @@ export function MarksSheet({
 /* ====================================================================== */
 
 /**
- * The chapter, small, to thumb through.
+ * The chapters, small, to jump between.
  *
- * A MINIATURE, not a photograph of the real thing shrunk. The obvious build
- * is to take the strip the reader already has — every page of the chapter
- * side by side — and put `transform: scale(0.12)` on it. It works on a
- * desktop and it is blank on a phone, which is the worst kind of wrong.
- *
- * A transform does not change what the browser rasterises: it lays the
- * element out at full size, draws it at full size, and scales the result. The
- * strip is eleven thousand CSS pixels wide, which on a three-times screen is
- * thirty-three thousand device pixels — several times WebKit's maximum
- * texture size. Over that limit it does not draw a smaller version, it draws
- * nothing.
- *
- * So the chapter is laid out AGAIN at a twelfth of the type size, in a twelfth
- * of the box, with a twelfth of the gap. Geometrically similar, so the lines
- * break in nearly the same places and the pages hold nearly the same words —
- * and the whole strip is thirteen hundred pixels wide, which any phone can
- * draw. The text comes out about two pixels tall, which is what a thumbnail
- * is: not words, the shape of words on a page.
+ * One chip per chapter rather than a filmstrip of pages. A page strip on a
+ * twenty-eight page chapter is twenty-eight thumbnails to hunt through for
+ * something a table of contents already says in one line; and pages are only
+ * meaningful inside the chapter you are already in, while the question a
+ * reader actually asks at the bottom of a book is "which chapter is next".
+ * Chips are also a single slim row that stays clear of the page, where the
+ * strip was a second copy of the text sitting under the words you were
+ * reading.
  */
-export const PageRail = memo(function PageRail({
-  theme, prefs, html, label, box, pages, page, onPick,
+export const ChapterRail = memo(function ChapterRail({
+  theme, titles, current, onPick,
+}: {
+  theme: ReturnType<typeof themeSpec>;
+  titles: string[];
+  current: number;
+  onPick: (chapter: number) => void;
+}) {
+  const rail = useRef<HTMLDivElement>(null);
+
+  // Keep the chapter you are on in view, without fighting a finger that is
+  // already scrolling: only when the chapter changed underneath it.
+  useEffect(() => {
+    const el = rail.current;
+    if (!el) return;
+    const chip = el.querySelector<HTMLElement>('[aria-current="true"]');
+    chip?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+  }, [current, titles.length]);
+
+  return (
+    <div
+      ref={rail}
+      className="pointer-events-auto mx-auto mb-2 max-w-full overflow-x-auto overscroll-x-contain rounded-full px-2 py-1.5"
+      style={{
+        background: theme.dark ? "rgba(40,40,44,0.92)" : "rgba(240,238,232,0.94)",
+        scrollbarWidth: "none",
+      }}
+      // The rail scrolls sideways and nothing else; letting the browser treat
+      // a drag on it as a page turn would turn the page you are scrubbing past.
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex w-max items-center gap-1.5">
+        {titles.map((t, i) => (
+          <button
+            key={i}
+            type="button"
+            aria-label={`Chapter ${i + 1}: ${t}`}
+            aria-current={i === current}
+            onClick={() => onPick(i)}
+            className="flex max-w-[8.5rem] shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[0.66rem] font-bold leading-none"
+            style={
+              i === current
+                ? { background: theme.fg, color: theme.bg }
+                : { background: `${theme.fg}14`, color: theme.faint }
+            }
+          >
+            <span className="tabular-nums opacity-70">{i + 1}</span>
+            <span className="truncate">{t}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+/* ====================================================================== */
+
+/**
+ * The page scrubber, in the shape Apple Books settled on.
+ *
+ * A floating pill over the page rather than a full-width bar: translucent
+ * and blurred, with a row of small page thumbnails and the page you are on
+ * centred and framed. Dragging the strip scrubs — the page under the middle
+ * of the pill becomes the page — and the paper dims behind it while the
+ * finger is down, exactly like the native reader.
+ */
+export const PageScrubber = memo(function PageScrubber({
+  theme, prefs, html, label, box, pages, page, onPick, onScrub,
 }: {
   theme: ReturnType<typeof themeSpec>;
   prefs: ReaderPrefs;
@@ -388,18 +443,22 @@ export const PageRail = memo(function PageRail({
   pages: number;
   page: number;
   onPick: (page: number) => void;
+  onScrub?: (active: boolean) => void;
 }) {
   const rail = useRef<HTMLDivElement>(null);
   const markup = useMemo(() => ({ __html: html }), [html]);
-  /** Tall enough to read as a page, short enough to leave the book room. */
-  const HEIGHT = 92;
-  const scale = box.h ? HEIGHT / box.h : 0.12;
-  const cardW = Math.max(18, Math.round(box.w * scale));
+  const drag = useRef({ active: false, raf: 0 });
+  const scrubTo = useRef(onPick);
+  scrubTo.current = onPick;
+
+  /** Pill-sized: tall enough to read as pages, short enough to float. */
+  const HEIGHT = 56;
+  const scale = box.h ? HEIGHT / box.h : 0.1;
+  const cardW = Math.max(16, Math.round(box.w * scale));
   const gapW = Math.max(3, Math.round(PAGE_GAP * scale));
   const stride = cardW + gapW;
 
-  // Keep the page you are on in view, without fighting a finger that is
-  // already scrolling: only when the page changed underneath it.
+  // Keep the page you are on centred under the pill.
   useEffect(() => {
     const el = rail.current;
     if (!el) return;
@@ -407,93 +466,135 @@ export const PageRail = memo(function PageRail({
     el.scrollTo({ left: Math.max(0, want), behavior: "smooth" });
   }, [page, stride, cardW]);
 
+  /** The page under the middle of the pill, from the strip's own scroll. */
+  const pageUnderCenter = () => {
+    const el = rail.current;
+    if (!el) return 0;
+    const mid = el.scrollLeft + el.clientWidth / 2;
+    return Math.max(0, Math.min(pages - 1, Math.floor(mid / stride)));
+  };
+
+  const onDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    drag.current.active = true;
+    onScrub?.(true);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!drag.current.active) return;
+    e.stopPropagation();
+    cancelAnimationFrame(drag.current.raf);
+    drag.current.raf = requestAnimationFrame(() => {
+      scrubTo.current(pageUnderCenter());
+    });
+  };
+  const endScrub = () => {
+    if (!drag.current.active) return;
+    drag.current.active = false;
+    cancelAnimationFrame(drag.current.raf);
+    onScrub?.(false);
+  };
+
   if (!box.w || pages < 1) return null;
 
   return (
-    <div
-      ref={rail}
-      className="pointer-events-auto mx-auto mb-2 max-w-full overflow-x-auto overscroll-x-contain rounded-2xl px-3 py-2"
-      style={{
-        background: theme.dark ? "rgba(70,70,76,0.55)" : "rgba(250,249,246,0.62)",
-        backdropFilter: "blur(24px) saturate(180%)",
-        WebkitBackdropFilter: "blur(24px) saturate(180%)",
-        boxShadow: theme.dark
-          ? "inset 0 0.5px 0 rgba(255,255,255,0.20), 0 6px 20px rgba(0,0,0,0.42)"
-          : "inset 0 0.5px 0 rgba(255,255,255,0.9), 0 6px 20px rgba(0,0,0,0.16)",
-        scrollbarWidth: "none",
-      }}
-      // The rail scrolls sideways and nothing else; letting the browser treat
-      // a drag on it as a page turn would turn the page you are scrubbing past.
-      onPointerDown={(e) => e.stopPropagation()}
-    >
-      <div className="relative" style={{ height: HEIGHT, width: stride * pages - gapW }}>
-        {/* Paper, one piece per page, under everything.
-            What makes a thumbnail legible at a twelfth of its size is not the
-            words — they are two pixels tall — but the rectangle they sit on. */}
-        {Array.from({ length: pages }, (_, i) => (
-          <span
-            key={`p${i}`}
-            aria-hidden
-            className="absolute top-0 block rounded-[3px]"
-            style={{ left: i * stride, width: cardW, height: HEIGHT, background: theme.bg }}
-          />
-        ))}
-
-        {/* The chapter, set small. Same columns, same proportions, a twelfth
-            of everything — so the pages here are the pages there. */}
+    <div className="pointer-events-auto mx-auto mb-2 w-fit max-w-full">
+      <div
+        className="rounded-full px-2.5 py-2 shadow-[0_14px_38px_rgba(0,0,0,0.45)]"
+        style={{
+          background: theme.dark ? "rgba(44,44,48,0.8)" : "rgba(238,236,230,0.84)",
+          backdropFilter: "blur(18px)",
+          WebkitBackdropFilter: "blur(18px)",
+        }}
+      >
         <div
-          aria-hidden
-          className="absolute left-0 top-0 overflow-hidden"
-          style={{ width: stride * pages - gapW, height: HEIGHT }}
+          ref={rail}
+          className="overflow-x-auto overscroll-x-contain"
+          style={{ scrollbarWidth: "none", maxWidth: "min(76vw, 330px)" }}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={endScrub}
+          onPointerCancel={endScrub}
         >
-          <div
-            className="soma-epub"
-            style={{
-              fontFamily: fontStack(prefs.font),
-              fontSize: `${prefs.size * scale}px`,
-              lineHeight: prefs.lineHeight,
-              color: theme.fg,
-              height: `${HEIGHT}px`,
-              columnWidth: `${cardW}px`,
-              columnGap: `${gapW}px`,
-              columnFill: "auto",
-              // iOS inflates small text in narrow columns unless told not to,
-              // which would break every page boundary in the strip.
-              WebkitTextSizeAdjust: "none",
-              textSizeAdjust: "none",
-            }}
-          >
-            {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}
-            <div dangerouslySetInnerHTML={markup} />
+          <div className="relative" style={{ height: HEIGHT, width: stride * pages - gapW }}>
+            {/* Paper, one card per page, under everything. Without it the strip
+                is text floating on the pill's own colour and reads as a smudge. */}
+            {Array.from({ length: pages }, (_, i) => (
+              <span
+                key={`p${i}`}
+                aria-hidden
+                className="absolute top-0 block rounded-[4px]"
+                style={{ left: i * stride, width: cardW, height: HEIGHT, background: theme.bg }}
+              />
+            ))}
+
+            {/* The chapter set SMALL — not the real strip shrunk.
+                Scaling the reader's own strip is the obvious build and it is
+                blank on a phone. A transform does not change what the browser
+                rasterises: it lays the element out at full size, draws it at
+                full size, and scales the result. The strip is eleven thousand
+                CSS pixels wide, which on a three-times screen is thirty-three
+                thousand device pixels — several times WebKit's maximum texture
+                size. Past that limit it does not draw something smaller. It
+                draws nothing, which is exactly what the scrubber did.
+
+                So the chapter is laid out again at a tenth of the type size,
+                in a tenth of the box, with a tenth of the gap. Geometrically
+                similar, so the lines break in nearly the same places and the
+                pages hold nearly the same words — and the whole strip is a
+                thousand pixels wide, which any phone can draw. */}
+            <div
+              aria-hidden
+              className="absolute left-0 top-0 overflow-hidden"
+              style={{ width: stride * pages - gapW, height: HEIGHT }}
+            >
+              <div
+                className="soma-epub"
+                style={{
+                  fontFamily: fontStack(prefs.font),
+                  fontSize: `${prefs.size * scale}px`,
+                  lineHeight: prefs.lineHeight,
+                  color: theme.fg,
+                  height: `${HEIGHT}px`,
+                  columnWidth: `${cardW}px`,
+                  columnGap: `${gapW}px`,
+                  columnFill: "auto",
+                  // iOS inflates small text in narrow columns unless told not
+                  // to, which would move every page boundary in the strip.
+                  WebkitTextSizeAdjust: "none",
+                  textSizeAdjust: "none",
+                }}
+              >
+                {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}
+                <div dangerouslySetInnerHTML={markup} />
+              </div>
+            </div>
+
+            {/* Frames over the top: what you press, and which page is centred.
+                Every page but the one you are on is held back a little, so the
+                current one is found without reading any of them. */}
+            {Array.from({ length: pages }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                aria-label={`Page ${i + 1}`}
+                aria-current={i === page}
+                onClick={() => onPick(i)}
+                className="absolute top-0 rounded-[4px]"
+                style={{
+                  left: i * stride,
+                  width: cardW,
+                  height: HEIGHT,
+                  boxShadow:
+                    i === page ? `0 0 0 2px ${theme.fg}` : `0 0 0 1px ${theme.fg}26`,
+                  background:
+                    i === page
+                      ? "transparent"
+                      : theme.dark ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.32)",
+                }}
+              />
+            ))}
           </div>
         </div>
-
-        {/* A frame per page, over the top. These are what you press, and what
-            says which page you are on. */}
-        {Array.from({ length: pages }, (_, i) => (
-          <button
-            key={i}
-            type="button"
-            aria-label={`Page ${i + 1}`}
-            aria-current={i === page}
-            onClick={() => onPick(i)}
-            className="absolute top-0 rounded-[3px]"
-            style={{
-              left: i * stride,
-              width: cardW,
-              height: HEIGHT,
-              boxShadow:
-                i === page
-                  ? `0 0 0 2px ${theme.fg}`
-                  : `0 0 0 1px ${theme.fg}33`,
-              // Every page but the one you are on is held back a little, so
-              // the one you are on is found without reading any of them.
-              background: i === page
-                ? "transparent"
-                : theme.dark ? "rgba(0,0,0,0.42)" : "rgba(255,255,255,0.34)",
-            }}
-          />
-        ))}
       </div>
     </div>
   );
@@ -511,25 +612,9 @@ export function TopPills({
   onSearch: () => void;
   onKept: () => void;
 }) {
-  // Glass, properly.
-  //
-  // A flat translucent fill is not glass, it is a grey box you can half see
-  // through — which is what this was. Real glass does three things at once
-  // and needs all three: it BLURS what is behind it, it SATURATES it so the
-  // colour underneath still reads through, and it catches a highlight along
-  // its top edge where the light lands. The hairline ring is the edge of the
-  // pane; the shadow is it floating above the page rather than printed on it.
-  //
-  // `-webkit-backdrop-filter` is written out because Safari still wants it,
-  // and Safari is the only browser this ever runs in.
-  const pill: React.CSSProperties = {
-    background: theme.dark ? "rgba(70,70,76,0.55)" : "rgba(250,249,246,0.62)",
-    backdropFilter: "blur(24px) saturate(180%)",
-    WebkitBackdropFilter: "blur(24px) saturate(180%)",
+  const pill = {
+    background: theme.dark ? "rgba(58,58,62,0.82)" : "rgba(236,234,228,0.88)",
     color: theme.fg,
-    boxShadow: theme.dark
-      ? "inset 0 0.5px 0 rgba(255,255,255,0.22), inset 0 0 0 0.5px rgba(255,255,255,0.10), 0 6px 20px rgba(0,0,0,0.42)"
-      : "inset 0 0.5px 0 rgba(255,255,255,0.9), inset 0 0 0 0.5px rgba(0,0,0,0.07), 0 6px 20px rgba(0,0,0,0.16)",
   };
   const Btn = ({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) => (
     <button
@@ -550,7 +635,7 @@ export function TopPills({
       )}
     >
       <div
-        className={cn("flex items-center rounded-full px-1", show && "pointer-events-auto")}
+        className={cn("flex items-center rounded-full px-1 backdrop-blur-xl", show && "pointer-events-auto")}
         style={pill}
       >
         <Btn label="Back to the shelf" onClick={onBack}>
@@ -561,7 +646,7 @@ export function TopPills({
         </Btn>
       </div>
       <div
-        className={cn("flex items-center rounded-full px-1", show && "pointer-events-auto")}
+        className={cn("flex items-center rounded-full px-1 backdrop-blur-xl", show && "pointer-events-auto")}
         style={pill}
       >
         <Btn label="Type and theme" onClick={onType}>

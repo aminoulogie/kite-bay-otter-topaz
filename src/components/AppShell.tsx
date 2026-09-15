@@ -8,6 +8,7 @@ import { requestPersistence } from "@/lib/storage-health";
 import { TrainCalendar } from "@/components/TrainCalendar";
 import { useEdgeSwipe, useRightEdgeSwipe } from "@/lib/use-edge-swipe";
 import { useKeyboardInset } from "@/lib/use-keyboard";
+import { useLiquidGlass } from "@/lib/use-liquid-glass";
 import { useBackupDownload } from "@/lib/use-backup";
 import { BodyView } from "@/components/views/BodyView";
 import { HabitsView } from "@/components/views/HabitsView";
@@ -58,6 +59,10 @@ export function AppShell() {
   // every tab needs the same answer about where it now ends.
   useKeyboardInset();
 
+  // The tilt parallax behind every glass surface. One hook, root-level CSS
+  // vars, two composited layers — see lib/use-liquid-glass.ts.
+  useLiquidGlass();
+
   // Everything in this app lives on this one device, so the backup file is the
   // only copy that survives losing it. Burying the one control that writes it
   // three screens deep in Setup made the safest habit the least convenient
@@ -103,9 +108,13 @@ export function AppShell() {
     const el = navRef.current;
     if (!el) return;
     const publish = () => {
+      // offsetHeight, not getBoundingClientRect().height: the rect follows
+      // the VISUAL viewport, which iOS moves while the URL bar collapses or
+      // the keyboard opens — publishing it made --dock-h wobble and the page
+      // reflow under the user's thumb. The layout box is stable.
       document.documentElement.style.setProperty(
         "--dock-h",
-        `${Math.round(el.getBoundingClientRect().height)}px`,
+        `${Math.round(el.offsetHeight)}px`,
       );
     };
     publish();
@@ -278,11 +287,17 @@ export function AppShell() {
 
   return (
     <div className="relative mx-auto min-h-dvh max-w-lg bg-bg pb-[calc(var(--dock-h,7rem)+0.75rem)] lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
+      {/* The ambient light behind every glass surface. Fixed, pointer-dead,
+          and the only layer the tilt parallax moves — the glass refracts it,
+          the content never does. It sits at z-0; the rail and the content
+          column stack above it in order, so overlay sheets always cover the
+          rail on desktop. */}
+      <div aria-hidden className="soma-ambient" />
       {/* The dock becomes a rail. On a phone the bottom edge is where the thumb
           is; on a desktop it is the furthest point from where anyone is looking,
           and a pill floating there is a phone app in a window. The rail is the
           same TAB_ORDER, so the two can never disagree. */}
-      <nav className="sticky top-0 hidden h-dvh shrink-0 flex-col gap-1 border-r border-border bg-surface/40 p-3 lg:flex lg:w-[13.5rem]">
+      <nav className="glass-rail sticky top-0 z-[1] hidden h-dvh shrink-0 flex-col gap-1 border-r border-border p-3 lg:flex lg:w-[13.5rem]">
         <div className="mb-3 px-2 pt-2">
           <div className="font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
             SOMA
@@ -313,7 +328,7 @@ export function AppShell() {
         })}
       </nav>
 
-      <div className="soma-desk relative min-w-0 flex-1 lg:mx-auto lg:pb-10">
+      <div className="soma-desk relative z-[2] min-w-0 flex-1 lg:mx-auto lg:pb-10">
       {/* The native webview fills the screen including the area behind the
           status bar, so without the safe-area inset the clock, wifi and battery
           sit on top of the header. Harmless in a browser, where the inset is 0. */}
@@ -324,7 +339,7 @@ export function AppShell() {
           left with the Calendar button hanging past the edge. A media query
           cannot see this coming, because the trigger is the text size rather
           than the viewport. */}
-      <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-bg/85 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur-xl">
+      <header className="glass-header sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {/* The swipe is not discoverable on its own, so the drawer also has
               a visible control. */}
@@ -459,14 +474,19 @@ export function AppShell() {
         <div
           ref={dockRef}
           data-no-swipe-nav
-          className="pointer-events-auto relative flex w-full max-w-lg snap-x items-center gap-1 overflow-x-auto rounded-full border border-border-strong bg-dock p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="glass-dock pointer-events-auto relative flex w-full max-w-lg snap-x items-center gap-1 overflow-x-auto rounded-full border border-border-strong p-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           {/* One pill that travels, rather than each tab painting its own
               background. Colour swapping between two elements reads as a
-              blink; a single element moving reads as the selection sliding. */}
+              blink; a single element moving reads as the selection sliding.
+
+              Transform-only on purpose: translateX runs on the compositor at
+              the display's refresh rate, while a width transition would put
+              layout on the main thread every frame. The tabs are all the same
+              fixed width, so the pill's width is set once and never animates. */}
           <span
             aria-hidden
-            className="pointer-events-none absolute left-0 top-1.5 rounded-full bg-accent shadow-glow transition-[transform,width] duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
+            className="pointer-events-none absolute left-0 top-1.5 rounded-full bg-accent transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)] will-change-transform"
             style={{
               width: pill.w,
               height: "calc(100% - 0.75rem)",

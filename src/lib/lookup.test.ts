@@ -1,29 +1,30 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  coverUrl, lookupWord, parseBooks, parseWord, progressLabel, readProgress, searchBooks,
-  upgradeCoverUrl,
+  coverUrl, lookupWord, parseBooks, parseDatamuse, parseWord, progressLabel, readProgress,
+  searchBooks, upgradeCoverUrl,
 } from "./lookup.ts";
 
-/** A real dictionaryapi.dev payload, trimmed to the fields that are read. */
-const DICT_OK = [
-  {
-    word: "ephemeral",
-    phonetic: "/ɪˈfɛm(ə)ɹəl/",
-    phonetics: [{ text: "", audio: "x.mp3" }, { text: "/ɪˈfɛm(ə)ɹəl/" }],
-    meanings: [
-      {
-        partOfSpeech: "adjective",
-        definitions: [
-          { definition: "Lasting for a short period of time.", example: "an ephemeral victory" },
-          { definition: "Existing for only one day, as with some flowers." },
-        ],
-      },
-      { partOfSpeech: "noun", definitions: [{ definition: "Something short-lived." }] },
-    ],
-    sourceUrls: ["https://en.wiktionary.org/wiki/ephemeral"],
-  },
-];
+/** A real Wiktionary rest_v1/page/definition payload, trimmed to the fields read. */
+const WIKT_OK = {
+  en: [
+    {
+      partOfSpeech: "adjective",
+      language: "English",
+      definitions: [
+        {
+          definition: "Lasting for a short period of time.",
+          examples: ["an ephemeral victory"],
+        },
+        { definition: "Existing for only one day, as with some flowers." },
+      ],
+    },
+    { partOfSpeech: "noun", definitions: [{ definition: "Something short-lived." }] },
+  ],
+};
+
+/** A real Datamuse `md=dp` payload. */
+const DM_OK = [{ word: "ephemeral", tags: ["adj"], defs: ["adj\tLasting for a very short time."] }];
 
 const OL_OK = {
   numFound: 412,
@@ -43,6 +44,16 @@ const OL_OK = {
 const fetchOf = (body: unknown, ok = true) =>
   (async () => ({ ok, status: ok ? 200 : 404, json: async () => body })) as unknown as typeof fetch;
 
+/** Answers successive calls with successive bodies — for testing the fallback chain. */
+const fetchQueue = (...bodies: unknown[]) => {
+  let i = 0;
+  return (async () => {
+    const b = bodies[Math.min(i++, bodies.length - 1)];
+    if (b instanceof Error) throw b;
+    return { ok: true, status: 200, json: async () => b };
+  }) as unknown as typeof fetch;
+};
+
 const fetchFails = (async () => {
   throw new Error("network");
 }) as unknown as typeof fetch;
@@ -50,27 +61,23 @@ const fetchFails = (async () => {
 // ------------------------------------------------------------- dictionary --
 
 test("a definition is pulled out with its part of speech and example", () => {
-  const w = parseWord(DICT_OK, "ephemeral")!;
+  const w = parseWord(WIKT_OK, "ephemeral")!;
   assert.equal(w.word, "ephemeral");
-  assert.equal(w.phonetic, "/ɪˈfɛm(ə)ɹəl/", "the first NON-EMPTY phonetic, not the blank one");
   assert.equal(w.senses[0]!.partOfSpeech, "adjective");
   assert.match(w.senses[0]!.definition, /short period of time/);
   assert.equal(w.senses[0]!.example, "an ephemeral victory");
-  assert.match(w.source ?? "", /wiktionary/);
+  assert.match(w.source ?? "", /wiktionary/i);
 });
 
 test("a word with nine senses is trimmed to something reviewable", () => {
-  const many = [
-    {
-      word: "set",
-      meanings: [
-        {
-          partOfSpeech: "verb",
-          definitions: Array.from({ length: 9 }, (_, i) => ({ definition: `sense ${i}` })),
-        },
-      ],
-    },
-  ];
+  const many = {
+    en: [
+      {
+        partOfSpeech: "verb",
+        definitions: Array.from({ length: 9 }, (_, i) => ({ definition: `sense ${i}` })),
+      },
+    ],
+  };
   assert.equal(parseWord(many, "set")!.senses.length, 3);
 });
 
@@ -79,15 +86,30 @@ test("junk from the service produces nothing rather than a crash", () => {
   // a missing field must never write "undefined" into a log kept for years.
   assert.equal(parseWord(null, "x"), null);
   assert.equal(parseWord([], "x"), null);
-  assert.equal(parseWord({ title: "No Definitions Found" }, "x"), null);
-  assert.equal(parseWord([{ word: "x", meanings: [] }], "x"), null);
-  assert.equal(parseWord([{ meanings: [{ definitions: [{ definition: "  " }] }] }], "x"), null);
+  assert.equal(parseWord({ title: "Not Found" }, "x"), null);
+  assert.equal(parseWord({ en: [] }, "x"), null);
+  assert.equal(parseWord({ en: [{ definitions: [{ definition: "  " }] }] }, "x"), null);
 });
 
-test("a word with no phonetic simply has none", () => {
-  const w = parseWord([{ word: "x", meanings: [{ definitions: [{ definition: "a thing" }] }] }], "x")!;
+test("an entry with no part of speech simply has none", () => {
+  const w = parseWord({ en: [{ definitions: [{ definition: "a thing" }] }] }, "x")!;
   assert.equal(w.phonetic, undefined);
   assert.equal(w.senses[0]!.partOfSpeech, undefined);
+});
+
+test("a datamuse entry yields a sense from its pos-tab-def string", () => {
+  const w = parseDatamuse(DM_OK, "ephemeral")!;
+  assert.equal(w.word, "ephemeral");
+  assert.equal(w.senses[0]!.partOfSpeech, "adj");
+  assert.match(w.senses[0]!.definition, /Lasting for a very short time/);
+  assert.match(w.source ?? "", /Datamuse/);
+});
+
+test("datamuse junk produces nothing rather than a crash", () => {
+  assert.equal(parseDatamuse(null, "x"), null);
+  assert.equal(parseDatamuse([], "x"), null);
+  assert.equal(parseDatamuse([{ word: "x" }], "x"), null);
+  assert.equal(parseDatamuse([{ defs: [""] }], "x"), null);
 });
 
 test("an empty search is refused before the network is touched", async () => {
@@ -104,16 +126,28 @@ test("a lookup that fails tells you to type it in yourself", async () => {
   assert.match(r.ok === false ? r.reason : "", /Type it in instead/);
 });
 
-test("a word the dictionary does not have says so by name", async () => {
-  const r = await lookupWord("qwertyuiop", { fetch: fetchOf({ title: "No Definitions Found" }) });
+test("a word neither provider has says so by name", async () => {
+  const r = await lookupWord("qwertyuiop", { fetch: fetchOf({ title: "Not Found" }) });
   assert.equal(r.ok, false);
   assert.match(r.ok === false ? r.reason : "", /qwertyuiop/);
 });
 
 test("a good lookup comes back ready to store", async () => {
-  const r = await lookupWord("ephemeral", { fetch: fetchOf(DICT_OK) });
+  const r = await lookupWord("ephemeral", { fetch: fetchOf(WIKT_OK) });
   assert.equal(r.ok, true);
   if (r.ok) assert.equal(r.value.senses.length, 3);
+});
+
+test("when wiktionary has nothing, the datamuse fallback answers", async () => {
+  const r = await lookupWord("ephemeral", { fetch: fetchQueue({ title: "Not Found" }, DM_OK) });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.match(r.value.source ?? "", /Datamuse/);
+});
+
+test("when wiktionary is unreachable, the datamuse fallback answers", async () => {
+  const r = await lookupWord("ephemeral", { fetch: fetchQueue(new Error("network"), DM_OK) });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.match(r.value.source ?? "", /Datamuse/);
 });
 
 // ------------------------------------------------------------------ books --

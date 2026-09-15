@@ -747,10 +747,3 @@ function Spark({ points, className }: { points: number[]; className?: string }) 
     </svg>
   );
 }
-
-function startOfWeek(d: Date) {
-  const x = new Date(d);
-  const dow = x.getDay();
-  x.setDate(x.getDate() + (dow === 0 ? -6 : 1 - dow));
-  return x;
-}

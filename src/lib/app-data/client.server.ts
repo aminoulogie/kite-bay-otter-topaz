@@ -211,7 +211,10 @@ function tokenIdentityKey(token: string): string {
             .digest("base64url");
         }
       }
-    } catch {}
+      // A token that does not parse as a JWT is not an error worth surfacing
+      // here: fall through and hash the raw token, which is exactly what the
+      // caller below does.
+    } catch { /* fall through to hashing the raw token below */ }
   }
   return createHash("sha256").update(token).digest("base64url");
 }

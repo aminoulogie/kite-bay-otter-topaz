@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./glass.css";
 
 @theme {
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
@@ -349,6 +350,18 @@ html.soma-dragging * {
 }
 
 /*
+ * The reader answers a selection with its own bar, and iOS's native
+ * copy/define bubble parks itself over exactly that bar. Suppressing the
+ * callout leaves the selection alone — long-press still forms the range and
+ * still fires selectionchange, which is what opens the app's own menu — and
+ * removes the native menu that covered the app's buttons.
+ */
+.soma-epub,
+.soma-epub * {
+  -webkit-touch-callout: none;
+}
+
+/*
  * Belt and braces on the scroll.
  *
  * The touchmove listener in the drag hooks is what actually stops WebKit
@@ -360,6 +373,20 @@ html.soma-dragging * {
 html.soma-dragging body {
   touch-action: none;
   overscroll-behavior: contain;
+}
+
+/*
+ * Pin the chrome in place on iOS.
+ *
+ * Safari shows and hides its URL bar when the page overscrolls, and every
+ * show/hide moves what `position: fixed` means for a frame — the dock and the
+ * sticky header visibly hop. Refusing overscroll chaining at the root stops
+ * the browser from ever starting that dance, so the bottom bar stays pinned
+ * to the bottom and the header stays put. The app's own scrollers set
+ * overscroll-behavior themselves where they want a bounce of their own.
+ */
+html {
+  overscroll-behavior-y: none;
 }
 
 /*

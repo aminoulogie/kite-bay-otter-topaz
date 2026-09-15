@@ -44,6 +44,41 @@ a leak that appears after twenty minutes of use.
 - `prefers-reduced-motion` disables every animation wholesale rather than
   merely shortening it.
 
+## Liquid Glass & 120 Hz
+
+The Liquid Glass pass (`src/glass.css`, `src/lib/use-liquid-glass.ts`) was
+built around one rule: **the 120 Hz path is the compositor's, not the main
+thread's.** Every continuous animation is a transform or opacity; nothing
+continuous animates layout.
+
+What that means in practice:
+
+- **The dock and TopTabs pills slide with `translateX` (+ `scaleX` for
+  TopTabs, where tabs differ in width).** The old `width` transition pushed
+  layout through the main thread every frame; now the pill's width is set
+  once and only its transform animates, with `will-change: transform`.
+- **`Progress` fills by `scaleX`**, same reason. Width is always 100%; the
+  bar's visual scale is what changes.
+- **Backdrop blur is capped to hero surfaces** — header, dock, rail, overlay
+  scrims, sheet panels, full-screen sheets. One or two are composited at a
+  time. Cards, chips, buttons and inputs get the specular rim, sheen and
+  shadow only (no `backdrop-filter`), because twenty blurred cards would be
+  the 120fps budget by themselves.
+- **Sheet glass uses one blur on the scrim, not one per panel.** The panel
+  tints what the scrim already frosted, so nested backdrop filters — the
+  usual source of WebKit blur artifacts — cannot occur.
+- **Tilt parallax costs two composited moves per frame.** The hook publishes
+  two eased CSS variables on `<html>`; only the ambient backdrop layer and
+  its light spots consume them. The loop performs zero layout reads and
+  parks when the values settle, so a still phone costs zero frames.
+- **Reduced motion still stops everything**, including the parallax (the
+  variables are zeroed and the ambient layer is static).
+
+What was NOT re-measured: real frame rate on a ProMotion device. Same caveat
+as above — CSS animations and compositor transforms run at the display's
+refresh rate by construction, but the "120 Hz verified" claim still belongs
+to Safari's own Timeline on the phone.
+
 ## If it does get slow
 
 The first suspects, in order: the micro-muscle panel (recomputes an index

@@ -3,6 +3,7 @@ import { ArrowRight, Check, Moon } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { CoachBrief } from "@/components/CoachBrief";
 import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
+import { ProjectsCard } from "@/components/ProjectsCard";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
 import { HabitRings } from "@/components/HabitRings";
@@ -203,6 +204,7 @@ export function DashboardView() {
       <HabitRings key="habits" />
 
       <div key="todos"><TodoCard /></div>
+      <div key="projects"><ProjectsCard /></div>
       <div key="gap"><LogTheGap /></div>
       <Card key="correlate">
         <CardTitle>Across everything</CardTitle>

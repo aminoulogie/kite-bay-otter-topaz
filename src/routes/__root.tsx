@@ -9,7 +9,10 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      // interactive-widget=resizes-content: the layout viewport follows the
+      // keyboard instead of the keys drawing over fixed chrome — without it
+      // the dock and header jump when a field takes focus on Android.
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" },
       { title: APP_NAME },
       { name: "theme-color", content: "#0b0c10" },
       {

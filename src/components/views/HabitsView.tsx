@@ -36,7 +36,6 @@ export function HabitsView() {
   const toggleHabit = useSoma((s) => s.toggleHabit);
   const addHabit = useSoma((s) => s.addHabit);
   const removeHabit = useSoma((s) => s.removeHabit);
-  const setHabitSeconds = useSoma((s) => s.setHabitSeconds);
   const activeDate = useSoma((s) => s.activeDate);
 
   const [tab, setTab] = useState<HabitTab>("today");
