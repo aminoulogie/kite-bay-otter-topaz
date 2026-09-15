@@ -181,6 +181,9 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   // lives on one screen only.
   { id: "habits", label: "Habits", size: "2x4" },
   { id: "todos", label: "To-do", size: "2x4" },
+  // Next steps, not progress bars. Sits beside the to-do list because the two
+  // answer the same question at different scales — what could I pick up now.
+  { id: "projects", label: "Projects", size: "2x4" },
   { id: "gap", label: "Log the gap", size: "2x4" },
   { id: "correlate", label: "Across everything", size: "2x4" },
 ];
@@ -238,6 +241,8 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   projects: [
     { id: "header", label: "On the go", size: "2x4" },
     { id: "new", label: "Start something", size: "2x4" },
+    // A bar, not a card: one row, the same as Habits' Today/Matrix/Year.
+    { id: "filter", label: "Active / Paused / Done", size: "1x4" },
     { id: "list", label: "The projects", size: "2x4" },
   ],
   money: [
