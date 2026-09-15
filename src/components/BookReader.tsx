@@ -783,10 +783,34 @@ function EpubPages({
       const b = boxRef.current;
       const home = cornerPoint(c.corner, b);
       const from = foldAt_.current;
-      // Forward, "finished" is the corner carried a full page-width past the
-      // far edge; backward, it is the corner back where it started.
-      const done = c.forward ? { x: home.x - 2 * b.w, y: from.y } : { x: home.x, y: from.y };
-      const back = c.forward ? { x: home.x, y: home.y } : { x: home.x - 2 * b.w, y: from.y };
+      // Where the corner is going, and the y matters as much as the x.
+      //
+      // It used to settle along the row the finger happened to be on, and
+      // that meant the crease finished TILTED — so it never actually left the
+      // page. Measured on a 353x736 page released halfway up: a completed
+      // forward turn still had seventeen per cent of the page lying flat,
+      // still showing the page you were leaving, and a completed backward
+      // turn had the arriving page covering only ninety-one per cent of the
+      // screen. The animation ran out with the fold still on, and the last
+      // sixth of the turn happened in one step when the fold was taken away.
+      // That is the cut at the end of a curl.
+      //
+      // Both ends now run to the corner's own row, where the crease is
+      // square to the page: carried past the far edge it leaves the page
+      // altogether, and brought home it shrinks to nothing against the
+      // corner. Either way the last frame of the animation is the first
+      // frame of the settled page, and there is nothing left to take away.
+      //
+      // The extra fifth of a width is what puts the crease properly OFF the
+      // edge rather than exactly on it, so nothing of the old page survives
+      // as a hairline.
+      const away = { x: home.x - 2.2 * b.w, y: home.y };
+      // A hair short of the corner: at the corner exactly, the crease is the
+      // bisector of a point and itself, which is not a line, and the frame
+      // would paint nothing and leave the one before it on screen.
+      const landed = { x: home.x, y: home.y - Math.sign(home.y || -1) * 0.5 };
+      const done = c.forward ? away : landed;
+      const back = c.forward ? landed : away;
       const to = commit ? done : back;
       const began = performance.now();
       const run = (now: number) => {
