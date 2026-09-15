@@ -699,9 +699,16 @@ select,
   text-rendering: optimizeLegibility;
   -webkit-hyphens: auto;
   hyphens: auto;
-  /* A tap on the page turns it; a press-and-hold still selects, which is how
-     a word gets into the word book. Without this, iOS offers to select a
-     whole paragraph on every tap near text. */
+  /* The book does its own selecting, and this is why.
+     iOS puts its own edit menu over ANY native selection — Copy, Look Up,
+     Translate — and no page can suppress or move it. A reader that shows its
+     own bar over a selected word therefore shows two bars, one on top of the
+     other, and the one underneath is the one with Highlight in it. So the
+     text is not selectable at all: a press-and-hold picks the word under the
+     finger, the book draws it, and the only menu is the book's.
+     See lib/pick-word.ts. */
+  -webkit-user-select: none;
+  user-select: none;
   -webkit-touch-callout: none;
 }
 

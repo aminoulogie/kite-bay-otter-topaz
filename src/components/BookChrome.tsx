@@ -482,8 +482,16 @@ export const PageScrubber = memo(function PageScrubber({
   const scrubTo = useRef(onPick);
   scrubTo.current = onPick;
 
-  /** Pill-sized: tall enough to read as pages, short enough to float. */
-  const HEIGHT = 56;
+  /**
+   * Page-sized, not chip-sized.
+   *
+   * At fifty-six pixels these read as a row of grey ticks. What makes the
+   * native scrubber legible is that the thumbnails are PAGES: tall, portrait,
+   * with white space around them, and the one you are on standing a little
+   * proud of the rest. Eighty-eight is the height where a column of miniature
+   * text stops being a smudge and starts being a page.
+   */
+  const HEIGHT = 88;
   const scale = box.h ? HEIGHT / box.h : 0.1;
   const cardW = Math.max(16, Math.round(box.w * scale));
   const gapW = Math.max(3, Math.round(PAGE_GAP * scale));
@@ -529,11 +537,11 @@ export const PageScrubber = memo(function PageScrubber({
 
   return (
     <div className="pointer-events-auto mx-auto mb-2 w-fit max-w-full">
-      <div className="rounded-full px-2.5 py-2" style={readerGlass(theme)}>
+      <div className="rounded-[26px] px-3 py-2.5" style={readerGlass(theme)}>
         <div
           ref={rail}
           className="overflow-x-auto overscroll-x-contain"
-          style={{ scrollbarWidth: "none", maxWidth: "min(76vw, 330px)" }}
+          style={{ scrollbarWidth: "none", maxWidth: "min(84vw, 344px)" }}
           onPointerDown={onDown}
           onPointerMove={onMove}
           onPointerUp={endScrub}
@@ -546,8 +554,11 @@ export const PageScrubber = memo(function PageScrubber({
               <span
                 key={`p${i}`}
                 aria-hidden
-                className="absolute top-0 block rounded-[4px]"
-                style={{ left: i * stride, width: cardW, height: HEIGHT, background: theme.bg }}
+                className="absolute top-0 block rounded-[4px] transition-transform duration-150"
+                style={{
+                  left: i * stride, width: cardW, height: HEIGHT, background: theme.bg,
+                  transform: i === page ? "scale(1.14)" : "none",
+                }}
               />
             ))}
 
@@ -603,17 +614,25 @@ export const PageScrubber = memo(function PageScrubber({
                 aria-label={`Page ${i + 1}`}
                 aria-current={i === page}
                 onClick={() => onPick(i)}
-                className="absolute top-0 rounded-[4px]"
+                className="absolute top-0 rounded-[4px] transition-transform duration-150"
                 style={{
                   left: i * stride,
                   width: cardW,
                   height: HEIGHT,
+                  // The page you are on stands proud of the row and the rest
+                  // stay flat and held back. That difference is the whole
+                  // readability of the strip: you find where you are without
+                  // reading a single one of them.
+                  transform: i === page ? "scale(1.14)" : "none",
                   boxShadow:
-                    i === page ? `0 0 0 2px ${theme.fg}` : `0 0 0 1px ${theme.fg}26`,
+                    i === page
+                      ? `0 0 0 2px ${theme.fg}, 0 4px 12px rgba(0,0,0,0.45)`
+                      : `0 0 0 0.5px ${theme.fg}22`,
                   background:
                     i === page
                       ? "transparent"
-                      : theme.dark ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.32)",
+                      : theme.dark ? "rgba(0,0,0,0.46)" : "rgba(255,255,255,0.4)",
+                  zIndex: i === page ? 2 : 1,
                 }}
               />
             ))}

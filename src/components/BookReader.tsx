@@ -15,7 +15,7 @@ import {
 } from "@/lib/marks";
 import { WordMenu, type Pick } from "@/components/WordMenu";
 import {
-  ContentsSheet, ChapterRail, MarksSheet, PageScrubber, SearchSheet, TopPills,
+  ContentsSheet, MarksSheet, PageScrubber, SearchSheet, TopPills,
 } from "@/components/BookChrome";
 import { LANGUAGES, defaultLanguage, isLanguage } from "@/lib/translate";
 import {
@@ -35,6 +35,7 @@ import { getLocalDateKey } from "@/lib/soma";
 import { useScrollLock } from "@/lib/use-sheet";
 import { useSoma } from "@/lib/store";
 import { capture, cleanSelection, isSelectable } from "@/lib/word-capture";
+import { caretAt, spanUnion, wordBounds } from "@/lib/pick-word";
 import { cn } from "@/lib/utils";
 import type { MindEntry } from "@/lib/types";
 
@@ -329,16 +330,11 @@ export function BookReader({
             onScrub={setScrubbing}
           />
         )}
-        {/* Jump between chapters. Only for an EPUB: a PDF has no chapters to
-            name, and its pages are the table of contents. */}
-        {epub && chrome && index.titles.length > 1 && (
-          <ChapterRail
-            theme={theme}
-            titles={index.titles}
-            current={at - 1}
-            onPick={(i) => goTo({ chapter: i })}
-          />
-        )}
+        {/* No chapter chips under the scrubber. They were a second row of
+            controls saying what the line below already says and what the
+            contents button already does properly, and stacked under the
+            filmstrip and over the progress bar they turned the foot of the
+            page into four bands of furniture. One strip, one line, one bar. */}
         <div
           className="mb-2 h-[3px] w-full overflow-hidden rounded-full"
           style={{ background: `${theme.fg}22` }}
@@ -1758,9 +1754,14 @@ function ReadingSurface({
   const drag = useRef<
     {
       x: number; y: number; turning: boolean; at: number; lastX: number; vx: number;
-      held: boolean;
+      held: boolean; picking: boolean;
     } | null
   >(null);
+  /** The press-and-hold timer, cancelled by movement or by letting go. */
+  const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (hold.current) clearTimeout(hold.current);
+  }, []);
   const [lines, setLines] = useState<Rect[]>([]);
   const [line, setLine] = useState(0);
   /** Set when a page is entered backwards, so it opens on its last line. */
@@ -1786,16 +1787,42 @@ function ReadingSurface({
   /** A translation fetched before the word was kept, so keeping it carries it. */
   const gotTranslation = useRef<{ text: string; to: string } | null>(null);
 
-  useEffect(() => {
-    const offer = () => {
-      const sel = document.getSelection();
+  /** The span the finger has picked out, in characters into the chapter. */
+  const [held, setHeld] = useState<{ start: number; end: number } | null>(null);
+  const holdFrom = useRef<{ start: number; end: number } | null>(null);
+
+  /**
+   * The word under a point on the page, as characters into the chapter.
+   *
+   * Goes through the caret rather than through a selection, because the whole
+   * purpose of this is never to make a selection — see lib/pick-word.ts for
+   * why iOS leaves no other way to own the menu over a word.
+   */
+  const wordUnder = useCallback(
+    (clientX: number, clientY: number) => {
+      const host = columnRef.current;
+      if (!host) return null;
+      const caret = caretAt(clientX, clientY);
+      if (!caret || caret.node.nodeType !== Node.TEXT_NODE) return null;
+      if (!host.contains(caret.node)) return null;
+      const text = caret.node.textContent ?? "";
+      const within = wordBounds(text, caret.offset);
+      if (!within) return null;
+      const base = charOffset(host, caret.node, 0);
+      return { start: base + within.start, end: base + within.end };
+    },
+    [columnRef],
+  );
+
+  /** Put the menu over whatever is currently held. */
+  const offerHeld = useCallback(
+    (span: { start: number; end: number }) => {
       const host = columnRef.current;
       const port = viewportRef.current;
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !host || !port) return;
-      const range = sel.getRangeAt(0);
-      if (!host.contains(range.commonAncestorContainer)) return;
-
-      const raw = sel.toString();
+      if (!host || !port) return;
+      const range = rangeOf(host, span.start, span.end);
+      if (!range) return;
+      const raw = range.toString();
       if (!isSelectable(raw)) return;
       const block =
         range.startContainer.parentElement?.closest("p, li, blockquote, h1, h2, h3, div")
@@ -1805,13 +1832,8 @@ function ReadingSurface({
       // A sentence is not a word and is exactly what you highlight.
       const got = capture(raw, block);
       const text = cleanSelection(raw);
-
       const r = range.getBoundingClientRect();
       const view = port.getBoundingClientRect();
-      const a = charOffset(host, range.startContainer, range.startOffset);
-      const b = charOffset(host, range.endContainer, range.endOffset);
-      const start = Math.min(a, b);
-      const end = Math.max(a, b);
       gotTranslation.current = null;
       setKept(
         !!got &&
@@ -1827,34 +1849,86 @@ function ReadingSurface({
         example: got?.example,
         word: !!got,
         at: { x: r.left - view.left, y: r.top - view.top, w: r.width, h: r.height },
-        start,
-        end,
-        mark: markAt(marks, chapter, start),
+        start: span.start,
+        end: span.end,
+        mark: markAt(marks, chapter, span.start),
       });
-    };
+    },
+    [columnRef, viewportRef, marks, chapter],
+  );
 
-    // `selectionchange` fires on every pixel the handle moves. Offering on
-    // each of them would put the menu under the handle you are still dragging,
-    // so it waits for the selection to stop moving.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const onChange = () => {
-      if (timer) clearTimeout(timer);
-      const sel = document.getSelection();
-      if (!sel || sel.isCollapsed) {
-        setPick(null);
-        return;
-      }
-      timer = setTimeout(offer, 320);
-    };
-    document.addEventListener("selectionchange", onChange);
-    return () => {
-      if (timer) clearTimeout(timer);
-      document.removeEventListener("selectionchange", onChange);
-    };
-  }, [columnRef, viewportRef, marks, chapter]);
+  /**
+   * Press and hold to pick a word; keep holding and drag to take in more.
+   *
+   * The press is what starts it, not a tap — a tap turns the page, and the two
+   * must never be the same gesture. Holding still for a third of a second is
+   * the signal, which is the same one iOS uses for its own selection and
+   * therefore the one a thumb already knows.
+   */
+  const onHold = useCallback(
+    (clientX: number, clientY: number) => {
+      const w = wordUnder(clientX, clientY);
+      if (!w) return false;
+      holdFrom.current = w;
+      setHeld(w);
+      offerHeld(w);
+      return true;
+    },
+    [wordUnder, offerHeld],
+  );
+
+  /**
+   * The picked word, drawn.
+   *
+   * The browser is not selecting anything, so nothing is highlighted unless
+   * the book highlights it. One stroke per line, in the paper's own mark
+   * colour, positioned against the viewport exactly as the line-focus overlay
+   * is — and recomputed whenever the span changes, which while a finger is
+   * dragging is every few words.
+   */
+  const [holdRects, setHoldRects] = useState<Row[]>([]);
+  useEffect(() => {
+    const host = columnRef.current;
+    const port = viewportRef.current;
+    if (!held || !host || !port) {
+      setHoldRects([]);
+      return;
+    }
+    const range = rangeOf(host, held.start, held.end);
+    if (!range) {
+      setHoldRects([]);
+      return;
+    }
+    const view = port.getBoundingClientRect();
+    setHoldRects(
+      rowsOf(
+        Array.from(range.getClientRects()).map((r) => ({
+          x: r.left - view.left,
+          y: r.top - view.top,
+          w: r.width,
+          h: r.height,
+        })),
+        1.5,
+      ),
+    );
+  }, [held, columnRef, viewportRef, page]);
+
+  const onHoldMove = useCallback(
+    (clientX: number, clientY: number) => {
+      const from = holdFrom.current;
+      if (!from) return;
+      const w = wordUnder(clientX, clientY);
+      if (!w) return;
+      const span = spanUnion(from, w);
+      setHeld((cur) => (cur && cur.start === span.start && cur.end === span.end ? cur : span));
+      offerHeld(span);
+    },
+    [wordUnder, offerHeld],
+  );
 
   const done = useCallback(() => {
-    document.getSelection()?.removeAllRanges();
+    holdFrom.current = null;
+    setHeld(null);
     setPick(null);
   }, []);
 
@@ -2034,9 +2108,27 @@ function ReadingSurface({
   );
 
   const onPointerDown = (e: React.PointerEvent) => {
+    // Press and hold to pick a word. A third of a second is the same signal
+    // iOS uses for its own selection, so it is the one a thumb already knows
+    // — and it is long enough that a tap to turn the page never trips it.
+    if (hold.current) clearTimeout(hold.current);
+    const hx = e.clientX;
+    const hy = e.clientY;
+    hold.current = setTimeout(() => {
+      hold.current = null;
+      const d = drag.current;
+      // Only if the finger actually stayed still. A swipe that happens to
+      // last a third of a second is a swipe.
+      if (!d || d.turning || d.held) return;
+      if (Math.abs(d.lastX - d.x) > 8) return;
+      if (onHold(hx, hy)) {
+        d.held = true;
+        d.picking = true;
+      }
+    }, 320);
     drag.current = {
       x: e.clientX, y: e.clientY, turning: false,
-      at: e.timeStamp, lastX: e.clientX, vx: 0,
+      at: e.timeStamp, lastX: e.clientX, vx: 0, picking: false,
       // Was there already something selected when this gesture began?
       //
       // If there was, the gesture belongs to the SELECTION — on a phone that
@@ -2079,8 +2171,18 @@ function ReadingSurface({
       d.at = e.timeStamp;
       d.lastX = e.clientX;
     }
+    // Once a word is held, the finger is choosing words, not turning pages.
+    if (d.picking) {
+      onHoldMove(e.clientX, e.clientY);
+      return;
+    }
     // A gesture that began on a selection stays with the selection.
     if (d.held) return;
+    // Moved far enough to be a swipe: it is not a press any more.
+    if (hold.current && Math.hypot(dx, dy) > 8) {
+      clearTimeout(hold.current);
+      hold.current = null;
+    }
     if (!d.turning && isTurning(dx, dy, box.w || 1, paged)) d.turning = true;
     if (!d.turning) return;
     document.getSelection()?.removeAllRanges();
@@ -2099,12 +2201,16 @@ function ReadingSurface({
   };
 
   const onPointerCancel = () => {
+    if (hold.current) clearTimeout(hold.current);
+    hold.current = null;
     // iOS taking the gesture over for its own selection handles.
     drag.current = null;
     onDrag?.(null);
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
+    if (hold.current) clearTimeout(hold.current);
+    hold.current = null;
     const from = drag.current;
     drag.current = null;
     // Stale speed is worse than none: a finger held still for a moment before
@@ -2269,6 +2375,18 @@ function ReadingSurface({
             />
           </>
         )}
+
+        {/* The word you are holding. Not a selection — the book's own mark,
+            because the browser has been told this text is not selectable and
+            therefore draws nothing at all. */}
+        {holdRects.map((r, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className="pointer-events-none absolute block rounded-[3px]"
+            style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: theme.mark }}
+          />
+        ))}
 
         {pick && (
           <WordMenu
