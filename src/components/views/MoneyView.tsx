@@ -12,6 +12,8 @@ import {
 import { getLocalDateKey } from "@/lib/soma";
 import { RowEditSheet } from "@/components/RowEditSheet";
 import { numOf, textOf } from "@/lib/row-edit";
+import { TopTabs } from "@/components/TopTabs";
+import { TradingView } from "@/components/views/TradingView";
 import { WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -25,7 +27,33 @@ import type { LedgerEntry } from "@/lib/types";
  * the Spend/Income switch — asking someone to type a minus sign is asking for
  * a month of sign errors.
  */
+/**
+ * The two pages behind this tab.
+ *
+ * Spending and trading are both money and they are not the same job: one is a
+ * diary of what left the account, the other is a rulebook with a gate on it.
+ * Putting the trading cards on the spending page would mean scrolling past the
+ * grocery list to reach a checklist that is meant to be read in the ninety
+ * seconds before a click.
+ */
+const PAGES = [
+  { id: "spend", label: "Spending" },
+  { id: "trade", label: "Trading" },
+] as const;
+
+type Page = (typeof PAGES)[number]["id"];
+
 export function MoneyView() {
+  const [page, setPage] = useState<Page>("spend");
+  return (
+    <>
+      <TopTabs tabs={PAGES} value={page} onChange={setPage} className="mb-3" />
+      {page === "spend" ? <SpendingView /> : <TradingView />}
+    </>
+  );
+}
+
+function SpendingView() {
   const ledger = useSoma((s) => s.ledger);
   const addLedger = useSoma((s) => s.addLedger);
   const updateLedger = useSoma((s) => s.updateLedger);

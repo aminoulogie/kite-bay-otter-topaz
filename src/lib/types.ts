@@ -324,6 +324,16 @@ export interface Settings {
   /** Spending categories. Unset means the shipped defaults. */
   spendCategories?: string[];
   /**
+   * The trading account balance, in dollars.
+   *
+   * Typed in rather than derived from the trade log: the broker account is a
+   * separate pot from the spending ledger, deposits and withdrawals happen
+   * outside this app, and every risk rule is a percentage OF THIS NUMBER. A
+   * figure this app inferred would be wrong the first time money moved, and
+   * wrong in the direction of allowing bigger positions.
+   */
+  tradingEquity?: number;
+  /**
    * Which way you are eating. Decides whether hunger costs points: on a cut it
    * is the deficit working, on a bulk it means the surplus did not happen.
    */
