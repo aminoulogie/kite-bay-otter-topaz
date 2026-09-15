@@ -358,13 +358,24 @@ export function MarksSheet({
 /**
  * The chapter, small, to thumb through.
  *
- * One copy of the text, scaled down, scrolling sideways — not one thumbnail
- * per page. The obvious build is a row of little page pictures, and on a
- * twenty-eight page chapter that is twenty-eight more copies of the chapter
- * in the document, laid out and rastered, to draw a strip ninety pixels tall.
- * The strip is already ONE element that holds every page side by side, which
- * is precisely the shape of a filmstrip: scale it, put it in a scroller, and
- * the pages are there because the column gaps already put them there.
+ * A MINIATURE, not a photograph of the real thing shrunk. The obvious build
+ * is to take the strip the reader already has — every page of the chapter
+ * side by side — and put `transform: scale(0.12)` on it. It works on a
+ * desktop and it is blank on a phone, which is the worst kind of wrong.
+ *
+ * A transform does not change what the browser rasterises: it lays the
+ * element out at full size, draws it at full size, and scales the result. The
+ * strip is eleven thousand CSS pixels wide, which on a three-times screen is
+ * thirty-three thousand device pixels — several times WebKit's maximum
+ * texture size. Over that limit it does not draw a smaller version, it draws
+ * nothing.
+ *
+ * So the chapter is laid out AGAIN at a twelfth of the type size, in a twelfth
+ * of the box, with a twelfth of the gap. Geometrically similar, so the lines
+ * break in nearly the same places and the pages hold nearly the same words —
+ * and the whole strip is thirteen hundred pixels wide, which any phone can
+ * draw. The text comes out about two pixels tall, which is what a thumbnail
+ * is: not words, the shape of words on a page.
  */
 export const PageRail = memo(function PageRail({
   theme, prefs, html, label, box, pages, page, onPick,
@@ -383,8 +394,8 @@ export const PageRail = memo(function PageRail({
   /** Tall enough to read as a page, short enough to leave the book room. */
   const HEIGHT = 92;
   const scale = box.h ? HEIGHT / box.h : 0.12;
-  const cardW = Math.max(18, box.w * scale);
-  const gapW = PAGE_GAP * scale;
+  const cardW = Math.max(18, Math.round(box.w * scale));
+  const gapW = Math.max(3, Math.round(PAGE_GAP * scale));
   const stride = cardW + gapW;
 
   // Keep the page you are on in view, without fighting a finger that is
@@ -403,7 +414,12 @@ export const PageRail = memo(function PageRail({
       ref={rail}
       className="pointer-events-auto mx-auto mb-2 max-w-full overflow-x-auto overscroll-x-contain rounded-2xl px-3 py-2"
       style={{
-        background: theme.dark ? "rgba(40,40,44,0.92)" : "rgba(240,238,232,0.94)",
+        background: theme.dark ? "rgba(70,70,76,0.55)" : "rgba(250,249,246,0.62)",
+        backdropFilter: "blur(24px) saturate(180%)",
+        WebkitBackdropFilter: "blur(24px) saturate(180%)",
+        boxShadow: theme.dark
+          ? "inset 0 0.5px 0 rgba(255,255,255,0.20), 0 6px 20px rgba(0,0,0,0.42)"
+          : "inset 0 0.5px 0 rgba(255,255,255,0.9), 0 6px 20px rgba(0,0,0,0.16)",
         scrollbarWidth: "none",
       }}
       // The rail scrolls sideways and nothing else; letting the browser treat
@@ -412,10 +428,8 @@ export const PageRail = memo(function PageRail({
     >
       <div className="relative" style={{ height: HEIGHT, width: stride * pages - gapW }}>
         {/* Paper, one piece per page, under everything.
-            Without it the filmstrip is text floating on the rail's own colour
-            and reads as a smudge rather than as pages: what makes a thumbnail
-            legible at an eighth of its size is not the words, which are two
-            pixels tall, but the RECTANGLE they sit on. */}
+            What makes a thumbnail legible at a twelfth of its size is not the
+            words — they are two pixels tall — but the rectangle they sit on. */}
         {Array.from({ length: pages }, (_, i) => (
           <span
             key={`p${i}`}
@@ -425,25 +439,28 @@ export const PageRail = memo(function PageRail({
           />
         ))}
 
-        {/* The chapter itself, once, shrunk. `zoom` would be simpler and is
-            not the same thing: a transform does not re-lay-out the text, so
-            every page in here breaks exactly where it breaks in the book. */}
+        {/* The chapter, set small. Same columns, same proportions, a twelfth
+            of everything — so the pages here are the pages there. */}
         <div
           aria-hidden
-          className="absolute left-0 top-0 origin-top-left overflow-hidden"
-          style={{ width: box.w * pages + PAGE_GAP * pages, height: box.h, transform: `scale(${scale})` }}
+          className="absolute left-0 top-0 overflow-hidden"
+          style={{ width: stride * pages - gapW, height: HEIGHT }}
         >
           <div
             className="soma-epub"
             style={{
               fontFamily: fontStack(prefs.font),
-              fontSize: `${prefs.size}px`,
+              fontSize: `${prefs.size * scale}px`,
               lineHeight: prefs.lineHeight,
               color: theme.fg,
-              height: `${box.h}px`,
-              columnWidth: `${box.w}px`,
-              columnGap: `${PAGE_GAP}px`,
+              height: `${HEIGHT}px`,
+              columnWidth: `${cardW}px`,
+              columnGap: `${gapW}px`,
               columnFill: "auto",
+              // iOS inflates small text in narrow columns unless told not to,
+              // which would break every page boundary in the strip.
+              WebkitTextSizeAdjust: "none",
+              textSizeAdjust: "none",
             }}
           >
             {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}
@@ -494,9 +511,25 @@ export function TopPills({
   onSearch: () => void;
   onKept: () => void;
 }) {
-  const pill = {
-    background: theme.dark ? "rgba(58,58,62,0.82)" : "rgba(236,234,228,0.88)",
+  // Glass, properly.
+  //
+  // A flat translucent fill is not glass, it is a grey box you can half see
+  // through — which is what this was. Real glass does three things at once
+  // and needs all three: it BLURS what is behind it, it SATURATES it so the
+  // colour underneath still reads through, and it catches a highlight along
+  // its top edge where the light lands. The hairline ring is the edge of the
+  // pane; the shadow is it floating above the page rather than printed on it.
+  //
+  // `-webkit-backdrop-filter` is written out because Safari still wants it,
+  // and Safari is the only browser this ever runs in.
+  const pill: React.CSSProperties = {
+    background: theme.dark ? "rgba(70,70,76,0.55)" : "rgba(250,249,246,0.62)",
+    backdropFilter: "blur(24px) saturate(180%)",
+    WebkitBackdropFilter: "blur(24px) saturate(180%)",
     color: theme.fg,
+    boxShadow: theme.dark
+      ? "inset 0 0.5px 0 rgba(255,255,255,0.22), inset 0 0 0 0.5px rgba(255,255,255,0.10), 0 6px 20px rgba(0,0,0,0.42)"
+      : "inset 0 0.5px 0 rgba(255,255,255,0.9), inset 0 0 0 0.5px rgba(0,0,0,0.07), 0 6px 20px rgba(0,0,0,0.16)",
   };
   const Btn = ({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) => (
     <button
@@ -517,7 +550,7 @@ export function TopPills({
       )}
     >
       <div
-        className={cn("flex items-center rounded-full px-1 backdrop-blur-xl", show && "pointer-events-auto")}
+        className={cn("flex items-center rounded-full px-1", show && "pointer-events-auto")}
         style={pill}
       >
         <Btn label="Back to the shelf" onClick={onBack}>
@@ -528,7 +561,7 @@ export function TopPills({
         </Btn>
       </div>
       <div
-        className={cn("flex items-center rounded-full px-1 backdrop-blur-xl", show && "pointer-events-auto")}
+        className={cn("flex items-center rounded-full px-1", show && "pointer-events-auto")}
         style={pill}
       >
         <Btn label="Type and theme" onClick={onType}>

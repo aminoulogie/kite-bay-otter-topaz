@@ -1723,7 +1723,10 @@ function ReadingSurface({
   const atBookEnd = page === pages - 1 && atEnd;
 
   const drag = useRef<
-    { x: number; y: number; turning: boolean; at: number; lastX: number; vx: number } | null
+    {
+      x: number; y: number; turning: boolean; at: number; lastX: number; vx: number;
+      held: boolean;
+    } | null
   >(null);
   const [lines, setLines] = useState<Rect[]>([]);
   const [line, setLine] = useState(0);
@@ -2001,6 +2004,17 @@ function ReadingSurface({
     drag.current = {
       x: e.clientX, y: e.clientY, turning: false,
       at: e.timeStamp, lastX: e.clientX, vx: 0,
+      // Was there already something selected when this gesture began?
+      //
+      // If there was, the gesture belongs to the SELECTION — on a phone that
+      // is a finger on one of the two handles, dragging it to take in another
+      // word. It is not a page turn and must not be treated as one, and this
+      // is the bug that made the whole selection menu unusable on a phone:
+      // the turn threshold is fourteen pixels, a handle moves further than
+      // that immediately, and the first thing a turn does is clear the
+      // selection. So the menu appeared and vanished, over and over, and
+      // nothing in it could be pressed.
+      held: !(document.getSelection()?.isCollapsed ?? true),
     };
   };
 
@@ -2032,6 +2046,8 @@ function ReadingSurface({
       d.at = e.timeStamp;
       d.lastX = e.clientX;
     }
+    // A gesture that began on a selection stays with the selection.
+    if (d.held) return;
     if (!d.turning && isTurning(dx, dy, box.w || 1, paged)) d.turning = true;
     if (!d.turning) return;
     document.getSelection()?.removeAllRanges();
@@ -2063,6 +2079,9 @@ function ReadingSurface({
     const still = from && e.timeStamp - from.at > 90;
     const folded = onDrag?.(null, still ? 0 : (from?.vx ?? 0));
     if (!from) return;
+    // Letting go of a selection handle is not a tap on the page: it must not
+    // turn a page, show the bars, or move the lit line.
+    if (from.held) return;
     // A fold is already on its way somewhere; a second opinion about the same
     // gesture would turn two pages. `folded` is the fold answering for itself
     // on this event; `folding` is the same fact a render later, and is kept
@@ -2225,7 +2244,6 @@ function ReadingSurface({
             box={box}
             translateTo={translateTo}
             saved={kept}
-            onClose={done}
             onCopy={copyPick}
             onMark={(colour) => {
               onMark({ start: pick.start, end: pick.end, colour, text: pick.text });
