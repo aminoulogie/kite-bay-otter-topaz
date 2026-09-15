@@ -693,20 +693,23 @@ function EpubPages({
    * when a page turns, which is the trade worth making: a chapter opens once
    * and its pages turn forty times.
    *
-   * They still lag a frame behind a COMPLETED turn, so finishing a fold does
-   * not repaint three pages of text on one frame.
+   * Which pages they hold is derived, not scheduled. It used to be state
+   * updated a frame after a turn, on the theory that the spares should not be
+   * repainted on the frame the page changes — and that made them WRONG for a
+   * frame or two after every turn. Swipe twice in quick succession and the
+   * second fold opened onto the page you had just left, which then swapped
+   * for the right one when the turn finished.
+   *
+   * There is nothing to spread out any more: repointing a spare is a
+   * transform, and since the chapter stopped being re-parsed on every render
+   * that costs a composite rather than a layout. So they simply follow the
+   * page — except while a fold is up, where they are pinned to the page the
+   * fold STARTED from. The page underneath changes one frame before the fold
+   * is let go of, and following it there would swap the revealed text while
+   * the reader is looking straight at it.
    */
-  const [neighbours, setNeighbours] = useState({ next: page + 1, prev: page - 1 });
-  useEffect(() => {
-    // Never while a fold is up. The last act of a turn is to stand one of
-    // these spares in front of the column and let the column catch up behind
-    // it; re-pointing it at a new page mid-cover would put the wrong page on
-    // screen for a frame, which is the one thing the cover exists to stop.
-    if (curl) return;
-    if (neighbours.next === page + 1 && neighbours.prev === page - 1) return;
-    const id = requestAnimationFrame(() => setNeighbours({ next: page + 1, prev: page - 1 }));
-    return () => cancelAnimationFrame(id);
-  }, [page, neighbours, curl]);
+  const held = curl ? curl.from : page;
+  const neighbours = { next: held + 1, prev: held - 1 };
 
   /**
    * One frame of the fold, straight onto the DOM.
@@ -738,12 +741,25 @@ function EpubPages({
     [],
   );
 
-  /** Bring the flap in or out, again without a render. */
+  /**
+   * Bring the flap in or out, and say which spare the fold is uncovering.
+   *
+   * Both spares are opaque and both sit under the page you are reading, so
+   * only their order decides which one a fold reveals — and left at the same
+   * z-index, order means DOM order, which put the PREVIOUS page on top. So
+   * turning forward peeled the page back to reveal the page before it, and
+   * the text only became the next page when the turn finished and the real
+   * column moved. That is the swap at the end of a curl: not a page arriving
+   * late, a page that was never the right one.
+   *
+   * Going back, the page arriving lies OVER the one you are on, so it goes
+   * above the column; going forward, the page revealed lies under it, so it
+   * goes above the other spare and below the column — which is clipped to the
+   * unfolded part, and so lets it through exactly where the paper has lifted.
+   */
   const showFold = useCallback((on: boolean, forward: boolean) => {
     if (flapOuter.current) flapOuter.current.style.visibility = on ? "visible" : "hidden";
-    // Going back, the page arriving lies OVER the one you are on; going
-    // forward, the page revealed lies under it. z-index is the one way of
-    // saying that which costs a composite rather than a repaint.
+    if (nextSheet.current) nextSheet.current.style.zIndex = on && forward ? "1" : "0";
     if (prevSheet.current) {
       prevSheet.current.style.zIndex = on && !forward ? "2" : "0";
       if (!on || forward) prevSheet.current.style.clipPath = "";
