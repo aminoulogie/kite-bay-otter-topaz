@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ==========================================================================
 // Local-time date helpers. Everything is keyed YYYY-MM-DD in LOCAL time so a
 // session logged at 11pm never lands on the wrong day via UTC.
@@ -11,25 +10,25 @@ function getLocalDateKey(dateObj = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
-function parseLocalDateKey(dateKeyStr) {
+function parseLocalDateKey(dateKeyStr: string) {
   if (!dateKeyStr || typeof dateKeyStr !== "string") return new Date();
   const parts = dateKeyStr.split("-").map(Number);
   if (parts.length < 3 || isNaN(parts[0])) return new Date();
   return new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
 }
 
-function addDays(date, days) {
+function addDays(date: Date, days: number) {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
 }
 
-function formatDateLong(dateStr) {
+function formatDateLong(dateStr: string) {
   const d = parseLocalDateKey(dateStr);
   return d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 }
 
-function formatTimeShort(ts) {
+function formatTimeShort(ts: number | string) {
   if (!ts) return "";
   return new Date(ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }

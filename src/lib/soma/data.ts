@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ==========================================================================
 // Seed databases: nutrition goals, the food and exercise libraries, and the
 // built-in routines.
