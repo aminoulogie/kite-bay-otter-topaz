@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Languages, Loader2, Search } from "lucide-react";
+import { Languages, Loader2, Search, Star } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,9 @@ import { lookupWord, type WordLookup } from "@/lib/lookup";
 import { getLocalDateKey } from "@/lib/soma";
 import { RowEditSheet } from "@/components/RowEditSheet";
 import { textOf } from "@/lib/row-edit";
+import { languageLabel } from "@/lib/translate";
 import { useSoma } from "@/lib/store";
+import { cn } from "@/lib/utils";
 import type { MindEntry } from "@/lib/types";
 
 /**
@@ -55,7 +57,12 @@ export function WordBook() {
     () =>
       mind
         .filter((m) => m.kind === "language" && !!m.title)
-        .sort((a, b) => (a.date < b.date ? 1 : -1))
+        // Starred first, then newest. A favourite is the word you went looking
+        // for, and a list that buries it under a fortnight of new ones is a
+        // list you have to search to use.
+        .sort((a, b) =>
+          a.favourite === b.favourite ? (a.date < b.date ? 1 : -1) : a.favourite ? -1 : 1,
+        )
         .slice(0, 20),
     [mind],
   );
@@ -220,6 +227,23 @@ export function WordBook() {
             >
               <div className="rounded-xl border border-border bg-surface-2 px-3 py-2">
                 <div className="flex items-baseline gap-2">
+                  {/* The star is a button, not a badge: the place you notice a
+                      word matters is the list, so that is where you should be
+                      able to say so. */}
+                  <button
+                    type="button"
+                    aria-label={w.favourite ? `Unkeep ${w.title}` : `Keep ${w.title}`}
+                    aria-pressed={!!w.favourite}
+                    onClick={() => updateMind(w.id, { favourite: !w.favourite })}
+                    className="-my-1 shrink-0 self-center p-1 active:scale-90"
+                  >
+                    <Star
+                      className={cn(
+                        "size-3.5",
+                        w.favourite ? "fill-accent-text text-accent-text" : "text-faint",
+                      )}
+                    />
+                  </button>
                   <span className="truncate text-sm font-bold">{w.title}</span>
                   {w.phonetic && (
                     <span className="shrink-0 text-[0.62rem] text-faint">{w.phonetic}</span>
@@ -245,6 +269,14 @@ export function WordBook() {
                   >
                     Add what it means
                   </button>
+                )}
+                {w.translation && (
+                  <div className="mt-0.5 flex items-baseline gap-1.5 text-[0.72rem] leading-snug">
+                    <span className="shrink-0 text-[0.55rem] uppercase tracking-wide text-faint">
+                      {languageLabel(w.translatedTo)}
+                    </span>
+                    <span className="truncate">{w.translation}</span>
+                  </div>
                 )}
                 {w.example && (
                   <div className="mt-1 text-[0.66rem] italic leading-snug text-faint">

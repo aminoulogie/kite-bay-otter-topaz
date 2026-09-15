@@ -83,6 +83,26 @@ export function sentenceAround(block: string, selected: string): string | undefi
   return sentence.length > MAX_SENTENCE ? `${sentence.slice(0, MAX_SENTENCE - 1).trimEnd()}…` : sentence;
 }
 
+/** Beyond this it is not a passage either, it is a chapter. */
+export const MAX_PASSAGE = 400;
+
+/**
+ * Whether a selection is worth offering a menu for at all.
+ *
+ * A looser question than `isCapturable`, and deliberately so. That one asks
+ * "is this a vocabulary word", which is the right question for the word book
+ * and the wrong one for everything else you might do with a selection: a
+ * sentence is not a word and is exactly the kind of thing you highlight, copy
+ * or translate. So the menu opens for any run of text you could have meant to
+ * mark, and the two word-scale actions — keeping it, looking it up — are the
+ * ones that come and go with `isCapturable`.
+ */
+export function isSelectable(text: string): boolean {
+  const clean = cleanSelection(text);
+  if (clean.length < 2 || clean.length > MAX_PASSAGE) return false;
+  return /\p{L}/u.test(clean);
+}
+
 /** What the word book should be told, or null if this is not worth filing. */
 export interface CapturedWord {
   word: string;

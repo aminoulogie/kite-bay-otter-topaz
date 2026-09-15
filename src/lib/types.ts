@@ -1,3 +1,4 @@
+import type { BookMark } from "./marks.ts";
 import type { ReaderPrefs } from "./reader-prefs.ts";
 import type { HabitRamp } from "./habit-ramp";
 export type { HabitRamp };
@@ -308,6 +309,14 @@ export interface Settings {
    */
   reader?: ReaderPrefs;
   /**
+   * The language a highlighted word is translated INTO.
+   *
+   * A setting rather than a question asked each time: you are reading one
+   * book in one language and you want it in yours, and being asked on every
+   * word is how a feature stops being used. See lib/translate.ts.
+   */
+  translateTo?: string;
+  /**
    * Daily nutrition targets the user has set themselves.
    *
    * Partial and optional: only the fields actually overridden are stored, so
@@ -523,6 +532,16 @@ export interface MindEntry {
   /** Which line was lit, for anyone reading line by line. */
   readLine?: number;
   /**
+   * What you highlighted in this book, in pastel.
+   *
+   * Spans of CHARACTERS rather than rectangles — see lib/marks.ts for why
+   * that is the only shape of highlight that survives changing the type size.
+   * They ride the entry, so they are in the backup and cannot drift away from
+   * the book they belong to, and a book removed from the shelf takes its
+   * highlights with it rather than leaving them orphaned in a side store.
+   */
+  marks?: BookMark[];
+  /**
    * Words: how it sounds, and a sentence using it.
    *
    * The definition itself goes in `takeaway`, which means vocabulary joins the
@@ -533,6 +552,23 @@ export interface MindEntry {
   example?: string;
   /** Where a fetched definition came from. A definition is never anonymous. */
   source?: string;
+  /**
+   * Starred, by you, because it mattered more than the rest.
+   *
+   * Separate from the review queue on purpose: the queue decides what you
+   * SHOULD see next, and this is what you want to find again. A word can be
+   * well-learned and still be the one you love.
+   */
+  favourite?: boolean;
+  /**
+   * What it means in another language, and which one.
+   *
+   * Kept beside the definition rather than replacing it: a word has a meaning
+   * and it has a translation, and they are not the same fact. Fetched once and
+   * stored, so the word book reads the same on a plane.
+   */
+  translation?: string;
+  translatedTo?: string;
   /**
    * Dates the takeaway was reviewed, oldest first.
    *

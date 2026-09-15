@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { describe, it, test } from "node:test";
 import {
-  MAX_WORDS, capture, cleanSelection, isCapturable, sentenceAround,
+  MAX_WORDS, capture, cleanSelection, isCapturable, isSelectable, sentenceAround,
 } from "./word-capture.ts";
 
 test("the page's punctuation is not part of the word", () => {
@@ -72,4 +72,28 @@ test("capture puts the two together, or refuses", () => {
   assert.equal(capture("42", PARA), null);
   // A word with no traceable sentence is still a word.
   assert.deepEqual(capture("shai-hulud", PARA), { word: "shai-hulud", example: undefined });
+});
+
+describe("what the menu will open for", () => {
+  it("opens for a word, and for the sentence the word came from", () => {
+    assert.equal(isSelectable("melange"), true);
+    assert.equal(
+      isSelectable("A beginning is the time for taking care that the balances are correct."),
+      true,
+      "a sentence is exactly the kind of thing you highlight",
+    );
+  });
+
+  it("does not open for a tap, a stray character or half a chapter", () => {
+    assert.equal(isSelectable(""), false);
+    assert.equal(isSelectable(" , "), false);
+    assert.equal(isSelectable("42"), false);
+    assert.equal(isSelectable("word ".repeat(120)), false);
+  });
+
+  it("is looser than the word book, which is the point", () => {
+    const sentence = "A beginning is the time for taking care that the balances are correct.";
+    assert.equal(isSelectable(sentence), true);
+    assert.equal(isCapturable(sentence), false, "a sentence is not a vocabulary word");
+  });
 });

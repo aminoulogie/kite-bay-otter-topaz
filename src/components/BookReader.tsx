@@ -1,13 +1,19 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
-  ChevronLeft, ChevronRight, Loader2, Minus, Plus, Rows3, Settings2, X,
+  ChevronLeft, ChevronRight, Languages, Loader2, Minus, Plus, Rows3, Settings2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getBookFile } from "@/lib/book-files";
 import type { EpubArchive } from "@/lib/epub-archive";
 import { cleanOffset, locate } from "@/lib/anchor";
+import {
+  addMark, cleanMarks, markAt, markColour, removeMark, rowsOf,
+  type BookMark, type Row,
+} from "@/lib/marks";
+import { WordMenu, type Pick } from "@/components/WordMenu";
+import { LANGUAGES, defaultLanguage, isLanguage } from "@/lib/translate";
 import {
   cornerPoint, foldAt, grabbedCorner, matrixCss, polygonCss, type Corner, type Fold,
   type Point,
@@ -24,7 +30,7 @@ import {
 import { getLocalDateKey } from "@/lib/soma";
 import { useScrollLock } from "@/lib/use-sheet";
 import { useSoma } from "@/lib/store";
-import { capture } from "@/lib/word-capture";
+import { capture, cleanSelection, isSelectable } from "@/lib/word-capture";
 import { cn } from "@/lib/utils";
 import type { MindEntry } from "@/lib/types";
 
@@ -68,6 +74,10 @@ export function BookReader({
   const [loading, setLoading] = useState(true);
   const [chrome, setChrome] = useState(true);
   const [showPrefs, setShowPrefs] = useState(false);
+  const storedLang = useSoma((s) => s.settings.translateTo);
+  const readerLang = isLanguage(storedLang)
+    ? storedLang
+    : defaultLanguage(typeof navigator === "undefined" ? undefined : navigator.language);
 
   // Where we are, one-based, in pages for a PDF and chapters for an EPUB.
   const [at, setAt] = useState(Math.max(1, book.page ?? 1));
@@ -220,6 +230,7 @@ export function BookReader({
           onAnchor={setOffset}
           onLine={setLine}
           startLine={line}
+          onMarks={(marks) => onChange({ marks })}
         />
       ) : (
         <PdfPages {...common} pager={pager} page={at} onPage={setAt} />
@@ -291,6 +302,8 @@ export function BookReader({
           onChange={setPrefs}
           onClose={() => setShowPrefs(false)}
           epub={epub}
+          translateTo={readerLang}
+          onLanguage={(code) => patchSettings({ translateTo: code })}
         />
       )}
     </div>
@@ -330,6 +343,65 @@ function textRuns(host: HTMLElement): Text[] {
     node = walker.nextNode();
   }
   return out;
+}
+
+/**
+ * How many characters into the chapter a point in the text is.
+ *
+ * The same counting the reading anchor uses, and it has to be: a highlight and
+ * a bookmark are both "this many characters in", and if the two disagreed by a
+ * space the highlight would land on the wrong word after a re-import.
+ */
+function charOffset(host: HTMLElement, node: Node, offset: number): number {
+  const runs = textRuns(host);
+  let acc = 0;
+  for (const run of runs) {
+    if (run === node) return acc + Math.max(0, Math.min(offset, run.length));
+    acc += run.length;
+  }
+  return acc;
+}
+
+/** The characters back into a Range, so the browser can be asked where they are. */
+function rangeOf(host: HTMLElement, start: number, end: number): Range | null {
+  const runs = textRuns(host);
+  if (!runs.length || end <= start) return null;
+  const lens = runs.map((r) => r.length);
+  const a = locate(lens, start);
+  const b = locate(lens, Math.max(start, end - 1));
+  const from = runs[a.index];
+  const to = runs[b.index];
+  if (!from || !to) return null;
+  const range = document.createRange();
+  try {
+    range.setStart(from, Math.min(a.into, from.length));
+    range.setEnd(to, Math.min(b.into + 1, to.length));
+  } catch {
+    return null;
+  }
+  return range;
+}
+
+/**
+ * Where a highlight's ink goes, in the strip's own coordinates.
+ *
+ * Strip coordinates rather than screen ones, because the same numbers then
+ * serve every copy of the chapter the fold keeps: the page you are reading and
+ * the two spares either side all lay the text out identically and differ only
+ * by how far they are translated. Measure once, draw four times, and a
+ * highlight is on the next page before you have finished turning to it.
+ */
+function markRows(host: HTMLElement, mark: BookMark): Row[] {
+  const range = rangeOf(host, mark.start, mark.end);
+  if (!range) return [];
+  const origin = host.getBoundingClientRect();
+  const rects: Row[] = [];
+  for (const r of Array.from(range.getClientRects())) {
+    rects.push({ x: r.left - origin.left, y: r.top - origin.top, w: r.width, h: r.height });
+  }
+  // A shade taller than the letters, which is what a highlighter does — the
+  // ink runs past the x-height rather than stopping at it.
+  return rowsOf(rects, 1.5);
 }
 
 /** Where a run sits along the laid-out strip, ignoring the current translate. */
@@ -408,7 +480,7 @@ function pageOfOffset(host: HTMLElement, stripLeft: number, offset: number, w: n
  */
 function EpubPages({
   book, prefs, pager, chapter, onReady, onError, onChrome, onChapter, onSpread, onAnchor,
-  onLine, startLine,
+  onLine, startLine, onMarks,
 }: RendererProps & {
   chapter: number;
   onChapter: (index: number) => void;
@@ -417,6 +489,7 @@ function EpubPages({
   onAnchor: (offset: number) => void;
   onLine: (index: number) => void;
   startLine?: number;
+  onMarks: (marks: BookMark[]) => void;
 }) {
   const archive = useRef<EpubArchive | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -431,6 +504,33 @@ function EpubPages({
   /** Set when a chapter is entered backwards, so it opens on its last page. */
   const landOnLast = useRef(false);
   const paged = isPaged(prefs);
+
+  /**
+   * The highlights, and where their ink lands.
+   *
+   * Measured once per layout rather than once per page, in the strip's own
+   * coordinates, because every copy of the chapter the fold keeps lays the
+   * text out identically and differs only by how far it is translated. One
+   * measurement serves the page you are reading and both spares — which is
+   * what puts a highlight on the next page before you have finished turning
+   * to it, instead of after.
+   */
+  const marks = useMemo(() => cleanMarks(book.marks), [book.marks]);
+  const mine = useMemo(() => marks.filter((m) => m.chapter === chapter), [marks, chapter]);
+  const [ink, setInk] = useState<Ink[]>([]);
+
+  const addHighlight = useCallback(
+    (span: { start: number; end: number; colour: string; text: string }) => {
+      const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+      onMarks(addMark(marks, { id, chapter, ...span }));
+    },
+    [marks, chapter, onMarks],
+  );
+  const dropHighlight = useCallback(
+    (id: string) => onMarks(removeMark(marks, id)),
+    [marks, onMarks],
+  );
+
   /**
    * Where you are, in characters into this chapter.
    *
@@ -625,6 +725,40 @@ function EpubPages({
       cancelAnimationFrame(raf2);
     };
   }, [html, box.w, box.h, prefs.size, prefs.lineHeight, prefs.font, paged, prefs.margin, warmFlap]);
+
+  /**
+   * Ask the browser where the highlighted characters ended up.
+   *
+   * After the same double rAF as the page count and for the same reason: the
+   * column's layout is not final until the browser has done a pass with the
+   * new metrics, and a Range measured before that reports the last size's
+   * line boxes — which would put the ink a line above the words.
+   */
+  useEffect(() => {
+    const el = column.current;
+    if (!el || !box.w || !mine.length) {
+      setInk([]);
+      return;
+    }
+    let a = 0;
+    let b = 0;
+    a = requestAnimationFrame(() => {
+      b = requestAnimationFrame(() => {
+        const out: Ink[] = [];
+        for (const m of mine) {
+          const colour = markColour(m.colour, theme.dark);
+          for (const r of markRows(el, m)) {
+            out.push({ ...r, id: `${m.id}:${Math.round(r.x)}:${Math.round(r.y)}`, colour });
+          }
+        }
+        setInk(out);
+      });
+    });
+    return () => {
+      cancelAnimationFrame(a);
+      cancelAnimationFrame(b);
+    };
+  }, [mine, html, box.w, box.h, prefs.size, prefs.lineHeight, prefs.font, prefs.margin, paged, theme.dark]);
 
   /**
    * Write down where you are, once the page has settled.
@@ -1021,6 +1155,10 @@ function EpubPages({
       slide={slide}
       turning={dragX !== null}
       folding={!!curl}
+      chapter={chapter}
+      marks={mine}
+      onMark={addHighlight}
+      onUnmark={dropHighlight}
     >
       {/* The other page: the one revealed underneath going forward, and the
           one arriving over the top going back. Mounted for as long as curling
@@ -1046,6 +1184,7 @@ function EpubPages({
             box={box}
             page={neighbours.next}
             style={UNDER_SHEET}
+            ink={ink}
           />
           <Sheet
             innerRef={prevSheet}
@@ -1055,6 +1194,7 @@ function EpubPages({
             box={box}
             page={neighbours.prev}
             style={UNDER_SHEET}
+            ink={ink}
           />
 
           {/* The flap: the part that has come up off the table, showing its
@@ -1128,9 +1268,22 @@ function EpubPages({
           sheet only when it is the page being folded. */}
       <div
         ref={flatWrap}
-        className={paged ? "absolute inset-0" : undefined}
+        className={paged ? "absolute inset-0" : "relative"}
         style={paged ? { zIndex: 1, background: theme.bg } : undefined}
       >
+      {/* The ink goes under the words, and moves exactly as they do — same
+          translate, same transition. Different transitions and a page turn
+          drags the highlights across the paper a beat behind the sentences
+          they belong to. */}
+      <InkLayer
+        ink={ink}
+        shift={paged ? (curl ? -pageOffset(page, box.w) : slide) : 0}
+        transition={
+          paged && dragX === null && !curl
+            ? "transform 320ms cubic-bezier(.22,.61,.36,1)"
+            : "none"
+        }
+      />
       <div
         className="soma-epub"
         ref={column}
@@ -1214,8 +1367,58 @@ const UNDER_SHEET: React.CSSProperties = { zIndex: 0 };
 const BACK_SHEET_DARK: React.CSSProperties = { background: "transparent", opacity: 0.16 };
 const BACK_SHEET_LIGHT: React.CSSProperties = { background: "transparent", opacity: 0.13 };
 
+/** One highlight stroke, placed along the laid-out strip. */
+export interface Ink extends Row {
+  id: string;
+  colour: string;
+}
+
+/**
+ * The ink, under the words.
+ *
+ * Under, and that is the whole reason it is a layer of its own rather than a
+ * background on the text: a highlighter goes beneath the letters, and setting
+ * a background on the markup would mean touching the markup — which is the
+ * chapter, which would have to be re-parsed, which is the one thing this
+ * reader has learned not to do.
+ *
+ * It carries the same translate as the strip beside it, with the same
+ * transition, so the ink and the words move as one thing. Give them different
+ * transitions and a page turn drags the highlights across the paper a beat
+ * behind the sentences they belong to.
+ */
+const InkLayer = memo(function InkLayer({
+  ink, shift, transition,
+}: {
+  ink?: Ink[];
+  shift: number;
+  transition?: string;
+}) {
+  if (!ink?.length) return null;
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0"
+      style={{ transform: `translateX(${shift}px)`, transition }}
+    >
+      {ink.map((r) => (
+        <span
+          key={r.id + r.x + r.y}
+          className="absolute block"
+          style={{
+            left: r.x, top: r.y, width: r.w, height: r.h,
+            background: r.colour,
+            // Rounded like a pen stroke, not like a table cell.
+            borderRadius: 3,
+          }}
+        />
+      ))}
+    </div>
+  );
+});
+
 const Sheet = memo(function Sheet({
-  innerRef, html, label, prefs, box, page, style,
+  innerRef, html, label, prefs, box, page, style, ink,
 }: {
   /** So a fold can write its clip straight onto this, without a render. */
   innerRef?: React.Ref<HTMLDivElement>;
@@ -1225,6 +1428,8 @@ const Sheet = memo(function Sheet({
   box: { w: number; h: number };
   page: number;
   style?: React.CSSProperties;
+  /** Highlight strokes in strip coordinates, shared with every other copy. */
+  ink?: Ink[];
 }) {
   const theme = themeSpec(prefs.theme);
   const markup = useMemo(() => ({ __html: html }), [html]);
@@ -1240,6 +1445,7 @@ const Sheet = memo(function Sheet({
       // printed on top of each other.
       style={{ background: theme.bg, ...style }}
     >
+      <InkLayer ink={ink} shift={-pageOffset(Math.max(0, page), box.w)} />
       <div
         className="soma-epub"
         style={{
@@ -1276,9 +1482,16 @@ const Sheet = memo(function Sheet({
 function ReadingSurface({
   book, prefs, viewportRef, columnRef, box, onTurn, onChrome, onDrag, onLine,
   startLine, page, pages, atStart, atEnd, edges, slide, turning, folding, children,
+  chapter, marks, onMark, onUnmark,
 }: {
   book: MindEntry;
   prefs: ReaderPrefs;
+  /** Which chapter is on screen, so a highlight knows where it belongs. */
+  chapter: number;
+  /** This chapter's highlights, for spotting one the selection landed on. */
+  marks: BookMark[];
+  onMark: (span: { start: number; end: number; colour: string; text: string }) => void;
+  onUnmark: (id: string) => void;
   viewportRef: React.RefObject<HTMLDivElement | null>;
   columnRef: React.RefObject<HTMLDivElement | null>;
   box: { w: number; h: number };
@@ -1327,7 +1540,6 @@ function ReadingSurface({
 }) {
   const theme = themeSpec(prefs.theme);
   const paged = isPaged(prefs);
-  const addMind = useSoma((s) => s.addMind);
   const removeMind = useSoma((s) => s.removeMind);
   // Whether there is anything beyond this page. Only the very front and back
   // of the BOOK resist — every other end-of-chapter carries on into the next.
@@ -1345,60 +1557,178 @@ function ReadingSurface({
   const resumeLine = useRef(startLine);
 
   /**
-   * A word you highlighted is a word you wanted.
+   * A word you put your finger on, and what you meant by it.
    *
-   * Filed the moment the selection settles, with no dialog in the way — the
-   * request was "as soon as a word is highlighted it goes to the words
-   * section", and a confirmation step is the thing that stops you collecting
-   * words at all. It is undoable for a few seconds, which is the right shape
-   * for an action that costs nothing and happens often.
+   * This used to file the word in the word book the moment the selection
+   * settled, and nothing else — one action, chosen for you, taken before you
+   * could say otherwise. That is right for the thing you do most often and
+   * wrong for every other thing you might have meant, so the selection now
+   * asks: copy it, highlight it, look it up, translate it, keep it.
    *
-   * The sentence around it comes too. A word alone is a flashcard you will
-   * fail; the same word in the line you met it in is a memory — and the text
-   * is already on the screen, so it is free.
+   * The sentence around it still comes along, because a word alone is a
+   * flashcard you will fail and the same word in the line you met it in is a
+   * memory — and the text is already on the screen, so it is free.
    */
-  useEffect(() => {
-    const file = () => {
-      const sel = document.getSelection();
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
-      const range = sel.getRangeAt(0);
-      const host = columnRef.current;
-      if (!host || !host.contains(range.commonAncestorContainer)) return;
+  const [pick, setPick] = useState<Pick | null>(null);
+  const [kept, setKept] = useState(false);
+  /** A translation fetched before the word was kept, so keeping it carries it. */
+  const gotTranslation = useRef<{ text: string; to: string } | null>(null);
 
+  useEffect(() => {
+    const offer = () => {
+      const sel = document.getSelection();
+      const host = columnRef.current;
+      const port = viewportRef.current;
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !host || !port) return;
+      const range = sel.getRangeAt(0);
+      if (!host.contains(range.commonAncestorContainer)) return;
+
+      const raw = sel.toString();
+      if (!isSelectable(raw)) return;
       const block =
         range.startContainer.parentElement?.closest("p, li, blockquote, h1, h2, h3, div")
           ?.textContent ?? "";
-      const got = capture(sel.toString(), block);
-      if (!got) return;
+      // `capture` answers the narrower question — is this a vocabulary word —
+      // and that decides only whether the two word-scale actions are offered.
+      // A sentence is not a word and is exactly what you highlight.
+      const got = capture(raw, block);
+      const text = cleanSelection(raw);
 
-      sel.removeAllRanges();
-      const id = addMind({
-        date: getLocalDateKey(new Date()),
-        kind: "language",
-        title: got.word,
-        example: got.example,
-        source: book.title,
-      } as Omit<MindEntry, "id">);
-      toast.success(`“${got.word}” added to your words`, {
-        description: got.example,
-        action: { label: "Undo", onClick: () => removeMind(id) },
+      const r = range.getBoundingClientRect();
+      const view = port.getBoundingClientRect();
+      const a = charOffset(host, range.startContainer, range.startOffset);
+      const b = charOffset(host, range.endContainer, range.endOffset);
+      const start = Math.min(a, b);
+      const end = Math.max(a, b);
+      gotTranslation.current = null;
+      setKept(
+        !!got &&
+          useSoma
+            .getState()
+            .mind.some(
+              (m) =>
+                m.kind === "language" && (m.title ?? "").toLowerCase() === got.word.toLowerCase(),
+            ),
+      );
+      setPick({
+        text: got?.word ?? text,
+        example: got?.example,
+        word: !!got,
+        at: { x: r.left - view.left, y: r.top - view.top, w: r.width, h: r.height },
+        start,
+        end,
+        mark: markAt(marks, chapter, start),
       });
     };
 
-    // `selectionchange` fires on every pixel the handle moves. Filing on each
-    // of them would put the whole drag in the word book one prefix at a time,
-    // so the word is taken once the selection has stopped moving.
+    // `selectionchange` fires on every pixel the handle moves. Offering on
+    // each of them would put the menu under the handle you are still dragging,
+    // so it waits for the selection to stop moving.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const onChange = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(file, 420);
+      const sel = document.getSelection();
+      if (!sel || sel.isCollapsed) {
+        setPick(null);
+        return;
+      }
+      timer = setTimeout(offer, 320);
     };
     document.addEventListener("selectionchange", onChange);
     return () => {
       if (timer) clearTimeout(timer);
       document.removeEventListener("selectionchange", onChange);
     };
-  }, [addMind, removeMind, book.title, columnRef]);
+  }, [columnRef, viewportRef, marks, chapter]);
+
+  const done = useCallback(() => {
+    document.getSelection()?.removeAllRanges();
+    setPick(null);
+  }, []);
+
+  /**
+   * Which language a word gets translated into.
+   *
+   * Taken from the phone the first time and then kept, because being asked on
+   * every word is how a feature stops being used. Written back on first use
+   * rather than at startup, so a reader who never translates anything never
+   * acquires a setting they did not ask for.
+   */
+  const storedLang = useSoma((s) => s.settings.translateTo);
+  const translateTo = isLanguage(storedLang)
+    ? storedLang
+    : defaultLanguage(typeof navigator === "undefined" ? undefined : navigator.language);
+
+  const copyPick = useCallback(() => {
+    const text = pick?.text;
+    if (!text) return;
+    void (async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.success("Copied");
+      } catch {
+        toast.error("This phone would not let the app copy.");
+      }
+    })();
+    done();
+  }, [pick?.text, done]);
+
+  /**
+   * Keep the word: file it, or star the one already filed.
+   *
+   * Starring rather than adding again, because the same word met twice in a
+   * book is one word. The entry it lands on is the same kind the word book
+   * already reads, so a word kept here is in the spaced-repetition queue by
+   * tonight without a line of code that knows about either.
+   */
+  const keepPick = useCallback(() => {
+    const got = pick;
+    if (!got) return;
+    const store = useSoma.getState();
+    const already = store.mind.find(
+      (m) => m.kind === "language" && (m.title ?? "").toLowerCase() === got.text.toLowerCase(),
+    );
+    const said = gotTranslation.current;
+    if (already) {
+      const next = !already.favourite;
+      store.updateMind(already.id, {
+        favourite: next,
+        ...(said ? { translation: said.text, translatedTo: said.to } : {}),
+      });
+      setKept(next);
+      toast.success(next ? `“${got.text}” kept` : `“${got.text}” unkept`);
+    } else {
+      const id = store.addMind({
+        date: getLocalDateKey(new Date()),
+        kind: "language",
+        title: got.text,
+        example: got.example,
+        source: book.title,
+        favourite: true,
+        ...(said ? { translation: said.text, translatedTo: said.to } : {}),
+      } as Omit<MindEntry, "id">);
+      setKept(true);
+      toast.success(`“${got.text}” added to your words`, {
+        description: got.example,
+        action: { label: "Undo", onClick: () => removeMind(id) },
+      });
+    }
+    done();
+  }, [pick, book.title, removeMind, done]);
+
+  const notedTranslation = useCallback(
+    (text: string, to: string) => {
+      gotTranslation.current = { text, to };
+      const store = useSoma.getState();
+      if (!isLanguage(store.settings.translateTo)) store.patchSettings({ translateTo: to });
+      const word = pick?.text ?? "";
+      const already = store.mind.find(
+        (m) => m.kind === "language" && (m.title ?? "").toLowerCase() === word.toLowerCase(),
+      );
+      if (already) store.updateMind(already.id, { translation: text, translatedTo: to });
+    },
+    [pick?.text],
+  );
 
   /**
    * The lines on the page, measured from the text the browser actually drew.
@@ -1705,6 +2035,28 @@ function ReadingSurface({
             />
           </>
         )}
+
+        {pick && (
+          <WordMenu
+            pick={pick}
+            theme={theme}
+            box={box}
+            translateTo={translateTo}
+            saved={kept}
+            onClose={done}
+            onCopy={copyPick}
+            onMark={(colour) => {
+              onMark({ start: pick.start, end: pick.end, colour, text: pick.text });
+              done();
+            }}
+            onUnmark={(id) => {
+              onUnmark(id);
+              done();
+            }}
+            onSave={keepPick}
+            onTranslated={notedTranslation}
+          />
+        )}
       </div>
     </div>
   );
@@ -1926,12 +2278,14 @@ function RoundButton({
  * and find is a control you stop using.
  */
 function PrefsSheet({
-  prefs, onChange, onClose, epub,
+  prefs, onChange, onClose, epub, translateTo, onLanguage,
 }: {
   prefs: ReaderPrefs;
   onChange: (next: ReaderPrefs) => void;
   onClose: () => void;
   epub: boolean;
+  translateTo: string;
+  onLanguage: (code: string) => void;
 }) {
   return (
     <div
@@ -2059,9 +2413,39 @@ function PrefsSheet({
           </span>
         </button>
 
+        {/* Which language the menu's translate button reaches for. Here
+            rather than in the app's settings because it is a fact about
+            reading, and this is the sheet you are already in when you notice
+            it is wrong. */}
+        <div className="mt-3 rounded-2xl border border-border bg-surface-2 px-3 py-2.5">
+          <div className="mb-2 flex items-center gap-2 text-sm font-bold">
+            <Languages className="size-4 shrink-0" />
+            Translate into
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {LANGUAGES.map((l) => (
+              <button
+                key={l.code}
+                type="button"
+                aria-pressed={l.code === translateTo}
+                onClick={() => onLanguage(l.code)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold",
+                  l.code === translateTo
+                    ? "border-accent bg-accent/15 text-accent-text"
+                    : "border-border text-muted",
+                )}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <p className="mt-3 text-[0.65rem] leading-snug text-faint">
-          Highlight a word while you read and it goes straight into your words, with the
-          sentence it came from. They are on the Reading tab, under the shelf.
+          Select a word while you read and a bar appears over it: copy it, highlight it in
+          one of five pastels, look it up, translate it, or keep it. Kept words are on the
+          Reading tab, under the shelf.
         </p>
       </div>
     </div>
