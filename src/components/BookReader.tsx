@@ -15,7 +15,7 @@ import {
 } from "@/lib/marks";
 import { WordMenu, type Pick } from "@/components/WordMenu";
 import {
-  ContentsSheet, ChapterRail, MarksSheet, SearchSheet, TopPills,
+  ContentsSheet, ChapterRail, MarksSheet, PageScrubber, SearchSheet, TopPills,
 } from "@/components/BookChrome";
 import { LANGUAGES, defaultLanguage, isLanguage } from "@/lib/translate";
 import {
@@ -78,6 +78,8 @@ export function BookReader({
   const [loading, setLoading] = useState(true);
   const [chrome, setChrome] = useState(true);
   const [showPrefs, setShowPrefs] = useState(false);
+  /** True while a finger is scrubbing the page pill — the paper dims behind it. */
+  const [scrubbing, setScrubbing] = useState(false);
   const storedLang = useSoma((s) => s.settings.translateTo);
   const readerLang = isLanguage(storedLang)
     ? storedLang
@@ -257,6 +259,11 @@ export function BookReader({
       aria-label={`Reading ${book.title}`}
       style={{ background: theme.bg, color: theme.fg }}
     >
+      {/* The paper dims while the scrubber is being dragged, the way the
+          native reader does — the pill floats over it, the page stays put. */}
+      {scrubbing && (
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-[65] bg-black/30" />
+      )}
       {error ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
           <p className="text-sm leading-snug opacity-80">{error}</p>
@@ -305,6 +312,23 @@ export function BookReader({
       />
 
       <Bar edge="bottom" theme={theme} show={chrome}>
+        {/* The Apple Books scrubber: a floating pill of page thumbnails, the
+            current page centred, drag to scrub. Only for an EPUB: a PDF's
+            pages are already pictures and scrubbing them means rendering
+            every one. */}
+        {epub && chrome && spread.box.w > 0 && (
+          <PageScrubber
+            theme={theme}
+            prefs={prefs}
+            html={spread.html}
+            label={spread.label}
+            box={spread.box}
+            pages={spread.pages}
+            page={spread.page}
+            onPick={(n) => pager.current?.to(n)}
+            onScrub={setScrubbing}
+          />
+        )}
         {/* Jump between chapters. Only for an EPUB: a PDF has no chapters to
             name, and its pages are the table of contents. */}
         {epub && chrome && index.titles.length > 1 && (
