@@ -1,18 +1,22 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
-  ChevronLeft, ChevronRight, Languages, Loader2, Minus, Plus, Rows3, Settings2, X,
+  ChevronLeft, ChevronRight, Languages, Loader2, Minus, Plus, Rows3, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getBookFile } from "@/lib/book-files";
 import type { EpubArchive } from "@/lib/epub-archive";
 import { cleanOffset, locate } from "@/lib/anchor";
+import { nthIndexOf } from "@/lib/book-search";
 import {
   addMark, cleanMarks, markAt, markColour, removeMark, rowsOf,
   type BookMark, type Row,
 } from "@/lib/marks";
 import { WordMenu, type Pick } from "@/components/WordMenu";
+import {
+  ContentsSheet, MarksSheet, PageRail, SearchSheet, TopPills,
+} from "@/components/BookChrome";
 import { LANGUAGES, defaultLanguage, isLanguage } from "@/lib/translate";
 import {
   cornerPoint, foldAt, grabbedCorner, matrixCss, polygonCss, type Corner, type Fold,
@@ -82,8 +86,46 @@ export function BookReader({
   // Where we are, one-based, in pages for a PDF and chapters for an EPUB.
   const [at, setAt] = useState(Math.max(1, book.page ?? 1));
   const [total, setTotal] = useState(book.pages ?? 0);
-  /** Page within the current chapter, for the counter and the progress bar. */
-  const [spread, setSpread] = useState({ page: 0, pages: 1 });
+  /** Page within the current chapter, and the text the rail draws small. */
+  const [spread, setSpread] = useState<{
+    page: number;
+    pages: number;
+    html: string;
+    label: string;
+    box: { w: number; h: number };
+  }>({ page: 0, pages: 1, html: "", label: "", box: { w: 0, h: 0 } });
+  /** The contents and the searchable book, published by the renderer. */
+  const [index, setIndex] = useState<{ titles: string[]; textOf: (i: number) => string }>({
+    titles: [],
+    textOf: () => "",
+  });
+  const [panel, setPanel] = useState<"contents" | "search" | "kept" | null>(null);
+  /**
+   * The words you kept while reading this book.
+   *
+   * Matched on the source the word menu writes, which is the book's title.
+   * Two books with the same title would share a list, and that is the right
+   * trade against giving every word a book id it would have to keep in step
+   * with a shelf entry that can be deleted and re-imported.
+   */
+  // Selected as the whole list and filtered here, NOT filtered inside the
+  // selector. A selector that builds an array returns a new one every time it
+  // is called, which to a subscription means "changed", which means render,
+  // which means call the selector — an infinite loop, and the reader never
+  // appears at all.
+  const mind = useSoma((s) => s.mind);
+  const kept = useMemo(
+    () => mind.filter((m) => m.kind === "language" && m.source === book.title),
+    [mind, book.title],
+  );
+  const [seek, setSeek] = useState<Seek | undefined>(undefined);
+  const nonce = useRef(0);
+  /** Send the reader somewhere, chapter and all. */
+  const goTo = useCallback((next: Omit<Seek, "nonce">) => {
+    nonce.current += 1;
+    setAt(next.chapter + 1);
+    setSeek({ ...next, nonce: nonce.current });
+  }, []);
   /** Characters into the chapter — see lib/anchor.ts for why not a page. */
   const [offset, setOffset] = useState(book.readOffset);
   /** Which line was lit, for anyone reading line by line. */
@@ -231,6 +273,8 @@ export function BookReader({
           onLine={setLine}
           startLine={line}
           onMarks={(marks) => onChange({ marks })}
+          onIndex={setIndex}
+          seek={seek}
         />
       ) : (
         <PdfPages {...common} pager={pager} page={at} onPage={setAt} />
@@ -242,36 +286,39 @@ export function BookReader({
         </div>
       )}
 
-      {/* Two bars and nothing else. They fade rather than unmounting, so the
-          page does not reflow every time you tap it and lose your place
-          mid-paragraph. */}
-      <Bar
-        edge="top"
+      {/* Two pills at the top and one bar at the bottom. They fade rather
+          than unmounting, so the page does not reflow every time you tap it
+          and lose your place mid-paragraph.
+
+          The book's title is not up here any more. Five things are, and every
+          one of them is something you came to the top of the screen to DO —
+          the title is something you already know, and it was taking the room
+          they needed. It is on the shelf, and the chapter is at the bottom. */}
+      <TopPills
         theme={theme}
         show={chrome}
-        className="flex items-center justify-between gap-2"
-      >
-        <RoundButton theme={theme} label="Close the book" onClick={onClose}>
-          <X className="size-5" />
-        </RoundButton>
-        <div className="min-w-0 flex-1 text-center">
-          <div className="truncate text-[0.78rem] font-bold">{book.title}</div>
-          {book.author && (
-            <div className="truncate text-[0.62rem]" style={{ color: theme.faint }}>
-              {book.author}
-            </div>
-          )}
-        </div>
-        <RoundButton
-          theme={theme}
-          label="Type and theme"
-          onClick={() => setShowPrefs(true)}
-        >
-          <Settings2 className="size-[1.15rem]" />
-        </RoundButton>
-      </Bar>
+        onBack={onClose}
+        onContents={() => setPanel("contents")}
+        onType={() => setShowPrefs(true)}
+        onSearch={() => setPanel("search")}
+        onKept={() => setPanel("kept")}
+      />
 
       <Bar edge="bottom" theme={theme} show={chrome}>
+        {/* Thumb through the chapter. Only for an EPUB: a PDF's pages are
+            already pictures and scrubbing them means rendering every one. */}
+        {epub && chrome && spread.box.w > 0 && (
+          <PageRail
+            theme={theme}
+            prefs={prefs}
+            html={spread.html}
+            label={spread.label}
+            box={spread.box}
+            pages={spread.pages}
+            page={spread.page}
+            onPick={(n) => pager.current?.to(n)}
+          />
+        )}
         <div
           className="mb-2 h-[3px] w-full overflow-hidden rounded-full"
           style={{ background: `${theme.fg}22` }}
@@ -296,6 +343,39 @@ export function BookReader({
         </div>
       </Bar>
 
+      {panel === "contents" && (
+        <ContentsSheet
+          theme={theme}
+          titles={index.titles}
+          current={at - 1}
+          onPick={(i) => goTo({ chapter: i })}
+          onClose={() => setPanel(null)}
+        />
+      )}
+
+      {panel === "search" && (
+        <SearchSheet
+          theme={theme}
+          chapters={total || index.titles.length}
+          titles={index.titles}
+          textOf={index.textOf}
+          onPick={(hit, rank) => goTo({ chapter: hit.chapter, phrase: hit.hit, rank })}
+          onClose={() => setPanel(null)}
+        />
+      )}
+
+      {panel === "kept" && (
+        <MarksSheet
+          theme={theme}
+          marks={cleanMarks(book.marks)}
+          words={kept}
+          titles={index.titles}
+          onPickMark={(m) => goTo({ chapter: m.chapter, offset: m.start, end: m.end })}
+          onDropMark={(id) => onChange({ marks: removeMark(cleanMarks(book.marks), id) })}
+          onClose={() => setPanel(null)}
+        />
+      )}
+
       {showPrefs && (
         <PrefsSheet
           prefs={prefs}
@@ -314,6 +394,31 @@ export function BookReader({
 interface Pager {
   back: () => void;
   forward: () => void;
+  /** Jump to a page of the chapter on screen. The rail's whole purpose. */
+  to: (page: number) => void;
+}
+
+/**
+ * Somewhere the reader has been asked to go.
+ *
+ * Declarative rather than a method call, because the destination is only
+ * reachable once the chapter it is in has been laid out — and that is two
+ * renders and a couple of frames after the chapter is chosen. A prop that
+ * says "you are wanted here" can wait for the layout; a function call made
+ * the moment a search result is tapped cannot.
+ *
+ * `phrase` + `rank` rather than a character offset: the nth occurrence of a
+ * word in the plain text is the nth in the laid-out chapter, which is a far
+ * steadier thing to rely on than two independently counted offsets agreeing.
+ */
+interface Seek {
+  chapter: number;
+  phrase?: string;
+  rank?: number;
+  offset?: number;
+  end?: number;
+  /** Changes on every request, so asking for the same place twice works. */
+  nonce: number;
 }
 
 type PagerRef = { current: Pager | null };
@@ -480,11 +585,24 @@ function pageOfOffset(host: HTMLElement, stripLeft: number, offset: number, w: n
  */
 function EpubPages({
   book, prefs, pager, chapter, onReady, onError, onChrome, onChapter, onSpread, onAnchor,
-  onLine, startLine, onMarks,
+  onLine, startLine, onMarks, onIndex, seek,
 }: RendererProps & {
   chapter: number;
   onChapter: (index: number) => void;
-  onSpread: (s: { page: number; pages: number }) => void;
+  /**
+   * What the page rail needs to draw the chapter small: the text itself, the
+   * box it is set in, and where you are in it.
+   */
+  onSpread: (s: {
+    page: number;
+    pages: number;
+    html: string;
+    label: string;
+    box: { w: number; h: number };
+  }) => void;
+  /** The book's contents and its searchable text, once it is open. */
+  onIndex: (ix: { titles: string[]; textOf: (i: number) => string }) => void;
+  seek?: Seek;
   /** Characters into the chapter, written down so the book reopens here. */
   onAnchor: (offset: number) => void;
   onLine: (index: number) => void;
@@ -499,6 +617,8 @@ function EpubPages({
   const [ready, setReady] = useState(false);
   const [page, setPage] = useState(0);
   const [pages, setPages] = useState(1);
+  /** The found phrase, lit until you turn away from it. Never stored. */
+  const [found, setFound] = useState<{ start: number; end: number } | null>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [chapters, setChapters] = useState(0);
   /** Set when a chapter is entered backwards, so it opens on its last page. */
@@ -516,7 +636,14 @@ function EpubPages({
    * to it, instead of after.
    */
   const marks = useMemo(() => cleanMarks(book.marks), [book.marks]);
-  const mine = useMemo(() => marks.filter((m) => m.chapter === chapter), [marks, chapter]);
+  const mine = useMemo(() => {
+    const own = marks.filter((m) => m.chapter === chapter);
+    // A search hit is drawn by exactly the same machinery as a highlight, and
+    // is simply never written down. It is the page's answer to "here".
+    return found
+      ? [...own, { id: "found", chapter, start: found.start, end: found.end, colour: "sky", text: "" }]
+      : own;
+  }, [marks, chapter, found]);
   const [ink, setInk] = useState<Ink[]>([]);
 
   const addHighlight = useCallback(
@@ -604,6 +731,11 @@ function EpubPages({
         setChapters(opened.book.chapters.length);
         setReady(true);
         onReady(opened.book.chapters.length);
+        // The contents and the searchable book, handed to the chrome. The
+        // titles are read now because they are cheap and wanted the moment a
+        // finger reaches the top-left; the text is a function because it is
+        // neither, and nothing should read a hundred chapters to open one.
+        onIndex({ titles: opened.titles(), textOf: (i) => opened.plain(i) });
       } catch (err) {
         if (alive) onError(messageFor(err, "That EPUB would not open."));
       }
@@ -761,6 +893,46 @@ function EpubPages({
   }, [mine, html, box.w, box.h, prefs.size, prefs.lineHeight, prefs.font, prefs.margin, paged, theme.dark]);
 
   /**
+   * Go where the chrome asked, once the chapter it asked for is on screen.
+   *
+   * Two things have to have happened first: the chapter has to be the one
+   * wanted, and it has to have been laid out — `pages` is the signal for
+   * that, since it is set by the measuring pass. Waiting on both is why this
+   * is a prop and an effect rather than a method somebody calls.
+   */
+  useEffect(() => {
+    if (!seek || seek.chapter !== chapter) return;
+    const el = column.current;
+    if (!el || !box.w || !pages) return;
+    const id = requestAnimationFrame(() => {
+      const runs = textRuns(el);
+      const whole = runs.map((r) => r.textContent ?? "").join("");
+      let start = seek.offset ?? -1;
+      let end = seek.end ?? -1;
+      if (seek.phrase) {
+        const at = nthIndexOf(whole, seek.phrase, seek.rank ?? 0);
+        if (at >= 0) {
+          start = at;
+          end = at + seek.phrase.length;
+        }
+      }
+      if (start < 0) return;
+      const stripLeft = el.getBoundingClientRect().left;
+      anchor.current = start;
+      setPage(clampPage(pageOfOffset(el, stripLeft, start, box.w), pages));
+      setFound(end > start ? { start, end } : null);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [seek, chapter, pages, box.w, html]);
+
+  // What you were looking for stops being lit once you have read past it.
+  useEffect(() => {
+    if (!found) return;
+    const t = setTimeout(() => setFound(null), 6000);
+    return () => clearTimeout(t);
+  }, [found]);
+
+  /**
    * Write down where you are, once the page has settled.
    *
    * After the turn, not during it: measuring mid-animation reads the page
@@ -781,8 +953,8 @@ function EpubPages({
   }, [page, pages, box.w, onAnchor]);
 
   useEffect(() => {
-    onSpread({ page, pages });
-  }, [page, pages, onSpread]);
+    onSpread({ page, pages, html, label, box });
+  }, [page, pages, html, label, box, onSpread]);
 
   /** Where the strip sits right now: the settled page, plus the finger. */
   const slide = -pageOffset(page, box.w) + (dragX ?? 0);
@@ -1128,8 +1300,12 @@ function EpubPages({
   // rather than during render: a ref written while rendering is a side effect
   // in a function that is allowed to run twice.
   useEffect(() => {
-    pager.current = { back: () => go(-1), forward: () => go(1) };
-  }, [pager, go]);
+    pager.current = {
+      back: () => go(-1),
+      forward: () => go(1),
+      to: (n) => setPage(clampPage(n, pages)),
+    };
+  }, [pager, go, pages]);
 
   return (
     <ReadingSurface
@@ -1928,7 +2104,13 @@ function ReadingSurface({
 
   return (
     <div
-      className="relative flex-1 overflow-hidden"
+      // `isolate` is load-bearing. The fold stacks its own layers — the page
+      // being turned at 1, the flap at 3 — and a `relative` box with no
+      // stacking context of its own does not contain them: they join the
+      // READER's stack, where they outrank anything sitting at z-auto. Which
+      // meant the page was painted over the bottom bar, and the page rail
+      // inside it was invisible while measuring as perfectly present.
+      className="relative isolate flex-1 overflow-hidden"
       style={{
         paddingLeft: prefs.margin,
         paddingRight: prefs.margin,
@@ -2150,6 +2332,7 @@ function PdfPages({
     pager.current = {
       back: () => onPage(Math.max(1, page - 1)),
       forward: () => onPage(count ? Math.min(count, page + 1) : page + 1),
+      to: (n) => onPage(Math.max(1, count ? Math.min(count, n + 1) : n + 1)),
     };
   }, [pager, page, count, onPage]);
 
@@ -2223,7 +2406,7 @@ function Bar({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-0 px-3 transition-opacity duration-200",
+        "pointer-events-none absolute inset-x-0 z-[70] px-3 transition-opacity duration-200",
         edge === "top"
           ? "top-0 pb-6 pt-[max(12px,env(safe-area-inset-top))]"
           : "bottom-0 pt-8 pb-[max(12px,env(safe-area-inset-bottom))]",

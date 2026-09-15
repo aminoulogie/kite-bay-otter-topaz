@@ -1,4 +1,5 @@
 import { unzip } from "fflate";
+import { plainText } from "./book-search.ts";
 import {
   CONTAINER_PATH, chapterHtml, chapterTitle, containerOpfPath, parseOpf, type EpubBook,
 } from "./epub.ts";
@@ -17,6 +18,8 @@ const decoder = new TextDecoder();
 export class EpubArchive {
   private files: Record<string, Uint8Array>;
   private urls = new Map<string, string>();
+  private chapterTitles: string[] | null = null;
+  private plainText = new Map<number, string>();
   readonly book: EpubBook;
   readonly opfPath: string;
 
@@ -86,6 +89,43 @@ export class EpubArchive {
       html: chapterHtml(xhtml, ch.path, (p) => this.url(p)),
       title: chapterTitle(xhtml, `Chapter ${index + 1}`),
     };
+  }
+
+  /**
+   * Every chapter's title, in reading order.
+   *
+   * Read out of the chapters themselves rather than out of the navigation
+   * document, because a great many EPUBs in the wild have a table of contents
+   * that is missing, stale, or lists files that are not in the spine. The
+   * chapter's own <title> or first heading is the thing that cannot disagree
+   * with what you are about to read.
+   */
+  titles(): string[] {
+    if (!this.chapterTitles) {
+      this.chapterTitles = this.book.chapters.map((ch, i) => {
+        const xhtml = this.text(ch.path);
+        return xhtml === null ? `Chapter ${i + 1}` : chapterTitle(xhtml, `Chapter ${i + 1}`);
+      });
+    }
+    return this.chapterTitles;
+  }
+
+  /**
+   * A chapter as plain text, kept for as long as the book is open.
+   *
+   * This is the searchable book. Built one chapter at a time and only when
+   * something asks, so opening a book costs nothing and searching one costs
+   * the chapters it actually reads — which for a novel is a few hundred
+   * kilobytes of string and by far the cheapest thing the reader holds.
+   */
+  plain(index: number): string {
+    const had = this.plainText.get(index);
+    if (had !== undefined) return had;
+    const ch = this.book.chapters[index];
+    const xhtml = ch ? this.text(ch.path) : null;
+    const text = xhtml === null ? "" : plainText(xhtml);
+    this.plainText.set(index, text);
+    return text;
   }
 
   coverBlob(): Blob | null {
