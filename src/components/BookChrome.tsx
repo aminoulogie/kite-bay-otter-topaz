@@ -20,6 +20,37 @@ import { cn } from "@/lib/utils";
  * is a decision you make by reading the line around it.
  */
 
+/**
+ * The reader's own glass.
+ *
+ * The app has a Liquid Glass system and the reader cannot simply use it: those
+ * tints are built for one dark chrome, and a book has three papers. A night
+ * tint floating over sepia is the thing that reads as "off" — not the blur,
+ * the COLOUR, sitting on paper it was never mixed for.
+ *
+ * So the material is shared and the tint is not. Blur and saturation come from
+ * the same custom properties the rest of the app uses, so a pill in a book is
+ * made of the same stuff as the dock; the tint is mixed from the page it is
+ * floating over. And it is all three things at once, which is what separates
+ * glass from a translucent grey box: it blurs what is behind it, it SATURATES
+ * it so the colour underneath still reads through, and it catches a highlight
+ * along its top edge where the light lands.
+ *
+ * `-webkit-backdrop-filter` is spelled out because Safari still wants it, and
+ * Safari is the only browser this ever runs in.
+ */
+function readerGlass(theme: ReturnType<typeof themeSpec>): React.CSSProperties {
+  return {
+    background: theme.dark ? "rgba(70,70,76,0.55)" : "rgba(250,249,246,0.62)",
+    backdropFilter: "blur(var(--glass-blur,22px)) saturate(var(--glass-sat,1.8))",
+    WebkitBackdropFilter: "blur(var(--glass-blur,22px)) saturate(var(--glass-sat,1.8))",
+    color: theme.fg,
+    boxShadow: theme.dark
+      ? "inset 0 0.5px 0 rgba(255,255,255,0.22), inset 0 0 0 0.5px rgba(255,255,255,0.10), 0 8px 26px rgba(0,0,0,0.46)"
+      : "inset 0 0.5px 0 rgba(255,255,255,0.9), inset 0 0 0 0.5px rgba(0,0,0,0.07), 0 8px 26px rgba(0,0,0,0.18)",
+  };
+}
+
 /** One sheet, sliding up from the bottom, in the book's own colours. */
 function Panel({
   theme, title, onClose, children,
@@ -498,14 +529,7 @@ export const PageScrubber = memo(function PageScrubber({
 
   return (
     <div className="pointer-events-auto mx-auto mb-2 w-fit max-w-full">
-      <div
-        className="rounded-full px-2.5 py-2 shadow-[0_14px_38px_rgba(0,0,0,0.45)]"
-        style={{
-          background: theme.dark ? "rgba(44,44,48,0.8)" : "rgba(238,236,230,0.84)",
-          backdropFilter: "blur(18px)",
-          WebkitBackdropFilter: "blur(18px)",
-        }}
-      >
+      <div className="rounded-full px-2.5 py-2" style={readerGlass(theme)}>
         <div
           ref={rail}
           className="overflow-x-auto overscroll-x-contain"
@@ -612,10 +636,7 @@ export function TopPills({
   onSearch: () => void;
   onKept: () => void;
 }) {
-  const pill = {
-    background: theme.dark ? "rgba(58,58,62,0.82)" : "rgba(236,234,228,0.88)",
-    color: theme.fg,
-  };
+  const pill = readerGlass(theme);
   const Btn = ({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) => (
     <button
       type="button"
@@ -635,7 +656,7 @@ export function TopPills({
       )}
     >
       <div
-        className={cn("flex items-center rounded-full px-1 backdrop-blur-xl", show && "pointer-events-auto")}
+        className={cn("flex items-center rounded-full px-1", show && "pointer-events-auto")}
         style={pill}
       >
         <Btn label="Back to the shelf" onClick={onBack}>
@@ -646,7 +667,7 @@ export function TopPills({
         </Btn>
       </div>
       <div
-        className={cn("flex items-center rounded-full px-1 backdrop-blur-xl", show && "pointer-events-auto")}
+        className={cn("flex items-center rounded-full px-1", show && "pointer-events-auto")}
         style={pill}
       >
         <Btn label="Type and theme" onClick={onType}>

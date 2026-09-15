@@ -125,8 +125,8 @@ export function WordMenu({
   // which is the only combination that works over text.
   const chrome: React.CSSProperties = {
     background: theme.dark ? "rgba(34,34,38,0.92)" : "rgba(252,251,248,0.94)",
-    backdropFilter: "blur(30px) saturate(180%)",
-    WebkitBackdropFilter: "blur(30px) saturate(180%)",
+    backdropFilter: "blur(calc(var(--glass-blur,22px) * 1.4)) saturate(var(--glass-sat,1.8))",
+    WebkitBackdropFilter: "blur(calc(var(--glass-blur,22px) * 1.4)) saturate(var(--glass-sat,1.8))",
     color: theme.fg,
     boxShadow: theme.dark
       ? "inset 0 0.5px 0 rgba(255,255,255,0.20), inset 0 0 0 0.5px rgba(255,255,255,0.10), 0 12px 34px rgba(0,0,0,0.7)"
