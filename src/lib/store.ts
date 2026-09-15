@@ -94,8 +94,9 @@ import {
 } from "./routine";
 import { defaultPlan, normalise, type TimeBlock } from "./day-plan";
 import {
-  addStep, cleanProject, newProjectId, removeStep, setStep, stepsOf, type Project,
+  addStep, cleanProject, moveStep, newProjectId, removeStep, setStep, stepsOf, type Project,
 } from "./projects";
+import { cleanTrade, newTradeId, type Trade, type TradeDraft } from "./trading";
 import { lastSetAt, lastTimeFor } from "./last-time";
 
 /**
@@ -257,13 +258,22 @@ export interface SomaStore {
   setDayRoutineRun: (run: RunState | null) => void;
   /** Things with a finish line. See lib/projects.ts. */
   projects: Project[];
+  /** The trading journal. See lib/trading.ts for the rules it enforces. */
+  trades: Trade[];
   addProject: (name: string, color: string) => string;
   patchProject: (id: string, patch: Partial<Omit<Project, "id">>) => void;
   removeProject: (id: string) => void;
   restoreProject: (idx: number, project: Project) => void;
+  /** Opens a trade. The gate runs in the view; this records what was decided. */
+  addTrade: (draft: TradeDraft, equity: number) => string;
+  closeTrade: (id: string, exit: number, opts?: { closedEarly?: boolean; note?: string }) => void;
+  patchTrade: (id: string, patch: Partial<Trade>) => void;
+  removeTrade: (id: string) => void;
+  restoreTrade: (idx: number, trade: Trade) => void;
   addProjectStep: (id: string, label: string) => void;
   setProjectStep: (id: string, stepId: string, done: boolean) => void;
   renameProjectStep: (id: string, stepId: string, label: string) => void;
+  moveProjectStep: (id: string, stepId: string, delta: number) => void;
   removeProjectStep: (id: string, stepId: string) => void;
   addTodo: (text: string) => void;
   toggleTodo: (id: string) => void;
@@ -443,6 +453,12 @@ function asProjects(raw: unknown): Project[] {
   return raw.map(cleanProject).filter((p): p is Project => p !== null);
 }
 
+/** A trade list read back from a backup. */
+function asTrades(raw: unknown): Trade[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(cleanTrade).filter((t): t is Trade => t !== null);
+}
+
 /** Fold two id-keyed lists together, with `mine` winning a collision. */
 function mergeById<T extends { id: string }>(incoming: T[], mine: T[]): T[] {
   const out = new Map<string, T>();
@@ -517,6 +533,7 @@ export const useSoma = create<SomaStore>()(
       grocery: [],
       todos: [],
       projects: [],
+      trades: [],
       dayRoutines: [],
       dayRoutineRun: null,
       dayPlans: {},
@@ -1239,6 +1256,55 @@ export const useSoma = create<SomaStore>()(
           next.splice(Math.max(0, Math.min(next.length, idx)), 0, project);
           return { projects: next };
         }),
+      /**
+       * Open a trade.
+       *
+       * The equity is COPIED onto the trade rather than read back later. Risk
+       * percentage is a fact about the moment the position was taken, and an
+       * account that grows would otherwise quietly rewrite every past trade
+       * into having been more sensible than it was.
+       */
+      addTrade: (draft, equity) => {
+        const id = newTradeId();
+        set((s) => ({
+          trades: [
+            ...s.trades,
+            {
+              ...draft,
+              reason: String(draft.reason ?? "").trim(),
+              checks: [...(draft.checks ?? [])],
+              id,
+              date: getLocalDateKey(),
+              openedAt: Date.now(),
+              equityAtEntry: Number(equity) || 0,
+            },
+          ],
+        }));
+        return id;
+      },
+      closeTrade: (id, exit, opts) =>
+        set((s) => ({
+          trades: s.trades.map((t) =>
+            t.id === id
+              ? {
+                  ...t,
+                  exit: Number(exit),
+                  closedAt: Date.now(),
+                  ...(opts?.closedEarly ? { closedEarly: true as const } : {}),
+                  ...(opts?.note ? { note: opts.note } : {}),
+                }
+              : t,
+          ),
+        })),
+      patchTrade: (id, patch) =>
+        set((s) => ({ trades: s.trades.map((t) => (t.id === id ? { ...t, ...patch } : t)) })),
+      removeTrade: (id) => set((s) => ({ trades: s.trades.filter((t) => t.id !== id) })),
+      restoreTrade: (idx, trade) =>
+        set((s) => {
+          const next = [...s.trades];
+          next.splice(Math.max(0, Math.min(next.length, idx)), 0, trade);
+          return { trades: next };
+        }),
       addProjectStep: (id, label) =>
         set((s) => ({
           projects: s.projects.map((p) => (p.id === id ? addStep(p, label) : p)),
@@ -1259,6 +1325,10 @@ export const useSoma = create<SomaStore>()(
                 }
               : p,
           ),
+        })),
+      moveProjectStep: (id, stepId, delta) =>
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === id ? moveStep(p, stepId, delta) : p)),
         })),
       removeProjectStep: (id, stepId) =>
         set((s) => ({
@@ -2170,6 +2240,7 @@ export const useSoma = create<SomaStore>()(
             grocery: get().grocery,
             todos: get().todos,
             projects: get().projects,
+            trades: get().trades,
             dayRoutines: get().dayRoutines,
             dayPlans: get().dayPlans,
             screenTime: get().screenTime,
@@ -2222,6 +2293,7 @@ export const useSoma = create<SomaStore>()(
               grocery: data.grocery || [],
               todos: data.todos || [],
               projects: asProjects(data.projects),
+              trades: asTrades(data.trades),
               dayRoutines: asRoutines(data.dayRoutines),
               dayPlans: data.dayPlans || {},
               screenTime: data.screenTime || {},
@@ -2322,6 +2394,7 @@ export const useSoma = create<SomaStore>()(
             grocery: mergeById(data.grocery || [], cur.grocery),
             todos: mergeById(data.todos || [], cur.todos),
             projects: mergeById(asProjects(data.projects), cur.projects),
+            trades: mergeById(asTrades(data.trades), cur.trades),
             dayRoutines: mergeById(asRoutines(data.dayRoutines), cur.dayRoutines),
             // Incoming days fill gaps; a plan on the device is the newer edit.
             dayPlans: { ...(data.dayPlans || {}), ...cur.dayPlans },
@@ -2426,6 +2499,7 @@ export const useSoma = create<SomaStore>()(
         grocery: s.grocery,
         todos: s.todos,
         projects: s.projects,
+        trades: s.trades,
         dayRoutines: s.dayRoutines,
         dayPlans: s.dayPlans,
         screenTime: s.screenTime,
