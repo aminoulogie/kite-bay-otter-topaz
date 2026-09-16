@@ -1893,31 +1893,69 @@ function ReadingSurface({
    * dragging is every few words.
    */
   const [holdRects, setHoldRects] = useState<Row[]>([]);
+  /** Where the two ends of the held span are, for the grab handles. */
+  const [holdEnds, setHoldEnds] = useState<{ a: Row; b: Row } | null>(null);
   useEffect(() => {
     const host = columnRef.current;
     const port = viewportRef.current;
     if (!held || !host || !port) {
       setHoldRects([]);
+      setHoldEnds(null);
       return;
     }
     const range = rangeOf(host, held.start, held.end);
     if (!range) {
       setHoldRects([]);
+      setHoldEnds(null);
       return;
     }
     const view = port.getBoundingClientRect();
-    setHoldRects(
-      rowsOf(
-        Array.from(range.getClientRects()).map((r) => ({
-          x: r.left - view.left,
-          y: r.top - view.top,
-          w: r.width,
-          h: r.height,
-        })),
-        1.5,
-      ),
-    );
+    const raw = Array.from(range.getClientRects())
+      .filter((r) => r.width > 0.5 && r.height > 0.5)
+      .map((r) => ({ x: r.left - view.left, y: r.top - view.top, w: r.width, h: r.height }));
+    setHoldRects(rowsOf(raw, 1.5));
+    // The ends come from the RAW rectangles rather than the merged rows: a
+    // handle belongs at the first and last character, and merging has already
+    // thrown away which of several boxes on a line came first.
+    const first = raw[0];
+    const last = raw[raw.length - 1];
+    setHoldEnds(first && last ? { a: first, b: last } : null);
   }, [held, columnRef, viewportRef, page]);
+
+  /**
+   * The two handles, and what dragging one does.
+   *
+   * iOS gives a native selection two grab handles and takes the menu away in
+   * exchange; this reader has neither, so it draws its own. Dragging an end
+   * moves it to the WORD under the finger rather than the character, because
+   * a handle on a phone covers about four letters and character precision
+   * with a thumb is a promise no one can keep.
+   */
+  const dragEnd = useRef<"a" | "b" | null>(null);
+  const grabHandle = (which: "a" | "b") => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragEnd.current = which;
+  };
+  const moveHandle = (e: React.PointerEvent) => {
+    if (!dragEnd.current || !held) return;
+    e.stopPropagation();
+    const w = wordUnder(e.clientX, e.clientY);
+    if (!w) return;
+    const next =
+      dragEnd.current === "a"
+        ? { start: Math.min(w.start, held.end - 1), end: held.end }
+        : { start: held.start, end: Math.max(w.end, held.start + 1) };
+    if (next.start === held.start && next.end === held.end) return;
+    setHeld(next);
+    offerHeld(next);
+  };
+  const dropHandle = (e: React.PointerEvent) => {
+    if (!dragEnd.current) return;
+    e.stopPropagation();
+    dragEnd.current = null;
+  };
 
   const onHoldMove = useCallback(
     (clientX: number, clientY: number) => {
@@ -2233,6 +2271,16 @@ function ReadingSurface({
     // for the gesture that started before this one finished.
     if (folded || folding) return;
 
+    // With a word held, the next tap anywhere on the page puts the menu away
+    // and does nothing else — it does not also turn the page or raise the
+    // bars. This is the job the backdrop used to do before it was removed for
+    // swallowing the handles; doing it here instead means the page underneath
+    // is never covered by anything, which is what let the handles work.
+    if (pick) {
+      done();
+      return;
+    }
+
     const dx = e.clientX - from.x;
     const dy = e.clientY - from.y;
     const turn = paged && from.turning ? turnFrom(dx, dy, box.w || 1, paged) : "stay";
@@ -2390,9 +2438,74 @@ function ReadingSurface({
             key={i}
             aria-hidden
             className="pointer-events-none absolute block rounded-[3px]"
-            style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: theme.mark }}
+            style={{
+              left: r.x, top: r.y, width: r.w, height: r.h,
+              // The mark colour, laid down twice. It is mixed to sit UNDER
+              // text as a highlighter, and a selection has to be plainly
+              // visible rather than tasteful — two coats of the page's own
+              // ink is a stronger tint without introducing a colour the book
+              // does not already use. (Two gradient layers, because CSS will
+              // composite those and will not composite two flat colours.)
+              background: `linear-gradient(${theme.mark}, ${theme.mark}), linear-gradient(${theme.mark}, ${theme.mark})`,
+            }}
           />
         ))}
+
+        {/* The grab handles. Drawn, because there is no selection for the
+            browser to draw them on — a bar at each end with a knob outside
+            the line, which is the shape a thumb already knows. */}
+        {holdEnds && (
+          <>
+            {(["a", "b"] as const).map((which) => {
+              const r = which === "a" ? holdEnds.a : holdEnds.b;
+              const x = which === "a" ? r.x : r.x + r.w;
+              return (
+                <span
+                  key={which}
+                  role="slider"
+                  tabIndex={-1}
+                  aria-label={which === "a" ? "Start of the selection" : "End of the selection"}
+                  aria-valuenow={which === "a" ? (held?.start ?? 0) : (held?.end ?? 0)}
+                  onPointerDown={grabHandle(which)}
+                  onPointerMove={moveHandle}
+                  onPointerUp={dropHandle}
+                  onPointerCancel={dropHandle}
+                  className="absolute z-[62] touch-none"
+                  // A generous target around a thin mark: the bar is two
+                  // pixels and the thing you can put a thumb on is twenty-two.
+                  style={{
+                    left: x - 11,
+                    top: r.y - (which === "a" ? 13 : 2),
+                    width: 22,
+                    height: r.h + 15,
+                  }}
+                >
+                  <span
+                    className="absolute rounded-full"
+                    style={{
+                      left: 10,
+                      top: which === "a" ? 11 : 0,
+                      width: 2,
+                      height: r.h + 4,
+                      background: theme.fg,
+                    }}
+                  />
+                  <span
+                    className="absolute size-[11px] rounded-full"
+                    style={{
+                      left: 5.5,
+                      top: which === "a" ? 2 : r.h + 4,
+                      background: theme.fg,
+                      boxShadow: theme.dark
+                        ? "0 1px 3px rgba(0,0,0,0.7)"
+                        : "0 1px 3px rgba(0,0,0,0.35)",
+                    }}
+                  />
+                </span>
+              );
+            })}
+          </>
+        )}
 
         {pick && (
           <WordMenu
