@@ -64,17 +64,47 @@ export function Bookshelf() {
    * counted the afternoon. The reader now banks a minute at a time and stops
    * counting when nobody is turning pages.
    */
+  const setReadingBook = useSoma((s) => s.setReadingBook);
+
   // Opening a book from the shelf means "where I left off", so any landing a
   // highlight asked for is dropped first. Leaving it set would send the next
   // ordinary open back to the same passage for ever.
   const openReader = (id: string) => {
     setLanding(undefined);
     setReadingId(id);
+    setReadingBook(id);
   };
   const closeReader = () => {
     setLanding(undefined);
     setReadingId(null);
+    // Closing the book is what says you are done with it. Everything else —
+    // backgrounding, locking the phone, the app being killed — leaves this
+    // set, which is what makes the next launch land back on the page.
+    setReadingBook(null);
   };
+
+  /**
+   * Back to the page you were on, on the next launch.
+   *
+   * Only for a book that is still on the shelf and still has its file: the
+   * alternative is opening into a reader that can only show an error, which
+   * is a worse start than the shelf. Either way the memory is spent here, so
+   * a book you then close does not come back the launch after.
+   */
+  const hydrated = useSoma((s) => s.hydrated);
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (!hydrated || resumed.current) return;
+    resumed.current = true;
+    const want = useSoma.getState().readingBook;
+    if (!want) return;
+    const book = useSoma.getState().mind.find((m) => m.id === want);
+    if (!book || book.kind !== "book" || !book.fileKind) {
+      setReadingBook(null);
+      return;
+    }
+    setReadingId(want);
+  }, [hydrated, setReadingBook]);
 
   /**
    * "Take me to this highlight", asked for by a card that cannot reach here.

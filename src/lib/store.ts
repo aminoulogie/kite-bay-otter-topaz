@@ -212,6 +212,17 @@ export interface SomaStore {
    */
   editingDashboard: boolean;
   /**
+   * The book that was open when the app went away, or null.
+   *
+   * PERSISTED, and the distinction it draws is the whole point: this is set
+   * while a book is OPEN and cleared when you close it. So "left it on" means
+   * left — walked away, locked the phone, got killed in the background — and
+   * not "finished with". Shut the book and the app opens on Home next time,
+   * the way it always did.
+   */
+  readingBook: string | null;
+  setReadingBook: (id: string | null) => void;
+  /**
    * A book another card has asked to open, at a passage inside it.
    *
    * The highlights list and the shelf are separate widgets on the same page
@@ -560,6 +571,7 @@ export const useSoma = create<SomaStore>()(
       langs: [],
       readingSince: null,
       editingDashboard: false,
+      readingBook: null,
       openBookAt: null,
       programs: [],
       activeProgramId: null,
@@ -1141,6 +1153,7 @@ export const useSoma = create<SomaStore>()(
         set({ langs: get().langs.map((l) => (l.code === code ? learn(l, word) : l)) }),
       unlearnWord: (code, word) =>
         set({ langs: get().langs.map((l) => (l.code === code ? unlearn(l, word) : l)) }),
+      setReadingBook: (id) => set({ readingBook: id }),
       askForBook: (bookId, chapter, offset) =>
         set({ openBookAt: { bookId, chapter: Math.max(0, chapter), offset: Math.max(0, offset) } }),
       bookOpened: () => set({ openBookAt: null }),
@@ -2528,6 +2541,7 @@ export const useSoma = create<SomaStore>()(
         reading: s.reading,
         langs: s.langs,
         readingSince: s.readingSince,
+        readingBook: s.readingBook,
         live: s.live,
         activeDate: s.activeDate,
       }),

@@ -226,6 +226,14 @@ export function AppShell() {
         const gone = useSoma.getState().purgeNutritionBefore(NUTRITION_KEEP_FROM);
         if (gone) toast(`Cleared ${gone} nutrition days from before September`);
       }
+      // Left in the middle of a book: open where the book is, so the shelf is
+      // mounted to reopen it. The app otherwise starts on Home by design, and
+      // still does for every launch that did not interrupt a reading session
+      // — closing a book is what clears this.
+      const open = useSoma.getState().readingBook;
+      if (open && useSoma.getState().mind.some((m) => m.id === open && m.fileKind)) {
+        useSoma.getState().setTab("mind");
+      }
       markHydrated();
       setReady(true);
     });
