@@ -54,34 +54,18 @@ export function Bookshelf() {
   const [readingId, setReadingId] = useState<string | null>(null);
   const [importing, setImporting] = useState(0);
 
-  const startReading = useSoma((s) => s.startReading);
-  const stopReading = useSoma((s) => s.stopReading);
   /**
-   * Whether the READER started the clock, as opposed to the goal card.
+   * The reader keeps its own time — see `lib/use-reading-clock.ts`.
    *
-   * Opening a book starts the reading timer, because opening a book is what
-   * reading is — a timer you have to remember to start is a timer that shows
-   * you did no reading this week. But if you had already started it yourself,
-   * the reader must not restart it, and closing the book must not stop what
-   * you started: the minutes you had banked are yours either way.
+   * This used to start the goal card's stopwatch on open and stop it on close,
+   * which meant a session was recorded only if the book was closed properly
+   * (iOS discards a backgrounded web view whenever it likes, and takes the
+   * whole evening with it) and that a book left open on the arm of a chair
+   * counted the afternoon. The reader now banks a minute at a time and stops
+   * counting when nobody is turning pages.
    */
-  const clockIsOurs = useRef(false);
-
-  const openReader = (id: string) => {
-    setReadingId(id);
-    if (!useSoma.getState().readingSince) {
-      startReading();
-      clockIsOurs.current = true;
-    }
-  };
-
-  const closeReader = () => {
-    setReadingId(null);
-    if (!clockIsOurs.current) return;
-    clockIsOurs.current = false;
-    const kept = stopReading();
-    if (kept > 0) toast.success(`${kept} min read`);
-  };
+  const openReader = (id: string) => setReadingId(id);
+  const closeReader = () => setReadingId(null);
 
   const books = useMemo(() => sortShelf(onlyBooks(mind)), [mind]);
   const tally = useMemo(() => counts(books), [books]);

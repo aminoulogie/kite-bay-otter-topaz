@@ -33,6 +33,7 @@ import {
 } from "@/lib/reader-prefs";
 import { getLocalDateKey } from "@/lib/soma";
 import { useScrollLock } from "@/lib/use-sheet";
+import { useReadingClock } from "@/lib/use-reading-clock";
 import { useSoma } from "@/lib/store";
 import { capture, cleanSelection, isSelectable } from "@/lib/word-capture";
 import { caretAt, spanUnion, wordBounds } from "@/lib/pick-word";
@@ -77,6 +78,19 @@ export function BookReader({
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  /**
+   * The book counts its own minutes towards the reading goal.
+   *
+   * A book that is open on the screen knows when it was being read. Nothing
+   * accrues while the file is still being opened or after it has failed to
+   * open — staring at a spinner is not reading — and the total is said out
+   * loud on the way back to the shelf, because a number that only ever
+   * changes while you are looking away is a number nobody trusts.
+   */
+  const sawReading = useReadingClock(!loading && !error, (min) =>
+    toast.success(`${min} min read`),
+  );
   const [chrome, setChrome] = useState(true);
   const [showPrefs, setShowPrefs] = useState(false);
   /** True while a finger is scrubbing the page pill — the paper dims behind it. */
@@ -179,6 +193,18 @@ export function BookReader({
     }, 700);
     return () => clearTimeout(t);
   }, [at, total, offset, line]);
+
+  /**
+   * A page that changed is somebody reading, whatever moved it.
+   *
+   * The clock already watches for a pointer, which covers a swipe and a tap on
+   * the arrows. This covers the rest — a keyboard turn, a jump from the
+   * contents or a search result — and costs nothing when the page has not
+   * moved, because a repeated sign of life only pushes the idle wall along.
+   */
+  useEffect(() => {
+    sawReading();
+  }, [at, spread.page, sawReading]);
 
   /**
    * And once more on the way out.

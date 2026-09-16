@@ -6,14 +6,17 @@
  * today" — and a run of days you can see is most of what makes you open it
  * tomorrow.
  *
- * SOMA is not the reader, so the minutes cannot be taken automatically the way
- * a reading app takes them. They come from a timer you start, or from typing
- * them. That makes one rule unavoidable and it is the rule everything else
- * here bends around: **a day with nothing logged is a day with nothing logged,
- * not a day with zero minutes.** A streak may only be broken by a day that
- * went by, never by a day nobody got round to recording — but a blank day
- * cannot count towards one either. Both halves matter, and the second is why
- * the streak walks backwards from today rather than counting entries.
+ * The minutes arrive three ways. A book open in SOMA counts itself — see
+ * `reading-clock.ts` — and a timer you start by hand or a tap on +15 covers
+ * everything read on paper, which is most of what anybody reads.
+ *
+ * Because two of those three depend on somebody remembering, one rule is
+ * unavoidable and it is the rule everything else here bends around: **a day
+ * with nothing logged is a day with nothing logged, not a day with zero
+ * minutes.** A streak may only be broken by a day that went by, never by a day
+ * nobody got round to recording — but a blank day cannot count towards one
+ * either. Both halves matter, and the second is why the streak walks backwards
+ * from today rather than counting entries.
  */
 
 import { addDays, getLocalDateKey, parseLocalDateKey } from "./soma/dates.ts";

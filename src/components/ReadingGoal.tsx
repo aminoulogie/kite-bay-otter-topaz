@@ -35,11 +35,12 @@ const QUICK = [5, 15, 30];
  * is the thing that actually decides whether a book gets finished, and a run of
  * days you can see is most of what makes you open it tomorrow.
  *
- * SOMA is not the reader, so the minutes cannot be taken automatically. They
- * come from a timer or from a tap, and the timer is stored as a START TIME
- * rather than a tally: reading is the one activity during which you put the
- * phone down, so a counter that only advances while the app is foregrounded
- * would undercount exactly the sessions worth counting.
+ * A book opened in SOMA fills this in by itself. The timer and the quick taps
+ * are for paper, which is most of what anybody reads — and the timer is stored
+ * as a START TIME rather than a tally, because reading is the one activity
+ * during which you put the phone down, and a counter that only advances while
+ * the app is foregrounded would undercount exactly the sessions worth
+ * counting.
  */
 export function ReadingGoal() {
   const reading = useSoma((s) => s.reading);
@@ -158,6 +159,13 @@ export function ReadingGoal() {
           </button>
         ))}
       </div>
+
+      {/* Said once, here, because a number that fills itself in without
+          explanation reads as a bug — and somebody who does not know it is
+          running will start the timer as well and count the evening twice. */}
+      <p className="mt-1.5 text-center text-[0.65rem] leading-snug text-faint">
+        Books opened in SOMA count themselves. The timer is for paper.
+      </p>
 
       {/* The week, Monday first. A strip that slides every midnight cannot show
           "this week", and this week is what a weekly run is measured against. */}
