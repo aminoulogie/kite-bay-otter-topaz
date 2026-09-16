@@ -693,7 +693,7 @@ export function NutritionView() {
       <div key="diary" className="space-y-3">
       {/* The gesture is invisible without this. */}
       {items.length > 0 && (
-        <p className="-mb-1 px-1 text-[0.62rem] text-faint">
+        <p className="px-1 text-[0.62rem] leading-snug text-faint">
           Tap a food to edit it. Swipe left to delete. Press and hold, then drag it onto
           another meal to move it there.
         </p>

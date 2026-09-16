@@ -65,10 +65,14 @@
     rgba(255, 255, 255, 0) 70%
   );
 
+  /* The vertical offset is at least half the blur on purpose: a shadow
+     reaches up by (blur / 2 - offset), and at 10px/28px that was four pixels
+     of darkness above every card, landing on the bottom edge of whatever it
+     was stacked under. Below the card is where a shadow belongs. */
   --glass-shadow-card:
     inset 0 1px 0 var(--glass-rim-soft),
     0 1px 2px rgba(0, 0, 0, 0.3),
-    0 10px 28px rgba(0, 0, 0, 0.28);
+    0 13px 26px rgba(0, 0, 0, 0.28);
   --glass-shadow-float:
     inset 0 1px 0 var(--glass-rim-top),
     0 8px 20px rgba(0, 0, 0, 0.4),
@@ -108,7 +112,7 @@ html[data-soma-theme="light"] {
   --glass-shadow-card:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     0 1px 2px rgba(16, 24, 40, 0.06),
-    0 10px 24px rgba(16, 24, 40, 0.1);
+    0 12px 24px rgba(16, 24, 40, 0.1);
   --glass-shadow-float:
     inset 0 1px 0 rgba(255, 255, 255, 0.95),
     0 8px 20px rgba(16, 24, 40, 0.12),
@@ -287,8 +291,17 @@ html[data-soma-theme="light"] {
    shorthand, like .soma-skeleton's shimmer.
    ========================================================================== */
 .glass-card,
-.soma-widget-box > *,
-.soma-widget-natural > *,
+/* A widget's children get the glass only if they are a SURFACE.
+   `> *` matched every direct child, including the transparent layout
+   wrappers — `grid grid-cols-2 gap-2`, `flex flex-wrap gap-2` — that exist
+   only to arrange things. Those then cast a rounded drop shadow and drew a
+   white rim across whatever was behind them, which is what put a dark
+   rounded corner over the accent buttons underneath. A box with no surface
+   has no edge to catch the light on. */
+.soma-widget-box
+  > :where([class~="bg-surface"], [class~="bg-surface-2"], [class~="bg-surface-3"]),
+.soma-widget-natural
+  > :where([class~="bg-surface"], [class~="bg-surface-2"], [class~="bg-surface-3"]),
 :where(div, section, article, aside):where(
     [class~="rounded-2xl"],
     [class~="rounded-xl"],
