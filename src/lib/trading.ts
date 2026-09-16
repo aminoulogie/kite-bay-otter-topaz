@@ -45,6 +45,13 @@ export const GOOD_RR = 2;
 /** Two losses and the day is over. */
 export const DAILY_LOSS_LIMIT = 2;
 
+export interface CheckItem {
+  id: string;
+  label: string;
+  /** Why it is here, shown small under the label. */
+  why: string;
+}
+
 export type SystemId = "ema-pullback" | "sr-retest" | "rsi-divergence" | "session-breakout";
 export type Direction = "buy" | "sell";
 
@@ -57,6 +64,18 @@ export interface SystemDef {
   rules: string[];
   /** What makes the setup void, kept separate because it is what gets ignored. */
   skip: string;
+  /**
+   * The entry conditions for THIS system, ticked one at a time.
+   *
+   * There used to be a single box saying "the setup matches the system's
+   * rules exactly", which is the checkbox equivalent of asking someone
+   * whether they have read the terms. It asks for a judgement you have
+   * already made, at the moment you are least able to question it, and it is
+   * always ticked. These ask for the rules one at a time instead — the trend,
+   * the touch, the close — so that ticking is looking, and a setup that fails
+   * on the third one fails before you have typed a price.
+   */
+  entry: CheckItem[];
 }
 
 /**
@@ -80,6 +99,28 @@ export const SYSTEMS: SystemDef[] = [
       "Target 2× the stop, or the last swing high/low if that is at least 1.5×.",
     ],
     skip: "A candle closes through EMA50 against the trend.",
+    entry: [
+      {
+        id: "ema-trend",
+        label: "EMA20 and EMA50 are stacked and both moving your way",
+        why: "Above and rising to buy, below and falling to sell. Flat or tangled is no trade.",
+      },
+      {
+        id: "ema-touch",
+        label: "Price left the EMAs, came back, and touched EMA20 or EMA50",
+        why: "A pullback that never reaches the line is not this setup.",
+      },
+      {
+        id: "ema-close",
+        label: "A candle touched the EMA and CLOSED back in the trend direction",
+        why: "Green above EMA20 with RSI over 50 to buy; red below with RSI under 50 to sell.",
+      },
+      {
+        id: "ema-intact",
+        label: "No candle has closed through EMA50 against the trend",
+        why: "That is the void condition. If it has happened, the trend is not yours any more.",
+      },
+    ],
   },
   {
     id: "sr-retest",
@@ -94,6 +135,28 @@ export const SYSTEMS: SystemDef[] = [
       "Target the next support or resistance, at least 1.5× the stop.",
     ],
     skip: "A candle closes back through the level — the breakout failed.",
+    entry: [
+      {
+        id: "sr-level",
+        label: "The level is one the market has turned at least twice",
+        why: "Twice is a level. Once is a place price happened to stop.",
+      },
+      {
+        id: "sr-break",
+        label: "A 15m candle has CLOSED beyond the level",
+        why: "A wick through it is not a break.",
+      },
+      {
+        id: "sr-retest",
+        label: "Price came back, wicked through, and closed on the breakout side",
+        why: "The retest candle is the entry. The breakout candle never is.",
+      },
+      {
+        id: "sr-holding",
+        label: "Nothing has closed back through the level since",
+        why: "That is the void condition — the breakout failed and this is now the other side.",
+      },
+    ],
   },
   {
     id: "rsi-divergence",
@@ -109,6 +172,23 @@ export const SYSTEMS: SystemDef[] = [
       "Also a filter: never take another system's trade against an active divergence.",
     ],
     skip: "The divergence is against you — that is a reason to skip, whatever the other system says.",
+    entry: [
+      {
+        id: "rsi-diverge",
+        label: "Price and RSI disagree at the swing",
+        why: "Lower low with a higher RSI low to buy; higher high with a lower RSI high to sell.",
+      },
+      {
+        id: "rsi-zone",
+        label: "RSI is in the zone — under 35 to buy, over 65 to sell",
+        why: "Not required, but a divergence in the middle of the range is the weak kind.",
+      },
+      {
+        id: "rsi-cross",
+        label: "RSI has crossed its signal line your way AND a candle closed the same way",
+        why: "Both. The cross without the close is the trap this system is famous for.",
+      },
+    ],
   },
   {
     id: "session-breakout",
@@ -123,6 +203,28 @@ export const SYSTEMS: SystemDef[] = [
       "Target the range height added to the breakout point, at least 1.5× the stop.",
     ],
     skip: "Price closes back inside the range — the breakout failed.",
+    entry: [
+      {
+        id: "brk-utc",
+        label: "The chart is on UTC, and the Asian range is 00:00–07:00",
+        why: "XM shows UTC+3. Read the range off the wrong clock and everything after it is wrong.",
+      },
+      {
+        id: "brk-width",
+        label: "The range is 35 pips wide or less",
+        why: "Wider than that and the stop at the middle is further than the target is worth.",
+      },
+      {
+        id: "brk-close",
+        label: "A 15m candle has CLOSED beyond the range, inside the window",
+        why: "Between 07:00 and 10:00 UTC. Outside it this is not the setup.",
+      },
+      {
+        id: "brk-inside",
+        label: "Price has not closed back inside the range",
+        why: "That is the void condition. A failed breakout is not a late entry.",
+      },
+    ],
   },
 ];
 
@@ -146,19 +248,15 @@ export const BREAKOUT_CLOSE_UTC = 10;
  * check, because a checkbox next to a number the machine already knows is
  * theatre, and theatre is what teaches people to tick without reading.
  */
-export interface CheckItem {
-  id: string;
-  label: string;
-  /** Why it is here, shown small under the label. */
-  why: string;
-}
-
+/**
+ * The checks that are true of every trade, whichever system it came from.
+ *
+ * "The setup matches the system's rules exactly" used to head this list and
+ * has been removed: the per-system entry conditions ARE that question, asked
+ * one rule at a time, and asking it again in the abstract afterwards taught
+ * nothing except how to tick.
+ */
 export const CHECKS: CheckItem[] = [
-  {
-    id: "matches",
-    label: "The setup matches the system's rules exactly",
-    why: "Not nearly, not the spirit of it. If you are arguing for it, it is a no.",
-  },
   {
     id: "closed",
     label: "The trigger candle has closed",
@@ -182,6 +280,24 @@ export const CHECKS: CheckItem[] = [
 ];
 
 export const CHECK_IDS = CHECKS.map((c) => c.id);
+
+/**
+ * Everything this trade has to confirm: its system's entry, then the rest.
+ *
+ * In that order on purpose. The system's own conditions are the ones that
+ * decide whether there is a trade at all, and they should be answered before
+ * the housekeeping — a setup that fails its third rule should never get as
+ * far as being asked about the news.
+ */
+export function checksFor(system: SystemId | undefined): CheckItem[] {
+  return [...(systemDef(system)?.entry ?? []), ...CHECKS];
+}
+
+/** Ticks that belong to this system. Switching systems drops the rest. */
+export function keepChecks(system: SystemId | undefined, ticked: readonly string[]): string[] {
+  const mine = new Set(checksFor(system).map((c) => c.id));
+  return ticked.filter((id) => mine.has(id));
+}
 
 /** A trade as it is being drafted, before anything is committed. */
 export interface TradeDraft {
@@ -458,7 +574,7 @@ export function gate(draft: TradeDraft, ctx: GateContext): GateResult {
     add("block", "reason", "Write the one sentence: which system, and why this matches it.");
   }
 
-  const missing = CHECKS.filter((c) => !draft.checks?.includes(c.id));
+  const missing = checksFor(draft.system).filter((c) => !draft.checks?.includes(c.id));
   if (missing.length) {
     add(
       "block",

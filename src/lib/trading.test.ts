@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  CHECK_IDS, DAILY_LOSS_LIMIT, MIN_SAMPLE, PIP, RISK_MAX,
+  CHECK_IDS, DAILY_LOSS_LIMIT, MIN_SAMPLE, PIP, RISK_MAX, SYSTEMS, checksFor, keepChecks,
   bestSystem, cleanTrade, gate, isOpen, lossesOn, lotTable, maxStopPips, openTrade,
   outcome, pipValue, pips, profit, rMultiple, report, rewardRatio, riskMoney, riskPercent,
   stopPips, suggestLots, summarise, systemName, verdictFor,
@@ -20,7 +20,9 @@ const draft = (over: Partial<TradeDraft> = {}): TradeDraft => ({
   entry: 1.17000,
   stop: 1.16900,          // 10 pips
   target: 1.17200,        // 20 pips, so 2R
-  checks: [...CHECK_IDS],
+  // Every box this system asks for: its own entry conditions first, then
+  // the ones true of any trade.
+  checks: checksFor(over.system ?? "ema-pullback").map((c) => c.id),
   ...over,
 });
 
@@ -171,11 +173,48 @@ test("no sentence, no trade", () => {
 });
 
 test("every confirmation has to be ticked, and the last one is named", () => {
-  const one = gate(draft({ checks: CHECK_IDS.slice(0, -1) }), ctx());
+  const all = checksFor("ema-pullback").map((c) => c.id);
+  const one = gate(draft({ checks: all.slice(0, -1) }), ctx());
   const issue = one.blocks.find((b) => b.id === "checks")!;
   assert.match(issue.message, /One thing left/);
   const none = gate(draft({ checks: [] }), ctx());
-  assert.match(none.blocks.find((b) => b.id === "checks")!.message, /5 things/);
+  assert.match(none.blocks.find((b) => b.id === "checks")!.message, new RegExp(`${all.length} things`));
+});
+
+test("each system asks its own entry conditions, before the shared ones", () => {
+  for (const sys of SYSTEMS) {
+    const list = checksFor(sys.id);
+    assert.ok(sys.entry.length >= 3, `${sys.name} needs its rules as ticks`);
+    assert.deepEqual(
+      list.slice(0, sys.entry.length).map((c) => c.id),
+      sys.entry.map((c) => c.id),
+      "the system's own conditions come first",
+    );
+    assert.deepEqual(list.slice(sys.entry.length).map((c) => c.id), CHECK_IDS);
+    // No two systems may share a tick id, or switching would carry one over.
+    for (const other of SYSTEMS) {
+      if (other.id === sys.id) continue;
+      for (const c of sys.entry) {
+        assert.ok(
+          !other.entry.some((o) => o.id === c.id),
+          `${c.id} appears in both ${sys.name} and ${other.name}`,
+        );
+      }
+    }
+  }
+});
+
+test("the vague catch-all is gone: no box asks whether the rules were followed", () => {
+  assert.ok(!CHECK_IDS.includes("matches"));
+});
+
+test("switching system keeps what still applies and drops what does not", () => {
+  const ticked = [...checksFor("ema-pullback").map((c) => c.id)];
+  const kept = keepChecks("sr-retest", ticked);
+  // The shared ones survive; the EMA-specific ones do not.
+  assert.deepEqual(kept, CHECK_IDS);
+  assert.deepEqual(keepChecks("ema-pullback", ticked), ticked);
+  assert.deepEqual(keepChecks(undefined, ticked), CHECK_IDS);
 });
 
 test("a second trade is refused while one is still open", () => {

@@ -10,7 +10,8 @@ import { hasDetailRoom } from "@/lib/dashboard-layout";
 import { tapSuccess, tapWarn } from "@/lib/haptics";
 import { getLocalDateKey } from "@/lib/soma";
 import {
-  CHECKS, DAILY_LOSS_LIMIT, LOT_STEPS, MIN_SAMPLE, RISK_TARGET, SYSTEMS,
+  DAILY_LOSS_LIMIT, LOT_STEPS, MIN_SAMPLE, RISK_TARGET, SYSTEMS,
+  checksFor, keepChecks, systemDef,
   bestSystem, gate, lossesOn, lotTable, openTrade, outcome, profit, rMultiple, report,
   rewardRatio, riskMoney, riskPercent, stopPips, suggestLots, summarise, systemName,
   type Direction, type SystemId, type Trade, type TradeDraft, type Verdict,
@@ -207,6 +208,10 @@ function PreTradeCard({
   const stopped = stopPips(draft);
   const suggested = stopped > 0 ? suggestLots(stopped, equity) : null;
 
+  /** What this system asks for, and where its own rules stop. */
+  const list = checksFor(d.system);
+  const entryCount = systemDef(d.system)?.entry.length ?? 0;
+
   const toggle = (id: string) =>
     setD((p) => ({
       ...p,
@@ -237,7 +242,17 @@ function PreTradeCard({
           <button
             key={s.id}
             type="button"
-            onClick={() => setD((p) => ({ ...p, system: s.id as SystemId }))}
+            onClick={() =>
+              setD((p) => ({
+                ...p,
+                system: s.id as SystemId,
+                // The conditions below are this system's own, so the ticks
+                // that belonged to the last one go with it. Carrying them
+                // over would mean arriving at a new setup with three of its
+                // rules already confirmed by a setup you have just rejected.
+                checks: keepChecks(s.id as SystemId, p.checks),
+              }))
+            }
             className={cn(
               "rounded-xl border px-2 py-2 text-left text-[0.7rem] font-bold leading-tight",
               d.system === s.id ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface-2",
@@ -345,15 +360,31 @@ function PreTradeCard({
         />
       </label>
 
+      {/* The system's own entry conditions, then the ones true of any trade.
+          These change with the system above — that is the point of them. */}
+      <div className="mb-1 flex items-baseline justify-between px-0.5">
+        <span className="text-[0.6rem] font-bold uppercase tracking-wide text-faint">
+          {systemName(d.system)} — entry
+        </span>
+        <span className="text-[0.6rem] tabular text-faint">
+          {d.checks.length}/{list.length}
+        </span>
+      </div>
       <div className="mb-2 space-y-1">
-        {CHECKS.map((c) => {
+        {list.map((c, i) => {
           const on = d.checks.includes(c.id);
           return (
             <button
               key={c.id}
               type="button"
               onClick={() => toggle(c.id)}
-              className="flex w-full items-start gap-2.5 rounded-xl border border-border bg-surface-2 px-3 py-2 text-left"
+              className={cn(
+                "flex w-full items-start gap-2.5 rounded-xl border bg-surface-2 px-3 py-2 text-left",
+                on ? "border-accent/40" : "border-border",
+                // A hairline break where this system's rules end and the
+                // housekeeping begins, so the two are never read as one list.
+                i === entryCount && "mt-2.5",
+              )}
             >
               <span
                 className={cn(
@@ -750,7 +781,7 @@ function LogCard({ trades }: { trades: Trade[] }) {
                         {typeof t.exit === "number" && ` · out ${price(t.exit)}`}
                       </p>
                       <p className="mt-0.5 text-[0.6rem] text-faint">
-                        Confirmed {t.checks.length} of {CHECKS.length} ·{" "}
+                        Confirmed {t.checks.length} of {checksFor(t.system).length} ·{" "}
                         {t.equityAtEntry > 0
                           ? `${(riskPercent(t, t.equityAtEntry) * 100).toFixed(1)}% risked`
                           : "risk unknown"}
