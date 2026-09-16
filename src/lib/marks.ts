@@ -101,6 +101,12 @@ export interface BookMark {
   colour: string;
   /** What it said, so the list of highlights can be read away from the book. */
   text: string;
+  /**
+   * When it was drawn, in epoch milliseconds. Optional, and it has to be:
+   * every highlight made before this existed has no date and must not vanish
+   * from a list because of it. Undated ones sort as oldest, which is true.
+   */
+  at?: number;
 }
 
 /**
@@ -125,7 +131,12 @@ export function cleanMark(value: unknown): BookMark | null {
   if (to <= from) return null;
   const text = typeof v.text === "string" ? v.text : "";
   const colour = MARK_COLOURS.some((m) => m.id === v.colour) ? (v.colour as string) : DEFAULT_MARK;
-  return { id, chapter: Math.round(chapter), start: Math.round(from), end: Math.round(to), colour, text };
+  const stamp = Number(v.at);
+  const at = Number.isFinite(stamp) && stamp > 0 ? Math.round(stamp) : undefined;
+  return {
+    id, chapter: Math.round(chapter), start: Math.round(from), end: Math.round(to), colour, text,
+    ...(at === undefined ? {} : { at }),
+  };
 }
 
 export function cleanMarks(value: unknown): BookMark[] {

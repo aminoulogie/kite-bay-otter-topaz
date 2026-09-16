@@ -56,9 +56,16 @@ import type { MindEntry } from "@/lib/types";
  * whether you read the book here or on paper.
  */
 export function BookReader({
-  book, onClose, onChange,
+  book, startAt, onClose, onChange,
 }: {
   book: MindEntry;
+  /**
+   * Open here instead of where you left off — a highlight asking to be
+   * visited. Read once, on the first render: this component is keyed on it,
+   * so a different passage arrives as a different reader rather than as a
+   * prop that changes under a book already open.
+   */
+  startAt?: { chapter: number; offset: number };
   onClose: () => void;
   onChange: (patch: Partial<MindEntry>) => void;
 }) {
@@ -101,7 +108,8 @@ export function BookReader({
     : defaultLanguage(typeof navigator === "undefined" ? undefined : navigator.language);
 
   // Where we are, one-based, in pages for a PDF and chapters for an EPUB.
-  const [at, setAt] = useState(Math.max(1, book.page ?? 1));
+  // Where the book opens: the passage asked for, or where you left off.
+  const [at, setAt] = useState(Math.max(1, startAt ? startAt.chapter + 1 : (book.page ?? 1)));
   const [total, setTotal] = useState(book.pages ?? 0);
   /** Page within the current chapter, and the text the rail draws small. */
   const [spread, setSpread] = useState<{
@@ -144,9 +152,9 @@ export function BookReader({
     setSeek({ ...next, nonce: nonce.current });
   }, []);
   /** Characters into the chapter — see lib/anchor.ts for why not a page. */
-  const [offset, setOffset] = useState(book.readOffset);
+  const [offset, setOffset] = useState(startAt ? startAt.offset : book.readOffset);
   /** Which line was lit, for anyone reading line by line. */
-  const [line, setLine] = useState(book.readLine);
+  const [line, setLine] = useState(startAt ? undefined : book.readLine);
 
   // Written back on a debounce rather than per turn: one page turn is one
   // localStorage write of the entire diary, and a thumb held on the forward
@@ -697,7 +705,9 @@ function EpubPages({
   const addHighlight = useCallback(
     (span: { start: number; end: number; colour: string; text: string }) => {
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-      onMarks(addMark(marks, { id, chapter, ...span }));
+      // Dated, so the list of highlights outside the book can answer "what
+      // have I been marking lately" and not only "what is in this book".
+      onMarks(addMark(marks, { id, chapter, at: Date.now(), ...span }));
     },
     [marks, chapter, onMarks],
   );

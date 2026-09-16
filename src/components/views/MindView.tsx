@@ -10,6 +10,7 @@ import { WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { LanguageStudy } from "@/components/LanguageStudy";
 import { ReadingGoal } from "@/components/ReadingGoal";
+import { Highlights } from "@/components/Highlights";
 import { WordBook } from "@/components/WordBook";
 import { getLocalDateKey } from "@/lib/soma";
 import { RowEditSheet } from "@/components/RowEditSheet";
@@ -136,6 +137,7 @@ export function MindView() {
             the same page as the thing you collected it from. */}
         {kind === "book" && <ReviewQueue key="review" />}
         {kind === "book" && <WordBook key="words" />}
+        {kind === "book" && <Highlights key="highlights" />}
         {kind === "language" && <LanguageStudy key="languages" />}
 
       <Card key="week">

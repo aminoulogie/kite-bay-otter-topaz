@@ -64,8 +64,39 @@ export function Bookshelf() {
    * counted the afternoon. The reader now banks a minute at a time and stops
    * counting when nobody is turning pages.
    */
-  const openReader = (id: string) => setReadingId(id);
-  const closeReader = () => setReadingId(null);
+  // Opening a book from the shelf means "where I left off", so any landing a
+  // highlight asked for is dropped first. Leaving it set would send the next
+  // ordinary open back to the same passage for ever.
+  const openReader = (id: string) => {
+    setLanding(undefined);
+    setReadingId(id);
+  };
+  const closeReader = () => {
+    setLanding(undefined);
+    setReadingId(null);
+  };
+
+  /**
+   * "Take me to this highlight", asked for by a card that cannot reach here.
+   *
+   * The request is cleared as soon as it is taken up, so the passage is a
+   * place the reader STARTS at and not a place it keeps being dragged back
+   * to — turn one page and the request is already spent.
+   *
+   * `landing` is held separately from the store field for that reason: the
+   * reader needs the target for its first render, and by then the request is
+   * gone.
+   */
+  const request = useSoma((s) => s.openBookAt);
+  const bookOpened = useSoma((s) => s.bookOpened);
+  const [landing, setLanding] = useState<{ chapter: number; offset: number } | undefined>();
+  useEffect(() => {
+    if (!request) return;
+    bookOpened();
+    if (!useSoma.getState().mind.some((m) => m.id === request.bookId)) return;
+    setLanding({ chapter: request.chapter, offset: request.offset });
+    setReadingId(request.bookId);
+  }, [request, bookOpened]);
 
   const books = useMemo(() => sortShelf(onlyBooks(mind)), [mind]);
   const tally = useMemo(() => counts(books), [books]);
@@ -335,7 +366,11 @@ export function Bookshelf() {
 
       {reading && (
         <BookReader
+          // Keyed on the landing too, so asking for a second highlight in the
+          // book already open re-opens it there rather than doing nothing.
+          key={`${reading.id}:${landing ? `${landing.chapter}:${landing.offset}` : ""}`}
           book={reading}
+          startAt={landing}
           onClose={closeReader}
           onChange={(patch) => updateMind(reading.id, patch)}
         />

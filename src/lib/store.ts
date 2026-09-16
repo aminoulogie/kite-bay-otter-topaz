@@ -211,6 +211,23 @@ export interface SomaStore {
    * that reopens into a mode you forgot you left on looks broken.
    */
   editingDashboard: boolean;
+  /**
+   * A book another card has asked to open, at a passage inside it.
+   *
+   * The highlights list and the shelf are separate widgets on the same page
+   * with no way to talk to each other, and "take me to this one" has to cross
+   * that gap. A field rather than a prop chain because the two are siblings
+   * under a layout grid that reorders them.
+   *
+   * Deliberately NOT persisted. It is a request made a moment ago, and an app
+   * that reopens by throwing you into chapter nine of a book you closed last
+   * week has not remembered anything useful — it has lost your place.
+   */
+  openBookAt: { bookId: string; chapter: number; offset: number } | null;
+  /** Ask for a book to be opened at a character offset in a chapter. */
+  askForBook: (bookId: string, chapter: number, offset: number) => void;
+  /** Said by whoever honoured the request, so it is not honoured twice. */
+  bookOpened: () => void;
   planFor: (date?: string) => TimeBlock[];
   setDayPlan: (date: string, blocks: TimeBlock[]) => void;
   resetDayPlan: (date: string) => void;
@@ -543,6 +560,7 @@ export const useSoma = create<SomaStore>()(
       langs: [],
       readingSince: null,
       editingDashboard: false,
+      openBookAt: null,
       programs: [],
       activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
@@ -1123,6 +1141,9 @@ export const useSoma = create<SomaStore>()(
         set({ langs: get().langs.map((l) => (l.code === code ? learn(l, word) : l)) }),
       unlearnWord: (code, word) =>
         set({ langs: get().langs.map((l) => (l.code === code ? unlearn(l, word) : l)) }),
+      askForBook: (bookId, chapter, offset) =>
+        set({ openBookAt: { bookId, chapter: Math.max(0, chapter), offset: Math.max(0, offset) } }),
+      bookOpened: () => set({ openBookAt: null }),
       startReading: () => set({ readingSince: Date.now() }),
       /** Bank whatever the timer holds and stop it. Returns the minutes kept. */
       stopReading: () => {

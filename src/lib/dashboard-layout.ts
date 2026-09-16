@@ -218,6 +218,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "shelf", label: "Reading shelf", size: "2x4" },
     { id: "review", label: "Words to review", size: "2x4" },
     { id: "words", label: "Your own words", size: "2x4" },
+    { id: "highlights", label: "Highlights", size: "2x4" },
     { id: "week", label: "This week", size: "2x4" },
     { id: "log", label: "Log a book", size: "2x4" },
     { id: "recent", label: "Recent books", size: "2x4" },
