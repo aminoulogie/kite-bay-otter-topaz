@@ -23,16 +23,21 @@
  * in this file should be read as advice about whether to trade.
  */
 
-/** One pip on a 5-decimal EUR/USD quote. */
-export const PIP = 0.0001;
-
 /**
- * Dollars per pip at 0.01 lots, the size this account trades in.
+ * How a market is measured, and what a step of it is worth.
  *
- * Everything else scales off it, so the lot table is derived rather than
- * transcribed — an account that grows gets a table that grows with it.
+ * Both used to be constants here — 0.0001 and ten cents a pip at 0.01 lots —
+ * which is EUR/USD written into the arithmetic. They now come from
+ * `instruments.ts` by way of the trade itself, so gold is counted in gold's
+ * units and the same gate does the same job on it.
  */
-export const PIP_VALUE_PER_001 = 0.1;
+import { DEFAULT_INSTRUMENT, instrumentOf, perPoint } from "./instruments.ts";
+
+/** The default instrument's price step, which is what "a pip" used to mean. */
+export const PIP = instrumentOf(DEFAULT_INSTRUMENT).point;
+
+/** And its dollars per point at 1.00 lot. */
+export const DEFAULT_PER_POINT = instrumentOf(DEFAULT_INSTRUMENT).perLot;
 
 /** The account rule: 1% a trade, 2% the outer limit. */
 export const RISK_TARGET = 0.01;
@@ -303,6 +308,18 @@ export function keepChecks(system: SystemId | undefined, ticked: readonly string
 export interface TradeDraft {
   system: SystemId;
   direction: Direction;
+  /** What was traded — see instruments.ts. Absent means EUR/USD, which is
+   * what every trade logged before instruments existed was. */
+  instrument?: string;
+  /**
+   * Dollars per point at 1.00 lot, as it was when the trade was taken.
+   *
+   * Stored rather than looked up for the same reason `equityAtEntry` is: a
+   * correction made to the table next month must not quietly rewrite the risk
+   * on a trade that was sized under the old figure. Absent falls back to the
+   * instrument's shipped value.
+   */
+  perPoint?: number;
   /** The one sentence: which system, and why this matches it. */
   reason: string;
   lots: number;
@@ -341,32 +358,43 @@ export function newTradeId(): string {
  * about the one that matters.
  */
 
-/** Dollars per pip at this lot size. */
-export function pipValue(lots: number): number {
-  return (Number(lots) / 0.01) * PIP_VALUE_PER_001;
+/** Dollars per point at this lot size. */
+export function pipValue(lots: number, dollarsPerLot = DEFAULT_PER_POINT): number {
+  return Number(lots) * Number(dollarsPerLot);
 }
 
-/** Distance between two prices, in pips. Always positive. */
-export function pips(a: number, b: number): number {
-  return Math.abs(Number(a) - Number(b)) / PIP;
+/** What one step of this trade's market is worth per lot. */
+export function perPointOf(d: Pick<TradeDraft, "instrument" | "perPoint">): number {
+  return Number.isFinite(d.perPoint) && (d.perPoint as number) > 0
+    ? (d.perPoint as number)
+    : perPoint(d.instrument);
 }
 
-export function stopPips(d: Pick<TradeDraft, "entry" | "stop">): number {
-  return pips(d.entry, d.stop);
+/** Distance between two prices, in that market's own units. Always positive. */
+export function pips(a: number, b: number, step = PIP): number {
+  return Math.abs(Number(a) - Number(b)) / step;
 }
 
-export function targetPips(d: Pick<TradeDraft, "entry" | "target">): number {
-  return pips(d.entry, d.target);
+type Priced = Pick<TradeDraft, "instrument">;
+
+export function stopPips(d: Pick<TradeDraft, "entry" | "stop"> & Priced): number {
+  return pips(d.entry, d.stop, instrumentOf(d.instrument).point);
+}
+
+export function targetPips(d: Pick<TradeDraft, "entry" | "target"> & Priced): number {
+  return pips(d.entry, d.target, instrumentOf(d.instrument).point);
 }
 
 /** What this trade puts at risk, in dollars. */
-export function riskMoney(d: Pick<TradeDraft, "entry" | "stop" | "lots">): number {
-  return stopPips(d) * pipValue(d.lots);
+export function riskMoney(
+  d: Pick<TradeDraft, "entry" | "stop" | "lots" | "instrument" | "perPoint">,
+): number {
+  return stopPips(d) * pipValue(d.lots, perPointOf(d));
 }
 
 /** That risk as a share of the account. */
 export function riskPercent(
-  d: Pick<TradeDraft, "entry" | "stop" | "lots">,
+  d: Pick<TradeDraft, "entry" | "stop" | "lots" | "instrument" | "perPoint">,
   equity: number,
 ): number {
   if (!(equity > 0)) return 0;
@@ -375,9 +403,11 @@ export function riskPercent(
 
 /** Reward to risk, as a multiple. Zero stop distance has no ratio. */
 export function rewardRatio(d: Pick<TradeDraft, "entry" | "stop" | "target">): number {
-  const risk = stopPips(d);
+  // No instrument needed: it is a ratio of two distances in the same market,
+  // so whatever they are counted in cancels out.
+  const risk = pips(d.entry, d.stop);
   if (!(risk > 0)) return 0;
-  return targetPips(d) / risk;
+  return pips(d.entry, d.target) / risk;
 }
 
 /**
@@ -387,8 +417,13 @@ export function rewardRatio(d: Pick<TradeDraft, "entry" | "stop" | "target">): n
  * returns their 12 / 6 / 4 pips at 1% and 24 / 12 / 8 at 2%. Copied, it would
  * still say 12 pips after the account had doubled.
  */
-export function maxStopPips(lots: number, equity: number, pct = RISK_TARGET): number {
-  const value = pipValue(lots);
+export function maxStopPips(
+  lots: number,
+  equity: number,
+  pct = RISK_TARGET,
+  dollarsPerLot = DEFAULT_PER_POINT,
+): number {
+  const value = pipValue(lots, dollarsPerLot);
   if (!(value > 0) || !(equity > 0)) return 0;
   return (equity * pct) / value;
 }
@@ -402,11 +437,11 @@ export interface LotRow {
   atMax: number;
 }
 
-export function lotTable(equity: number): LotRow[] {
+export function lotTable(equity: number, dollarsPerLot = DEFAULT_PER_POINT): LotRow[] {
   return LOT_STEPS.map((lots) => ({
     lots,
-    atTarget: maxStopPips(lots, equity, RISK_TARGET),
-    atMax: maxStopPips(lots, equity, RISK_MAX),
+    atTarget: maxStopPips(lots, equity, RISK_TARGET, dollarsPerLot),
+    atMax: maxStopPips(lots, equity, RISK_MAX, dollarsPerLot),
   }));
 }
 
@@ -417,10 +452,15 @@ export function lotTable(equity: number): LotRow[] {
  * not a rounding problem to be nudged past but the answer "this trade is too
  * wide for this account", and the rules already say what to do about it.
  */
-export function suggestLots(stopDistancePips: number, equity: number, pct = RISK_TARGET): number | null {
+export function suggestLots(
+  stopDistancePips: number,
+  equity: number,
+  pct = RISK_TARGET,
+  dollarsPerLot = DEFAULT_PER_POINT,
+): number | null {
   let best: number | null = null;
   for (const lots of LOT_STEPS) {
-    if (stopDistancePips <= maxStopPips(lots, equity, pct)) best = lots;
+    if (stopDistancePips <= maxStopPips(lots, equity, pct, dollarsPerLot)) best = lots;
   }
   return best;
 }
@@ -432,7 +472,7 @@ export function suggestLots(stopDistancePips: number, equity: number, pct = RISK
 export function profit(trade: Trade): number {
   if (typeof trade.exit !== "number") return 0;
   const moved = trade.direction === "buy" ? trade.exit - trade.entry : trade.entry - trade.exit;
-  return (moved / PIP) * pipValue(trade.lots);
+  return (moved / instrumentOf(trade.instrument).point) * pipValue(trade.lots, perPointOf(trade));
 }
 
 /**
@@ -799,6 +839,13 @@ export function cleanTrade(raw: unknown): Trade | null {
     system,
     direction: r.direction === "sell" ? "sell" : "buy",
     reason: typeof r.reason === "string" ? r.reason : "",
+    // An unlabelled trade is a EUR/USD one, because that is all the journal
+    // could log before instruments existed. Its numbers do not move.
+    instrument: instrumentOf(typeof r.instrument === "string" ? r.instrument : undefined).id,
+    perPoint:
+      Number.isFinite(Number(r.perPoint)) && Number(r.perPoint) > 0
+        ? Number(r.perPoint)
+        : instrumentOf(typeof r.instrument === "string" ? r.instrument : undefined).perLot,
     lots: num(r.lots, 0.01),
     entry: num(r.entry),
     stop: num(r.stop),

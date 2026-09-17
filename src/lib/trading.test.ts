@@ -460,3 +460,99 @@ test("the constants are the ones the plan was written with", () => {
   // comparison in here is a tolerance rather than an equality.
   assert.ok(Math.abs(stopPips({ entry: 1.17, stop: 1.169 }) - 10) < 1e-9);
 });
+
+// ------------------------------------------------------- other markets --
+//
+// The whole reason instruments exist. Every test above is EUR/USD and must
+// stay exactly as it was; these are the ones that would have been wrong by
+// two orders of magnitude when the pip was a constant.
+
+const gold = (over: Partial<TradeDraft> = {}): TradeDraft =>
+  draft({
+    instrument: "XAUUSD",
+    perPoint: 1,
+    entry: 2650.00,
+    stop: 2647.00,        // $3, which is 300 points of gold
+    target: 2656.00,      // $6, so still 2R
+    ...over,
+  });
+
+test("gold is counted in gold's own units, not in EUR/USD's", () => {
+  assert.equal(Math.round(stopPips(gold())), 300);
+  assert.equal(Math.round(targetPipsOf(gold())), 600);
+  // The old arithmetic would have called a three-dollar stop 30,000 pips.
+  assert.equal(Math.round(pips(2650, 2647)), 30000);
+});
+
+function targetPipsOf(d: TradeDraft): number {
+  return stopPips({ ...d, stop: d.target });
+}
+
+test("a gold stop costs what the ounces cost", () => {
+  // 0.01 lots of gold is one ounce; a three-dollar move is three dollars.
+  assert.equal(Math.round(riskMoney(gold()) * 100) / 100, 3);
+  // Ten times the size, ten times the money.
+  assert.equal(Math.round(riskMoney(gold({ lots: 0.1 })) * 100) / 100, 30);
+});
+
+test("reward to risk does not care what was traded", () => {
+  // Within floating point of exactly 2 in both markets: it is a ratio of two
+  // distances in the same quote, so the unit cancels whatever it was.
+  assert.ok(Math.abs(rewardRatio(gold()) - 2) < 1e-9);
+  assert.ok(Math.abs(rewardRatio(draft()) - 2) < 1e-9);
+});
+
+test("a gold trade this account cannot afford is refused, not rounded", () => {
+  // $1.19 is 1% of the account; 300 points at a cent a point is $3.
+  assert.equal(suggestLots(300, EQUITY, undefined, 1), null);
+  // Widen the account and the same stop becomes sizeable.
+  assert.equal(suggestLots(300, 1190, undefined, 1), 0.03);
+});
+
+test("the lot table is the table for the market you are in", () => {
+  const fx = lotTable(EQUITY).map((r) => Math.floor(r.atTarget));
+  const au = lotTable(EQUITY, 1).map((r) => Math.round(r.atTarget));
+  assert.deepEqual(fx, [11, 5, 3]);
+  // A point of gold at 0.01 lots is a cent, so the same 1% carries a hundred
+  // times as many of them — and each is worth a hundredth as much.
+  assert.deepEqual(au, [119, 59, 40]);
+});
+
+test("profit on gold is the move in dollars times the ounces", () => {
+  const won = { ...trade(), ...gold(), exit: 2656.00 } as Trade;
+  assert.equal(Math.round(profit(won) * 100) / 100, 6);
+  assert.equal(outcome(won), "win");
+  assert.equal(Math.round(rMultiple(won) * 100) / 100, 2);
+});
+
+test("a short on gold makes money when gold falls", () => {
+  const won = { ...trade(), ...gold({ direction: "sell", stop: 2653, target: 2644 }), exit: 2644 } as Trade;
+  assert.equal(Math.round(profit(won) * 100) / 100, 6);
+});
+
+test("an old trade with no instrument is still the EUR/USD trade it was", () => {
+  const before = { ...trade() } as Record<string, unknown>;
+  delete before.instrument;
+  delete before.perPoint;
+  const after = cleanTrade(before)!;
+  assert.equal(after.instrument, "EURUSD");
+  assert.equal(after.perPoint, 10);
+  assert.equal(Math.round(riskMoney(after) * 100) / 100, 1);
+  assert.equal(Math.round(stopPips(after)), 10);
+});
+
+test("a trade keeps the value it was sized with, not the one in the table today", () => {
+  // The index tables are a broker convention and the user can correct them.
+  // A correction must not rewrite the risk on a trade already taken.
+  const old = cleanTrade({ ...trade(), instrument: "US30", perPoint: 1, entry: 44200, stop: 44190, target: 44220 })!;
+  assert.equal(old.perPoint, 1);
+  assert.equal(Math.round(riskMoney(old) * 100) / 100, 0.1);
+  const corrected = cleanTrade({ ...old, perPoint: 5 })!;
+  assert.equal(Math.round(riskMoney(corrected) * 100) / 100, 0.5);
+});
+
+test("a stored instrument nobody recognises falls back rather than throwing", () => {
+  const odd = cleanTrade({ ...trade(), instrument: "MADEUP" })!;
+  assert.equal(odd.instrument, "EURUSD");
+  assert.ok(Number.isFinite(riskMoney(odd)));
+});

@@ -16,6 +16,10 @@ import {
   rewardRatio, riskMoney, riskPercent, stopPips, suggestLots, summarise, systemName,
   type Direction, type SystemId, type Trade, type TradeDraft, type Verdict,
 } from "@/lib/trading";
+import {
+  DEFAULT_INSTRUMENT, GROUPS, cleanPointValues, formatPrice, inGroup, instrumentName,
+  instrumentOf, perPoint, setPerPoint, unitLabel,
+} from "@/lib/instruments";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -69,7 +73,9 @@ const num = (s: string) => {
   return Number.isFinite(v) ? v : NaN;
 };
 const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
-const price = (n: number) => n.toFixed(5);
+/** A price written the way its own market writes it — five places for a
+ *  currency pair, two for gold, one for an index. */
+const price = (n: number, instrument?: string) => formatPrice(instrument, n);
 
 /* ------------------------------------------------------------- account -- */
 
@@ -135,8 +141,11 @@ function AccountCard({
           the truth after the account has grown or shrunk. */}
       {equity > 0 && hasDetailRoom(size) && (
         <div className="mt-3">
+          {/* Stated as a forex table rather than left to be assumed. The same
+              1% buys a hundred times as many points of gold, and a row that
+              said "pips" while you were trading metal would be a trap. */}
           <div className="mb-1 grid grid-cols-3 text-[0.55rem] font-bold uppercase tracking-wider text-faint">
-            <span>Lot</span>
+            <span>Lot · FX</span>
             <span className="text-right">Max stop at 1%</span>
             <span className="text-right">at 2%</span>
           </div>
@@ -170,9 +179,105 @@ function AccountCard({
 
 /* ----------------------------------------------------------- pre-trade -- */
 
+/**
+ * What was traded, and what a point of it is worth.
+ *
+ * At the top of the card rather than buried with the size, because it governs
+ * every number below it: the stop is counted in this market's units, the risk
+ * is priced at this market's value, and the lot that fits is the lot that fits
+ * HERE. Picking the system first and the market fourth would mean reading
+ * three numbers that were about something else.
+ *
+ * The value is on show and not hidden in a table. Forex and the metals are
+ * contract arithmetic — a standard lot is a hundred thousand units, gold is a
+ * hundred ounces — and cannot be wrong. The indices and crypto are a broker
+ * convention, and a risk calculation you cannot check against your own account
+ * is a risk calculation that should not be trusted. So it can be replaced, and
+ * a replacement that matches the shipped figure is simply forgotten.
+ */
+function InstrumentPicker({
+  value, perPointNow, onPick, onValue,
+}: {
+  value: string;
+  perPointNow: number;
+  onPick: (id: string) => void;
+  onValue: (n: number) => void;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const inst = instrumentOf(value);
+  const shipped = inst.perLot;
+
+  const save = () => {
+    const n = Number(String(editing).replace(",", "."));
+    if (!Number.isFinite(n) || n <= 0) {
+      toast.error("Enter what one point is worth at 1.00 lot.");
+      return;
+    }
+    onValue(n);
+    setEditing(null);
+    toast.success(n === shipped ? "Back to the standard value" : `${instrumentName(value)} set to ${money(n)} a point`);
+  };
+
+  return (
+    <div className="mb-2">
+      {/* One row per market, scrolling sideways. A grid of thirteen would be
+          the tallest thing on the card and the least often changed. */}
+      {GROUPS.map((group) => (
+        <div key={group} className="mb-1 flex items-center gap-1.5">
+          <span className="w-12 shrink-0 text-[0.55rem] font-bold uppercase tracking-wider text-faint">
+            {group}
+          </span>
+          <div className="-mx-1 flex min-w-0 flex-1 gap-1.5 overflow-x-auto px-1 pb-0.5">
+            {inGroup(group).map((i) => (
+              <button
+                key={i.id}
+                type="button"
+                onClick={() => onPick(i.id)}
+                className={cn(
+                  "h-8 shrink-0 rounded-full border px-2.5 text-[0.68rem] font-bold",
+                  value === i.id
+                    ? "border-accent bg-accent text-accent-ink"
+                    : "border-border bg-surface-2 text-muted",
+                )}
+              >
+                {i.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {editing === null ? (
+        <button
+          type="button"
+          onClick={() => setEditing(String(perPointNow))}
+          className="mt-0.5 text-[0.62rem] leading-snug text-faint underline decoration-dotted underline-offset-2"
+        >
+          {money(perPointNow)} per {inst.unit} at 1.00 lot
+          {perPointNow !== shipped ? " · yours" : ""} — tap if your broker differs
+        </button>
+      ) : (
+        <div className="mt-1 flex items-center gap-1.5">
+          <Input
+            autoFocus
+            inputMode="decimal"
+            value={editing}
+            onChange={(e) => setEditing(e.target.value)}
+            aria-label={`Dollars per ${inst.unit} at one lot`}
+            className="h-9 flex-1 tabular"
+          />
+          <Button size="sm" onClick={save}>Set</Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const BLANK: TradeDraft = {
   system: "ema-pullback",
   direction: "buy",
+  instrument: DEFAULT_INSTRUMENT,
   reason: "",
   lots: 0.01,
   entry: NaN,
@@ -189,6 +294,9 @@ function PreTradeCard({
   today: string;
 }) {
   const addTrade = useSoma((s) => s.addTrade);
+  const storedValues = useSoma((s) => s.settings.pointValues);
+  const patchSettings = useSoma((s) => s.patchSettings);
+  const pointValues = useMemo(() => cleanPointValues(storedValues), [storedValues]);
   const [d, setD] = useState<TradeDraft>(BLANK);
   const [entry, setEntry] = useState("");
   const [stop, setStop] = useState("");
@@ -197,16 +305,26 @@ function PreTradeCard({
   // The three prices are held as the strings that were typed and parsed here,
   // so a half-typed "1.1" is a number in progress rather than a value the gate
   // has to have an opinion about yet.
+  /**
+   * What a point of this market is worth, settled at the moment of drafting.
+   *
+   * Stored on the trade rather than looked up later, for the same reason the
+   * account balance is: correcting the table next month must not rewrite the
+   * risk on a trade that was sized under the old figure.
+   */
+  const inst = instrumentOf(d.instrument);
+  const value = perPoint(d.instrument, pointValues);
+
   const draft: TradeDraft = useMemo(
-    () => ({ ...d, entry: num(entry), stop: num(stop), target: num(target) }),
-    [d, entry, stop, target],
+    () => ({ ...d, perPoint: value, entry: num(entry), stop: num(stop), target: num(target) }),
+    [d, value, entry, stop, target],
   );
 
   const g = useMemo(() => gate(draft, { equity, trades, today }), [draft, equity, trades, today]);
   const risk = riskMoney(draft);
   const rr = rewardRatio(draft);
   const stopped = stopPips(draft);
-  const suggested = stopped > 0 ? suggestLots(stopped, equity) : null;
+  const suggested = stopped > 0 ? suggestLots(stopped, equity, undefined, value) : null;
 
   /** What this system asks for, and where its own rules stop. */
   const list = checksFor(d.system);
@@ -236,6 +354,19 @@ function PreTradeCard({
   return (
     <Card>
       <CardTitle>Before you click</CardTitle>
+
+      {/* What was traded, first, because everything under it is counted in
+          this market's units and priced at this market's value. */}
+      <InstrumentPicker
+        value={d.instrument ?? DEFAULT_INSTRUMENT}
+        perPointNow={value}
+        onPick={(id) => setD((p) => ({ ...p, instrument: id }))}
+        onValue={(n) =>
+          patchSettings({
+            pointValues: setPerPoint(pointValues, d.instrument ?? DEFAULT_INSTRUMENT, n),
+          })
+        }
+      />
 
       <div className="mb-2 grid grid-cols-2 gap-1.5">
         {SYSTEMS.map((s) => (
@@ -294,7 +425,7 @@ function PreTradeCard({
                 inputMode="decimal"
                 value={value}
                 onChange={(e) => set(e.target.value)}
-                placeholder="1.17000"
+                placeholder={inst.sample}
                 aria-label={label}
                 className="h-11 tabular"
               />
@@ -327,7 +458,7 @@ function PreTradeCard({
       {/* The numbers, live, before anything is committed. */}
       {stopped > 0 && (
         <div className="mb-2 grid grid-cols-3 gap-1.5 text-center">
-          <Readout label="Stop" value={`${stopped.toFixed(1)}p`} />
+          <Readout label="Stop" value={unitLabel(d.instrument, stopped)} />
           <Readout
             label="Risk"
             value={equity > 0 ? `${(riskPercent(draft, equity) * 100).toFixed(1)}%` : money(risk)}
@@ -517,12 +648,13 @@ function OpenTradeCard({ trade }: { trade: Trade | undefined }) {
           </span>
         </div>
         <div className="mt-1.5 grid grid-cols-3 gap-1 text-[0.65rem] tabular text-faint">
-          <span>in {price(trade.entry)}</span>
-          <span>stop {price(trade.stop)}</span>
-          <span>target {price(trade.target)}</span>
+          <span>in {price(trade.entry, trade.instrument)}</span>
+          <span>stop {price(trade.stop, trade.instrument)}</span>
+          <span>target {price(trade.target, trade.instrument)}</span>
         </div>
         <div className="mt-1 text-[0.65rem] tabular text-faint">
-          {trade.lots.toFixed(2)} lots · risking {money(riskMoney(trade))} ·{" "}
+          {instrumentName(trade.instrument)} · {trade.lots.toFixed(2)} lots · risking{" "}
+          {money(riskMoney(trade))} ·{" "}
           {rewardRatio(trade).toFixed(2)}R
         </div>
         {trade.reason && (
@@ -766,9 +898,12 @@ function LogCard({ trades }: { trades: Trade[] }) {
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-x-2 text-[0.6rem] tabular text-faint">
                     <span>{t.date}</span>
+                    {/* What it was, next to the size, because "0.03 lots" is
+                        a different amount of money in every market. */}
+                    <span className="font-bold">{instrumentName(t.instrument)}</span>
                     <span className="uppercase">{t.direction}</span>
                     <span>{t.lots.toFixed(2)} lots</span>
-                    <span>{stopPips(t).toFixed(1)}p stop</span>
+                    <span>{unitLabel(t.instrument, stopPips(t))} stop</span>
                     {t.closedEarly && <span className="font-bold text-warn">closed by hand</span>}
                   </div>
                   {open && (
@@ -777,8 +912,9 @@ function LogCard({ trades }: { trades: Trade[] }) {
                         <p className="text-[0.68rem] italic leading-snug text-muted">“{t.reason}”</p>
                       )}
                       <p className="mt-1 text-[0.6rem] tabular text-faint">
-                        in {price(t.entry)} · stop {price(t.stop)} · target {price(t.target)}
-                        {typeof t.exit === "number" && ` · out ${price(t.exit)}`}
+                        in {price(t.entry, t.instrument)} · stop {price(t.stop, t.instrument)} ·
+                        {" "}target {price(t.target, t.instrument)}
+                        {typeof t.exit === "number" && ` · out ${price(t.exit, t.instrument)}`}
                       </p>
                       <p className="mt-0.5 text-[0.6rem] text-faint">
                         Confirmed {t.checks.length} of {checksFor(t.system).length} ·{" "}

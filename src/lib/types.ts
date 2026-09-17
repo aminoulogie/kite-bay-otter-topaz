@@ -343,6 +343,16 @@ export interface Settings {
    */
   tradingEquity?: number;
   /**
+   * Dollars per point at 1.00 lot, where your broker differs from the table.
+   *
+   * Forex and the metals are contract arithmetic and need no correcting. The
+   * indices and crypto are a CFD convention that brokers vary, and a risk
+   * figure you cannot check against your own account is one you should not
+   * trust — so the value is shown on the card and can be replaced. Keyed by
+   * instrument id; only entries that differ from the shipped figure are kept.
+   */
+  pointValues?: Record<string, number>;
+  /**
    * Which way you are eating. Decides whether hunger costs points: on a cut it
    * is the deficit working, on a bulk it means the surplus did not happen.
    */
