@@ -625,9 +625,23 @@ function xOf(range: Range, stripLeft: number): number | null {
 /**
  * The character offset of the first text on a page.
  *
- * What gets written down when you stop reading. Taken from the FIRST run that
- * the browser put on this page or later, because that is the first thing your
- * eye lands on when the page comes up.
+ * What gets written down when you stop reading, and the exact inverse of
+ * `pageOfOffset` — which is the whole point, because one of them saves your
+ * place and the other one finds it again, and if they disagree by so much as a
+ * character the book reopens somewhere you were not.
+ *
+ * They DID disagree. This asked which page each text run STARTS on, and a
+ * paragraph does not start where the page does: the top of a page is usually
+ * the middle of a paragraph that began on the page before. So the first run
+ * whose start is on this page is the NEXT paragraph, one or two pages further
+ * on — and the offset written down was a place you had not read yet. Measured
+ * on a real chapter: the anchor saved for page 13 sat on page 12.
+ *
+ * `pageOfOffset` already carries the note explaining this, and the fix that
+ * goes with it: measure one CHARACTER at a time. So this does the same, in the
+ * other direction — the first character the browser put on this page or later.
+ * A binary search inside the run that spans the break, because a chapter has
+ * tens of thousands of characters and only one of them is the answer.
  */
 function offsetOfPage(host: HTMLElement, stripLeft: number, page: number, w: number): number {
   const runs = textRuns(host);
@@ -635,10 +649,33 @@ function offsetOfPage(host: HTMLElement, stripLeft: number, page: number, w: num
   let acc = 0;
   for (const run of runs) {
     const len = run.length;
-    if (len > 0) {
-      range.selectNodeContents(run);
-      const x = xOf(range, stripLeft);
-      if (x !== null && pageForX(x, w, PAGE_GAP) >= page) return acc;
+    if (len === 0) continue;
+    // Cheap rejection: the run's box spans every column it touches, so if its
+    // RIGHT edge has not reached this page, no character in it has.
+    range.selectNodeContents(run);
+    const box = range.getBoundingClientRect();
+    const reaches =
+      (box.width || box.height) && pageForX(box.right - stripLeft, w, PAGE_GAP) >= page;
+    if (reaches) {
+      let lo = 0;
+      let hi = len - 1;
+      let found = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        range.setStart(run, mid);
+        range.setEnd(run, mid + 1);
+        const x = xOf(range, stripLeft);
+        // A character with no box is a space at a column break. Stepping past
+        // it can only land on the first character with ink, which is the one
+        // the eye actually starts at.
+        if (x !== null && pageForX(x, w, PAGE_GAP) >= page) {
+          found = mid;
+          hi = mid - 1;
+        } else {
+          lo = mid + 1;
+        }
+      }
+      if (found >= 0) return acc + found;
     }
     acc += len;
   }
