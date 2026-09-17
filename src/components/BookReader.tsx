@@ -182,25 +182,82 @@ export function BookReader({
     saveRef.current = { at, total, offset, line };
   });
 
+  /**
+   * Write the place down now, wherever we are.
+   *
+   * One function rather than three copies, because there are three moments
+   * that have to do exactly this and the only bug worse than forgetting one is
+   * having them disagree.
+   */
+  const keepPlace = useCallback(() => {
+    // Ask where we actually are before writing it down. The `offset` in state
+    // arrives about a third of a second after the turn, on a timer — so at the
+    // moment the app is being put away it is still describing the page BEFORE
+    // the one on screen, and writing it would be the whole bug.
+    const here = pager.current?.place() ?? null;
+    if (here !== null && here !== saveRef.current.offset) {
+      saveRef.current = { ...saveRef.current, offset: here };
+      setOffset(here);
+    }
+    const now = saveRef.current;
+    if (
+      saved.current.at === now.at && saved.current.total === now.total &&
+      saved.current.offset === now.offset && saved.current.line === now.line
+    ) {
+      return;
+    }
+    saved.current = now;
+    latestChange.current({
+      page: now.at,
+      pages: now.total || undefined,
+      readOffset: now.offset,
+      readLine: now.line,
+    });
+  }, []);
+
   useEffect(() => {
-    const now = { at, total, offset, line };
     if (
       saved.current.at === at && saved.current.total === total &&
       saved.current.offset === offset && saved.current.line === line
     ) {
       return;
     }
-    const t = setTimeout(() => {
-      saved.current = now;
-      latestChange.current({
-        page: at,
-        pages: total || undefined,
-        readOffset: offset,
-        readLine: line,
-      });
-    }, 700);
+    const t = setTimeout(keepPlace, 700);
     return () => clearTimeout(t);
-  }, [at, total, offset, line]);
+  }, [at, total, offset, line, keepPlace]);
+
+  /**
+   * And immediately when the app goes away, which is the one that was missing.
+   *
+   * The debounce above is a browser assumption: that a timer set now will run
+   * in 700ms. On iOS it will not. Locking the phone or swiping to another app
+   * SUSPENDS the web view's timers, and iOS then discards the view whenever it
+   * likes without ever running them — so the turn you made in the last
+   * second-and-a-bit before putting the phone down was never written, and
+   * nothing unmounted to write it either, because being killed in the
+   * background is not a close.
+   *
+   * That is one page. It sounds like nothing. It is the page you were on:
+   * reading up to a point and then locking the screen is not an edge case,
+   * it is how reading on a phone ENDS, every time. And since the app started
+   * reopening the book you left open, it is also the page it reopens on.
+   *
+   * `visibilitychange` fires while there is still a live JavaScript context to
+   * act on, which is the whole point of using it rather than trusting the
+   * timer. The reading clock has done this since it was written; the place in
+   * the book was left on a promise iOS does not keep.
+   */
+  useEffect(() => {
+    const away = () => {
+      if (document.visibilityState === "hidden") keepPlace();
+    };
+    document.addEventListener("visibilitychange", away);
+    window.addEventListener("pagehide", keepPlace);
+    return () => {
+      document.removeEventListener("visibilitychange", away);
+      window.removeEventListener("pagehide", keepPlace);
+    };
+  }, [keepPlace]);
 
   /**
    * A page that changed is somebody reading, whatever moved it.
@@ -221,23 +278,7 @@ export function BookReader({
    * 700ms of the last page turn and that turn was never written down. The
    * unmount is the last chance to say where you stopped.
    */
-  useEffect(() => {
-    return () => {
-      const now = saveRef.current;
-      if (
-        saved.current.at === now.at && saved.current.offset === now.offset &&
-        saved.current.line === now.line
-      ) {
-        return;
-      }
-      latestChange.current({
-        page: now.at,
-        pages: now.total || undefined,
-        readOffset: now.offset,
-        readLine: now.line,
-      });
-    };
-  }, []);
+  useEffect(() => keepPlace, [keepPlace]);
 
   /**
    * The renderer's own back and forward.
@@ -452,6 +493,15 @@ interface Pager {
   forward: () => void;
   /** Jump to a page of the chapter on screen. The rail's whole purpose. */
   to: (page: number) => void;
+  /**
+   * Where you are RIGHT NOW, measured on the spot, or null if it cannot say.
+   *
+   * The renderer normally reports this on a timer that waits for the turn to
+   * settle. That is fine while the app is running and useless when it is
+   * being put away, because the timer will not run again — so this asks for
+   * the same measurement without waiting for anything.
+   */
+  place: () => number | null;
 }
 
 /**
@@ -1375,8 +1425,16 @@ function EpubPages({
       back: () => go(-1),
       forward: () => go(1),
       to: (n) => setPage(clampPage(n, pages)),
+      // Safe to run mid-turn: every run's position is taken relative to the
+      // strip's own left edge, so the slide cancels out and what comes back
+      // is the page you are landing on rather than the one going past.
+      place: () => {
+        const el = column.current;
+        if (!el || !box.w || !pages) return null;
+        return offsetOfPage(el, el.getBoundingClientRect().left, page, box.w);
+      },
     };
-  }, [pager, go, pages]);
+  }, [pager, go, pages, page, box.w]);
 
   return (
     <ReadingSurface
@@ -2657,6 +2715,9 @@ function PdfPages({
       back: () => onPage(Math.max(1, page - 1)),
       forward: () => onPage(count ? Math.min(count, page + 1) : page + 1),
       to: (n) => onPage(Math.max(1, count ? Math.min(count, n + 1) : n + 1)),
+      // A PDF page is a page. There is no offset inside it to measure and
+      // nothing that lags, so there is nothing to ask for.
+      place: () => null,
     };
   }, [pager, page, count, onPage]);
 
