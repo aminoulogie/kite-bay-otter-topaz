@@ -141,7 +141,32 @@ const ROUTINE_PRESETS = {
     { name: "Standing Low Pulley Overhead Tricep Extension" },
     { name: "One-Arm Dumbbell Preacher Curl" }
   ],
-  "Rest & Active Recovery": []
+  "Rest & Active Recovery": [],
+  "PPL (JN) Push": [
+    { name: "Hammer Strength Incline Bench Press" },
+    { name: "Flat Dumbbell Press" },
+    { name: "Machine Shoulder Press" },
+    { name: "Cable Face Pull" },
+    { name: "Close Grip Ez Bar Press" },
+    { name: "Cable Triceps Pushdown (Straight/V)" }
+  ],
+  "PPL (JN) Pull": [
+    { name: "Pull Up" },
+    { name: "Single-Arm Dumbbell Row" },
+    { name: "Lat Pulldown (Wide/Neutral)" },
+    { name: "Chest-Supported T-Bar Row" },
+    { name: "Face Pulls" },
+    { name: "Seated Zottman Curl" },
+    { name: "Hammer Curl (Dumbbell/Cable)" }
+  ],
+  "PPL (JN) Legs": [
+    { name: "Hack Squat" },
+    { name: "Romanian Deadlift" },
+    { name: "Leg Press" },
+    { name: "Leg Extensions" },
+    { name: "Seated Leg Curl" },
+    { name: "Standing Machine Calf Raise" }
+  ]
 };
 
 const ROTATION_SEQUENCE = [
