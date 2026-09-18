@@ -201,9 +201,17 @@ function exTx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBReques
   );
 }
 
-/** The stored picture for an exercise photo id, or null. */
-export function exercisePhotoBlob(key: string): Promise<Blob | null> {
-  return exTx<Blob | undefined>("readonly", (s) => s.get(key)).then((b) => b ?? null);
+/**
+ * The stored picture for an exercise photo id, or null.
+ *
+ * The row is `{ key, blob, ts }` — reading it back and handing the ROW to
+ * `URL.createObjectURL` is what made every saved exercise photo silently
+ * not render, so the blob is unwrapped here and nowhere else.
+ */
+export async function exercisePhotoBlob(key: string): Promise<Blob | null> {
+  const row = await exTx<{ key: string; blob?: Blob } | undefined>("readonly", (s) => s.get(key));
+  const blob = row?.blob;
+  return blob instanceof Blob ? blob : null;
 }
 
 /** Stores an exercise picture, fitted to the display budget. */
