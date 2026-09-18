@@ -158,6 +158,16 @@ export function MealProgramPicker({ target }: { target: string }) {
       <Button variant="primary" className="mt-2 w-full" onClick={putOnPlan}>
         Done — put it on the plan
       </Button>
+      {/* Editing a programme is the thing people go looking for and never
+          find, because the card that owns it sits further down the page. The
+          shortcut lives here, one tap from the dropdown it edits. */}
+      <button
+        type="button"
+        onClick={() => document.getElementById("day-programmes")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+        className="mt-2 w-full rounded-xl border border-border bg-surface-2 px-3 py-2 text-[0.7rem] font-bold text-muted"
+      >
+        Edit these programmes (rename · grams · duplicate · new)
+      </button>
     </div>
   );
 }
@@ -343,7 +353,7 @@ export function MealPrograms() {
   }
 
   return (
-    <Card>
+    <Card id="day-programmes">
       <div className="mb-2 flex items-center justify-between gap-2">
         <CardTitle className="mb-0">Day programmes</CardTitle>
         <button
