@@ -171,6 +171,15 @@ function EditSheet({ ex, onClose, onSave }: { ex: ExerciseDef; onClose: () => vo
   const [tier, setTier] = useState(ex.tier || "");
   const [keys, setKeys] = useState<string[]>(ex.targetKeys ?? []);
   const [photoId, setPhotoId] = useState(ex.photoId);
+  /**
+   * The picture just picked, shown before anything is read back.
+   *
+   * The icon reads its blob out of IndexedDB by id, and the id only reaches the
+   * library when the sheet is saved — so without this the one thing the user
+   * looks at after choosing a photo was the OLD tile, and a working picker
+   * looked like a broken one.
+   */
+  const [preview, setPreview] = useState<string | null>(null);
 
   const pickPhoto = async (source: "camera" | "library") => {
     const files = await pickFiles({
@@ -180,9 +189,31 @@ function EditSheet({ ex, onClose, onSave }: { ex: ExerciseDef; onClose: () => vo
     const file = files[0];
     if (!file) return;
     const id = photoId || `ex:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-    await saveExercisePhotoBlob(id, file);
+    try {
+      await saveExercisePhotoBlob(id, file);
+    } catch {
+      toast.error("That image could not be read. Try another one.");
+      return;
+    }
     setPhotoId(id);
-    toast.success("Photo set — it will show with this exercise everywhere");
+    setPreview(URL.createObjectURL(file));
+    // Written straight through, not held for Save: the photo is its own act,
+    // and a picture that vanishes because the sheet was closed is worse than
+    // no picture at all.
+    onSave({
+      name: (name.trim() || ex.name) as string,
+      muscle: MUSCLES.find((m) => m.key === keys[0])?.label ?? ex.muscle ?? "Custom",
+      subTarget: ex.subTarget ?? "",
+      targetKeys: keys,
+      position: ex.position ?? "",
+      risk: ex.risk ?? "Low",
+      tier,
+      isAxial: !!ex.isAxial,
+      isBW: !!ex.isBW,
+      photoId: id,
+      img: ex.img,
+    });
+    toast.success("Photo saved — it shows with this exercise everywhere");
   };
 
   const save = () => {
@@ -217,7 +248,13 @@ function EditSheet({ ex, onClose, onSave }: { ex: ExerciseDef; onClose: () => vo
         </CardTitle>
 
         <div className="mb-3 flex items-center gap-3">
-          <ExerciseIcon name={name || "?"} size={52} />
+          {preview ? (
+            <span className="relative inline-grid size-[52px] shrink-0 place-items-center overflow-hidden rounded-[22%] border border-border">
+              <img src={preview} alt="" className="h-full w-full object-cover" />
+            </span>
+          ) : (
+            <ExerciseIcon name={name || "?"} size={52} />
+          )}
           <div className="flex-1">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Exercise name" className="mb-2" />
             <div className="flex gap-1.5">
@@ -277,9 +314,14 @@ function EditSheet({ ex, onClose, onSave }: { ex: ExerciseDef; onClose: () => vo
           ))}
         </div>
 
-        <Button className="mt-4 w-full" onClick={save}>
-          Save exercise
-        </Button>
+        {/* Pinned to the bottom of the sheet, not parked under twenty-three
+            muscle chips: the button that saves the thing has to be visible
+            without scrolling to find it. */}
+        <div className="sticky bottom-0 -mx-4 mt-4 bg-surface px-4 pb-1 pt-2">
+          <Button className="w-full" onClick={save}>
+            Save exercise
+          </Button>
+        </div>
       </div>
     </div>
   );
