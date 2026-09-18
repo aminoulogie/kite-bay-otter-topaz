@@ -11,7 +11,7 @@ import { tapSuccess, tapWarn } from "@/lib/haptics";
 import { getLocalDateKey } from "@/lib/soma";
 import {
   DAILY_LOSS_LIMIT, LOT_STEPS, MIN_SAMPLE, RISK_TARGET, SYSTEMS,
-  checksFor, keepChecks, systemDef,
+  checksFor, currentWeekStats, keepChecks, systemDef, weeklyStats,
   bestSystem, gate, lossesOn, lotTable, openTrade, outcome, profit, rMultiple, report,
   rewardRatio, riskMoney, riskPercent, stopPips, suggestLots, summarise, systemName,
   type Direction, type SystemId, type Trade, type TradeDraft, type Verdict,
@@ -60,6 +60,7 @@ export function TradingView() {
       <OpenTradeCard key="open" trade={open} />
       <SystemsCard key="systems" ranked={ranked} best={best} />
       <StatsCard key="stats" stats={stats} />
+      <WeeklyCard key="weekly" trades={trades} today={today} />
       <LogCard key="log" trades={trades} />
       <RulesCard key="rules" />
     </WidgetGrid>
@@ -840,6 +841,106 @@ function Line({ label, value, tone }: { label: string; value: string; tone?: "wa
       <span>{label}</span>
       <span className={cn("font-bold", tone === "warn" ? "text-warn" : "text-fg")}>{value}</span>
     </div>
+  );
+}
+
+/* --------------------------------------------------------------- weekly -- */
+
+/** "This week" for the current Monday, else "Week of 7 Sep". */
+function weekLabel(mondayKey: string, todayKey: string): string {
+  if (mondayKey === mondayOfKey(todayKey)) return "This week";
+  const d = new Date(`${mondayKey}T12:00:00`);
+  return `Week of ${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
+}
+
+/** Same rule `weeklyStats` groups by — recomputed here because this file
+ *  draws the label and trading.ts does the money, and the two do not share
+ *  a date helper any more than the rest of the app's Monday-based weeks do. */
+function mondayOfKey(dateKey: string): string {
+  const d = new Date(`${dateKey}T12:00:00`);
+  const dow = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dow);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * How the week has gone, and the weeks before it.
+ *
+ * "The numbers" above is all-time on purpose — a system needs dozens of
+ * trades before its average R means anything, and resetting that every
+ * Monday would erase the one figure that actually says whether it works.
+ * But all-time also cannot answer "how did THIS week go", and a Monday
+ * morning wants that answer more than it wants a lifetime average.
+ *
+ * Grouped by when a trade CLOSED, not when it was opened — a week's money is
+ * what actually left or arrived during it, and a trade only does that on the
+ * day it closes.
+ */
+function WeeklyCard({ trades, today }: { trades: Trade[]; today: string }) {
+  const size = useWidgetSize();
+  const weeks = useMemo(() => weeklyStats(trades), [trades]);
+  const current = useMemo(() => currentWeekStats(trades, today), [trades, today]);
+  // The five weeks before this one, oldest first — so the row of bars below
+  // reads left to right the way a week itself does.
+  const past = weeks.filter((w) => w.week !== current.week).slice(0, 5).reverse();
+  const scale = Math.max(1, ...[...past, current].map((w) => Math.abs(w.net)));
+
+  return (
+    <Card>
+      <CardTitle>This week</CardTitle>
+
+      {current.trades === 0 ? (
+        <p className="text-xs leading-snug text-faint">
+          Nothing closed this week yet. It will show here the moment a trade does.
+        </p>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5 text-center">
+          <Readout
+            label="Net"
+            value={money(current.net)}
+            tone={current.net > 0 ? "good" : current.net < 0 ? "bad" : undefined}
+          />
+          <Readout
+            label="Result"
+            value={`${current.totalR >= 0 ? "+" : ""}${current.totalR.toFixed(1)}R`}
+            tone={current.totalR > 0 ? "good" : current.totalR < 0 ? "bad" : undefined}
+          />
+          <Readout label="Trades" value={`${current.wins}W ${current.losses}L`} />
+        </div>
+      )}
+
+      {/* The weeks before it, as a short strip of bars rather than another
+          table — the shape of a run of weeks is the thing a table hides and
+          a glance at five bars gives back immediately. */}
+      {hasDetailRoom(size) && past.length > 0 && (
+        <div className="mt-3 border-t border-border pt-2">
+          <div className="mb-1.5 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+            Weeks before this one
+          </div>
+          <div className="flex items-end justify-between gap-1.5" style={{ height: 56 }}>
+            {past.map((w) => (
+              <div key={w.week} className="flex flex-1 flex-col items-center gap-1">
+                <div
+                  className="flex w-full flex-1 items-end justify-center"
+                  title={`${weekLabel(w.week, today)}: ${money(w.net)}`}
+                >
+                  <div
+                    className={cn(
+                      "w-full rounded-t-sm",
+                      w.net > 0 ? "bg-accent/70" : w.net < 0 ? "bg-danger/70" : "bg-border",
+                    )}
+                    style={{ height: `${Math.max(4, (Math.abs(w.net) / scale) * 44)}px` }}
+                  />
+                </div>
+                <span className="text-[0.55rem] font-bold tabular text-faint">
+                  {money(w.net)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 

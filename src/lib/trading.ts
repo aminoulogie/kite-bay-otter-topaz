@@ -32,6 +32,7 @@
  * units and the same gate does the same job on it.
  */
 import { DEFAULT_INSTRUMENT, instrumentOf, perPoint } from "./instruments.ts";
+import { addDays, getLocalDateKey, parseLocalDateKey } from "./soma/dates.ts";
 
 /** The default instrument's price step, which is what "a pip" used to mean. */
 export const PIP = instrumentOf(DEFAULT_INSTRUMENT).point;
@@ -824,6 +825,81 @@ export function bestSystem(trades: Trade[], equityFallback = 0): SystemReport | 
   // break-even, which is floating-point noise wearing a rosette.
   const ranked = report(trades, equityFallback).filter((r) => r.verdict === "working");
   return ranked[0] ?? null;
+}
+
+/* ----------------------------------------------------------------- weeks --
+ *
+ * "The numbers" above is all-time, on purpose — a trading edge only shows
+ * itself over dozens of trades, and a card that reset every Monday would
+ * bury the one figure that actually says whether the system works. But
+ * all-time also hides the thing a Monday morning wants to know, which is
+ * "how did last week go", and a total that only ever grows cannot answer
+ * that on its own.
+ */
+
+/** Monday-based week key, the same rule reading-goal and the training
+ *  consistency streak each keep their own copy of, recomputed here rather
+ *  than shared across three unrelated domains. */
+function mondayOfWeek(dateKey: string): string {
+  const d = parseLocalDateKey(dateKey);
+  const dow = (d.getDay() + 6) % 7; // Monday = 0
+  return getLocalDateKey(addDays(d, -dow));
+}
+
+export interface WeekStat {
+  /** The Monday that starts this week, local date key. */
+  week: string;
+  net: number;
+  totalR: number;
+  trades: number;
+  wins: number;
+  losses: number;
+}
+
+/**
+ * Every week that has a closed trade in it, most recent first.
+ *
+ * Grouped by the week the trade CLOSED in, not the week it was opened in — a
+ * week's money is what actually arrived or left during it, and a trade only
+ * does that on the day it closes. A trade still open contributes nothing to
+ * any week, the same way `profit` reports nothing for one.
+ */
+export function weeklyStats(trades: readonly Trade[]): WeekStat[] {
+  const groups = new Map<string, Trade[]>();
+  for (const t of trades) {
+    if (isOpen(t)) continue;
+    const closedKey = getLocalDateKey(new Date(t.closedAt ?? t.openedAt));
+    const week = mondayOfWeek(closedKey);
+    const list = groups.get(week);
+    if (list) list.push(t);
+    else groups.set(week, [t]);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : -1))
+    .map(([week, list]) => ({
+      week,
+      net: list.reduce((s, t) => s + profit(t), 0),
+      totalR: list.reduce((s, t) => s + rMultiple(t), 0),
+      trades: list.length,
+      wins: list.filter((t) => outcome(t) === "win").length,
+      losses: list.filter((t) => outcome(t) === "loss").length,
+    }));
+}
+
+/**
+ * This week's own row, even at zero trades.
+ *
+ * `weeklyStats` only knows about weeks that have a closed trade in them, so a
+ * week nothing has been closed in yet — the usual state of a Monday morning —
+ * would simply be missing from the list. This is the difference between
+ * "nothing found" and "correctly zero".
+ */
+export function currentWeekStats(trades: readonly Trade[], todayKey: string): WeekStat {
+  const week = mondayOfWeek(todayKey);
+  return (
+    weeklyStats(trades).find((w) => w.week === week) ??
+    { week, net: 0, totalR: 0, trades: 0, wins: 0, losses: 0 }
+  );
 }
 
 /** A trade read back from storage, with every field made safe. */

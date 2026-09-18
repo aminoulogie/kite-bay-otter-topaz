@@ -263,6 +263,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "open", label: "The open trade", size: "2x4" },
     { id: "systems", label: "Which system is working", size: "2x4" },
     { id: "stats", label: "The numbers", size: "2x4" },
+    { id: "weekly", label: "This week", size: "2x4" },
     { id: "log", label: "The log", size: "2x4" },
     { id: "rules", label: "The rules", size: "2x4" },
   ],

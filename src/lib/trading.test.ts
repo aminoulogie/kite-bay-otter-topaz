@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   CHECK_IDS, DAILY_LOSS_LIMIT, MIN_SAMPLE, PIP, RISK_MAX, SYSTEMS, checksFor, keepChecks,
-  bestSystem, cleanTrade, gate, isOpen, lossesOn, lotTable, maxStopPips, openTrade,
-  outcome, pipValue, pips, profit, rMultiple, report, rewardRatio, riskMoney, riskPercent,
-  stopPips, suggestLots, summarise, systemName, verdictFor,
+  bestSystem, cleanTrade, currentWeekStats, gate, isOpen, lossesOn, lotTable, maxStopPips,
+  openTrade, outcome, pipValue, pips, profit, rMultiple, report, rewardRatio, riskMoney,
+  riskPercent, stopPips, suggestLots, summarise, systemName, verdictFor, weeklyStats,
   type Trade, type TradeDraft,
 } from "./trading.ts";
 
@@ -555,4 +555,67 @@ test("a stored instrument nobody recognises falls back rather than throwing", ()
   const odd = cleanTrade({ ...trade(), instrument: "MADEUP" })!;
   assert.equal(odd.instrument, "EURUSD");
   assert.ok(Number.isFinite(riskMoney(odd)));
+});
+
+// ---------------------------------------------------------------- weeks --
+
+function closedTrade(over: Partial<Trade> & { closedAt: number }): Trade {
+  return { ...trade(), exit: 1.17200, ...over } as Trade; // a 2R winner by default
+}
+
+test("groups closed trades by the Monday they closed in, not opened in", () => {
+  // Opened on a Tuesday (TODAY), closed the following Monday — a different
+  // week from the one it started in.
+  const t = closedTrade({
+    date: TODAY,
+    openedAt: Date.parse(`${TODAY}T09:00:00Z`),
+    closedAt: Date.parse("2026-09-21T09:00:00Z"), // the following Monday
+  });
+  const weeks = weeklyStats([t]);
+  assert.equal(weeks.length, 1);
+  assert.equal(weeks[0]!.week, "2026-09-21");
+});
+
+test("sums net and R across a week, and counts wins and losses", () => {
+  const win = closedTrade({
+    id: "w1", closedAt: Date.parse(`${TODAY}T10:00:00Z`), exit: 1.17200, // +2R, +$2
+  });
+  const loss = closedTrade({
+    id: "l1", closedAt: Date.parse(`${TODAY}T11:00:00Z`), exit: 1.16900, // -1R, -$1
+  });
+  const weeks = weeklyStats([win, loss]);
+  assert.equal(weeks.length, 1);
+  const wk = weeks[0]!;
+  assert.equal(wk.trades, 2);
+  assert.equal(wk.wins, 1);
+  assert.equal(wk.losses, 1);
+  assert.ok(Math.abs(wk.totalR - 1) < 1e-9); // +2R and -1R
+  assert.ok(Math.abs(wk.net - 1) < 1e-9); // +$2 and -$1, at 0.01 lots
+});
+
+test("an open trade contributes to no week at all", () => {
+  const open = trade({ id: "open1" }); // no exit
+  assert.deepEqual(weeklyStats([open]), []);
+});
+
+test("orders weeks newest first", () => {
+  const older = closedTrade({ id: "a", closedAt: Date.parse("2026-09-07T09:00:00Z") });
+  const newer = closedTrade({ id: "b", closedAt: Date.parse("2026-09-21T09:00:00Z") });
+  const weeks = weeklyStats([older, newer]);
+  assert.deepEqual(weeks.map((w) => w.week), ["2026-09-21", "2026-09-07"]);
+});
+
+test("this week is a real, zero-filled row when nothing has closed yet", () => {
+  const wk = currentWeekStats([], TODAY);
+  assert.equal(wk.week, "2026-09-14"); // the Monday of TODAY's week
+  assert.equal(wk.trades, 0);
+  assert.equal(wk.net, 0);
+});
+
+test("this week finds itself among other weeks rather than always being blank", () => {
+  const thisWeekTrade = closedTrade({ id: "c", closedAt: Date.parse(`${TODAY}T09:00:00Z`) });
+  const lastWeekTrade = closedTrade({ id: "d", closedAt: Date.parse("2026-09-07T09:00:00Z") });
+  const wk = currentWeekStats([thisWeekTrade, lastWeekTrade], TODAY);
+  assert.equal(wk.week, "2026-09-14");
+  assert.equal(wk.trades, 1);
 });
