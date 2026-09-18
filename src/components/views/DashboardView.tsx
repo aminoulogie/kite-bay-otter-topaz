@@ -7,6 +7,7 @@ import { ProjectsCard } from "@/components/ProjectsCard";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
 import { HabitRings } from "@/components/HabitRings";
+import { ActivityRings } from "@/components/ActivityRings";
 import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
 import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
@@ -184,6 +185,7 @@ export function DashboardView() {
           the box it was given, and a bare wrapper would stretch instead of the
           card, leaving the card floating in a taller empty cell. */}
       <CoachBrief key="brief" horizon="today" />
+      <ActivityRings key="rings" />
       <ScoreCard key="score" score={score} lines={lines} />
 
       {/* The ticked ones are done — that is the whole point of a tile, and it

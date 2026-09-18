@@ -26,8 +26,11 @@ export const Route = createRootRoute({
       // in dev and in the native webview, both of which serve from the root.
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/__grok/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
+      // The app's own manifest and icon, not the platform's. The home screen is
+      // where this app actually lives on a phone, and the mark sitting there
+      // should be the app's own.
+      { rel: "manifest", href: "/app.webmanifest" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
