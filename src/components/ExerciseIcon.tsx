@@ -48,8 +48,9 @@ export function ExerciseIcon({ name, size = 34 }: { name: string; size?: number 
     .join("");
 
   const badge = tierColour(tier);
-  // The user's own photo wins; until one is set, the site's picture shows.
-  const src = url ?? (remote && !photoId ? remote : null);
+  // The user's own photo wins; until it loads (or when there is none), the
+  // site's picture shows, and only then the initials.
+  const src = url ?? remote ?? null;
 
   return (
     <span
