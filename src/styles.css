@@ -604,6 +604,28 @@ select,
 }
 
 /* ---------------------------------------------------------------------------
+   A narrow tile shows the TOP of a card, not a half-cut line of it.
+
+   Cards are written for a full row: a title, the headline number, then the
+   breakdown underneath. In a quarter of a phone that breakdown is what the
+   fade above was cropping mid-sentence — a widget that looks like a rendering
+   bug rather than a smaller widget. Resizing is supposed to change what a card
+   SAYS, so the parts that cannot fit are dropped here and what is left is the
+   headline the card exists to show. Full-width sizes are untouched: a 1x4 or
+   2x4 has the room, and a 3x4 may be an editor whose controls live at the
+   bottom.
+--------------------------------------------------------------------------- */
+.soma-widget-tile > * > *:nth-child(n + 4) {
+  display: none;
+}
+
+/* 1x1 is a square with one fact in it: the title and the number, and nothing
+   else fits whatever the card would like to say. */
+.soma-widget-tile:where(.soma-tile-1) > * > *:nth-child(n + 3) {
+  display: none;
+}
+
+/* ---------------------------------------------------------------------------
    A widget fills the box it was given.
 
    Without this the card keeps its natural height and sits at the top of a

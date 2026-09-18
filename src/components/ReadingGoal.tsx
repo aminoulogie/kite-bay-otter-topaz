@@ -131,9 +131,10 @@ export function ReadingGoal() {
             Today&apos;s reading
           </div>
           {/* Hours, minutes, seconds — the second hand is what says the timer
-              is alive. A minute-granularity clock sits still for sixty seconds
-              at a time and reads as broken while it does. */}
-          <div className="font-display text-4xl font-extrabold tabular leading-none">
+              is alive. Eight characters is wider than five, so the type is a
+              step down and tracked in: at the old size the digits ran into the
+              band on both sides. */}
+          <div className="mt-0.5 font-display text-[2.1rem] font-extrabold tabular leading-none tracking-tight">
             {clockHMS(secondsToday)}
           </div>
           <button
