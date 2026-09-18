@@ -2,8 +2,9 @@ import { Eye, EyeOff, Plus, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Children, createContext, isValidElement, useContext, useMemo, useState } from "react";
 import {
-  SIZE_SPECS, addSpacer, hidden as hiddenOf, isDefault, isSpacer, isTile, move, reconcile,
-  removeWidget, resize, specFor, toggleHidden, visible, widgetDef, type WidgetSize,
+  SIZE_SPECS, addSpacer, hasDetailRoom, hasFullRoom, hidden as hiddenOf, isDefault, isSpacer,
+  isTile, move, reconcile, removeWidget, resize, specFor, toggleHidden, visible, widgetDef,
+  type WidgetSize,
 } from "@/lib/dashboard-layout";
 import { useSoma } from "@/lib/store";
 import { useLongPressDrag } from "@/lib/use-long-press-drag";
@@ -40,6 +41,38 @@ const SizeContext = createContext<WidgetSize>("2x4");
 
 export function useWidgetSize(): WidgetSize {
   return useContext(SizeContext);
+}
+
+/**
+ * A part of a card that only some sizes can afford.
+ *
+ * Resizing a widget is supposed to change what it SAYS, not how much of it is
+ * cut off — the difference between an iOS widget and a photograph of one. So a
+ * card marks its parts by how much room they need and the grid answers for the
+ * size it was given:
+ *
+ *   core   — the one number or line that IS the widget. Always drawn.
+ *   detail — the second tier: a breakdown, a legend, a trend, a footnote.
+ *            Drawn at 2 rows and up.
+ *   full   — everything the card has: charts, controls, history. Drawn at the
+ *            tall sizes only.
+ *
+ * A card that ignores this is not broken — it simply renders the same at every
+ * size and relies on the tile's own fade, which is what almost every card did
+ * before this existed. Cards are converted one at a time, deliberately: the
+ * rule has to be that a small size shows LESS, never that it shows something
+ * unreadable.
+ */
+export function WidgetPart({
+  level, children,
+}: {
+  level: "core" | "detail" | "full";
+  children: React.ReactNode;
+}) {
+  const size = useWidgetSize();
+  if (level === "detail" && !hasDetailRoom(size)) return null;
+  if (level === "full" && !hasFullRoom(size)) return null;
+  return <>{children}</>;
 }
 
 /**
@@ -214,6 +247,34 @@ export function WidgetGrid({
               </Button>
             )}
           </div>
+
+          {/* The way back, AT THE TOP.
+              This list used to sit under the whole page, which on a sixteen
+              card tab is four screens below the eye you just tapped: hiding
+              something worked and looked permanent. It belongs beside the
+              control that hid it, where the answer to "where did it go" is on
+              screen while you are still asking. */}
+          {off.length > 0 && (
+            <div className="mt-2.5 border-t border-accent-line pt-2">
+              <div className="text-[0.6rem] font-bold uppercase tracking-[0.14em] text-muted">
+                Off the page — tap to bring back
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {off.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setDashboard(toggleHidden(layout, p.id))}
+                    className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[0.7rem] font-bold text-fg"
+                    aria-label={`Show ${widgetDef(tab, p.id)?.label ?? p.id}`}
+                  >
+                    <Eye className="size-3.5" />
+                    {widgetDef(tab, p.id)?.label ?? p.id}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -361,28 +422,6 @@ export function WidgetGrid({
           );
         })}
       </div>
-
-      {editing && off.length > 0 && (
-        <div className="mt-4">
-          <h2 className="px-1 text-[0.6rem] font-bold uppercase tracking-[0.14em] text-faint">
-            Off the page
-          </h2>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {off.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setDashboard(toggleHidden(layout, p.id))}
-                className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.7rem] font-bold text-muted"
-                aria-label={`Show ${widgetDef(tab, p.id)?.label ?? p.id}`}
-              >
-                <Eye className="size-3.5" />
-                {widgetDef(tab, p.id)?.label ?? p.id}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {picking && (
         <SizeSheet

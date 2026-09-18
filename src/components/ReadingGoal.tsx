@@ -4,7 +4,8 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import {
   ARC_START, ARC_SWEEP, DEFAULT_BOOKS_PER_YEAR, DEFAULT_GOAL_MIN, arcD, bestStreak, bookGrid,
-  clockOf, elapsedMinutes, fractionOf, streak, todayMinutes, weekMet, weekOf,
+  clockOf, clockHMS, elapsedMinutes, elapsedSeconds, fractionOf, streak, todayMinutes, todaySeconds,
+  weekMet, weekOf,
 } from "@/lib/reading-goal";
 import { finishedIn, onlyBooks } from "@/lib/shelf";
 import { getLocalDateKey } from "@/lib/soma";
@@ -65,7 +66,12 @@ export function ReadingGoal() {
   }, [readingSince]);
 
   const minutes = todayMinutes(reading, today, readingSince);
-  const frac = fractionOf(minutes, goal);
+  const secondsToday = todaySeconds(reading, today, readingSince);
+  // The arc is drawn from SECONDS against the goal in minutes, so it creeps
+  // forward every second instead of stepping a whole minute at a time — which
+  // is what makes "30 minutes and the ring is full" visibly true while you
+  // watch it.
+  const frac = fractionOf(secondsToday / 60, goal);
   const run = streak(reading, goal, today);
   const best = bestStreak(reading, goal);
   const week = useMemo(() => weekOf(reading, goal, today), [reading, goal, today]);
@@ -79,6 +85,24 @@ export function ReadingGoal() {
 
   const running = readingSince !== null;
   const held = elapsedMinutes(readingSince);
+
+  /**
+   * A timer that only runs while you are looking at it.
+   *
+   * Press play, put the phone in a pocket, and the old timer kept counting
+   * until you came back — hours of "reading" nobody did. Backgrounding now
+   * banks the session, which is the same rule the reader itself follows: time
+   * counts while the book is open and the app is in front of you, and not
+   * otherwise.
+   */
+  useEffect(() => {
+    if (!readingSince) return;
+    const onHide = () => {
+      if (document.visibilityState === "hidden") stopReading();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [readingSince, stopReading]);
 
   return (
     <Card className="overflow-hidden">
@@ -106,8 +130,11 @@ export function ReadingGoal() {
           <div className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-faint">
             Today&apos;s reading
           </div>
-          <div className="font-display text-5xl font-extrabold tabular leading-none">
-            {clockOf(minutes)}
+          {/* Hours, minutes, seconds — the second hand is what says the timer
+              is alive. A minute-granularity clock sits still for sixty seconds
+              at a time and reads as broken while it does. */}
+          <div className="font-display text-4xl font-extrabold tabular leading-none">
+            {clockHMS(secondsToday)}
           </div>
           <button
             type="button"
@@ -139,7 +166,7 @@ export function ReadingGoal() {
         )}
       >
         {running ? <Pause className="size-4" /> : <Play className="size-4" />}
-        {running ? `Reading — ${held} min` : "Start reading"}
+        {running ? `Reading — ${clockHMS(secondsToday)}` : "Start reading"}
       </button>
 
       <div className="mt-2 flex justify-center gap-1.5">
