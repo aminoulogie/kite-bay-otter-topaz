@@ -27,7 +27,8 @@
         "name":  "Hammer Strength Incline Bench Press",
         "muscle":  "Chest",
         "url":  "https://www.muscleandstrength.com/exercises/hammer-strength-incline-bench-press",
-        "img":  "https://cdn.muscleandstrength.com/sites/default/files/machine-incline-bench-press.jpg"
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/machine-incline-bench-press.jpg",
+        "tier":  "S-Tier"
     },
     {
         "name":  "Hammer Strength Machine Incline Bench Press",
@@ -81,7 +82,8 @@
         "name":  "Cable Face Pull",
         "muscle":  "Shoulders",
         "url":  "https://www.muscleandstrength.com/exercises/cable-face-pull",
-        "img":  "https://cdn.muscleandstrength.com/sites/default/files/cable-face-pull.jpg"
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/cable-face-pull.jpg",
+        "tier":  "S-Tier"
     },
     {
         "name":  "Machine Reverse Fly",
@@ -93,7 +95,8 @@
         "name":  "Machine Shoulder Press",
         "muscle":  "Shoulders",
         "url":  "https://www.muscleandstrength.com/exercises/machine-shoulder-press",
-        "img":  "https://cdn.muscleandstrength.com/sites/default/files/machine-shoulder-press.jpg"
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/machine-shoulder-press.jpg",
+        "tier":  "S-Tier"
     },
     {
         "name":  "Scapular Wall Slide",
@@ -171,7 +174,8 @@
         "name":  "Seated Zottman Curl",
         "muscle":  "Biceps",
         "url":  "https://www.muscleandstrength.com/exercises/seated-zottman-curl",
-        "img":  "https://cdn.muscleandstrength.com/sites/default/files/seated-zottman-curl.jpg"
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/seated-zottman-curl.jpg",
+        "tier":  "S-Tier"
     },
     {
         "name":  "Standing Overhead Ez Bar Tricep Extension",
@@ -207,7 +211,8 @@
         "name":  "Close Grip Ez Bar Press",
         "muscle":  "Triceps",
         "url":  "https://www.muscleandstrength.com/exercises/close-grip-ez-bar-press",
-        "img":  "https://cdn.muscleandstrength.com/sites/default/files/close-grip-ez-bar-press.jpg"
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/close-grip-ez-bar-press.jpg",
+        "tier":  "S-Tier"
     },
     {
         "name":  "Pallof Press",
@@ -370,5 +375,26 @@
         "muscle":  "Forearms",
         "url":  "https://www.muscleandstrength.com/exercises/zercher-carry",
         "img":  "https://cdn.muscleandstrength.com/sites/default/files/zercher-carry.jpg"
+    },
+    {
+        "name":  "Pull Up: Video Exercise Guide \u0026 Tips",
+        "muscle":  "Back",
+        "url":  "https://www.muscleandstrength.com/exercises/pull-up",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/pull-up-1.jpg",
+        "tier":  "S-Tier"
+    },
+    {
+        "name":  "Romanian Deadlift (AKA RDL): Video Exercise Guide \u0026 Tips",
+        "muscle":  "Legs",
+        "url":  "https://www.muscleandstrength.com/exercises/romanian-deadlift",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/romanian-deadlift.jpg",
+        "tier":  "S-Tier"
+    },
+    {
+        "name":  "Seated Leg Curl: Video Exercise Guide \u0026 Tips",
+        "muscle":  "Legs",
+        "url":  "https://www.muscleandstrength.com/exercises/seated-leg-curl",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/seated-leg-curl-1.jpg",
+        "tier":  "S-Tier"
     }
 ]

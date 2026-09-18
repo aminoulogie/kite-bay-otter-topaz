@@ -41,6 +41,12 @@ import { cn } from "@/lib/utils";
  */
 const TEMPLATES: { name: string; sub: string; kind: ProgramKind; days: string[] }[] = [
   {
+    name: "PPL (JN)",
+    sub: "JN's push · pull · legs — S-tier only",
+    kind: "cycle",
+    days: ["PPL (JN) Push", "PPL (JN) Pull", "PPL (JN) Legs"],
+  },
+  {
     name: "PPL",
     sub: "push · pull · legs, rolling",
     kind: "cycle",

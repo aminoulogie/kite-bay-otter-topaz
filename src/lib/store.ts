@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, type PersistStorage } from "zustand/middleware";
+import msExercises from "./ms-exercises.json";
 import {
   BASE_EXERCISE_DB,
   DEFAULT_GOALS,
@@ -386,7 +387,7 @@ export interface SomaStore {
   addExercise: (name: string) => void;
   addCustomExercise: (ex: ExerciseDef) => void;
   upsertCustomExercise: (ex: ExerciseDef) => void;
-  importExercises: (list: { name: string; muscle?: string; img?: string }[]) => void;
+  importExercises: (list: { name: string; muscle?: string; img?: string; tier?: string }[]) => void;
   updateSet: (exIdx: number, setIdx: number, patch: Partial<WorkoutSet>) => void;
   updateExercise: (exIdx: number, patch: Partial<SessionExercise>) => void;
   addSet: (exIdx: number, type?: WorkoutSet["type"]) => void;
@@ -1742,6 +1743,20 @@ export const useSoma = create<SomaStore>()(
         const routines = get().routines();
         const resolved = resolveSplitName(name, Object.keys(routines)) ?? name;
         const list = routines[resolved] || [];
+        // Exercises the routine names but the library does not have yet (the
+        // fetched seed) are brought in on the spot, with their photo and tier,
+        // so a template split never loads bare, photo-less rows.
+        const db0 = get().allExercises();
+        const have = new Set(db0.map((e) => e.name.toLowerCase()));
+        const missing = list.filter((item) => !have.has(item.name.toLowerCase()));
+        if (missing.length) {
+          const seed = new Map((msExercises as { name: string }[]).map((e) => [e.name.toLowerCase(), e]));
+          const fresh = missing
+            .map((item) => seed.get(item.name.toLowerCase()))
+            .filter((x): x is { name: string; muscle?: string; img?: string; tier?: string } => !!x)
+            .map((x) => makeExerciseDef(x.name, x.muscle, x.img, x.tier ?? "S-Tier"));
+          if (fresh.length) set({ customExercises: [...get().customExercises, ...fresh] });
+        }
         const db = get().allExercises();
         const exercises = list.map((item) => makeSessionEx(item.name, db, get()));
         set({
@@ -1775,7 +1790,7 @@ export const useSoma = create<SomaStore>()(
         const have = new Set(get().allExercises().map((e) => e.name.toLowerCase()));
         const fresh = list
           .filter((x) => x && x.name && !have.has(x.name.toLowerCase()))
-          .map((x) => makeExerciseDef(x.name, x.muscle, x.img));
+          .map((x) => makeExerciseDef(x.name, x.muscle, x.img, x.tier));
         if (fresh.length) set({ customExercises: [...get().customExercises, ...fresh] });
       },
       updateSet: (exIdx, setIdx, patch) => {
@@ -2637,7 +2652,7 @@ function recomputeSession(session: HistorySession, exercises: SessionExercise[])
   };
 }
 
-function makeExerciseDef(name: string, muscle?: string, img?: string): ExerciseDef {
+function makeExerciseDef(name: string, muscle?: string, img?: string, tier?: string): ExerciseDef {
   const guess = guessMuscles(name);
   return {
     name,
@@ -2646,7 +2661,7 @@ function makeExerciseDef(name: string, muscle?: string, img?: string): ExerciseD
     targetKeys: guess.targetKeys,
     position: "",
     risk: "Low",
-    tier: "",
+    tier: tier ?? "",
     isAxial: false,
     isBW: false,
     img,

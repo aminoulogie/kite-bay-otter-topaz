@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { ExercisesView } from "@/components/views/ExercisesView";
+import { ExerciseIcon } from "@/components/ExerciseIcon";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
@@ -374,8 +375,11 @@ export function SettingsView() {
             </Field>
             <div className="mb-2 space-y-1">
               {rtList.map((it, i) => (
-                <div key={`${it.name}-${i}`} className="flex items-center justify-between text-sm">
-                  <span>{it.name}</span>
+                <div key={`${it.name}-${i}`} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <ExerciseIcon name={it.name} size={24} />
+                    <span className="truncate">{it.name}</span>
+                  </span>
                   <div className="flex gap-1">
                     <Button
                       size="sm"
