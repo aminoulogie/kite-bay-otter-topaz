@@ -2,9 +2,9 @@
  * The stores that live outside the persisted zustand store.
  *
  * Almost everything is in one zustand store behind a `persist` middleware, and
- * `exportJson` dumps that. Four things are not: programmes, saved meals,
- * membership periods and the supplement checklist each keep their own
- * localStorage key, written directly by the screen that owns them.
+ * `exportJson` dumps that. Five things are not: programmes, saved meals, saved
+ * meal programmes, membership periods and the supplement checklist each keep
+ * their own localStorage key, written directly by the screen that owns them.
  *
  * That was invisible until someone asked whether a backup keeps everything. It
  * did not. Restoring onto a wiped phone brought back every session, every meal
@@ -21,6 +21,7 @@
  * data — restoring it would tell a fresh phone it was already safe.
  */
 
+import { loadMealPrograms, saveMealPrograms, type MealProgram } from "./meal-programs.ts";
 import { loadPeriods, savePeriods, type MembershipPeriod } from "./membership.ts";
 import { loadActiveId, loadPrograms, saveActiveId, savePrograms, type Program } from "./programs.ts";
 import { loadRecipes, saveRecipes, type Recipe } from "./recipes.ts";
@@ -33,6 +34,7 @@ export interface SideStores {
   programs?: Program[];
   activeProgramId?: string | null;
   recipes?: Recipe[];
+  mealPrograms?: MealProgram[];
   membership?: MembershipPeriod[];
   /** Ids of the supplements the user has ticked. */
   supplements?: string[];
@@ -44,6 +46,7 @@ export function collectSideStores(): SideStores {
     programs: loadPrograms(),
     activeProgramId: loadActiveId(),
     recipes: loadRecipes(),
+    mealPrograms: loadMealPrograms(),
     membership: loadPeriods(),
     supplements: loadTaken(),
   };
@@ -77,6 +80,7 @@ export function mergeSideStores(incoming: SideStores, mine: SideStores): SideSto
     // on now beats whatever it was on when the backup was written.
     activeProgramId: mine.activeProgramId ?? incoming.activeProgramId ?? null,
     recipes: mergeById(incoming.recipes ?? [], mine.recipes ?? []),
+    mealPrograms: mergeById(incoming.mealPrograms ?? [], mine.mealPrograms ?? []),
     // Membership periods union rather than one side winning outright, for the
     // same reason habit day-marks do: a month that was paid for was paid for,
     // whichever copy remembers it.
@@ -111,6 +115,7 @@ export function restoreSideStores(
           programs: incoming.programs ?? [],
           activeProgramId: incoming.activeProgramId ?? null,
           recipes: incoming.recipes ?? [],
+          mealPrograms: incoming.mealPrograms ?? [],
           membership: incoming.membership ?? [],
           supplements: incoming.supplements ?? [],
         }
@@ -121,6 +126,7 @@ export function restoreSideStores(
   // can do, so "no programme" simply leaves the key alone.
   if (next.activeProgramId) saveActiveId(next.activeProgramId);
   saveRecipes(next.recipes ?? []);
+  saveMealPrograms(next.mealPrograms ?? []);
   savePeriods(next.membership ?? []);
   saveTaken(next.supplements ?? []);
 
@@ -141,6 +147,7 @@ export function sideStoreCounts(s: SideStores | undefined | null) {
   return {
     programs: s?.programs?.length ?? 0,
     recipes: s?.recipes?.length ?? 0,
+    mealPrograms: s?.mealPrograms?.length ?? 0,
     membership: s?.membership?.length ?? 0,
     supplements: s?.supplements?.length ?? 0,
   };
