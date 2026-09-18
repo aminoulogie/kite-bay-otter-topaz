@@ -218,15 +218,21 @@ export function deleteExercisePhoto(key: string): Promise<void> {
 }
 
 /**
- * Opens the camera on a phone and the file picker on a desktop.
+ * Picking a picture: the camera, or the photo library.
  *
- * `capture` asks for the rear camera directly; browsers that ignore it fall
- * back to the normal picker, which is the desired behaviour rather than an
- * error. The awkward parts of waiting for the answer live in file-picker.ts —
- * they are the same on a photo from iCloud as on a book from Files.
+ * `capture` asks for the rear camera directly, which is right when the user
+ * said "camera" and wrong every other time — with it, iOS never offers the
+ * photo library at all. Passing "any" leaves the attribute off, so the system
+ * sheet offers Photo Library, Take Photo and Browse, which is the only way to
+ * reach a picture that was taken before this screen existed. The awkward
+ * parts of waiting for the answer live in file-picker.ts — they are the same
+ * on a photo from iCloud as on a book from Files.
  */
-export async function captureImage(): Promise<File | null> {
-  const files = await pickFiles({ accept: "image/*", capture: "environment" });
+export async function captureImage(source: "camera" | "library" | "any" = "any"): Promise<File | null> {
+  const files = await pickFiles({
+    accept: "image/*",
+    ...(source === "camera" ? { capture: "environment" as const } : {}),
+  });
   return files[0] ?? null;
 }
 
