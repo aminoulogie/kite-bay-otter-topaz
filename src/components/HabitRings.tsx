@@ -41,7 +41,7 @@ export function HabitRings() {
     <button
       type="button"
       onClick={() => setTab("habits")}
-      className="block h-full w-full rounded-2xl border border-border bg-surface p-4 text-left shadow-card active:bg-surface-2"
+      className="glass-card block h-full w-full rounded-2xl border border-border bg-surface p-4 text-left active:bg-surface-2"
       aria-label={`Habits: ${count.done} of ${count.total} done. Opens the Habits tab.`}
     >
       <CardTitle>
