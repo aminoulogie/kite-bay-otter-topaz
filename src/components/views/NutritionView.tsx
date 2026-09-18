@@ -9,6 +9,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { FoodEditorSheet } from "@/components/FoodEditorSheet";
 import { PreWorkoutCard } from "@/components/PreWorkoutCard";
 import { MealBuilder } from "@/components/MealBuilder";
+import { MealPrograms, MealProgramPicker } from "@/components/MealPrograms";
 import { MineralsCard } from "@/components/MineralsCard";
 import { NutritionGraphs } from "@/components/NutritionGraphs";
 import { DecimalInput } from "@/components/ui/decimal-input";
@@ -377,6 +378,10 @@ export function NutritionView() {
               greyed out and counted by nothing. Swipe a planned row right when you have
               actually eaten it.
             </p>
+            {/* The dropdown, sitting directly under the days it writes to. Keyed
+                on the date, so moving along the week re-opens on that weekday's
+                own programme rather than carrying the last choice across. */}
+            <MealProgramPicker key={planTarget} target={planTarget} />
           </>
         )}
       </Card>
@@ -685,6 +690,11 @@ export function NutritionView() {
       </Card>
 
       <MealBuilder key="meal" meal={meal} />
+
+      {/* Beside the meal builder because it is the same idea one size up: a
+          saved thing you apply instead of rebuilding. It owns the dropdown's
+          contents, so the two are useless apart. */}
+      <MealPrograms key="programs" />
 
       <PreWorkoutCard key="preworkout" />
 
