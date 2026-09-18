@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { Camera, ChevronLeft, Plus, Search, Trash2 } from "lucide-react";
+import { Camera, ChevronLeft, Image as ImageIcon, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ExerciseIcon } from "@/components/ExerciseIcon";
+import { TopTabs } from "@/components/TopTabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -90,36 +91,36 @@ export function ExercisesView({ onBack }: { onBack: () => void }) {
         <span className="ml-auto text-[0.7rem] font-bold text-faint">{count} total</span>
       </div>
 
-      {/* Same search row as the reader's SearchSheet: a quiet tinted bar that
-          sits proportionately with the glass chrome around it. */}
-      <div className="mb-1 flex items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-2">
-        <Search className="size-4 shrink-0 text-muted" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, muscle or tier" className="min-w-0 flex-1 border-0 bg-transparent p-0 shadow-none" />
+      {/* The app's own input, with the icon laid over it: a second border and
+          background around a styled input is what made this bar read as a
+          different material from every other field on the screen. */}
+      <div className="relative mb-1">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search name, muscle or tier"
+          className="pl-9 pr-9"
+        />
         {q && (
-          <button type="button" aria-label="Clear" onClick={() => setQ("")} className="text-faint">
+          <button type="button" aria-label="Clear" onClick={() => setQ("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-faint">
             ✕
           </button>
         )}
       </div>
 
-      <div className="flex items-center gap-1.5">
-        {([["name", "A–Z"], ["muscle", "Muscle"], ["tier", "Tier"]] as const).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setSort(id)}
-            className={
-              sort === id
-                ? "flex-1 rounded-full bg-accent px-2 py-1.5 text-[0.66rem] font-bold text-accent-ink"
-                : "flex-1 rounded-full border border-border bg-surface-2 px-2 py-1.5 text-[0.66rem] font-bold text-muted"
-            }
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <TopTabs
+        tabs={[
+          { id: "name", label: "A–Z" },
+          { id: "muscle", label: "Muscle" },
+          { id: "tier", label: "Tier" },
+        ]}
+        value={sort}
+        onChange={setSort}
+        className="mb-1"
+      />
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <Button
           variant="outline"
           className="flex-1"
@@ -171,8 +172,11 @@ function EditSheet({ ex, onClose, onSave }: { ex: ExerciseDef; onClose: () => vo
   const [keys, setKeys] = useState<string[]>(ex.targetKeys ?? []);
   const [photoId, setPhotoId] = useState(ex.photoId);
 
-  const pickPhoto = async () => {
-    const files = await pickFiles({ accept: "image/*", capture: "environment" });
+  const pickPhoto = async (source: "camera" | "library") => {
+    const files = await pickFiles({
+      accept: "image/*",
+      ...(source === "camera" ? { capture: "environment" as const } : {}),
+    });
     const file = files[0];
     if (!file) return;
     const id = photoId || `ex:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -217,8 +221,11 @@ function EditSheet({ ex, onClose, onSave }: { ex: ExerciseDef; onClose: () => vo
           <div className="flex-1">
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Exercise name" className="mb-2" />
             <div className="flex gap-1.5">
-              <Button variant="outline" className="flex-1" onClick={() => void pickPhoto()}>
-                <Camera className="size-4" /> Photo
+              <Button variant="outline" className="flex-1" onClick={() => void pickPhoto("camera")}>
+                <Camera className="size-4" /> Camera
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={() => void pickPhoto("library")}>
+                <ImageIcon className="size-4" /> Photos
               </Button>
               {photoId && (
                 <Button
