@@ -55,6 +55,7 @@ export function ExercisesView({ onBack }: { onBack: () => void }) {
   const upsert = useSoma((s) => s.upsertCustomExercise);
   const importAll = useSoma((s) => s.importExercises);
   const [q, setQ] = useState("");
+  const [sort, setSort] = useState<"name" | "muscle" | "tier">("name");
   const [editing, setEditing] = useState<ExerciseDef | null>(null);
 
   // allExercises() builds a fresh array per call — select the stable slice
@@ -63,10 +64,18 @@ export function ExercisesView({ onBack }: { onBack: () => void }) {
 
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return all
-      .filter((e) => !needle || e.name.toLowerCase().includes(needle) || e.muscle.toLowerCase().includes(needle))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [all, q]);
+    const filtered = all.filter(
+      (e) => !needle || e.name.toLowerCase().includes(needle) || e.muscle.toLowerCase().includes(needle) || (e.tier || "").toLowerCase().includes(needle),
+    );
+    const tierRank = (t: string) => (t.toLowerCase().startsWith("s") ? 0 : t.toLowerCase().startsWith("a") ? 1 : 2);
+    return filtered.sort((a, b) =>
+      sort === "muscle"
+        ? a.muscle.localeCompare(b.muscle) || a.name.localeCompare(b.name)
+        : sort === "tier"
+          ? tierRank(a.tier) - tierRank(b.tier) || a.name.localeCompare(b.name)
+          : a.name.localeCompare(b.name),
+    );
+  }, [all, q, sort]);
 
   const count = list.length;
   const msCount = (msData as { name: string }[]).length;
@@ -81,9 +90,33 @@ export function ExercisesView({ onBack }: { onBack: () => void }) {
         <span className="ml-auto text-[0.7rem] font-bold text-faint">{count} total</span>
       </div>
 
-      <div className="flex items-center gap-2 rounded-xl px-3 py-2" style={{ background: "var(--color-surface-2)" }}>
-        <Search className="size-4 text-muted" />
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search exercises or muscles" className="border-0 bg-transparent p-0 shadow-none" />
+      {/* Same search row as the reader's SearchSheet: a quiet tinted bar that
+          sits proportionately with the glass chrome around it. */}
+      <div className="mb-1 flex items-center gap-2 rounded-full border border-border bg-surface-2 px-3 py-2">
+        <Search className="size-4 shrink-0 text-muted" />
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, muscle or tier" className="min-w-0 flex-1 border-0 bg-transparent p-0 shadow-none" />
+        {q && (
+          <button type="button" aria-label="Clear" onClick={() => setQ("")} className="text-faint">
+            ✕
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        {([["name", "A–Z"], ["muscle", "Muscle"], ["tier", "Tier"]] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setSort(id)}
+            className={
+              sort === id
+                ? "flex-1 rounded-full bg-accent px-2 py-1.5 text-[0.66rem] font-bold text-accent-ink"
+                : "flex-1 rounded-full border border-border bg-surface-2 px-2 py-1.5 text-[0.66rem] font-bold text-muted"
+            }
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="flex items-center gap-2">
@@ -162,6 +195,7 @@ function EditSheet({ ex, onClose, onSave }: { ex: ExerciseDef; onClose: () => vo
       isAxial: !!ex.isAxial,
       isBW: !!ex.isBW,
       photoId,
+      img: ex.img,
     });
     toast.success(`${n} saved`);
     onClose();
