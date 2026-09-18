@@ -170,6 +170,7 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   // Full-width heights are floors, so it still grows when it has three things
   // to say.
   { id: "brief", label: "Coach brief", size: "1x4" },
+  { id: "rings", label: "Activity rings", size: "2x4" },
   { id: "score", label: "Today's score", size: "2x4" },
   { id: "cals", label: "Calories", size: "2x2" },
   { id: "protein", label: "Protein", size: "2x2" },
