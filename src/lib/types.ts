@@ -476,7 +476,13 @@ export interface TodoItem {
   id: string;
   text: string;
   done: boolean;
-  /** The day it was added, so a list can be cleared by age rather than by hand. */
+  /**
+   * The day it was added — or last moved, see `scope` below.
+   *
+   * Kept as one meaning for both lists on purpose: a "day" item is active
+   * while this IS today, a "week" item is active while this falls inside the
+   * current Monday-to-Sunday week. See lib/todos.ts for the arithmetic.
+   */
   date: string;
   /**
    * When it has to be done by, as a local date key. Optional, and stays that
@@ -484,6 +490,20 @@ export interface TodoItem {
    * turns "buy milk" into an appointment.
    */
   due?: string;
+  /**
+   * Which list this lives on. Undefined reads as `"day"` — every to-do made
+   * before the weekly list existed was a single flat list tied to the day it
+   * was added, which is exactly what `"day"` means now.
+   */
+  scope?: "day" | "week";
+  /**
+   * Swept out of the active list by hand, before its day or week was up.
+   *
+   * Not a delete. The item still belongs to the day (or week) in `date` for
+   * history's sake — this only hides it from the list you are working from,
+   * which is what "Clear done" does instead of throwing the row away.
+   */
+  cleared?: boolean;
 }
 
 export interface MindEntry {

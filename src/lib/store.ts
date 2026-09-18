@@ -38,6 +38,7 @@ import { followsSettings, resolveGoals, sameGoals } from "./goals";
 import { learn, unlearn, type LangTrack } from "./lang/study";
 import type { LangCode, Level } from "./lang/words";
 import { resolveTab } from "./tab-order";
+import { isActive, scopeOf, type TodoScope } from "./todos";
 
 /** One entry per language, with the words taken on either device kept. */
 function mergeLangs(incoming: unknown, mine: LangTrack[]): LangTrack[] {
@@ -303,15 +304,23 @@ export interface SomaStore {
   renameProjectStep: (id: string, stepId: string, label: string) => void;
   moveProjectStep: (id: string, stepId: string, delta: number) => void;
   removeProjectStep: (id: string, stepId: string) => void;
-  addTodo: (text: string) => void;
+  /** Defaults to the day list — see lib/todos.ts for what that means. */
+  addTodo: (text: string, scope?: TodoScope) => void;
   toggleTodo: (id: string) => void;
   renameTodo: (id: string, text: string) => void;
   /** Set or clear a to-do's deadline. Null clears it. */
   setTodoDue: (id: string, due: string | null) => void;
+  /** Move it onto the other list, dated as of right now. */
+  setTodoScope: (id: string, scope: TodoScope) => void;
   removeTodo: (id: string) => void;
   restoreTodo: (idx: number, todo: TodoItem) => void;
-  /** Drop everything already ticked. */
-  clearDoneTodos: () => number;
+  /**
+   * Sweep what is done, on one list, out of the active view.
+   *
+   * Not a delete — see `TodoItem.cleared`. Returns how many moved, for the
+   * toast.
+   */
+  clearDoneTodos: (scope: TodoScope) => number;
   /** What is in the house, and the list of what is not. */
   pantry: PantryItem[];
   grocery: GroceryLine[];
@@ -1368,13 +1377,13 @@ export const useSoma = create<SomaStore>()(
         set((s) => ({
           projects: s.projects.map((p) => (p.id === id ? removeStep(p, stepId) : p)),
         })),
-      addTodo: (text) => {
+      addTodo: (text, scope = "day") => {
         const t = text.trim();
         if (!t) return;
         set({
           todos: [
             ...get().todos,
-            { id: newId(), text: t, done: false, date: getLocalDateKey(new Date()) },
+            { id: newId(), text: t, done: false, date: getLocalDateKey(new Date()), scope },
           ],
         });
       },
@@ -1391,6 +1400,18 @@ export const useSoma = create<SomaStore>()(
             t.id === id ? { ...t, due: cleanDue(due ?? undefined) } : t,
           ),
         }),
+      setTodoScope: (id, scope) =>
+        set({
+          todos: get().todos.map((t) =>
+            t.id === id
+              ? // Re-dated to now: moving "buy milk" onto this week means it is
+                // active for THIS week, not whatever week it happened to be
+                // added in, and the same for a move back onto today. Cleared
+                // is dropped too, since the point of moving it is to see it.
+                { ...t, scope, date: getLocalDateKey(new Date()), cleared: false }
+              : t,
+          ),
+        }),
       removeTodo: (id) => set({ todos: get().todos.filter((t) => t.id !== id) }),
       restoreTodo: (idx, todo) => {
         const next = [...get().todos];
@@ -1399,10 +1420,19 @@ export const useSoma = create<SomaStore>()(
         next.splice(Math.max(0, Math.min(idx, next.length)), 0, todo);
         set({ todos: next });
       },
-      clearDoneTodos: () => {
-        const before = get().todos.length;
-        set({ todos: get().todos.filter((t) => !t.done) });
-        return before - get().todos.length;
+      clearDoneTodos: (scope) => {
+        const today = getLocalDateKey(new Date());
+        let n = 0;
+        set({
+          todos: get().todos.map((t) => {
+            if (t.done && !t.cleared && scopeOf(t) === scope && isActive(t, today)) {
+              n += 1;
+              return { ...t, cleared: true };
+            }
+            return t;
+          }),
+        });
+        return n;
       },
 
       addStock: (item) => set({ pantry: [...get().pantry, { ...item, id: newId() }] }),
