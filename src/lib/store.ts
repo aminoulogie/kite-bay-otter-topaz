@@ -385,6 +385,8 @@ export interface SomaStore {
   loadSplit: (name: string) => void;
   addExercise: (name: string) => void;
   addCustomExercise: (ex: ExerciseDef) => void;
+  upsertCustomExercise: (ex: ExerciseDef) => void;
+  importExercises: (list: { name: string; muscle?: string }[]) => void;
   updateSet: (exIdx: number, setIdx: number, patch: Partial<WorkoutSet>) => void;
   updateExercise: (exIdx: number, patch: Partial<SessionExercise>) => void;
   addSet: (exIdx: number, type?: WorkoutSet["type"]) => void;
@@ -1692,7 +1694,17 @@ export const useSoma = create<SomaStore>()(
           return { habits: next };
         }),
 
-      allExercises: () => [...(BASE_EXERCISE_DB as ExerciseDef[]), ...get().customExercises],
+      // Customs shadow built-ins by name: editing a shipped exercise's tier
+      // or photo upserts an entry here, and it must win over the base copy.
+      allExercises: () => {
+        const customs = get().customExercises;
+        if (!customs.length) return [...(BASE_EXERCISE_DB as ExerciseDef[])];
+        const names = new Set(customs.map((c) => c.name));
+        return [
+          ...(BASE_EXERCISE_DB as ExerciseDef[]).filter((e) => !names.has(e.name)),
+          ...customs,
+        ];
+      },
       routines: () =>
         SomaIntelligenceEngine.mergeRoutines(ROUTINE_PRESETS, {
           ...get().settings.customRoutines,
@@ -1754,6 +1766,17 @@ export const useSoma = create<SomaStore>()(
       addCustomExercise: (ex) => {
         set({ customExercises: [...get().customExercises, ex] });
         get().addExercise(ex.name);
+      },
+      upsertCustomExercise: (ex) => {
+        const rest = get().customExercises.filter((c) => c.name !== ex.name);
+        set({ customExercises: [...rest, ex] });
+      },
+      importExercises: (list) => {
+        const have = new Set(get().allExercises().map((e) => e.name.toLowerCase()));
+        const fresh = list
+          .filter((x) => x && x.name && !have.has(x.name.toLowerCase()))
+          .map((x) => makeExerciseDef(x.name, x.muscle));
+        if (fresh.length) set({ customExercises: [...get().customExercises, ...fresh] });
       },
       updateSet: (exIdx, setIdx, patch) => {
         const exercises = get().live.exercises.map((ex, i) => {
@@ -2611,6 +2634,21 @@ function recomputeSession(session: HistorySession, exercises: SessionExercise[])
     totalSets,
     axialVol,
     muscles: tallyMuscles(exercises),
+  };
+}
+
+function makeExerciseDef(name: string, muscle?: string): ExerciseDef {
+  const guess = guessMuscles(name);
+  return {
+    name,
+    muscle: muscle || guess.muscle,
+    subTarget: guess.subTarget,
+    targetKeys: guess.targetKeys,
+    position: "",
+    risk: "Low",
+    tier: "",
+    isAxial: false,
+    isBW: false,
   };
 }
 

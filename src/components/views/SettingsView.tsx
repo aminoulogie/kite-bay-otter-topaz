@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { ExercisesView } from "@/components/views/ExercisesView";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
@@ -57,6 +58,7 @@ export function SettingsView() {
   const activeProgram = useActiveProgram();
   const [programsOpen, setProgramsOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [exercisesOpen, setExercisesOpen] = useState(false);
   // Raw text beside the stored numbers, so a half-typed target is not wiped on
   // every keystroke.
   const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>(() =>
@@ -132,12 +134,25 @@ export function SettingsView() {
     });
   };
 
+  if (exercisesOpen) return <ExercisesView onBack={() => setExercisesOpen(false)} />;
+
   return (
     // Setup is fourteen unrelated panels sharing a screen, not one form. Which
     // of them you open weekly against never is personal, so they arrange like
     // any other page. The sheets and the version footer carry no key and stay
     // put — they are not cards.
     <WidgetGrid tab="settings">
+      <Card key="exercises">
+        <CardTitle>Exercises</CardTitle>
+        <p className="mb-2 text-[0.7rem] leading-snug text-faint">
+          Every exercise the app knows — tier them S/A, pick their muscles and give them a
+          photo that follows them everywhere their name appears.
+        </p>
+        <Button className="w-full" onClick={() => setExercisesOpen(true)}>
+          Open exercises
+        </Button>
+      </Card>
+
       <Card key="phase">
         <CardTitle>Phase</CardTitle>
         <p className="mb-2 text-[0.7rem] leading-snug text-faint">
