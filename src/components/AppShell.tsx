@@ -294,7 +294,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="relative mx-auto min-h-dvh max-w-lg bg-bg pb-[calc(var(--dock-h,7rem)+0.75rem)] lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
+    <div className="soma-page relative mx-auto min-h-dvh max-w-lg bg-bg pb-[calc(var(--dock-h,7rem)+0.75rem)] lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
       {/* The ambient light behind every glass surface. Fixed, pointer-dead,
           and the only layer the tilt parallax moves — the glass refracts it,
           the content never does. It sits at z-0; the rail and the content

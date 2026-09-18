@@ -389,6 +389,38 @@ html {
   overscroll-behavior-y: none;
 }
 
+/* ---------------------------------------------------------------------------
+   The chrome must not move, and on iOS it moved.
+
+   In the app's own webview (and in a home-screen web app) the DOCUMENT is
+   what scrolls, so reaching either end rubber-bands the whole page: the dock
+   lifts off the bottom edge and the header drops away from the top by exactly
+   the bounce, then snaps back. Nothing in the app is wrong - the page is
+   simply moving, and `fixed` means "fixed to the page".
+
+   So on iOS the document stops scrolling entirely and the app's own column
+   becomes the scroller. The header stays sticky inside it, the dock is fixed
+   to a viewport that can no longer move, and the bounce happens inside the
+   list where it belongs.
+
+   Scoped to iOS by the touch-callout probe: on a desktop browser the document
+   keeps scrolling exactly as it did, so nothing about the wide layout changes.
+--------------------------------------------------------------------------- */
+@supports (-webkit-touch-callout: none) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .soma-page {
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 /*
  * Printing, which is also how a PDF gets made.
  *
