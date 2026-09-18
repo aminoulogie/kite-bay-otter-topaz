@@ -15,18 +15,21 @@ import { pickFiles } from "./file-picker.ts";
 
 const DB_NAME = "soma-habit-photos";
 /**
- * v2 adds the scan store, v3 the book files. Object stores in the SAME
- * database rather than databases of their own, deliberately: the backup
- * coverage test asserts the app opens exactly one IndexedDB, because a second
- * one is a second thing to remember at backup time and that is precisely how
- * four localStorage keys went missing from every backup for months.
+ * v2 adds the scan store, v3 the book files, v4 the exercise photos.
+ * Object stores in the SAME database rather than databases of their own,
+ * deliberately: the backup coverage test asserts the app opens exactly one
+ * IndexedDB, because a second one is a second thing to remember at backup
+ * time and that is precisely how four localStorage keys went missing from
+ * every backup for months.
  */
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE = "photos";
 /** Face and posture captures, as data URLs keyed by scan id. */
 const SCAN_STORE = "scans";
 /** Imported PDFs and EPUBs, as Blobs keyed by book id. See lib/book-files.ts. */
 export const BOOK_STORE = "books";
+/** User-picked exercise pictures, one Blob per exercise photo id. */
+export const EXERCISE_STORE = "exercise-photos";
 
 const THUMB_PX = 320;
 const DISPLAY_PX = 1080;
@@ -73,6 +76,9 @@ function open(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(BOOK_STORE)) {
         db.createObjectStore(BOOK_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(EXERCISE_STORE)) {
+        db.createObjectStore(EXERCISE_STORE, { keyPath: "key" });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -179,6 +185,36 @@ export async function putPhotoRecord(row: HabitPhoto): Promise<void> {
 export async function allPhotoDates(): Promise<Set<string>> {
   const rows = await tx<HabitPhoto[]>("readonly", (s) => s.getAll());
   return new Set(rows.map((r) => r.date));
+}
+
+// ------------------------------------------------------------ exercise pics --
+
+function exTx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return open().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const t = db.transaction(EXERCISE_STORE, mode);
+        const req = run(t.objectStore(EXERCISE_STORE));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
+      }),
+  );
+}
+
+/** The stored picture for an exercise photo id, or null. */
+export function exercisePhotoBlob(key: string): Promise<Blob | null> {
+  return exTx<Blob | undefined>("readonly", (s) => s.get(key)).then((b) => b ?? null);
+}
+
+/** Stores an exercise picture, fitted to the display budget. */
+export async function saveExercisePhotoBlob(key: string, file: Blob): Promise<void> {
+  const display = await derive(file, DISPLAY_PX, 0.82);
+  await exTx("readwrite", (s) => s.put({ key, blob: display, ts: Date.now() }));
+}
+
+/** Removes an exercise picture. */
+export function deleteExercisePhoto(key: string): Promise<void> {
+  return exTx("readwrite", (s) => s.delete(key));
 }
 
 /**

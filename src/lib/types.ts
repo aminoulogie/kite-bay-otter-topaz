@@ -451,6 +451,8 @@ export interface ExerciseDef {
   tier: string;
   isAxial: boolean;
   isBW: boolean;
+  /** Photo blob key in the exercise-photos IndexedDB store, when the user set one. */
+  photoId?: string;
 }
 
 /**
