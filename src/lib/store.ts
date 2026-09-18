@@ -386,7 +386,7 @@ export interface SomaStore {
   addExercise: (name: string) => void;
   addCustomExercise: (ex: ExerciseDef) => void;
   upsertCustomExercise: (ex: ExerciseDef) => void;
-  importExercises: (list: { name: string; muscle?: string }[]) => void;
+  importExercises: (list: { name: string; muscle?: string; img?: string }[]) => void;
   updateSet: (exIdx: number, setIdx: number, patch: Partial<WorkoutSet>) => void;
   updateExercise: (exIdx: number, patch: Partial<SessionExercise>) => void;
   addSet: (exIdx: number, type?: WorkoutSet["type"]) => void;
@@ -1775,7 +1775,7 @@ export const useSoma = create<SomaStore>()(
         const have = new Set(get().allExercises().map((e) => e.name.toLowerCase()));
         const fresh = list
           .filter((x) => x && x.name && !have.has(x.name.toLowerCase()))
-          .map((x) => makeExerciseDef(x.name, x.muscle));
+          .map((x) => makeExerciseDef(x.name, x.muscle, x.img));
         if (fresh.length) set({ customExercises: [...get().customExercises, ...fresh] });
       },
       updateSet: (exIdx, setIdx, patch) => {
@@ -2637,7 +2637,7 @@ function recomputeSession(session: HistorySession, exercises: SessionExercise[])
   };
 }
 
-function makeExerciseDef(name: string, muscle?: string): ExerciseDef {
+function makeExerciseDef(name: string, muscle?: string, img?: string): ExerciseDef {
   const guess = guessMuscles(name);
   return {
     name,
@@ -2649,6 +2649,7 @@ function makeExerciseDef(name: string, muscle?: string): ExerciseDef {
     tier: "",
     isAxial: false,
     isBW: false,
+    img,
   };
 }
 

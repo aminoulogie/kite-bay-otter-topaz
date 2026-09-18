@@ -20,6 +20,7 @@ export function tierColour(tier: string): string | null {
 export function ExerciseIcon({ name, size = 34 }: { name: string; size?: number }) {
   const def = useSoma((s) => s.allExercises().find((e) => e.name === name));
   const photoId = def?.photoId;
+  const remote = def?.img;
   const tier = def?.tier ?? "";
   const [url, setUrl] = useState<string | null>(null);
 
@@ -47,6 +48,8 @@ export function ExerciseIcon({ name, size = 34 }: { name: string; size?: number 
     .join("");
 
   const badge = tierColour(tier);
+  // The user's own photo wins; until one is set, the site's picture shows.
+  const src = url ?? (remote && !photoId ? remote : null);
 
   return (
     <span
@@ -54,8 +57,8 @@ export function ExerciseIcon({ name, size = 34 }: { name: string; size?: number 
       style={{ width: size, height: size, background: "var(--color-surface-2)" }}
       aria-hidden
     >
-      {url ? (
-        <img src={url} alt="" className="h-full w-full object-cover" />
+      {src ? (
+        <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
       ) : (
         <span className="font-display font-extrabold" style={{ fontSize: size * 0.34, color: "var(--color-fg)" }}>
           {initials}

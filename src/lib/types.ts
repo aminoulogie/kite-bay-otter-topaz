@@ -453,6 +453,8 @@ export interface ExerciseDef {
   isBW: boolean;
   /** Photo blob key in the exercise-photos IndexedDB store, when the user set one. */
   photoId?: string;
+  /** Remote image (Muscle & Strength CDN) shown until the user sets their own photo. */
+  img?: string;
 }
 
 /**
