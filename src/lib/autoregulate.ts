@@ -61,6 +61,62 @@ export function failureFromQuality(q: { closeness?: Closeness; limiter?: Limiter
   return raw;
 }
 
+// --------------------------------------------------------------------- RPE --
+
+/**
+ * The numeric RPE implied by a rated set.
+ *
+ * 10.5 is "10+": the set went past failure with help or a drop. The feeder
+ * reading is deliberately lower — a feeder taken to 2+ reps in reserve is 7,
+ * not 8, because a feeder over RPE 8 is an error, not a PR, and the number
+ * should say so before the scoring does.
+ */
+export function rpeFromQuality(
+  q: { closeness?: Closeness; limiter?: Limiter },
+  type = "working",
+): number | null {
+  if (!q.closeness) return null;
+  switch (q.closeness) {
+    case "forced": return 10.5;
+    case "nothing": return 10;
+    case "one_left": return 9;
+    case "reps_left": return type === "feeder" ? 7 : 8;
+    default: return null;
+  }
+}
+
+// --------------------------------------------------------------- feeder ramp --
+
+export interface FeederSet {
+  weight: number;
+  reps: number;
+  targetRpe: number;
+}
+
+/**
+ * The three-feeder ramp up to a working top set, rounded to the bar's own
+ * increment. Feeder 3 sits at 87.5% of the target, the middle of the 85–90
+ * band the programme prescribes.
+ */
+export function feederRamp(targetWeight: number, unit: "kg" | "lb" = "kg"): FeederSet[] {
+  const inc = unit === "lb" ? 5 : 2.5;
+  const round = (w: number) => Math.max(0, Math.round(w / inc) * inc);
+  const t = Math.max(0, Number(targetWeight) || 0);
+  return [
+    { weight: round(t * 0.5), reps: 10, targetRpe: 5 },
+    { weight: round(t * 0.7), reps: 10, targetRpe: 6 },
+    { weight: round(t * 0.875), reps: 10, targetRpe: 8 },
+  ];
+}
+
+/** How the working target moves after feeder 3 is rated, as a percent. */
+export function feederAdjustment(feeder3Rpe: number | null | undefined): number {
+  if (feeder3Rpe == null) return 0;
+  if (feeder3Rpe >= 9) return -5;
+  if (feeder3Rpe <= 6) return 5;
+  return 0;
+}
+
 // --------------------------------------------------------------- volume cap --
 
 /**

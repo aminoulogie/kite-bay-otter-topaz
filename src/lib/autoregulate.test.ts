@@ -3,7 +3,8 @@ import { test } from "node:test";
 import {
   BASE_ANCHOR, DEBT_THRESHOLD_HOURS, LIMITER_FAILURE_CAP, MIN_DELOAD_SETS,
   OVER_MRV_READINESS, READINESS_FLOOR, capForVolume, deloadSetCount,
-  failureFromQuality, mesoAnchor, readinessWithSleepDebt,
+  failureFromQuality, feederAdjustment, feederRamp, mesoAnchor, readinessWithSleepDebt,
+  rpeFromQuality,
 } from "./autoregulate.ts";
 
 test("an unrated set says nothing rather than guessing a 3", () => {
@@ -25,6 +26,37 @@ test("a set the triceps ended is not evidence the chest failed", () => {
   assert.equal(failureFromQuality({ closeness: "nothing", limiter: "form" }), LIMITER_FAILURE_CAP);
   // The cap only ever lowers: an easy set stopped by form is still easy.
   assert.equal(failureFromQuality({ closeness: "reps_left", limiter: "form" }), 1);
+});
+
+test("the survey maps onto numeric RPE", () => {
+  assert.equal(rpeFromQuality({ closeness: "forced" }), 10.5);
+  assert.equal(rpeFromQuality({ closeness: "nothing" }), 10);
+  assert.equal(rpeFromQuality({ closeness: "one_left" }), 9);
+  assert.equal(rpeFromQuality({ closeness: "reps_left" }), 8);
+  assert.equal(rpeFromQuality({}), null);
+});
+
+test("a feeder reads one RPE lower — over 8 is an error, not a PR", () => {
+  assert.equal(rpeFromQuality({ closeness: "reps_left" }, "feeder"), 7);
+});
+
+test("the feeder ramp rounds to the bar's own increment", () => {
+  const r = feederRamp(100, "kg");
+  assert.deepEqual(
+    r.map((s) => s.weight),
+    [50, 70, 87.5],
+  );
+  assert.equal(r[2]!.targetRpe, 8);
+  assert.equal(feederRamp(100, "lb")[0]!.weight, 50);
+});
+
+test("feeder 3 moves the working target, and 7-8 leaves it alone", () => {
+  assert.equal(feederAdjustment(9.5), -5);
+  assert.equal(feederAdjustment(10), -5);
+  assert.equal(feederAdjustment(6), 5);
+  assert.equal(feederAdjustment(7), 0);
+  assert.equal(feederAdjustment(8), 0);
+  assert.equal(feederAdjustment(null), 0);
 });
 
 test("being past MRV drops a lift into the hold band", () => {
