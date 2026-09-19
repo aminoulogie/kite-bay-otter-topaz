@@ -159,7 +159,7 @@ export function WorkoutView() {
   let failSum = 0;
   for (const ex of live.exercises) {
     for (const s of ex.sets) {
-      if (s.done && s.type !== "warmup") {
+      if (s.done && s.type === "normal") {
         totalSets++;
         totalVol += SomaIntelligenceEngine.calculateWorkVolume(Number(s.weight) || 0, Number(s.reps) || 0, ex.isBW);
         failSum += s.failure || 3;
@@ -800,8 +800,13 @@ export function WorkoutView() {
               <span />
             </div>
             {ex.sets.map((s, sIdx) => {
-              const workingNo = ex.sets.slice(0, sIdx + 1).filter((x) => x.type !== "warmup" && x.type !== "dropset").length;
-              const label = s.type === "warmup" ? "W" : s.type === "dropset" ? "D" : String(workingNo);
+              const workingNo = ex.sets.slice(0, sIdx + 1).filter((x) => x.type === "normal").length;
+              const label =
+                s.type === "warmup" ? "W" :
+                s.type === "dropset" ? "D" :
+                s.type === "feeder" ? "F" :
+                s.type === "stretch" ? "S" :
+                String(workingNo);
               return (
                 <div
                   key={sIdx}

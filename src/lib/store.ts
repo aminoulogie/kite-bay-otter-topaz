@@ -1861,7 +1861,9 @@ export const useSoma = create<SomaStore>()(
         const cycle: Record<string, WorkoutSet["type"]> = {
           normal: "dropset",
           dropset: "warmup",
-          warmup: "normal",
+          warmup: "feeder",
+          feeder: "stretch",
+          stretch: "normal",
         };
         const exercises = get().live.exercises.map((ex, i) => {
           if (i !== exIdx) return ex;

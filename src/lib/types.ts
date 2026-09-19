@@ -4,7 +4,7 @@ import type { HabitRamp } from "./habit-ramp";
 export type { HabitRamp };
 
 import type { TrainingGoal } from "./goal-mode.ts";
-export type SetType = "normal" | "dropset" | "warmup";
+export type SetType = "normal" | "dropset" | "warmup" | "feeder" | "stretch";
 export type Unit = "kg" | "lb";
 export type ThemePref = "dark" | "light" | "system";
 export type TabId =
