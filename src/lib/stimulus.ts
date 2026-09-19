@@ -47,6 +47,21 @@ export const SET_WEIGHTS = {
   burn: 0.1,
 } as const;
 
+/**
+ * A feeder is judged on the path it took, not on how close it came.
+ *
+ * It exists to groove the movement at a submaximal load, so technique is what
+ * counts and proximity is nearly irrelevant — and a feeder taken past RPE 8 is
+ * an error, which the low proximity weight already punishes by refusing to
+ * credit the one thing a feeder must not chase.
+ */
+export const FEEDER_WEIGHTS: Record<SetPart, number> = {
+  proximity: 0.1,
+  targeting: 0.3,
+  form: 0.6,
+  burn: 0,
+};
+
 export type SetPart = keyof typeof SET_WEIGHTS;
 
 /** Reps left in the tank → share of the available stimulus. */
@@ -105,11 +120,12 @@ export function rateSet(set: WorkoutSet & SetQuality): SetRating {
 
   let weighted = 0;
   let available = 0;
-  for (const key of Object.keys(SET_WEIGHTS) as SetPart[]) {
+  const weights = set.type === "feeder" ? FEEDER_WEIGHTS : SET_WEIGHTS;
+  for (const key of Object.keys(weights) as SetPart[]) {
     const value = parts[key];
     if (value == null) continue;
-    weighted += value * SET_WEIGHTS[key];
-    available += SET_WEIGHTS[key];
+    weighted += value * weights[key];
+    available += weights[key];
   }
 
   return {
