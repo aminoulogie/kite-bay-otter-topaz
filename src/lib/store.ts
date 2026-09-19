@@ -88,7 +88,7 @@ import type { HungerEntry } from "./hunger";
 import {
   deduct, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
 } from "./pantry";
-import { deloadSetCount } from "./autoregulate";
+import { deloadSetCount, feederRamp } from "./autoregulate";
 import { cleanDue } from "./due";
 import {
   clampStep, cleanRoutine, newRoutineId, newStepId as newRoutineStepId, startRun,
@@ -394,6 +394,7 @@ export interface SomaStore {
   removeSet: (exIdx: number, setIdx: number) => void;
   removeExercise: (exIdx: number) => void;
   cycleSetType: (exIdx: number, setIdx: number) => void;
+  insertFeederRamp: (exIdx: number, setIdx: number) => void;
   cycleSuperset: (exIdx: number) => void;
   swapExercise: (exIdx: number, name: string) => void;
   snapshot: () => void;
@@ -1875,6 +1876,26 @@ export const useSoma = create<SomaStore>()(
           };
         });
         set({ live: { ...get().live, exercises } });
+      },
+      insertFeederRamp: (exIdx, setIdx) => {
+        get().snapshot();
+        const unit = get().settings.unit ?? "kg";
+        const exercises = get().live.exercises.map((ex, i) => {
+          if (i !== exIdx) return ex;
+          const top = ex.sets[setIdx];
+          const target = top && Number(top.weight) > 0 ? Number(top.weight) : 0;
+          if (!target) return ex;
+          const feeders = feederRamp(target, unit).map((f) => ({
+            weight: f.weight,
+            reps: f.reps,
+            done: false,
+            failure: 2,
+            type: "feeder" as const,
+          }));
+          const sets = [...ex.sets.slice(0, setIdx), ...feeders, ...ex.sets.slice(setIdx)];
+          return { ...ex, sets };
+        });
+        set({ live: { ...get().live, exercises, finished: null } });
       },
       cycleSuperset: (exIdx) => {
         get().snapshot();
