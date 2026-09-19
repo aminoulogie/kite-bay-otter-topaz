@@ -481,6 +481,15 @@ export const PageScrubber = memo(function PageScrubber({
   const drag = useRef({ active: false, raf: 0 });
   const scrubTo = useRef(onPick);
   scrubTo.current = onPick;
+  /**
+   * The page under the centre cursor RIGHT NOW, as opposed to `page` which is
+   * the reader's settled page. The two are the same when nothing is moving;
+   * while a finger is dragging the strip they diverge, and the cursor highlight
+   * has to follow the finger rather than lag a frame behind the reader. This is
+   * what gives the scrubber its feedback: you see which page you are about to
+   * land on, live, before you let go.
+   */
+  const [scrubPage, setScrubPage] = useState(page);
 
   /**
    * The height of the arrows either side of it, and nothing more.
@@ -499,10 +508,13 @@ export const PageScrubber = memo(function PageScrubber({
   const gapW = Math.max(3, Math.round(PAGE_GAP * scale));
   const stride = cardW + gapW;
 
-  // Keep the page you are on centred under the pill.
+  // Keep the page you are on centred under the pill, and put the cursor back on
+  // it whenever the page changes from OUTSIDE the scrubber (a turn, a search
+  // hit, a chapter jump).
   useEffect(() => {
     const el = rail.current;
     if (!el) return;
+    setScrubPage(page);
     const want = page * stride - el.clientWidth / 2 + cardW / 2;
     el.scrollTo({ left: Math.max(0, want), behavior: "smooth" });
   }, [page, stride, cardW]);
@@ -523,6 +535,8 @@ export const PageScrubber = memo(function PageScrubber({
   const onMove = (e: React.PointerEvent) => {
     if (!drag.current.active) return;
     e.stopPropagation();
+    const under = pageUnderCenter();
+    if (under !== scrubPage) setScrubPage(under);
     cancelAnimationFrame(drag.current.raf);
     drag.current.raf = requestAnimationFrame(() => {
       scrubTo.current(pageUnderCenter());
@@ -532,6 +546,17 @@ export const PageScrubber = memo(function PageScrubber({
     if (!drag.current.active) return;
     drag.current.active = false;
     cancelAnimationFrame(drag.current.raf);
+    // Let the finger decide: whatever page is under the cursor at release is
+    // the page, and the strip settles so that page sits exactly centred under
+    // it — the same page you were looking at while you dragged.
+    const landed = pageUnderCenter();
+    setScrubPage(landed);
+    scrubTo.current(landed);
+    const el = rail.current;
+    if (el) {
+      const want = landed * stride - el.clientWidth / 2 + cardW / 2;
+      el.scrollTo({ left: Math.max(0, want), behavior: "smooth" });
+    }
     onScrub?.(false);
   };
 
@@ -540,29 +565,38 @@ export const PageScrubber = memo(function PageScrubber({
   return (
     <div className="pointer-events-auto min-w-0 flex-1">
       <div className="rounded-full px-2 py-[5px]" style={readerGlass(theme)}>
-        <div
-          ref={rail}
-          className="overflow-x-auto overscroll-x-contain"
-          style={{ scrollbarWidth: "none" }}
-          onPointerDown={onDown}
-          onPointerMove={onMove}
-          onPointerUp={endScrub}
-          onPointerCancel={endScrub}
-        >
-          <div className="relative" style={{ height: HEIGHT, width: stride * pages - gapW }}>
-            {/* Paper, one card per page, under everything. Without it the strip
-                is text floating on the pill's own colour and reads as a smudge. */}
-            {Array.from({ length: pages }, (_, i) => (
-              <span
-                key={`p${i}`}
-                aria-hidden
-                className="absolute top-0 block rounded-[2px] transition-transform duration-150"
-                style={{
-                  left: i * stride, width: cardW, height: HEIGHT, background: theme.bg,
-                  transform: i === page ? "scale(1.22)" : "none",
-                }}
-              />
-            ))}
+        <div className="relative">
+          {/* The cursor: a fixed hairline at the pill's centre, the only thing
+              that says "the page that lands here is the one you get". It never
+              moves; the strip moves under it. */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute bottom-0 top-0 left-1/2 z-10 w-[2px] -translate-x-1/2 rounded-full"
+            style={{ background: "var(--color-accent)" }}
+          />
+          <div
+            ref={rail}
+            className="overflow-x-auto overscroll-x-contain"
+            style={{ scrollbarWidth: "none" }}
+            onPointerDown={onDown}
+            onPointerMove={onMove}
+            onPointerUp={endScrub}
+            onPointerCancel={endScrub}
+          >
+            <div className="relative" style={{ height: HEIGHT, width: stride * pages - gapW }}>
+              {/* Paper, one card per page, under everything. Without it the strip
+                  is text floating on the pill's own colour and reads as a smudge. */}
+              {Array.from({ length: pages }, (_, i) => (
+                <span
+                  key={`p${i}`}
+                  aria-hidden
+                  className="absolute top-0 block rounded-[2px] transition-transform duration-150"
+                  style={{
+                    left: i * stride, width: cardW, height: HEIGHT, background: theme.bg,
+                    transform: i === scrubPage ? "scale(1.18)" : "none",
+                  }}
+                />
+              ))}
 
             {/* The chapter set SMALL — not the real strip shrunk.
                 Scaling the reader's own strip is the obvious build and it is
@@ -614,38 +648,33 @@ export const PageScrubber = memo(function PageScrubber({
               </div>
             </div>
 
-            {/* Frames over the top: what you press, and which page is centred.
-                Every page but the one you are on is held back a little, so the
-                current one is found without reading any of them. */}
+            {/* The frame under the cursor: not a button, because a page in here
+                is not something you press — it is where the strip happens to
+                be. The cursor picks the page; the strip is dragged, never
+                tapped. */}
             {Array.from({ length: pages }, (_, i) => (
-              <button
-                key={i}
-                type="button"
-                aria-label={`Page ${i + 1}`}
-                aria-current={i === page}
-                onClick={() => onPick(i)}
+              <span
+                key={`f${i}`}
+                aria-hidden
                 className="absolute top-0 rounded-[2px] transition-transform duration-150"
                 style={{
                   left: i * stride,
                   width: cardW,
                   height: HEIGHT,
-                  // The page you are on stands proud of the row and the rest
-                  // stay flat and held back. That difference is the whole
-                  // readability of the strip: you find where you are without
-                  // reading a single one of them.
-                  transform: i === page ? "scale(1.22)" : "none",
+                  transform: i === scrubPage ? "scale(1.18)" : "none",
                   boxShadow:
-                    i === page
+                    i === scrubPage
                       ? `0 0 0 2px ${theme.fg}, 0 4px 12px rgba(0,0,0,0.45)`
                       : `0 0 0 0.5px ${theme.fg}22`,
                   background:
-                    i === page
+                    i === scrubPage
                       ? "transparent"
                       : theme.dark ? "rgba(0,0,0,0.46)" : "rgba(255,255,255,0.4)",
-                  zIndex: i === page ? 2 : 1,
+                  zIndex: i === scrubPage ? 2 : 1,
                 }}
               />
             ))}
+          </div>
           </div>
         </div>
       </div>
