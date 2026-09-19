@@ -66,6 +66,7 @@ export function WorkoutView() {
   const cycleSetType = useSoma((s) => s.cycleSetType);
   const insertFeederRamp = useSoma((s) => s.insertFeederRamp);
   const quickRateFeeder = useSoma((s) => s.quickRateFeeder);
+  const cycleGrip = useSoma((s) => s.cycleGrip);
   const cycleSuperset = useSoma((s) => s.cycleSuperset);
   const swapExercise = useSoma((s) => s.swapExercise);
   const undo = useSoma((s) => s.undo);
@@ -790,11 +791,12 @@ export function WorkoutView() {
               </div>
             )}
 
-            <div className="grid grid-cols-[32px_1fr_1fr_1.25fr_30px_32px_24px] items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
+            <div className="grid grid-cols-[30px_1fr_1fr_1.25fr_34px_30px_32px_24px] items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
               <span className="text-center">Set</span>
               <span className="text-center">{settings.unit}</span>
               <span className="text-center">Reps</span>
               <span className="text-center">RPE</span>
+              <span className="text-center">Grip</span>
               {/* The score the four RPE answers add up to. It was collected and
                   never shown, so the sheet felt like a form with no output. */}
               <span className="text-center">Pts</span>
@@ -813,7 +815,7 @@ export function WorkoutView() {
                 <div
                   key={sIdx}
                   className={cn(
-                    "grid grid-cols-[32px_1fr_1fr_1.25fr_30px_32px_24px] items-center gap-1 rounded-xl p-1",
+                    "grid grid-cols-[30px_1fr_1fr_1.25fr_34px_30px_32px_24px] items-center gap-1 rounded-xl p-1",
                     // A completed set acknowledges itself for half a second,
                     // so the tap has a visible consequence beyond a checkbox.
                     s.done && "soma-flash",
@@ -880,6 +882,23 @@ export function WorkoutView() {
                           : "rate"}
                     </button>
                   )}
+                  {/* Grip: width and orientation, cycled with one tap. A cable
+                      angle is a grip in three dimensions, so it rides the same
+                      field. */}
+                  <button
+                    type="button"
+                    aria-label={`Set ${sIdx + 1} grip`}
+                    onClick={() => cycleGrip(exIdx, sIdx)}
+                    title={s.grip ? `${s.grip.width} · ${s.grip.orientation}` : "Tap to set grip"}
+                    className={cn(
+                      "h-9 rounded-lg border px-0.5 text-[0.55rem] font-bold leading-none",
+                      s.grip ? "border-accent/40 bg-accent/10 text-accent-text" : "border-border bg-surface-2 text-faint",
+                    )}
+                  >
+                    {s.grip
+                      ? `${s.grip.width[0]!.toUpperCase()}·${s.grip.orientation.slice(0, 3)}`
+                      : "—"}
+                  </button>
                   {/* What the answers worked out to, 0-100. Weighted towards
                       how close the set got to failure — see lib/stimulus.ts. */}
                   {(() => {

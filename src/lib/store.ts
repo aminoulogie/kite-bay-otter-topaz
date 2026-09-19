@@ -396,6 +396,7 @@ export interface SomaStore {
   cycleSetType: (exIdx: number, setIdx: number) => void;
   insertFeederRamp: (exIdx: number, setIdx: number) => void;
   quickRateFeeder: (exIdx: number, setIdx: number, rpe: number) => void;
+  cycleGrip: (exIdx: number, setIdx: number) => void;
   cycleSuperset: (exIdx: number) => void;
   swapExercise: (exIdx: number, name: string) => void;
   snapshot: () => void;
@@ -1912,6 +1913,28 @@ export const useSoma = create<SomaStore>()(
           };
         });
         set({ live: { ...get().live, exercises, firstSetAt: get().live.firstSetAt ?? Date.now() } });
+      },
+      cycleGrip: (exIdx, setIdx) => {
+        get().snapshot();
+        const grips: NonNullable<WorkoutSet["grip"]>[] = [
+          { width: "wide", orientation: "pronated" },
+          { width: "medium", orientation: "neutral" },
+          { width: "narrow", orientation: "supinated" },
+        ];
+        const exercises = get().live.exercises.map((ex, i) => {
+          if (i !== exIdx) return ex;
+          return {
+            ...ex,
+            sets: ex.sets.map((s, j) => {
+              if (j !== setIdx) return s;
+              const cur = s.grip;
+              if (!cur) return { ...s, grip: grips[0] };
+              const idx = grips.findIndex((g) => g.width === cur.width && g.orientation === cur.orientation);
+              return { ...s, grip: grips[(idx + 1) % grips.length] ?? grips[0] };
+            }),
+          };
+        });
+        set({ live: { ...get().live, exercises } });
       },
       cycleSuperset: (exIdx) => {
         get().snapshot();
