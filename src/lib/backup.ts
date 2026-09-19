@@ -21,7 +21,8 @@
 
 import { checksum } from "./checksum";
 import {
-  allPhotos, allScanImages, putPhotoRecord, saveScanImage, type HabitPhoto,
+  allExercisePhotos, allPhotos, allScanImages, putExercisePhotoRecord, putPhotoRecord,
+  saveScanImage, type HabitPhoto,
 } from "./habit-photos";
 import { sideStoreCounts, type SideStores } from "./side-stores";
 
@@ -50,6 +51,12 @@ export interface BackupPhoto {
   ts: number;
 }
 
+/** An exercise picture, kept beside habit photos so it survives a restore. */
+export interface BackupExercisePhoto {
+  key: string;
+  dataUrl: string;
+}
+
 export interface ScanImage {
   id: string;
   dataUrl: string;
@@ -65,6 +72,8 @@ export interface Backup {
   photos: BackupPhoto[];
   /** Absent on v1 and v2 files. */
   scanImages?: ScanImage[];
+  /** Absent on files written before exercise photos were backed up. */
+  exercisePhotos?: BackupExercisePhoto[];
 }
 
 export interface BackupSummary {
@@ -107,7 +116,11 @@ export async function buildBackup(data: Record<string, unknown>): Promise<Backup
     });
   }
   const scanImages = await allScanImages();
-  const body = { data, photos, scanImages };
+  const exercisePhotos: BackupExercisePhoto[] = [];
+  for (const p of await allExercisePhotos()) {
+    exercisePhotos.push({ key: p.key, dataUrl: await blobToDataUrl(p.blob) });
+  }
+  const body = { data, photos, scanImages, exercisePhotos };
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
@@ -222,6 +235,20 @@ export async function restorePhotos(photos: BackupPhoto[]): Promise<number> {
         display: await dataUrlToBlob(p.display),
       };
       await putPhotoRecord(row);
+      n++;
+    } catch {
+      // One unreadable image must not abort the rest of the restore.
+    }
+  }
+  return n;
+}
+
+/** Writes the exercise-photo half of a backup back into IndexedDB. */
+export async function restoreExercisePhotos(photos: BackupExercisePhoto[] = []): Promise<number> {
+  let n = 0;
+  for (const p of photos) {
+    try {
+      await putExercisePhotoRecord({ key: p.key, blob: await dataUrlToBlob(p.dataUrl), ts: Date.now() });
       n++;
     } catch {
       // One unreadable image must not abort the rest of the restore.

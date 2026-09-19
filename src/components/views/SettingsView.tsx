@@ -9,7 +9,7 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
 import {
-  parseBackup, restorePhotos, restoreScanImages, saveBackupFile, type BackupSummary,
+  parseBackup, restoreExercisePhotos, restorePhotos, restoreScanImages, saveBackupFile, type BackupSummary,
 } from "@/lib/backup";
 import {
   backupIsDue, daysSinceBackup, formatBytes, requestPersistence,
@@ -124,6 +124,7 @@ export function SettingsView() {
         // Scan images live in the same IndexedDB and are restored the same way.
         // A v1 or v2 file simply has none, and the call no-ops.
         const scanned = await restoreScanImages(result.backup.scanImages);
+        const exPhotos = await restoreExercisePhotos(result.backup.exercisePhotos);
         const extras = result.summary.hasSideStores
           ? `, ${plural(result.summary.programs, "programme", "programmes")}`
           : "";

@@ -214,6 +214,16 @@ export async function exercisePhotoBlob(key: string): Promise<Blob | null> {
   return blob instanceof Blob ? blob : null;
 }
 
+/** Every exercise picture — the backup needs the blobs themselves. */
+export function allExercisePhotos(): Promise<{ key: string; blob: Blob; ts: number }[]> {
+  return exTx<{ key: string; blob: Blob; ts: number }[]>("readonly", (s) => s.getAll());
+}
+
+/** Writes an exercise-photo record straight back, used when restoring a backup. */
+export async function putExercisePhotoRecord(row: { key: string; blob: Blob; ts: number }): Promise<void> {
+  await exTx("readwrite", (s) => s.put(row));
+}
+
 /** Stores an exercise picture, fitted to the display budget. */
 export async function saveExercisePhotoBlob(key: string, file: Blob): Promise<void> {
   const display = await derive(file, DISPLAY_PX, 0.82);
