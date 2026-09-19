@@ -1827,7 +1827,7 @@ export const useSoma = create<SomaStore>()(
           const last = ex.sets[ex.sets.length - 1];
           const weight =
             type === "dropset" && last && Number(last.weight) > 0
-              ? Math.round(Number(last.weight) * 0.8 * 2) / 2
+              ? Math.round(Number(last.weight) * 0.7 * 2) / 2
               : last?.weight ?? "";
           return {
             ...ex,
