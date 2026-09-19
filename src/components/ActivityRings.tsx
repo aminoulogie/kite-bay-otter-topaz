@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { ChevronRight } from "lucide-react";
 import { CardTitle } from "@/components/ui/card";
-import { hasDetailRoom } from "@/lib/dashboard-layout";
+import { columnsFor } from "@/lib/dashboard-layout";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { sessionBurn } from "@/lib/training-burn";
 import { totalWaterMl } from "@/lib/hydration";
@@ -127,7 +127,9 @@ export function ActivityRings() {
           })}
         </svg>
 
-        {hasDetailRoom(size) && (
+        {/* The legend only fits beside the rings at full width. A 2x2 tile is
+            half a phone: rings only, centred, and the box stops cropping. */}
+        {columnsFor(size) >= 4 && (
           <div className="min-w-0 flex-1 space-y-1">
             {RINGS.map((ring) => {
               const { value, goal } = values[ring.id];
