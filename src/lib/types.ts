@@ -46,6 +46,8 @@ export interface WorkoutSet {
    */
   limiter?: "target" | "synergist" | "form" | "choice";
   closeness?: "reps_left" | "one_left" | "nothing" | "forced";
+  /** Numeric RPE, set directly by the feeder quick-log. Absent elsewhere. */
+  rpe?: number | null;
   limitedBy?: string[];
   burn?: 1 | 2 | 3;
   form?: 1 | 2 | 3;

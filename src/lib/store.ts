@@ -395,6 +395,7 @@ export interface SomaStore {
   removeExercise: (exIdx: number) => void;
   cycleSetType: (exIdx: number, setIdx: number) => void;
   insertFeederRamp: (exIdx: number, setIdx: number) => void;
+  quickRateFeeder: (exIdx: number, setIdx: number, rpe: number) => void;
   cycleSuperset: (exIdx: number) => void;
   swapExercise: (exIdx: number, name: string) => void;
   snapshot: () => void;
@@ -1896,6 +1897,21 @@ export const useSoma = create<SomaStore>()(
           return { ...ex, sets };
         });
         set({ live: { ...get().live, exercises, finished: null } });
+      },
+      quickRateFeeder: (exIdx, setIdx, rpe) => {
+        get().snapshot();
+        const exercises = get().live.exercises.map((ex, i) => {
+          if (i !== exIdx) return ex;
+          return {
+            ...ex,
+            sets: ex.sets.map((s, j) =>
+              j === setIdx
+                ? { ...s, rpe, done: true, failure: rpe >= 9 ? 3 : rpe >= 7 ? 2 : 1 }
+                : s,
+            ),
+          };
+        });
+        set({ live: { ...get().live, exercises, firstSetAt: get().live.firstSetAt ?? Date.now() } });
       },
       cycleSuperset: (exIdx) => {
         get().snapshot();
