@@ -48,6 +48,11 @@ export interface WorkoutSet {
   closeness?: "reps_left" | "one_left" | "nothing" | "forced";
   /** Numeric RPE, set directly by the feeder quick-log. Absent elsewhere. */
   rpe?: number | null;
+  /** Omni-grip: how the set was held. Absent means "not recorded". */
+  grip?: {
+    width: "wide" | "medium" | "narrow";
+    orientation: "pronated" | "supinated" | "neutral";
+  };
   limitedBy?: string[];
   burn?: 1 | 2 | 3;
   form?: 1 | 2 | 3;
