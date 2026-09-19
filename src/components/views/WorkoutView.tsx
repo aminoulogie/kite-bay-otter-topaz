@@ -65,6 +65,7 @@ export function WorkoutView() {
   const removeExercise = useSoma((s) => s.removeExercise);
   const cycleSetType = useSoma((s) => s.cycleSetType);
   const insertFeederRamp = useSoma((s) => s.insertFeederRamp);
+  const quickRateFeeder = useSoma((s) => s.quickRateFeeder);
   const cycleSuperset = useSoma((s) => s.cycleSuperset);
   const swapExercise = useSoma((s) => s.swapExercise);
   const undo = useSoma((s) => s.undo);
@@ -843,26 +844,42 @@ export function WorkoutView() {
                     value={s.reps}
                     onCommit={(v) => updateSet(exIdx, sIdx, { reps: v })}
                   />
-                  {/* Replaces the old 1-5 dropdown. That scale could not tell a
-                      chest failure from a triceps failure on the same press, so
-                      the detail is captured in a sheet instead of a select. */}
-                  <button
-                    type="button"
-                    aria-label={`Rate set ${sIdx + 1}`}
-                    onClick={() => setRating({ exIdx, sIdx })}
-                    className={cn(
-                      "h-9 rounded-xl border px-1 text-[0.65rem] font-bold leading-tight transition-colors",
-                      isGenuineFailure(s)
-                        ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
-                        : s.limiter
-                          ? "border-accent/40 bg-accent/10 text-accent-text"
-                          : "border-border bg-surface-2 text-faint",
-                    )}
-                  >
-                    {s.closeness
-                      ? rpeLabel(rpeFromQuality({ closeness: s.closeness, limiter: s.limiter }))
-                      : "rate"}
-                  </button>
+                  {s.type === "feeder" && s.rpe == null ? (
+                    /* A feeder is one tap, not a survey: the ramp only wants to
+                       know whether it felt easy, right, or heavy. */
+                    <span className="flex h-9 items-center gap-0.5">
+                      {([["Easy", 5], ["Good", 7], ["Heavy", 9]] as const).map(([word, rpe]) => (
+                        <button
+                          key={word}
+                          type="button"
+                          onClick={() => quickRateFeeder(exIdx, sIdx, rpe)}
+                          className="h-full flex-1 rounded-lg border border-border bg-surface-2 px-0.5 text-[0.55rem] font-bold text-faint active:bg-surface-3"
+                        >
+                          {word}
+                        </button>
+                      ))}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label={`Rate set ${sIdx + 1}`}
+                      onClick={() => setRating({ exIdx, sIdx })}
+                      className={cn(
+                        "h-9 rounded-xl border px-1 text-[0.65rem] font-bold leading-tight transition-colors",
+                        isGenuineFailure(s)
+                          ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                          : s.limiter
+                            ? "border-accent/40 bg-accent/10 text-accent-text"
+                            : "border-border bg-surface-2 text-faint",
+                      )}
+                    >
+                      {s.rpe != null
+                        ? rpeLabel(s.rpe)
+                        : s.closeness
+                          ? rpeLabel(rpeFromQuality({ closeness: s.closeness, limiter: s.limiter }))
+                          : "rate"}
+                    </button>
+                  )}
                   {/* What the answers worked out to, 0-100. Weighted towards
                       how close the set got to failure — see lib/stimulus.ts. */}
                   {(() => {
