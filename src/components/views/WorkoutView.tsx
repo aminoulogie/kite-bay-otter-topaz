@@ -64,6 +64,7 @@ export function WorkoutView() {
   const removeSet = useSoma((s) => s.removeSet);
   const removeExercise = useSoma((s) => s.removeExercise);
   const cycleSetType = useSoma((s) => s.cycleSetType);
+  const insertFeederRamp = useSoma((s) => s.insertFeederRamp);
   const cycleSuperset = useSoma((s) => s.cycleSuperset);
   const swapExercise = useSoma((s) => s.swapExercise);
   const undo = useSoma((s) => s.undo);
@@ -910,6 +911,20 @@ export function WorkoutView() {
                 Drop set
               </Button>
             </div>
+            {/* Feeder ramp: three sets at 50/70/87.5% of the first loaded
+                working set, inserted above it. Only offered once there is a
+                weight to ramp up to. */}
+            <Button
+              className="mt-2 w-full"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const idx = ex.sets.findIndex((x) => x.type === "normal" && Number(x.weight) > 0);
+                if (idx >= 0) insertFeederRamp(exIdx, idx);
+              }}
+            >
+              Auto-fill feeder ramp (50/70/87.5%)
+            </Button>
 
             {/* Pump belongs to the exercise, not the set: it builds across all
                 of them and can only be judged once the weight is down. Shown
