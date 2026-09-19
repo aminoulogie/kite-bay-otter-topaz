@@ -85,6 +85,12 @@ export function rpeFromQuality(
   }
 }
 
+/** "10+" for 10.5, otherwise the number as-is — the badge a set table shows. */
+export function rpeLabel(rpe: number | null | undefined): string {
+  if (rpe == null) return "";
+  return rpe === 10.5 ? "10+" : String(rpe);
+}
+
 // --------------------------------------------------------------- feeder ramp --
 
 export interface FeederSet {

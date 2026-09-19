@@ -19,7 +19,7 @@ import { WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
-import { failureFromQuality, readinessWithSleepDebt } from "@/lib/autoregulate";
+import { failureFromQuality, readinessWithSleepDebt, rpeFromQuality, rpeLabel } from "@/lib/autoregulate";
 import { applyGoal } from "@/lib/goal-mode";
 import { currentDebt } from "@/lib/sleep-debt";
 import { rateExerciseInstance, rateSession, rateSet, ratingTone } from "@/lib/stimulus";
@@ -853,13 +853,9 @@ export function WorkoutView() {
                           : "border-border bg-surface-2 text-faint",
                     )}
                   >
-                    {isGenuineFailure(s)
-                      ? "FAIL"
-                      : s.limiter === "synergist"
-                        ? "synrg"
-                        : s.limiter
-                          ? (s.closeness === "nothing" || s.closeness === "forced" ? "hard" : "easy")
-                          : "rate"}
+                    {s.closeness
+                      ? rpeLabel(rpeFromQuality({ closeness: s.closeness, limiter: s.limiter }))
+                      : "rate"}
                   </button>
                   {/* What the answers worked out to, 0-100. Weighted towards
                       how close the set got to failure — see lib/stimulus.ts. */}
