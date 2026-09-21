@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { exercisePhotoBlob } from "@/lib/habit-photos";
+import { BASE_EXERCISE_DB } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
+import type { ExerciseDef } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,7 +20,18 @@ export function tierColour(tier: string): string | null {
 }
 
 export function ExerciseIcon({ name, size = 34 }: { name: string; size?: number }) {
-  const def = useSoma((s) => s.allExercises().find((e) => e.name === name));
+  // Raw state, not s.allExercises() — that method rebuilds its array on
+  // every call, so calling it inside a selector reruns the merge on every
+  // store change and is the exact shape of the crash that took the app down
+  // twice (see selector-identity.test.ts). Customs win over the base
+  // database by name, same rule allExercises() itself uses.
+  const customs = useSoma((s) => s.customExercises);
+  const def = useMemo(
+    () =>
+      customs.find((e) => e.name === name) ??
+      (BASE_EXERCISE_DB as ExerciseDef[]).find((e) => e.name === name),
+    [customs, name],
+  );
   const photoId = def?.photoId;
   const remote = def?.img;
   const tier = def?.tier ?? "";
