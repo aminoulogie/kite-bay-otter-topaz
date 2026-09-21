@@ -1,11 +1,12 @@
 import { useMemo } from "react";
 import { ChevronRight } from "lucide-react";
 import { CardTitle } from "@/components/ui/card";
-import { columnsFor } from "@/lib/dashboard-layout";
+import { columnsFor, rowsFor } from "@/lib/dashboard-layout";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { sessionBurn } from "@/lib/training-burn";
 import { totalWaterMl } from "@/lib/hydration";
 import { useSoma } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 /**
  * The day, as four rings.
@@ -72,6 +73,14 @@ export function ActivityRings() {
     burnt: { value: sessionBurn(history[date], weight || undefined).gross, goal: BURN_TARGET },
   };
 
+  const full = columnsFor(size) >= 4;
+  // The rings scale to the box they were given: a 2x2 tile is 11rem tall and
+  // a 132px ring plus a title does not fit in it, which is exactly the crop
+  // being reported. Full width keeps the large dial; a 2-row tile drops to a
+  // medium one; a 1-row tile is just the rings with no title at all.
+  const diameter = full ? 132 : rowsFor(size) >= 2 ? 96 : 56;
+  const showTitle = full || rowsFor(size) >= 2;
+
   return (
     <button
       type="button"
@@ -79,17 +88,20 @@ export function ActivityRings() {
       className="glass-card block h-full w-full rounded-2xl border border-border bg-surface p-4 text-left active:bg-surface-2"
       aria-label={RINGS.map((r) => `${r.label} ${Math.round(values[r.id].value)} of ${Math.round(values[r.id].goal)}`).join(", ") + ". Opens Fuel."}
     >
-      <CardTitle>
-        <span className="flex items-center gap-1">
-          Today
-          <ChevronRight className="size-3.5 text-faint" aria-hidden />
-        </span>
-      </CardTitle>
+      {showTitle && (
+        <CardTitle>
+          <span className="flex items-center gap-1">
+            Today
+            <ChevronRight className="size-3.5 text-faint" aria-hidden />
+          </span>
+        </CardTitle>
+      )}
 
-      <div className="flex items-center gap-4">
+      <div className={cn("flex items-center gap-4", !full && "justify-center")}>
         <svg
           viewBox={`0 0 ${BOX} ${BOX}`}
-          className="size-[132px] shrink-0 -rotate-90"
+          className="shrink-0 -rotate-90"
+          style={{ width: diameter, height: diameter }}
           aria-hidden
         >
           {RINGS.map((ring, i) => {
@@ -129,7 +141,7 @@ export function ActivityRings() {
 
         {/* The legend only fits beside the rings at full width. A 2x2 tile is
             half a phone: rings only, centred, and the box stops cropping. */}
-        {columnsFor(size) >= 4 && (
+        {full && (
           <div className="min-w-0 flex-1 space-y-1">
             {RINGS.map((ring) => {
               const { value, goal } = values[ring.id];
