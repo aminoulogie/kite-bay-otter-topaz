@@ -160,7 +160,7 @@ export interface SomaStore {
   activeProgram: () => Program;
   setPrograms: (programs: Program[]) => void;
   setActiveProgram: (id: string) => void;
-  refreshScheduledDay: () => void;
+  refreshScheduledDay: (force?: boolean) => void;
   purgeNutritionBefore: (cutoff: string) => number;
   upsertLibraryFood: (food: FoodItem) => void;
   foodLibrary: () => FoodItem[];
@@ -955,11 +955,16 @@ export const useSoma = create<SomaStore>()(
       /**
        * Re-derive today's split from the active programme.
        *
-       * Only replaces the live session when nothing has been logged into it.
-       * Rebuilding a session with completed sets in it would throw away work
+       * Only replaces the live session when nothing has been logged into it —
+       * rebuilding a session with completed sets in it would throw away work
        * the user has already done, which is never worth a label being right.
+       * `force` is the escape hatch for when the user was just asked and said
+       * to replace it anyway (see ProgramBuilder's save handler): it skips the
+       * "nothing logged" check but still refuses to touch a session that was
+       * already finished and saved to history, which this has no business
+       * unwinding.
        */
-      refreshScheduledDay: () => {
+      refreshScheduledDay: (force = false) => {
         const proj = SomaIntelligenceEngine.getProgramProjectedDay(
           new Date(),
           get().settings.scheduleOverrides,
@@ -967,7 +972,7 @@ export const useSoma = create<SomaStore>()(
         );
         const live = get().live;
         const untouched = !live.exercises.some((ex) => ex.sets.some((st) => st.done));
-        if (untouched && !live.finished) {
+        if ((untouched || force) && !live.finished) {
           set({ live: defaultLive(proj.split) });
           if (!proj.isRest) get().loadSplit(proj.split);
         }

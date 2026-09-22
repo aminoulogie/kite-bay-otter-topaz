@@ -113,6 +113,7 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
   // render — which is what took this screen down with React #185.
   const customRoutines = useSoma((s) => s.settings.customRoutines);
   const removedRoutines = useSoma((s) => s.settings.customRoutinesRemoved);
+  const scheduleOverrides = useSoma((s) => s.settings.scheduleOverrides);
   const routines = useMemo(
     () =>
       SomaIntelligenceEngine.mergeRoutines(ROUTINE_PRESETS, {
@@ -140,9 +141,51 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
         splitNames={splitNames}
         onCancel={() => setEditing(null)}
         onSave={(p) => {
+          // Whether this edit actually changes what today is scheduled as —
+          // only relevant when p is (or is becoming) the active programme,
+          // since an edit to a programme you are not on cannot touch today.
+          const wasOnThisProgram = activeId === p.id || (!activeId && p.builtIn);
+          const live = useSoma.getState().live;
+          const hasLoggedWork = live.exercises.some((ex) => ex.sets.some((st) => st.done));
+          const proj = wasOnThisProgram
+            ? SomaIntelligenceEngine.getProgramProjectedDay(new Date(), scheduleOverrides, p)
+            : null;
+          const todayIsChanging = !!proj && proj.split !== live.split;
+
           persist([...programs.filter((x) => x.id !== p.id), p]);
           setEditing(null);
-          toast.success(`${p.name} saved`);
+
+          if (!wasOnThisProgram || !todayIsChanging) {
+            toast.success(`${p.name} saved`);
+            return;
+          }
+          if (live.finished) {
+            // refreshScheduledDay refuses to touch a finished, saved session
+            // even when forced — nothing to offer beyond saying so.
+            toast.success(`${p.name} saved — today's finished session stays ${live.split}`);
+            return;
+          }
+          if (!hasLoggedWork) {
+            // The unforced refresh inside setPrograms above already applied
+            // it, since nothing was logged to protect.
+            toast.success(`${p.name} saved — today is now ${proj!.split}`);
+            return;
+          }
+          // Today already has real sets logged under the old split. Never
+          // swap what Train is showing out from under that without asking —
+          // this is exactly the "picked Pull, title stayed Leg" confusion:
+          // silently keeping the old split looked like the app was stuck,
+          // when it was protecting logged work with no way to tell it wasn't.
+          const replace = confirm(
+            `Today already has sets logged under ${live.split}. Replace it with ${proj!.split}? ` +
+              `This discards those logged sets.`,
+          );
+          if (replace) {
+            useSoma.getState().refreshScheduledDay(true);
+            toast.success(`${p.name} saved — today switched to ${proj!.split}`);
+          } else {
+            toast.success(`${p.name} saved — today keeps ${live.split} since it's already logged`);
+          }
         }}
       />
     );
