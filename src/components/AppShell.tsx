@@ -253,7 +253,14 @@ export function AppShell() {
   useEffect(() => {
     if (!ready) return;
     const check = () => {
-      if (rollDayIfNeeded()) toast("New day — yesterday is saved in Logged days");
+      const { rolled, saved } = rollDayIfNeeded();
+      if (!rolled) return;
+      // Only claim a save happened when one did — a session with real
+      // exercises but no ticked set is kept too (a single Undo away on the
+      // new day), but saying "saved" for that would be a lie the one time
+      // it mattered most: right after the thing it describes stopped being
+      // silent.
+      toast(saved ? "New day — yesterday is saved in Logged days" : "New day — Train reset for today");
     };
     const id = setInterval(check, 60_000);
     document.addEventListener("visibilitychange", check);

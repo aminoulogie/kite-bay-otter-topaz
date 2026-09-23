@@ -170,7 +170,7 @@ export interface SomaStore {
   isFoodEdited: (name: string) => boolean;
   clearSeededHabitHistory: () => number;
   normalizeLive: () => void;
-  rollDayIfNeeded: () => boolean;
+  rollDayIfNeeded: () => { rolled: boolean; saved: boolean };
   setTab: (tab: SomaStore["tab"]) => void;
   setActiveDate: (d: string) => void;
   patchSettings: (p: Partial<Settings>) => void;
@@ -618,28 +618,44 @@ export const useSoma = create<SomaStore>()(
        * An unsaved session in progress is NOT discarded. If it has completed
        * sets it is saved to the day it was actually trained on first, because
        * losing a finished workout to a midnight tick would be the worst
-       * possible failure here. Returns whether the day actually rolled.
+       * possible failure here.
+       *
+       * "Completed" means a ticked set, which is the one thing this store
+       * trusts as "the user actually did this" — everything else, including
+       * the weight and reps fields, gets pre-filled from last time before
+       * anyone touches anything, so it cannot tell a real session from a
+       * glance at one. But a session with exercises in it and NOT a single
+       * tick is exactly what a lifter gets who logs the numbers as they go
+       * and ticks them off at the end, or forgets to and closes the app —
+       * and until now that carried zero signal either way and was simply
+       * thrown away with the tick check. It rides into the new day as a
+       * single Undo instead: recoverable if it mattered, aged out with
+       * everything else if it did not. Returns whether the day rolled, and
+       * whether a session actually got saved to history in the process.
        */
       rollDayIfNeeded: () => {
         const today = getLocalDateKey(new Date());
         const prev = get().activeDate;
-        if (prev === today) return false;
+        if (prev === today) return { rolled: false, saved: false };
 
         const live = get().live;
         const hasDone = live.exercises.some((ex) => ex.sets.some((s) => s.done));
+        let saved = false;
         if (hasDone && !live.finished) {
           // saveWorkout writes to activeDate, which is still yesterday here —
           // exactly where this session belongs.
-          get().saveWorkout();
+          saved = !!get().saveWorkout();
         }
+        const rescue =
+          !saved && !hasDone && live.exercises.length > 0 ? [JSON.stringify(live.exercises)] : [];
 
         set({ activeDate: today });
         get().ensureDay(today);
-        set({ live: defaultLive(live.split, today) });
         // The new day has its own programmed split; carrying yesterday's label
         // over was only ever a placeholder.
+        set({ live: { ...defaultLive(live.split, today), undoStack: rescue } });
         get().refreshScheduledDay();
-        return true;
+        return { rolled: true, saved };
       },
 
       normalizeLive: () => {
