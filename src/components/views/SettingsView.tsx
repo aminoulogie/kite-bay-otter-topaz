@@ -9,13 +9,17 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
 import {
-  parseBackup, restoreExercisePhotos, restorePhotos, restoreScanImages, saveBackupFile, type BackupSummary,
+  buildBackup, parseBackup, restoreExercisePhotos, restorePhotos, restoreScanImages, saveBackupFile,
+  type BackupSummary,
 } from "@/lib/backup";
 import {
   backupIsDue, daysSinceBackup, formatBytes, requestPersistence,
   storageHealth, type StorageHealth,
 } from "@/lib/storage-health";
 import { ProgramBuilder } from "@/components/ProgramBuilder";
+import {
+  getStoredVaultFolder, pickVaultFolder, forgetVaultFolder, readVaultFile, supportsVaultFolder, writeVaultFile,
+} from "@/lib/vault-sync";
 import { allCsv } from "@/lib/csv-export";
 import {
   looksLikeCsv, parseFoodCsv, rowToFood, toCsvUrl, type ParsedRow,
@@ -54,6 +58,9 @@ export function SettingsView() {
   const [pending, setPending] = useState<
     { summary: BackupSummary; apply: (mode: "merge" | "replace") => Promise<void> } | null
   >(null);
+  const [vaultHandle, setVaultHandleState] = useState<FileSystemDirectoryHandle | null>(null);
+  const [vaultBusy, setVaultBusy] = useState(false);
+  const [vaultLastSync, setVaultLastSync] = useState<Date | null>(null);
   const clearSeededHabitHistory = useSoma((s) => s.clearSeededHabitHistory);
   const applyGoalsToOpenDays = useSoma((s) => s.applyGoalsToOpenDays);
   const activeProgram = useActiveProgram();
@@ -135,6 +142,60 @@ export function SettingsView() {
       },
     });
   };
+
+  /**
+   * Pull whatever the other device left in the vault folder, then write the
+   * merged result back — so the file on disk always ends up holding the
+   * union of both devices rather than whichever one synced last overwriting
+   * the other's additions.
+   *
+   * Pulling is always a merge, never a replace: a vault sync must not be able
+   * to do what the day-roll bug did — make a day that was really logged look
+   * like it never happened because another device's copy of that day was
+   * emptier. importJson's merge rule already keeps whatever is on THIS
+   * device for a day both sides have, and only fills in days this device is
+   * missing, which is exactly the direction that can never lose anything.
+   */
+  const syncVault = async (handle: FileSystemDirectoryHandle, opts: { silent?: boolean } = {}) => {
+    setVaultBusy(true);
+    try {
+      const found = await readVaultFile(handle);
+      if (found) {
+        const result = parseBackup(found.text);
+        if (!result.ok) {
+          toast.error(`Vault file is damaged: ${result.reason}`);
+        } else {
+          importJson(JSON.stringify(result.backup.data), "merge");
+          await restorePhotos(result.backup.photos);
+          await restoreScanImages(result.backup.scanImages);
+          await restoreExercisePhotos(result.backup.exercisePhotos);
+        }
+      }
+      const backup = await buildBackup(JSON.parse(useSoma.getState().exportJson()));
+      await writeVaultFile(handle, JSON.stringify(backup));
+      setVaultLastSync(new Date());
+      if (!opts.silent) toast.success("Synced with vault");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Vault sync failed.");
+    } finally {
+      setVaultBusy(false);
+    }
+  };
+
+  // Reconnects to a previously-chosen folder without asking again, and syncs
+  // once immediately — the closest this can get to "just works" without a
+  // server: whatever changed elsewhere shows up the moment Setup is opened.
+  useEffect(() => {
+    if (!supportsVaultFolder()) return;
+    void getStoredVaultFolder().then((handle) => {
+      if (!handle) return;
+      setVaultHandleState(handle);
+      void syncVault(handle, { silent: true });
+    });
+    // Runs once: re-checking on every render would re-prompt nothing (a
+    // denied permission just returns null) but would re-sync constantly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (exercisesOpen) return <ExercisesView onBack={() => setExercisesOpen(false)} />;
 
@@ -612,6 +673,75 @@ export function SettingsView() {
             Reset to demo
           </Button>
         </div>
+      </Card>
+
+      <Card key="vault">
+        <CardTitle>Vault sync</CardTitle>
+        {supportsVaultFolder() ? (
+          <>
+            <p className="mb-3 text-xs text-muted">
+              Point this at a folder synced by iCloud Drive (or Dropbox, or anything else),
+              and open the same folder from SOMA on your other devices. Not instant — it
+              syncs whenever a device is opened, same as the files themselves sync.
+            </p>
+            {vaultHandle ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted">
+                  Connected to <b className="text-fg">{vaultHandle.name}</b>
+                  {vaultLastSync && ` · synced ${vaultLastSync.toLocaleTimeString()}`}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="primary"
+                    className="flex-1"
+                    disabled={vaultBusy}
+                    onClick={() => void syncVault(vaultHandle)}
+                  >
+                    {vaultBusy ? "Syncing…" : "Sync now"}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    onClick={() => {
+                      void forgetVaultFolder();
+                      setVaultHandleState(null);
+                      setVaultLastSync(null);
+                    }}
+                  >
+                    Disconnect
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="primary"
+                className="w-full"
+                disabled={vaultBusy}
+                onClick={() => {
+                  void (async () => {
+                    try {
+                      const handle = await pickVaultFolder();
+                      setVaultHandleState(handle);
+                      await syncVault(handle);
+                    } catch (err) {
+                      // A cancelled folder picker is a decision, not an error.
+                      if (err instanceof DOMException && err.name === "AbortError") return;
+                      toast.error(err instanceof Error ? err.message : "Could not open that folder.");
+                    }
+                  })();
+                }}
+              >
+                Choose vault folder
+              </Button>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-muted">
+            This browser can't hold a folder open for live sync. On iOS, Save backup and
+            Restore backup above already reach iCloud Drive through the share sheet and
+            Files picker — save there and Restore backup on your other device picks up
+            the same file.
+          </p>
+        )}
       </Card>
 
       <FoodImportCard key="foods" />

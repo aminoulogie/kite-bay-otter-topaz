@@ -15,14 +15,14 @@ import { pickFiles } from "./file-picker.ts";
 
 const DB_NAME = "soma-habit-photos";
 /**
- * v2 adds the scan store, v3 the book files, v4 the exercise photos.
- * Object stores in the SAME database rather than databases of their own,
- * deliberately: the backup coverage test asserts the app opens exactly one
- * IndexedDB, because a second one is a second thing to remember at backup
- * time and that is precisely how four localStorage keys went missing from
- * every backup for months.
+ * v2 adds the scan store, v3 the book files, v4 the exercise photos, v5 the
+ * vault folder handle. Object stores in the SAME database rather than
+ * databases of their own, deliberately: the backup coverage test asserts the
+ * app opens exactly one IndexedDB, because a second one is a second thing to
+ * remember at backup time and that is precisely how four localStorage keys
+ * went missing from every backup for months.
  */
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const STORE = "photos";
 /** Face and posture captures, as data URLs keyed by scan id. */
 const SCAN_STORE = "scans";
@@ -30,6 +30,8 @@ const SCAN_STORE = "scans";
 export const BOOK_STORE = "books";
 /** User-picked exercise pictures, one Blob per exercise photo id. */
 export const EXERCISE_STORE = "exercise-photos";
+/** The chosen vault-sync folder handle. See lib/vault-sync.ts. */
+export const VAULT_STORE = "vault";
 
 const THUMB_PX = 320;
 const DISPLAY_PX = 1080;
@@ -79,6 +81,10 @@ function open(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(EXERCISE_STORE)) {
         db.createObjectStore(EXERCISE_STORE, { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains(VAULT_STORE)) {
+        // Keyed externally, one row: there is only ever one chosen folder.
+        db.createObjectStore(VAULT_STORE);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -324,4 +330,40 @@ export async function allScanImages(): Promise<{ id: string; dataUrl: string }[]
     };
     t.onerror = () => reject(t.error ?? new Error("Could not read scan images"));
   });
+}
+
+// --------------------------------------------------------------- vault handle --
+
+const VAULT_KEY = "folder";
+
+function vaultTx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return open().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const t = db.transaction(VAULT_STORE, mode);
+        const req = run(t.objectStore(VAULT_STORE));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
+      }),
+  );
+}
+
+/**
+ * The chosen vault-sync folder, a `FileSystemDirectoryHandle`.
+ *
+ * IndexedDB is the only place a handle CAN live — it is not JSON-serialisable
+ * and not tied to any particular day or record, so it gets its own tiny store
+ * rather than a field on some other row.
+ */
+export async function getVaultHandle(): Promise<FileSystemDirectoryHandle | null> {
+  const row = await vaultTx<FileSystemDirectoryHandle | undefined>("readonly", (s) => s.get(VAULT_KEY));
+  return row ?? null;
+}
+
+export async function setVaultHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+  await vaultTx("readwrite", (s) => s.put(handle, VAULT_KEY));
+}
+
+export async function clearVaultHandle(): Promise<void> {
+  await vaultTx("readwrite", (s) => s.delete(VAULT_KEY));
 }

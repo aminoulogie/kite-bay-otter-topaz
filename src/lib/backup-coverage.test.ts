@@ -131,8 +131,8 @@ test("book files are the one deliberate hole in the backup, and it is written do
   const stores = [...photos.matchAll(/createObjectStore\(([A-Z_]+|"[a-z]+")/g)].map((m) => m[1]);
   assert.deepEqual(
     stores,
-    ["STORE", "SCAN_STORE", "BOOK_STORE", "EXERCISE_STORE"],
-    "a new object store: put it in the backup, or say here why it is out — exercise photos are user-picked pictures, deliberately like habit photos: not in the JSON backup",
+    ["STORE", "SCAN_STORE", "BOOK_STORE", "EXERCISE_STORE", "VAULT_STORE"],
+    "a new object store: put it in the backup, or say here why it is out — exercise photos are user-picked pictures, deliberately like habit photos: not in the JSON backup; VAULT_STORE holds a FileSystemDirectoryHandle to a folder on THIS device's disk, which is not serialisable and would be meaningless on another device or browser profile anyway: deliberately not in the JSON backup",
   );
 });
 
