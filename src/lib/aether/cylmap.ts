@@ -193,7 +193,14 @@ export function cylSymmetry(map: Float32Array, c: Cylinder, w: FaceWindow, noise
  * reached round to both sides (past ±80°), or the "width" would just be how
  * far the sweep got.
  */
-export function bandWidthMm(map: Float32Array, c: Cylinder, yLoMm: number, yHiMm: number): number | null {
+export function bandWidthMm(
+  map: Float32Array,
+  c: Cylinder,
+  yLoMm: number,
+  yHiMm: number,
+  maxThetaDeg = 180,
+  reachDeg = 80,
+): number | null {
   let best: number | null = null;
   for (let j = 0; j < c.height; j++) {
     const y = yOf(c, j);
@@ -206,13 +213,14 @@ export function bandWidthMm(map: Float32Array, c: Cylinder, yLoMm: number, yHiMm
       const r = map[j * c.width + i]!;
       if (!Number.isFinite(r)) continue;
       const t = theta(c, i);
+      if (Math.abs(t) > maxThetaDeg) continue;
       const x = r * Math.sin((t * Math.PI) / 180);
       lo = Math.min(lo, x);
       hi = Math.max(hi, x);
       tMin = Math.min(tMin, t);
       tMax = Math.max(tMax, t);
     }
-    if (tMin > -80 || tMax < 80) continue;
+    if (tMin > -reachDeg || tMax < reachDeg) continue;
     best = Math.max(best ?? 0, hi - lo);
   }
   return best;
@@ -386,8 +394,11 @@ export function summariseCylinder(
   const symA = cylSymmetry(c.a, c, w, halfNoise);
   const symB = cylSymmetry(c.b, c, w, halfNoise);
   const eye = eyeYMm ?? 30;
-  const cheekWidthMm = bandWidthMm(merged, c, eye - 40, eye - 10);
-  const jawWidthMm = bandWidthMm(merged, c, eye - 90, eye - 65);
+  // Cheekbones sit within ±75° round the head; beyond is the ear, which
+  // made the first real "cheek width" read ear to ear (200 mm). The jaw band
+  // is below the ears, so it may go further round.
+  const cheekWidthMm = bandWidthMm(merged, c, eye - 40, eye - 10, 75, 70);
+  const jawWidthMm = bandWidthMm(merged, c, eye - 90, eye - 65, 95, 75);
   let fullSummary: FullSummary | undefined;
   if (full && sym) {
     const m = fullFrom(merged, c, w, full.axisZ, sym.midlineDeg);

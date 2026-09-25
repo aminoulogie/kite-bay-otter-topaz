@@ -229,7 +229,7 @@ export async function runTrueDepthScan(
     audio.announce("Building your 3D model.");
     await new Promise((r) => setTimeout(r, 60)); // let the screen and voice update first
   }
-  const ext: Extended = raw && result.sides ? extendWithSides(raw, result.cylAxisZMm ?? -60, result.sides) : null;
+  const ext: Extended = raw && result.sides ? extendWithSides(raw, result.cylAxisZMm ?? -60, result.sides, result.sideDiag) : null;
   const cyl = ext?.cyl ?? raw;
   if (cyl) {
     const stored: StoredCylinder = {

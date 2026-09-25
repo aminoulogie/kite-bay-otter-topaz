@@ -94,3 +94,19 @@ test("sweep audio quickens as the ring fills", async () => {
   assert.ok(late.beepMs < early.beepMs);
   assert.equal(sweepGuidance({ tracked: true, ok: false, message: "Slower.", collected: 6, target: 60 }).phrase, "Slower.");
 });
+
+test("cheek width stops short of the ears", () => {
+  // Big ears at ±95° and eye height: an ear-to-ear reading would be far wider.
+  const c = head();
+  const m = mergeCyl(c);
+  for (let j = 0; j < H; j++) {
+    const y = Y0 + j * DY;
+    for (const e of [95, -95]) {
+      const i = e - T0;
+      if (Math.abs(y - 5) < 25) m[j * W + i] = m[j * W + i]! + 20;
+    }
+  }
+  const earToEar = bandWidthMm(m, c, -10, 20);
+  const cheeks = bandWidthMm(m, c, -10, 20, 75, 70);
+  assert.ok(earToEar! - cheeks! > 20, `${earToEar} vs ${cheeks}`);
+});

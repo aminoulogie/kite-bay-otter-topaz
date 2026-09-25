@@ -10,6 +10,10 @@ const NECK_A = 55, NECK_B = 60;
 /** Radius at (θ°, y mm): a head with nose, chin, ears, jaw — and a neck (ellipse 110 × 120) below y −85. */
 function radius(t: number, y: number): number {
   const tr = (t * Math.PI) / 180;
+  // Shoulders and chest: at 30 cm side-on they fill most of the phone's depth frame.
+  // Broad shoulders reaching well out to the side — side-on they are as
+  // near the phone as the head, and outnumber its points.
+  if (y < -150) return (230 * 120) / Math.hypot(120 * Math.sin(tr), 230 * Math.cos(tr));
   if (y < -85) return (NECK_A * NECK_B) / Math.hypot(NECK_B * Math.sin(tr), NECK_A * Math.cos(tr));
   let r = 78 + 14 * Math.cos(tr) ** 2 - ((y + 10) ** 2) / 500;
   r += 14 * Math.exp(-(t * t) / 60) * Math.exp(-(y * y) / 300);
@@ -50,7 +54,7 @@ function frame(camToFace: Mat4, stage: "turn" | "hold", tracked: boolean): RawSi
   const toCam = invert(camToFace);
   const [cx, , cz] = apply(camToFace, 0, 0, 0);
   const out: number[] = [];
-  for (let y = -200; y <= 70; y += 2.5)
+  for (let y = -320; y <= 70; y += 2.5)
     for (let t = -160; t <= 160; t += 1.5) {
       const r = radius(t, y);
       const tr = (t * Math.PI) / 180;

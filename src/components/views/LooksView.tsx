@@ -92,14 +92,14 @@ export function LooksView() {
       side: newest.find((x) => x.body?.mode === "side")?.body ?? null,
     };
   }, [scans]);
-  const latestDepth = useMemo(
-    () => newestFirst(scans).find((x) => x.depth && !x.depth.sweep)?.depth ?? null,
-    [scans],
-  );
-  const latestSweep = useMemo(
-    () => newestFirst(scans).find((x) => x.depth?.sweep)?.depth ?? null,
-    [scans],
-  );
+  const sweeps = useMemo(() => newestFirst(scans).filter((x) => x.depth?.sweep), [scans]);
+  const latestSweep = sweeps[0]?.depth ?? null;
+  const prevSweep = sweeps[1]?.depth ?? null;
+  // An older quick front scan is only shown when nothing newer replaced it.
+  const latestDepth = useMemo(() => {
+    const quick = newestFirst(scans).find((x) => x.depth && !x.depth.sweep);
+    return quick && (!sweeps[0] || quick.capturedAt > sweeps[0].capturedAt) ? quick.depth! : null;
+  }, [scans, sweeps]);
 
   /**
    * The native TrueDepth scan. Audio is enabled here, in the tap, because iOS
@@ -301,7 +301,7 @@ export function LooksView() {
       {(hasTrueDepth || latestDepth || latestSweep) && (
         <Card key="truedepth">
           <CardTitle>3D scan · TrueDepth</CardTitle>
-          {latestSweep?.sweep && <SweepMetrics d={latestSweep} />}
+          {latestSweep?.sweep && <SweepMetrics d={latestSweep} prev={prevSweep} />}
           {latestDepth ? (
             <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
               {latestDepth.raw && (
@@ -582,8 +582,12 @@ function mm(v: number | null | undefined, digits: number): string {
  * The sweep's numbers, each with its ±. A change between two sweeps smaller
  * than the ± is noise, and saying so is the point.
  */
-function SweepMetrics({ d }: { d: NonNullable<ScanRecord["depth"]> }) {
+function SweepMetrics({ d, prev }: { d: NonNullable<ScanRecord["depth"]>; prev: ScanRecord["depth"] | null }) {
   const s = d.sweep!;
+  const p = prev?.sweep;
+  /** The change against the previous sweep — the real test of repeatability. */
+  const vs = (now: number | null | undefined, before: number | null | undefined, digits = 1) =>
+    now != null && before != null ? ` (${now - before >= 0 ? "+" : ""}${(now - before).toFixed(digits)} vs last)` : "";
   const pm = (v: number | null | undefined, e: number | null | undefined, digits: number) =>
     v == null ? "—" : `${v.toFixed(digits)}${e != null ? ` ± ${e.toFixed(digits)}` : ""} mm`;
   const cell = s.cellNoiseMm;
@@ -592,17 +596,17 @@ function SweepMetrics({ d }: { d: NonNullable<ScanRecord["depth"]> }) {
     <div className="mb-3 space-y-2">
       <div className="text-[0.6rem] font-bold uppercase tracking-wider text-accent">Latest sweep</div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-        <Metric label="Asymmetry · 3D" value={pm(s.symmetry?.rmsMm, s.symmetryNoiseMm, 2)} />
+        <Metric label="Asymmetry · 3D" value={pm(s.symmetry?.rmsMm, s.symmetryNoiseMm, 2) + vs(s.symmetry?.rmsMm, p?.symmetry?.rmsMm, 2)} />
         <Metric
           label="Fuller side (up / mid / low)"
           value={s.symmetry ? (["upper", "middle", "lower"] as const).map((k) => side(s.symmetry!.leftMinusRightMm[k])).join(" / ") : "—"}
         />
-        <Metric label="Cheek width" value={pm(s.cheekWidthMm, cell, 1)} />
-        <Metric label="Jaw width" value={pm(s.jawWidthMm, cell, 1)} />
-        <Metric label="Chin behind nose tip" value={pm(s.chinBehindNoseMm, cell, 1)} />
+        <Metric label="Cheek width" value={pm(s.cheekWidthMm, cell, 1) + vs(s.cheekWidthMm, p?.cheekWidthMm)} />
+        <Metric label="Jaw width" value={pm(s.jawWidthMm, cell, 1) + vs(s.jawWidthMm, p?.jawWidthMm)} />
+        <Metric label="Chin behind nose tip" value={pm(s.chinBehindNoseMm, cell, 1) + vs(s.chinBehindNoseMm, p?.chinBehindNoseMm)} />
         <Metric label="Surface noise" value={cell == null ? "—" : `${cell.toFixed(2)} mm`} />
         <Metric label="Coverage" value={`${Math.round(s.coverage * 100)}% · ring ${Math.round(s.sweepCoverage * 100)}%`} />
-        {s.full && <FullMetrics f={s.full} />}
+        {s.full && <FullMetrics f={s.full} prev={p?.full ?? null} />}
         {ch && (
           <Metric
             label="Change vs first sweep"
@@ -645,26 +649,53 @@ function ScanSpotGuide() {
 }
 
 /** Side profile, neck and posture from a full scan. */
-function FullMetrics({ f }: { f: NonNullable<NonNullable<NonNullable<ScanRecord["depth"]>["sweep"]>["full"]> }) {
+type Full = NonNullable<NonNullable<NonNullable<ScanRecord["depth"]>["sweep"]>["full"]>;
+
+/** How one side of a full scan went, in words: so a failure says why. */
+function sideLine(label: string, st: NonNullable<Full["sides"]>["right"]): string {
+  if (st.holds > 0) return `${label} ${st.holds}/20 held · fit ${st.fitMm?.toFixed(1) ?? "?"} mm`;
+  const why = st.diag?.outcome ?? (st.received ? `${st.received} sent, ${st.aligned} placed` : "nothing sent");
+  const dist = st.diag?.distance != null ? ` · ${(st.diag.distance * 100).toFixed(0)} cm` : "";
+  return `${label} 0 · ${why}${st.diag?.depthFrames != null ? ` · ${st.diag.depthFrames} depth frames` : ""}${dist}`;
+}
+
+function FullMetrics({ f, prev }: { f: Full; prev: Full | null }) {
+  const vs = (now: number | null, before: number | null | undefined, digits = 1) =>
+    now != null && before != null ? ` (${now - before >= 0 ? "+" : ""}${(now - before).toFixed(digits)} vs last)` : "";
   const deg = (v: number | null, e?: number | null) =>
     v == null ? "—" : `${v.toFixed(1)}°${e != null ? ` ± ${e.toFixed(1)}` : ""}`;
   const mm0 = (v: number | null, e?: number | null) =>
     v == null ? "—" : `${v.toFixed(0)}${e != null ? ` ± ${e.toFixed(0)}` : ""} mm`;
-  const held = f.sides ? `R ${f.sides.right.holds}/20 · L ${f.sides.left.holds}/20` : "—";
+
   return (
     <>
       <div className="col-span-2 mt-1 text-[0.6rem] font-bold uppercase tracking-wider text-accent">Profile & neck</div>
-      <Metric label="Chin–neck angle" value={deg(f.chinNeckDeg, f.chinNeckNoiseDeg)} />
+      <Metric label="Chin–neck angle" value={deg(f.chinNeckDeg, f.chinNeckNoiseDeg) + vs(f.chinNeckDeg, prev?.chinNeckDeg)} />
       <Metric label="Under-chin length" value={mm0(f.underChinMm)} />
-      <Metric label="Neck width" value={mm0(f.neckWidthMm, f.neckWidthNoiseMm)} />
+      <Metric label="Neck width" value={mm0(f.neckWidthMm, f.neckWidthNoiseMm) + vs(f.neckWidthMm, prev?.neckWidthMm, 0)} />
       <Metric label={f.neckDepthPartial ? "Neck depth (partial)" : "Neck depth"} value={mm0(f.neckDepthMm)} />
-      <Metric label="Neck ≈ tape" value={f.neckCircumferenceMm == null ? "—" : `${(f.neckCircumferenceMm / 10).toFixed(1)} cm est.`} />
+      <Metric
+        label="Neck ≈ tape"
+        value={
+          f.neckCircumferenceMm == null
+            ? "—"
+            : f.neckDepthPartial
+              ? "needs the back of the neck"
+              : `${(f.neckCircumferenceMm / 10).toFixed(1)} cm est.`
+        }
+      />
       <Metric label="Neck / cheek · jaw" value={`${f.neckToCheek?.toFixed(2) ?? "—"} · ${f.neckToJaw?.toFixed(2) ?? "—"}`} />
       <div className="col-span-2 mt-1 text-[0.6rem] font-bold uppercase tracking-wider text-accent">Posture (vs gravity)</div>
       <Metric label="Neck lean forward" value={deg(f.neckLeanDeg)} />
       <Metric label="Head tipped forward" value={deg(f.headPitchDeg)} />
       <Metric label="Reached below chin" value={mm0(f.reachBelowChinMm)} />
-      <Metric label="Side holds used" value={held} />
+      {f.sides && (
+        <div className="col-span-2 text-[0.65rem] leading-snug text-faint">
+          {sideLine("Right", f.sides.right)}
+          <br />
+          {sideLine("Left", f.sides.left)}
+        </div>
+      )}
     </>
   );
 }

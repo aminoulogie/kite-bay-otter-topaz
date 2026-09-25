@@ -162,17 +162,24 @@ export function chinNeck(profile: { y: number; r: number }[], noseY: number): Ch
   const chinZone = profile.filter((p) => p.y <= noseY - 35 && p.y >= noseY - 85);
   if (!chinZone.length) return null;
   const chin = chinZone.reduce((a, b) => (b.r > a.r ? b : a));
-  const below = profile.filter((p) => p.y <= chin.y && p.y >= chin.y - 110).sort((a, b) => b.y - a.y);
+  // Only the neck, not the chest: the corner is looked for 15–70 mm below the
+  // chin, and the neck line runs at most 60 mm below the corner. (The first
+  // real scan reached 200 mm down and the fitted "neck" ran into the chest.)
+  const below = profile.filter((p) => p.y <= chin.y && p.y >= chin.y - 130).sort((a, b) => b.y - a.y);
   if (below.length < 20) return null;
   let best: { k: number; sse: number } | null = null;
   for (let k = 6; k <= below.length - 8; k++) {
-    const sse = fitLine(below.slice(0, k + 1)).sse + fitLine(below.slice(k)).sse;
+    const drop = chin.y - below[k]!.y;
+    if (drop < 15 || drop > 70) continue;
+    const neck = below.slice(k).filter((p) => p.y >= below[k]!.y - 60);
+    if (neck.length < 8) continue;
+    const sse = fitLine(below.slice(0, k + 1)).sse + fitLine(neck).sse;
     if (!best || sse < best.sse) best = { k, sse };
   }
   if (!best) return null;
   const upper = fitLine(below.slice(0, best.k + 1));
-  const lower = fitLine(below.slice(best.k));
   const corner = below[best.k]!;
+  const lower = fitLine(below.slice(best.k).filter((p) => p.y >= corner.y - 60));
   // Direction from the corner up towards the chin, and down the neck.
   const toChin = { y: chin.y - corner.y, r: chin.r - corner.r };
   let u = { y: upper.dy, r: upper.dr };
@@ -180,6 +187,8 @@ export function chinNeck(profile: { y: number; r: number }[], noseY: number): Ch
   let d = { y: lower.dy, r: lower.dr };
   if (d.y > 0) d = { y: -d.y, r: -d.r };
   const angleDeg = (Math.acos(Math.max(-1, Math.min(1, u.y * d.y + u.r * d.r))) * 180) / Math.PI;
+  // Outside what a human neck does, the fit found something else.
+  if (angleDeg < 80 || angleDeg > 150) return null;
   return {
     angleDeg,
     chinY: chin.y,
@@ -269,6 +278,10 @@ export interface RawSideFrame {
 }
 
 export interface SideStats {
+  /** Frames the phone sent for this side. */
+  received?: number;
+  /** What the phone saw: how the stage ended, depth frames, distance. */
+  diag?: { outcome?: string; depthFrames?: number; turnDepthFrames?: number; distance?: number };
   /** Frames placed on the model / lost, and hold frames used. */
   aligned: number;
   lost: number;
@@ -285,6 +298,7 @@ export function extendWithSides(
   c: Cylinder,
   axisZ: number,
   sides: { right: RawSideFrame[]; left: RawSideFrame[] },
+  diag?: Record<string, SideStats["diag"]>,
 ): { cyl: Cylinder; stats: { right: SideStats; left: SideStats } } {
   const model = modelPoints(mergeCyl(c), c, axisZ);
   const a = new SideCylinder(c, axisZ);
@@ -299,7 +313,14 @@ export function extendWithSides(
     }));
     const r = registerSide(model, frames, axisZ);
     for (const h of r.holds) (k++ % 2 ? b : a).add(h.T, h.pts);
-    stats[side] = { aligned: r.aligned, lost: r.lost, holds: r.holds.length, fitMm: r.meanRmsMm };
+    stats[side] = {
+      received: sides[side].length,
+      ...(diag?.[side] ? { diag: diag[side] } : {}),
+      aligned: r.aligned,
+      lost: r.lost,
+      holds: r.holds.length,
+      fitMm: r.meanRmsMm,
+    };
   }
   return {
     cyl: { ...c, a: mergeSides(c.a, a.medians(), c), b: mergeSides(c.b, b.medians(), c) },

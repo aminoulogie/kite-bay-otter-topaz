@@ -70,6 +70,8 @@ export interface FaceDepthResult {
   gravityFace?: [number, number, number];
   /** Full scan: the raw side-on depth frames, for matching onto the face model. */
   sides?: { right: SideFrameRaw[]; left: SideFrameRaw[] };
+  /** Per side: how the stage ended, depth frames seen, nearest distance (m). */
+  sideDiag?: Record<string, { outcome?: string; depthFrames?: number; turnDepthFrames?: number; distance?: number }>;
 }
 
 export interface SideFrameRaw {

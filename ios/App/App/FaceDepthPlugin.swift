@@ -140,6 +140,16 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     private var cylFrames = 0
     private var rng: UInt32 = 0x9E3779B9
     private var ticks = [Bool](repeating: false, count: 60)
+    /// The sweep as four spoken moves instead of a free circle: chin up, chin
+    /// down, head to the left, head to the right. Each is the ring's tick
+    /// index it points at (screen: 0 top, 15 right, 30 bottom, 45 left).
+    private static let looks: [(tick: Int, say: String)] = [
+        (0, "Slowly tilt your chin up, then back."),
+        (30, "Now slowly chin down, then back."),
+        (45, "Now turn your head to your left, then back."),
+        (15, "Now turn your head to your right, then back."),
+    ]
+    private var looksDone = [Bool](repeating: false, count: 4)
     private var lastPose: (yaw: Float, pitch: Float, t: TimeInterval)?
     private var frontPhoto: (score: Float, url: String)?
     private var obliquePhotos: [Int: (score: Float, url: String, yaw: Float)] = [:]
@@ -160,7 +170,11 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     private var stageStartedAt: TimeInterval = 0
     private var sideFrames: [String: [[String: Any]]] = ["right": [], "left": []]
     private var holdCount = 0
-    private var lastCentre: Float?
+    private var lastBody: Float?
+    /// What happened on each side, for the results card: so a failed side
+    /// says why instead of just "0 holds".
+    private var sideDiag: [String: [String: Any]] = ["right": [:], "left": [:]]
+    private var stageDepthFrames = 0
     private var stillCount = 0
     private var lastFace: ARFaceAnchor?
     private var gravitySum = SIMD3<Float>(repeating: 0)
@@ -397,7 +411,8 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             sweepMessage = "Slower."
         } else {
             sweepOk = true
-            sweepMessage = "Slowly move your head in a circle."
+            let next = looksDone.firstIndex(of: false) ?? 3
+            sweepMessage = Self.looks[next].say
         }
         if sweepOk, frame.capturedDepthData != nil {
             accumulateCylinder(frame, face: face)
@@ -408,13 +423,22 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                 let a = atan2(pose.pitch, -pose.yaw) * 180 / .pi
                 let i = Int(((a + 90) / 6).rounded())
                 for d in -1...1 { ticks[((i + d) % 60 + 60) % 60] = true }
+                // A move counts when the head points within ~25° of it; its
+                // whole quarter of the ring then lights, so progress is obvious.
+                for (k, look) in Self.looks.enumerated() where !looksDone[k] {
+                    let off = abs(((i - look.tick) % 60 + 90) % 60 - 30)
+                    if off <= 4 {
+                        looksDone[k] = true
+                        for d in -7...7 { ticks[((look.tick + d) % 60 + 60) % 60] = true }
+                    }
+                }
             }
             considerObliquePhoto(frame, pose: pose, blink: blink)
         }
         let filled = ticks.filter { $0 }.count
         showSweep(sweepMessage, ok: sweepOk || (!frontDone && ok), pose: pose, distance: distance, face: face,
                   front: frontDone, filled: filled)
-        if frontDone && filled >= 54 && cylFrames >= 40 {
+        if frontDone && !looksDone.contains(false) && cylFrames >= 40 {
             if sides {
                 sideStage = .turnRight
                 stageStartedAt = frame.timestamp
@@ -477,9 +501,11 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         if used > 500 { depthFrames += 1 }
     }
 
-    /// Median depth of the middle of the depth image, metres: what is straight
-    /// in front of the camera — the face, or the side of the head.
-    private static func centreDepth(_ data: AVDepthData) -> Float? {
+    /// Where the person is in a depth frame: the nearest surfaces (10th
+    /// percentile) and the median of everything within 15 cm of them. Taken
+    /// over the whole image, not its centre — a whole-body turn swings the
+    /// head sideways, and the centre can end up on the room behind.
+    private static func bodyDepth(_ data: AVDepthData) -> (near: Float, body: Float)? {
         let depth = data.depthDataType == kCVPixelFormatType_DepthFloat32
             ? data : data.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32)
         let map = depth.depthDataMap
@@ -489,16 +515,18 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         let w = CVPixelBufferGetWidth(map), h = CVPixelBufferGetHeight(map)
         let rowBytes = CVPixelBufferGetBytesPerRow(map)
         var v: [Float] = []
-        for y in stride(from: h / 2 - 20, to: h / 2 + 20, by: 2) {
+        for y in stride(from: 0, to: h, by: 8) {
             let row = base.advanced(by: y * rowBytes).assumingMemoryBound(to: Float32.self)
-            for x in stride(from: w / 2 - 20, to: w / 2 + 20, by: 2) {
+            for x in stride(from: 0, to: w, by: 8) {
                 let z = row[x]
-                if z.isFinite && z > 0.1 && z < 1.2 { v.append(z) }
+                if z.isFinite && z > 0.12 && z < 0.8 { v.append(z) }
             }
         }
-        guard v.count > 50 else { return nil }
+        guard v.count > 100 else { return nil }
         v.sort()
-        return v[v.count / 2]
+        let near = v[v.count / 10]
+        let person = v.filter { $0 < near + 0.15 }
+        return (near, person[person.count / 2])
     }
 
     /// The depth frame as camera-space points (ARKit camera axes), in 0.1 mm
@@ -556,12 +584,14 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         if let f = face, tracked { lastFace = f }
 
         var centre: Float?
-        if let d = frame.capturedDepthData {
-            centre = Self.centreDepth(d)
-            if let c = centre, let last = lastCentre, abs(c - last) < 0.0015 { stillCount += 1 } else if centre != nil { stillCount = 0 }
-            lastCentre = centre
+        if let d = frame.capturedDepthData, let b = Self.bodyDepth(d) {
+            stageDepthFrames += 1
+            centre = b.near
+            // Standing sway is a few mm; 3 mm between depth frames (~1/15 s) is still.
+            if let last = lastBody, abs(b.body - last) < 0.003 { stillCount += 1 } else { stillCount = 0 }
+            lastBody = b.body
         }
-        let still = stillCount >= 6
+        let still = stillCount >= 5
         let side = (sideStage == .turnRight || sideStage == .holdRight) ? "right" : "left"
         let way = side == "right" ? "right" : "left"
         var message = ""
@@ -570,6 +600,11 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
 
         // A stage that never settles is skipped rather than failing the scan.
         if now - stageStartedAt > Self.stageTimeout {
+            if sideStage != .back {
+                sideDiag[side]?["outcome"] = sideStage == .turnRight || sideStage == .turnLeft ? "never still side-on" : "hold not finished"
+                sideDiag[side]?["depthFrames"] = stageDepthFrames
+                if let c = centre { sideDiag[side]?["distance"] = Double(c) }
+            }
             advanceSide(frame, now: now)
             return
         }
@@ -590,6 +625,8 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                     sideStage = sideStage == .turnRight ? .holdRight : .holdLeft
                     stageStartedAt = now
                     holdCount = 0
+                    sideDiag[side]?["turnDepthFrames"] = stageDepthFrames
+                    stageDepthFrames = 0
                     message = "Hold still."
                     ok = true
                 }
@@ -602,7 +639,13 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                 holdCount += 1
             }
             progress = Float(holdCount) / Float(Self.holdFrames)
-            if holdCount >= Self.holdFrames { advanceSide(frame, now: now); return }
+            if holdCount >= Self.holdFrames {
+                sideDiag[side]?["outcome"] = "held"
+                sideDiag[side]?["depthFrames"] = stageDepthFrames
+                if let c = centre { sideDiag[side]?["distance"] = Double(c) }
+                advanceSide(frame, now: now)
+                return
+            }
         case .back:
             message = "Done. Turn back to face the phone."
             if tracked, let y = yaw, abs(y) < 12 {
@@ -632,6 +675,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         stageStartedAt = now
         stillCount = 0
         holdCount = 0
+        stageDepthFrames = 0
         switch sideStage {
         case .turnRight, .holdRight: sideStage = .back
         case .back: sideStage = .turnLeft
@@ -865,6 +909,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             }
             if sides {
                 result["sides"] = ["right": sideFrames["right"] ?? [], "left": sideFrames["left"] ?? []]
+                result["sideDiag"] = sideDiag
             }
         }
 

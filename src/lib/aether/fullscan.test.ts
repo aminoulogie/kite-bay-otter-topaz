@@ -97,3 +97,17 @@ test("a placed frame lands in the right cells", () => {
   const j = Math.round((0 + 250) / 1.5), i = 160 + 90;
   assert.ok(Math.abs(med[j * W + i]! - 90) < 1e-3, `${med[j * W + i]}`);
 });
+
+test("the neck line stops before the chest (the first real scan's 160° came from that)", () => {
+  // The same profile, but 70 mm below the corner the chest comes forward sharply.
+  const p = profile().map((q) => (q.y < -150 ? { y: q.y, r: 62 + (-150 - q.y) * 1.2 } : q));
+  const c = chinNeck(p, -10)!;
+  const expected = (Math.acos(-20 / Math.hypot(20, 38)) * 180) / Math.PI;
+  assert.ok(Math.abs(c.angleDeg - expected) < 3, `${c.angleDeg} vs ${expected}`);
+});
+
+test("an angle no neck makes is not reported", () => {
+  // A nearly flat profile: nothing like a chin and a neck.
+  const flat = profile().map((q) => ({ y: q.y, r: q.y < -60 ? 100 - (-60 - q.y) * 0.05 : 100 }));
+  assert.equal(chinNeck(flat, -10), null);
+});

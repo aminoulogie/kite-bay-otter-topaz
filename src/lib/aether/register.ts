@@ -408,6 +408,17 @@ export function invertRigid(m: Mat4): Mat4 {
   return o;
 }
 
+/** The points that, placed by `T`, fall on the head and neck (with a margin for a rough `T`). */
+function headOnly(pts: Float32Array, T: Mat4, axisZ: number): Float32Array {
+  const out: number[] = [];
+  for (let i = 0; i < pts.length / 3; i++) {
+    const [x, y, z] = apply(T, pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!);
+    const dz = z - axisZ;
+    if (y > -200 && y < 130 && x * x + dz * dz < 140 * 140) out.push(pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!);
+  }
+  return Float32Array.from(out);
+}
+
 /** Only head and neck go into the model; shoulders turn with the body but are not the head. */
 function inRegion(x: number, y: number, z: number, axisZ: number): boolean {
   const dz = z - axisZ;
@@ -432,7 +443,15 @@ export function registerSide(model: PointIndex, frames: RegFrame[], axisZ = -60)
     // ARKit's pose and the forecast both start close; only the very first
     // untracked guess needs the wide search.
     const warm = f.pose !== null || step !== null;
-    const r = icp(model, f.pts, init, f.stage === "hold" ? 1200 : 600, warm ? WARM : COLD);
+    // Match on the head and neck only. Side-on at 30 cm the shoulder and
+    // chest can fill most of the frame; they turn with the body but are not
+    // the model, and left in they would drown the head's share of matches.
+    const head = headOnly(f.pts, init, axisZ);
+    if (head.length < 600) {
+      lost++;
+      continue;
+    }
+    const r = icp(model, head, init, f.stage === "hold" ? 1200 : 600, warm ? WARM : COLD);
     if (!(r.inliers >= 0.35 && r.rms <= 4)) {
       lost++;
       continue;
