@@ -19,30 +19,47 @@ export interface MeshData {
 }
 
 const BASE: [number, number, number] = [0.72, 0.74, 0.78];
-/** Neighbouring cells further apart than this are a gap in the scan, not a surface. */
-const MAX_JUMP_MM = 8;
+/**
+ * Neighbouring vertices further apart than this in 3D are a gap in the scan,
+ * not a surface — per 2 cells of grid step. Judged on the real edge length
+ * rather than the difference in radius: the sides of the nose tip and the
+ * underside of the nose are steep but continuous skin, and a radius rule cut
+ * them out as holes. A true break (ear off the head, chin over the neck) is
+ * several times longer.
+ */
+const MAX_EDGE_MM = 14;
 
 /**
  * For DISPLAY only — the numbers are always read from the raw surface. Small
- * holes (a cell missing with most of its 5×5 neighbours present) are filled
- * with their mean, then every cell is averaged with the neighbours that sit
+ * holes (cells missing with about half their 5×5 neighbours present, a few
+ * passes deep) are filled with their mean, then every cell is averaged with the neighbours that sit
  * within 3 mm of it, so the model reads as skin rather than gravel without
  * rounding off real edges like the jaw line.
  */
 export function tidy(map: Float32Array, c: Cylinder): Float32Array {
   const W = c.width, H = c.height;
-  const filled = map.slice();
-  for (let j = 2; j < H - 2; j++)
-    for (let i = 2; i < W - 2; i++) {
-      if (Number.isFinite(map[j * W + i]!)) continue;
-      let s = 0, n = 0;
-      for (let dj = -2; dj <= 2; dj++)
-        for (let di = -2; di <= 2; di++) {
-          const v = map[(j + dj) * W + i + di]!;
-          if (Number.isFinite(v)) { s += v; n++; }
-        }
-      if (n >= 14) filled[j * W + i] = s / n;
-    }
+  // A few passes, so a hole a few cells across (a nostril the depth camera
+  // dropped) closes in from its edges. Each pass still needs about half the 5×5
+  // around a cell present, so a real gap — a column of missing cells — stays.
+  let filled = map.slice();
+  for (let pass = 0; pass < 4; pass++) {
+    const src = filled;
+    const next = src.slice();
+    let changed = 0;
+    for (let j = 2; j < H - 2; j++)
+      for (let i = 2; i < W - 2; i++) {
+        if (Number.isFinite(src[j * W + i]!)) continue;
+        let s = 0, n = 0;
+        for (let dj = -2; dj <= 2; dj++)
+          for (let di = -2; di <= 2; di++) {
+            const v = src[(j + dj) * W + i + di]!;
+            if (Number.isFinite(v)) { s += v; n++; }
+          }
+        if (n >= 12) { next[j * W + i] = s / n; changed++; }
+      }
+    filled = next;
+    if (!changed) break;
+  }
   const out = filled.slice();
   for (let j = 1; j < H - 1; j++)
     for (let i = 1; i < W - 1; i++) {
@@ -92,7 +109,6 @@ export function buildMesh(
   const cols = Math.floor((c.width - 1) / step) + 1;
   const rows = Math.floor((c.height - 1) / step) + 1;
   const index = new Int32Array(cols * rows).fill(-1);
-  const radius = new Float32Array(cols * rows).fill(NaN);
   const pos: number[] = [];
   const col: number[] = [];
   const change: number[] = [];
@@ -104,7 +120,6 @@ export function buildMesh(
       if (!Number.isFinite(r) || c.yMinMm + j * c.yStepMm < minYMm) continue;
       const t = ((c.thetaMinDeg + i * c.thetaStepDeg) * Math.PI) / 180;
       index[jj * cols + ii] = pos.length / 3;
-      radius[jj * cols + ii] = r;
       pos.push(r * Math.sin(t), c.yMinMm + j * c.yStepMm, axisZ + r * Math.cos(t));
       let d = NaN;
       if (before) {
@@ -121,7 +136,11 @@ export function buildMesh(
     }
   }
   const tri: number[] = [];
-  const near = (a: number, b: number) => Math.abs(radius[a]! - radius[b]!) < MAX_JUMP_MM;
+  const maxEdge = (MAX_EDGE_MM * step) / 2;
+  const near = (a: number, b: number) => {
+    const p = index[a]! * 3, q = index[b]! * 3;
+    return Math.hypot(pos[p]! - pos[q]!, pos[p + 1]! - pos[q + 1]!, pos[p + 2]! - pos[q + 2]!) < maxEdge;
+  };
   for (let jj = 0; jj < rows - 1; jj++) {
     for (let ii = 0; ii < cols - 1; ii++) {
       const a = jj * cols + ii, b = a + 1, d = a + cols, e = d + 1;

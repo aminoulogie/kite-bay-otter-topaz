@@ -70,3 +70,33 @@ test("unreliable cells stay grey in the heatmap", () => {
   const m = buildMesh(now, c, -60, 1, { map: before, di: 0, dj: 0, meanMm: 0, noiseMm: 0.5, reliable: (k) => k % 2 === 0 }, -1000);
   assert.ok(Number.isNaN(m.change[1]!) && Math.abs(m.change[0]! - 4) < 1e-6);
 });
+
+test("the nose is meshed whole: steep sides, the drop under the tip, a nostril dropout", () => {
+  // A head of radius 100 with a 25 mm nose that falls sharply to the lip —
+  // the radius-jump rule used to leave the tip's sides and underside open.
+  const NW = 101, NH = 101;
+  const c: Cylinder = {
+    a: new Float32Array(NW * NH), b: new Float32Array(NW * NH), width: NW, height: NH,
+    thetaMinDeg: -50, thetaStepDeg: 1, yMinMm: -75, yStepMm: 1.5,
+  };
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const map = new Float32Array(NW * NH);
+  for (let j = 0; j < NH; j++)
+    for (let i = 0; i < NW; i++) {
+      const x = 100 * Math.sin(((-50 + i) * Math.PI) / 180);
+      const y = -75 + j * 1.5;
+      let h = 0;
+      if (y <= 20 && y >= -25) {
+        const f = (20 - y) / 45;
+        h = Math.max(0, (6 + 19 * f) * (1 - (Math.abs(x) / (6 + 10 * f)) ** 1.5));
+      } else if (y < -25 && y > -29) {
+        h = Math.max(0, 25 * (1 - (y + 25) / -4) * (1 - (Math.abs(x) / 16) ** 1.5));
+      }
+      map[j * NW + i] = 100 + h + (rnd() - 0.5) * 1.6;
+    }
+  for (let j = 30; j < 38; j++) for (let i = 45; i < 49; i++) map[j * NW + i] = NaN;
+  const m = buildMesh(tidy(map, c), c, -60, 2, undefined, -1000);
+  const full = 2 * 50 * 50;
+  assert.ok(m.indices.length / 3 >= full - 4, `${m.indices.length / 3} of ${full} triangles`);
+});
