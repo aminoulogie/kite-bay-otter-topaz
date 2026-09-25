@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Face3DView, type Face3DHandle } from "@/components/aether/Face3DView";
 import { compareCyl, faceWindow, mergeCyl, type Cylinder } from "@/lib/aether/cylmap";
 import { buildMesh, tidy, type MeshData } from "@/lib/aether/cylmesh";
+import { alignOnAnchors } from "@/lib/aether/align3d";
 import { decodeFloat32 } from "@/lib/aether/mesh3d";
 import { METRICS, baselinePair, format, rows, series, sweepScans, type Group, type MetricDef, type Row } from "@/lib/aether/results";
 import { cylKey, type ScanRecord } from "@/lib/aether/scan-store";
@@ -87,13 +88,18 @@ export function LooksResults({
         setMeshNote("This scan's 3D surface is not on this phone (restored from a backup?).");
         return;
       }
-      const map = mergeCyl(now.c);
+      let map = mergeCyl(now.c);
       let before: Parameters<typeof buildMesh>[4];
       if (first) {
         const old = await loadCylinder(first.id);
         if (old && old.c.width === now.c.width && old.c.height === now.c.height) {
           const oldMap = mergeCyl(old.c);
-          const ch = compareCyl(oldMap, map, now.c, faceWindow((old.eye + now.eye) / 2));
+          const eye = (old.eye + now.eye) / 2;
+          // Moved onto the first scan by forehead and nose bridge, so the
+          // colours show the face changing, not the head held differently.
+          const aligned = alignOnAnchors(oldMap, map, now.c, AXIS_Z, eye);
+          if (aligned) map = aligned.map;
+          const ch = compareCyl(oldMap, map, now.c, faceWindow(eye));
           const noise = latest.depth?.sweep?.cellNoiseMm ?? 0.5;
           // Colour only where both halves of this scan agree within 2 mm, so
           // thin, noisy areas (chest, grazing edges) do not flash red and green.
@@ -353,7 +359,12 @@ function MetricRow({ r, active, onPick }: { r: Row; active: boolean; onPick: () 
       </span>
       <span className="tabular w-[5.2rem] shrink-0 text-right text-sm font-bold leading-tight">
         {format(r.now.v, d)}
-        {r.now.e != null && <span className="block text-[0.6rem] font-semibold text-faint">±{r.now.e.toFixed(d.digits)}</span>}
+        {r.now.e != null && (
+          <span className="block text-[0.6rem] font-semibold text-faint">
+            ±{r.now.e.toFixed(d.digits)}
+            {r.n > 1 ? ` · avg ×${r.n}` : ""}
+          </span>
+        )}
       </span>
       <span className={cn("tabular flex w-[4.8rem] shrink-0 items-center justify-end gap-1 text-[0.7rem] font-bold", colour)}>
         {r.delta == null ? (

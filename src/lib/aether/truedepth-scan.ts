@@ -4,6 +4,8 @@ import { ANALYZER_VERSION } from "./landmarks.ts";
 import { depthSymmetry } from "./depthmap.ts";
 import { compareCyl, faceWindow, mergeCyl, summariseCylinder, type Cylinder } from "./cylmap.ts";
 import { extendWithSides, type SideStats } from "./fullscan.ts";
+import { alignOnAnchors } from "./align3d.ts";
+import { decodeSweepFrames, refineSweep, type RefineStats } from "./refine.ts";
 import type { Guidance } from "./assist.ts";
 import { decodeFloat32, distanceMm, extents3d, symmetry3d } from "./mesh3d.ts";
 import { cylKey, depthGridKey, meshKey, type DepthSummary, type ScanRecord } from "./scan-store.ts";
@@ -74,7 +76,8 @@ function encodeFloat32(a: Float32Array): string {
   return btoa(bin);
 }
 
-type Extended = { cyl: Cylinder; stats: { right: SideStats; left: SideStats } } | null;
+/** The surface the summary reads, when the web side improved on the phone's: re-placed frames and/or sides. */
+type Extended = { cyl: Cylinder; stats: { right: SideStats; left: SideStats } | null } | null;
 
 /** The side stages: slow beeps while turning, the steady hold tone when still. */
 export function sideGuidance(e: FaceFrameEvent): Guidance {
@@ -172,8 +175,13 @@ async function changeVsFirst(scans: ScanRecord[], c: Cylinder, eye: number): Pro
   const p = JSON.parse(raw) as StoredCylinder;
   if (p.width !== c.width || p.height !== c.height) return undefined;
   const prev = mergeCyl({ ...c, a: decodeFloat32(p.a), b: decodeFloat32(p.b) });
-  const change = compareCyl(prev, mergeCyl(c), c, faceWindow((p.eyeYMm + eye) / 2));
-  return change ? { ...change, firstId: first.id } : undefined;
+  const eyeY = (p.eyeYMm + eye) / 2;
+  // Line the two up on forehead and nose bridge first (align3d.ts), so a
+  // different nod or shift is not counted as change.
+  const cur = mergeCyl(c);
+  const aligned = alignOnAnchors(prev, cur, c, -60, eyeY);
+  const change = compareCyl(prev, aligned?.map ?? cur, c, faceWindow(eyeY));
+  return change ? { ...change, firstId: first.id, ...(aligned ? { anchorRmsMm: aligned.anchorRmsMm } : {}) } : undefined;
 }
 
 /**
@@ -251,8 +259,17 @@ export async function runTrueDepthScan(
     audio.announce("Building your 3D model.");
     await new Promise((r) => setTimeout(r, 60)); // let the screen and voice update first
   }
-  const ext: Extended = raw && result.sides ? extendWithSides(raw, result.cylAxisZMm ?? -60, result.sides, result.sideDiag) : null;
-  const cyl = ext?.cyl ?? raw;
+  // First re-place the sweep's own frames by shape (refine.ts); the sides are
+  // then matched to that sharper surface.
+  let refine: RefineStats | null = null;
+  let base = raw;
+  if (raw && result.sweepFrames?.length) {
+    const r = refineSweep(raw, result.cylAxisZMm ?? -60, eyeY(result), decodeSweepFrames(result.sweepFrames));
+    refine = r.stats;
+    base = r.cyl;
+  }
+  const ext: Extended = base && result.sides ? extendWithSides(base, result.cylAxisZMm ?? -60, result.sides, result.sideDiag) : null;
+  const cyl = ext?.cyl ?? base;
   if (cyl) {
     const stored: StoredCylinder = {
       a: encodeFloat32(cyl.a), b: encodeFloat32(cyl.b), width: cyl.width, height: cyl.height, thetaMinDeg: cyl.thetaMinDeg,
@@ -268,7 +285,10 @@ export async function runTrueDepthScan(
     date: getLocalDateKey(new Date()),
     capturedAt: new Date().toISOString(),
     kind: "face_front_true",
-    depth: summariseDepth(result, ext),
+    depth: {
+      ...summariseDepth(result, ext ?? (base && base !== raw ? { cyl: base, stats: null } : null)),
+      ...(refine ? { refine } : {}),
+    },
   };
   if (cyl && record.depth) {
     const change = await changeVsFirst(history, cyl, eyeY(result)).catch(() => undefined);

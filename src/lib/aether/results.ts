@@ -114,6 +114,8 @@ export interface Row {
   withinNoise: boolean;
   /** "good" / "bad" / "neutral" for the arrow's colour. */
   verdict: "good" | "bad" | "neutral";
+  /** Scans averaged into the latest figure. */
+  n: number;
 }
 
 /** Sweep scans, oldest first. */
@@ -137,16 +139,53 @@ export function baselinePair(sweeps: ScanRecord[]): [ScanRecord, ScanRecord] | n
   return null;
 }
 
+/**
+ * Scans within 45 minutes of each other are one SESSION: the same face,
+ * measured again. Every figure is the session's average — two or three
+ * back-to-back scans cut the noise by 30–40% — and its ± comes from how
+ * much those scans disagreed, which is the honest error.
+ */
+export function sessions(sweeps: ScanRecord[]): ScanRecord[][] {
+  const out: ScanRecord[][] = [];
+  for (const x of sweeps) {
+    const last = out[out.length - 1];
+    const prev = last?.[last.length - 1];
+    if (last && prev && Date.parse(x.capturedAt) - Date.parse(prev.capturedAt) <= REPEAT_GAP_MS) last.push(x);
+    else out.push([x]);
+  }
+  return out;
+}
+
+interface SessionReading extends Reading {
+  n: number;
+  /** Spread between the session's scans (sample SD), when there were two or more. */
+  sd: number | null;
+}
+
+function readSession(session: ScanRecord[], def: MetricDef): SessionReading | null {
+  const rs = session.map((x) => def.read(x.depth!.sweep!)).filter((r): r is Reading => r !== null);
+  if (!rs.length) return null;
+  const n = rs.length;
+  const v = rs.reduce((a, r) => a + r.v, 0) / n;
+  const sd = n > 1 ? Math.sqrt(rs.reduce((a, r) => a + (r.v - v) ** 2, 0) / (n - 1)) : null;
+  const own = rs.every((r) => r.e != null) ? rs.reduce((a, r) => a + r.e!, 0) / n / Math.sqrt(n) : null;
+  // The error of the mean: the larger of what each scan claims and what the
+  // scans' disagreement shows.
+  const e = sd != null ? Math.max(own ?? 0, sd / Math.sqrt(n)) : own;
+  return { v, e, n, sd };
+}
+
 export function rows(sweeps: ScanRecord[]): Row[] {
   if (!sweeps.length) return [];
-  const pair = baselinePair(sweeps);
-  const latest = sweeps[sweeps.length - 1]!.depth!.sweep!;
+  const groups = sessions(sweeps);
+  const latestSession = groups[groups.length - 1]!;
+  const latest = latestSession[latestSession.length - 1]!.depth!.sweep!;
   const out: Row[] = [];
   for (const def of METRICS) {
-    const now = def.read(latest);
+    const now = readSession(latestSession, def);
     if (!now) continue;
-    const firstScan = sweeps.slice(0, -1).find((x) => def.read(x.depth!.sweep!));
-    const first = firstScan ? def.read(firstScan.depth!.sweep!) : null;
+    const firstSession = groups.slice(0, -1).find((g) => readSession(g, def));
+    const first = firstSession ? readSession(firstSession, def) : null;
     const delta = first ? now.v - first.v : null;
     // Two independent readings: their errors add in quadrature; a change
     // under twice that is not distinguishable from noise. A reading without
@@ -154,11 +193,11 @@ export function rows(sweeps: ScanRecord[]): Row[] {
     // (ratios) — never zero, which would call any wobble a change.
     const fallback = def.unit === "°" ? 1 : def.unit === "" ? 0.02 : (latest.cellNoiseMm ?? 0.5);
     let noise = Math.hypot(now.e ?? fallback, first ? (first.e ?? fallback) : 0);
-    // A measured repeat difference is the difference two scans of an
-    // unchanged face really show — the floor for calling anything a change.
-    const pa = pair ? def.read(pair[0].depth!.sweep!) : null;
-    const pb = pair ? def.read(pair[1].depth!.sweep!) : null;
-    if (pa && pb) noise = Math.max(noise, Math.abs(pa.v - pb.v));
+    // Measured repeatability — the spread of scans taken back to back, from
+    // the most recent session that had two or more — scaled to these two
+    // averages. It includes how the face was held, not just the sensor.
+    const rep = [...groups].reverse().map((g) => readSession(g, def)).find((r) => r?.sd != null)?.sd;
+    if (rep != null && first) noise = Math.max(noise, rep * Math.sqrt(1 / now.n + 1 / first.n));
     const shown = delta == null ? 0 : Number(delta.toFixed(def.digits));
     const withinNoise = delta == null ? false : shown === 0 || Math.abs(delta) < 2 * noise;
     const verdict =
@@ -167,7 +206,7 @@ export function rows(sweeps: ScanRecord[]): Row[] {
         : (delta > 0) === (def.better === "up")
           ? "good"
           : "bad";
-    out.push({ def, now, tag: def.tag(latest), delta, withinNoise, verdict });
+    out.push({ def, now: { v: now.v, e: now.e }, tag: def.tag(latest), delta, withinNoise, verdict, n: now.n });
   }
   return out;
 }
@@ -178,18 +217,20 @@ export interface Point {
   v: number;
   lo: number;
   hi: number;
+  /** Scans averaged into this point. */
+  n: number;
 }
 
-/** One metric over time, with its noise band, from `sinceMs` on. */
+/** One metric over time — one point per session, with its noise band — from `sinceMs` on. */
 export function series(sweeps: ScanRecord[], def: MetricDef, sinceMs = 0): Point[] {
   const out: Point[] = [];
-  for (const x of sweeps) {
-    const t = Date.parse(x.capturedAt);
+  for (const g of sessions(sweeps)) {
+    const t = Date.parse(g[g.length - 1]!.capturedAt);
     if (t < sinceMs) continue;
-    const rd = def.read(x.depth!.sweep!);
+    const rd = readSession(g, def);
     if (!rd) continue;
     const e = rd.e ?? 0;
-    out.push({ t, date: x.date, v: rd.v, lo: rd.v - e, hi: rd.v + e });
+    out.push({ t, date: g[0]!.date, v: rd.v, lo: rd.v - e, hi: rd.v + e, n: rd.n });
   }
   return out;
 }

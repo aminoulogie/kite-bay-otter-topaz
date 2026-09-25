@@ -646,6 +646,12 @@ function SweepMetrics({ d, prev }: { d: NonNullable<ScanRecord["depth"]>; prev: 
         <Metric label="Chin behind nose tip" value={pm(s.chinBehindNoseMm, cell, 1) + vs(s.chinBehindNoseMm, p?.chinBehindNoseMm)} />
         <Metric label="Surface noise" value={cell == null ? "—" : `${cell.toFixed(2)} mm`} />
         <Metric label="Coverage" value={`${Math.round(s.coverage * 100)}% · ring ${Math.round(s.sweepCoverage * 100)}%`} />
+        {d.refine && (
+          <Metric
+            label="Frames re-placed"
+            value={`${d.refine.placed}/${d.refine.frames} · ${d.refine.used ? `noise ${d.refine.noiseBeforeMm?.toFixed(2)} → ${d.refine.noiseAfterMm?.toFixed(2)} mm` : "kept phone's (not better)"}`}
+          />
+        )}
         {s.full && <FullMetrics f={s.full} prev={p?.full ?? null} />}
         {ch && (
           <Metric

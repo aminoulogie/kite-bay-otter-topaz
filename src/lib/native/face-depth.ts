@@ -73,6 +73,8 @@ export interface FaceDepthResult {
   obliques?: { image: string; yaw: number }[];
   /** Straight down in the face's own axes, while standing square-on. */
   gravityFace?: [number, number, number];
+  /** Sweep: a light copy of the front and head-move frames with ARKit's pose, for re-placing by shape. */
+  sweepFrames?: SideFrameRaw[];
   /** Full scan: the raw side-on depth frames, for matching onto the face model. */
   sides?: { right: SideFrameRaw[]; left: SideFrameRaw[] };
   /** Per side: how the stage ended, depth frames seen, nearest distance (m). */

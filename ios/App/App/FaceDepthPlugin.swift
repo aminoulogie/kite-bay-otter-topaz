@@ -151,6 +151,14 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     ]
     private var looksDone = [Bool](repeating: false, count: 4)
     private var sweepExtras: [String: Any] = [:]
+    /// A light copy of the front and head-move depth frames (every 4th pixel,
+    /// with ARKit's pose), so the web side can re-place each one by shape and
+    /// fuse again — ARKit's pose wobbles about 1 mm and 1° per frame.
+    private var sweepRaw: [[String: Any]] = []
+    private var sweepDepthSeen = 0
+    private var frontRawCount = 0
+    private static let maxSweepRaw = 70
+    private static let maxFrontRaw = 15
     private var lastPose: (yaw: Float, pitch: Float, t: TimeInterval)?
     private var frontPhoto: (score: Float, url: String)?
     private var obliquePhotos: [Int: (score: Float, url: String, yaw: Float)] = [:]
@@ -378,6 +386,11 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             let down = face.transform.inverse * SIMD4<Float>(0, -1, 0, 0)
             gravitySum += SIMD3(down.x, down.y, down.z)
             gravityN += 1
+            if sweep, frame.capturedDepthData != nil, frontRawCount < Self.maxFrontRaw,
+               let entry = Self.rawFrame(frame, face: face, stage: "front", step: 4) {
+                sweepRaw.append(entry)
+                frontRawCount += 1
+            }
         }
         if ok { considerFrontPhoto(frame, pose: pose, blink: blink) }
 
@@ -417,6 +430,11 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         }
         if sweepOk, frame.capturedDepthData != nil {
             accumulateCylinder(frame, face: face)
+            sweepDepthSeen += 1
+            if sweepDepthSeen % 3 == 0, sweepRaw.count < Self.maxSweepRaw + Self.maxFrontRaw,
+               let entry = Self.rawFrame(frame, face: face, stage: "sweep", step: 4) {
+                sweepRaw.append(entry)
+            }
             // Face ID's ring: the ticks in the direction the head points fill.
             // The preview is a mirror: a head turned to its left (yaw > 0)
             // points to the screen's left; chin down (pitch > 0) points down.
@@ -584,6 +602,14 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         }
         guard out.count > 300 else { return nil }
         return out.withUnsafeBufferPointer { Data(buffer: $0) }
+    }
+
+    /// A depth frame as a point cloud plus ARKit's camera → face pose.
+    private static func rawFrame(_ frame: ARFrame, face: ARFaceAnchor, stage: String, step: Int) -> [String: Any]? {
+        guard face.isTracked, let data = cloud(frame, step: step) else { return nil }
+        let m = face.transform.inverse * frame.camera.transform
+        return ["stage": stage, "points": data.base64EncodedString(),
+                "pose": [m.columns.0, m.columns.1, m.columns.2, m.columns.3].flatMap { [$0.x, $0.y, $0.z, $0.w] }]
     }
 
     private func recordSideFrame(_ frame: ARFrame, side: String, stage: String, step: Int, face: ARFaceAnchor?) {
@@ -924,6 +950,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             result["cylAxisZMm"] = Double(Self.cylZc * 1000)
             result["cylFrames"] = cylFrames
             result["sweepCoverage"] = Double(ticks.filter { $0 }.count) / 60
+            if !sweepRaw.isEmpty { result["sweepFrames"] = sweepRaw }
             var obliques: [[String: Any]] = []
             for (_, o) in obliquePhotos { obliques.append(["image": o.url, "yaw": Double(o.yaw)]) }
             result["obliques"] = obliques

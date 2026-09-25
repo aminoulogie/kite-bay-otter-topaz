@@ -109,8 +109,10 @@ export interface DepthSummary {
   };
   /** Face ID-style sweep: the fused 3D surface's numbers, each with its own noise. */
   sweep?: SweepSummary;
+  /** Re-placing the sweep's frames by shape: how many, and the noise before and after. */
+  refine?: import("./refine.ts").RefineStats;
   /** Surface change against the FIRST sweep, after alignment. */
-  changeVsFirst?: CylChange & { firstId: string };
+  changeVsFirst?: CylChange & { firstId: string; anchorRmsMm?: number };
 }
 
 /** Where a sweep's two cylinders are stored (JSON). */

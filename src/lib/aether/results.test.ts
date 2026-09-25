@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { METRICS, baselinePair, rows, series, sweepScans } from "./results.ts";
+import { METRICS, baselinePair, rows, series, sessions, sweepScans } from "./results.ts";
 import type { ScanRecord } from "./scan-store.ts";
 
 function scan(at: string, asym: number, noise: number, jaw: number | null): ScanRecord {
@@ -61,4 +61,20 @@ test("two scans back to back set the noise floor for calling a change", () => {
   // 0.4 from the first scan: outside the ±0.02 each scan claims, but inside
   // twice the 0.3 the baseline day showed.
   assert.equal(rows(sweeps).find((r) => r.def.key === "asym")!.withinNoise, true);
+});
+
+test("back-to-back scans are one session: averaged, with the spread as the ±", () => {
+  const sweeps = sweepScans([
+    scan("2026-03-01T10:00:00Z", 1.0, 0.02, 118),
+    scan("2026-03-29T10:00:00Z", 0.8, 0.02, 118),
+    scan("2026-03-29T10:04:00Z", 0.9, 0.02, 118),
+    scan("2026-03-29T10:09:00Z", 0.7, 0.02, 118),
+  ]);
+  assert.deepEqual(sessions(sweeps).map((g) => g.length), [1, 3]);
+  const asym = rows(sweeps).find((r) => r.def.key === "asym")!;
+  assert.ok(Math.abs(asym.now.v - 0.8) < 1e-9, "the latest figure is the session's mean");
+  assert.equal(asym.n, 3);
+  // SD of 0.8/0.9/0.7 is 0.1; the mean's error 0.1/√3.
+  assert.ok(Math.abs(asym.now.e! - 0.1 / Math.sqrt(3)) < 1e-9, `${asym.now.e}`);
+  assert.equal(series(sweeps, METRICS.find((m) => m.key === "asym")!).length, 2, "one chart point per session");
 });
