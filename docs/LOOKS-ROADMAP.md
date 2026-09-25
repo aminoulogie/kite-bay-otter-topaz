@@ -52,14 +52,30 @@ Test as a PWA, ship as the native iOS build.
 - [x] 8-frame burst ranked by quality then sharpness; symmetry is the median
       of every frame that passed its gates.
 
-### 2b — next
+### 2b ✅ (shipped, except the posture step)
 
-- [ ] Tap to override the auto-picked frame.
-- [ ] Both profile sides as separate steps.
-- [ ] Camera-roll import: auto-align to the guides, then drag / pinch / rotate.
-- [ ] Iris-based distance and baseline lock (match the first scan's distance).
-- [ ] Ghost overlay of the last scan; pre-scan checklist.
+- [x] Tap to override the auto-picked frame.
+- [x] Both profile sides as separate steps.
+- [x] Camera-roll import: auto-align to the guides, then drag / pinch / rotate.
+- [x] Iris-based distance and baseline lock (match the first scan's distance).
+- [x] Ghost overlay of the last scan; pre-scan checklist.
 - [ ] A full-body side step for posture (shoulder and hip in frame).
+
+## TrueDepth 3D face scan (native build)
+
+- [x] Swift plugin `FaceDepth` (ios/App/App/FaceDepthPlugin.swift), registered
+      in `MainViewController`: live wireframe, neutral-pose gating, 30-frame
+      averaged ARKit mesh in mm, blend shapes, eye centres, pose, distance,
+      camera intrinsics, one upright colour frame.
+- [x] Pose streamed to the web app, driving the same beeps and voice.
+- [x] 3D metrics: mirror asymmetry (RMS, 95th percentile, by third) with the
+      midline found rather than assumed, IPD, face width, lower/face width.
+- [x] Mesh stored in IndexedDB (`mesh:<id>`), summary on the scan.
+- [ ] Verify on device: photo orientation, and whether ARKit's fitted mesh
+      carries real asymmetry. If it reads ~0 mm, move symmetry to the raw
+      `AVDepthData` depth map.
+- [ ] Landmark-level metrics (gonial angle, canthal tilt, cheekbone projection)
+      from vertex indices identified on a real exported mesh.
 
 ### All decisions
 

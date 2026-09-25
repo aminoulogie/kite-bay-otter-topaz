@@ -1,11 +1,13 @@
-import { Suspense, lazy, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Camera, ChevronRight, ScanFace } from "lucide-react";
 import { WidgetGrid } from "@/components/WidgetGrid";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { SwipeRow } from "@/components/SwipeRow";
-import { latestByKind, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { latestByKind, meshKey, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { trueDepthAvailable } from "@/lib/native/face-depth";
+import type { AssistAudio } from "@/lib/aether/assist-audio";
 import { symmetryPercent } from "@/lib/aether/harmony";
 import { deleteScanImage } from "@/lib/habit-photos";
 import { agoLabel } from "@/lib/last-time";
@@ -70,6 +72,47 @@ export function LooksView() {
   const [comparing, setComparing] = useState(false);
   const [swiped, setSwiped] = useState<string | null>(null);
   const [redo, setRedo] = useState<{ done: number; total: number } | null>(null);
+  const addScan = useSoma((s) => s.addScan);
+  const [hasTrueDepth, setHasTrueDepth] = useState(false);
+  const [depthBusy, setDepthBusy] = useState(false);
+  const depthAudio = useRef<AssistAudio | null>(null);
+  useEffect(() => {
+    void trueDepthAvailable().then(setHasTrueDepth);
+  }, []);
+  const latestDepth = useMemo(
+    () => newestFirst(scans).find((x) => x.depth)?.depth ?? null,
+    [scans],
+  );
+
+  /**
+   * The native TrueDepth scan. Audio is enabled here, in the tap, because iOS
+   * lets sound start only inside a gesture; the scan module and its Swift side
+   * are loaded only now.
+   */
+  const scan3d = async () => {
+    if (depthBusy) return;
+    setDepthBusy(true);
+    try {
+      const [{ AssistAudio }, { runTrueDepthScan }] = await Promise.all([
+        import("@/lib/aether/assist-audio"),
+        import("@/lib/aether/truedepth-scan"),
+      ]);
+      depthAudio.current ??= new AssistAudio();
+      depthAudio.current.enable();
+      const record = await runTrueDepthScan(depthAudio.current);
+      addScan(record);
+      toast.success(
+        record.depth?.symmetryRmsMm != null
+          ? `3D scan saved · asymmetry ${record.depth.symmetryRmsMm.toFixed(2)} mm`
+          : "3D scan saved",
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "3D scan failed.";
+      if (!/cancelled/i.test(msg)) toast.error(msg);
+    } finally {
+      setDepthBusy(false);
+    }
+  };
 
   const today = getLocalDateKey(new Date());
   const rows = useMemo(() => newestFirst(scans), [scans]);
@@ -140,7 +183,10 @@ export function LooksView() {
     });
     // The image goes only once undo can no longer bring the record back.
     setTimeout(() => {
-      if (!useSoma.getState().scans.some((x) => x.id === scan.id)) void deleteScanImage(scan.id);
+      if (!useSoma.getState().scans.some((x) => x.id === scan.id)) {
+        void deleteScanImage(scan.id);
+        if (scan.depth) void deleteScanImage(meshKey(scan.id));
+      }
     }, 8000);
   };
 
@@ -195,6 +241,48 @@ export function LooksView() {
           which is a hole in the page with nothing to say what it is. With the
           key here the whole expression is simply absent and the grid skips
           the cell. */}
+      {(hasTrueDepth || latestDepth) && (
+        <Card key="truedepth">
+          <CardTitle>3D scan · TrueDepth</CardTitle>
+          {latestDepth ? (
+            <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+              <Metric label="Asymmetry (RMS)" value={mm(latestDepth.symmetryRmsMm, 2)} />
+              <Metric label="Worst areas (95th)" value={mm(latestDepth.symmetryP95Mm, 2)} />
+              {latestDepth.symmetryByThird && (
+                <Metric
+                  label="By third (up / mid / low)"
+                  value={`${latestDepth.symmetryByThird.upper.toFixed(1)} / ${latestDepth.symmetryByThird.middle.toFixed(1)} / ${latestDepth.symmetryByThird.lower.toFixed(1)} mm`}
+                />
+              )}
+              <Metric label="Eye distance (IPD)" value={mm(latestDepth.ipdMm, 1)} />
+              <Metric label="Face width" value={mm(latestDepth.faceWidthMm, 0)} />
+              <Metric label="Lower / face width" value={latestDepth.lowerToFace?.toFixed(2) ?? "—"} />
+              <Metric label="Scanned from" value={`${(latestDepth.distanceMm / 10).toFixed(0)} cm`} />
+            </div>
+          ) : (
+            <p className="mb-3 text-xs text-muted">
+              Uses the Face ID camera&apos;s infrared depth to measure your face in real millimetres —
+              no photo distortion, works in dim light. Everything stays on this phone.
+            </p>
+          )}
+          {hasTrueDepth ? (
+            <Button className="w-full" disabled={depthBusy} onClick={() => void scan3d()}>
+              {depthBusy ? "Scanning…" : latestDepth ? "New 3D scan" : "Start 3D scan"}
+            </Button>
+          ) : (
+            <p className="text-[0.7rem] text-faint">3D scanning needs the installed iPhone app.</p>
+          )}
+          {latestDepth?.symmetryRmsMm != null && latestDepth.symmetryRmsMm < 0.3 && (
+            // Honest flag: ARKit may fit faces symmetrically, in which case the
+            // mesh cannot show asymmetry and this figure means nothing yet.
+            <p className="mt-2 text-[0.7rem] leading-snug text-warn">
+              Near-zero asymmetry usually means the fitted mesh is forcing symmetry, not that your face
+              is perfectly even. Symmetry will move to the raw depth map in a later update.
+            </p>
+          )}
+        </Card>
+      )}
+
       {stale.length > 0 && (
         <Card key="reanalyse">
           <CardTitle>Measured before the angle fix</CardTitle>
@@ -295,6 +383,7 @@ export function LooksView() {
                       {sc.date}
                       {sc.face ? ` · ${symmetryPercent(sc.face.alpha)}% symmetry` : ""}
                       {sc.posture?.cvaEst != null ? ` · neck ${sc.posture.cvaEst.toFixed(1)}°` : ""}
+                      {sc.depth?.symmetryRmsMm != null ? ` · 3D ${sc.depth.symmetryRmsMm.toFixed(2)} mm` : ""}
                     </div>
                   </div>
                   <ChevronRight className="size-4 shrink-0 text-faint" />
@@ -339,6 +428,19 @@ function LoadingSheet({ label }: { label: string }) {
     <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-3 bg-bg">
       <ScanFace className="size-8 animate-pulse text-accent" />
       <p className="text-xs text-muted">{label}</p>
+    </div>
+  );
+}
+
+function mm(v: number | null | undefined, digits: number): string {
+  return v == null ? "—" : `${v.toFixed(digits)} mm`;
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="truncate text-[0.6rem] font-bold uppercase tracking-wider text-faint">{label}</div>
+      <div className="tabular font-bold">{value}</div>
     </div>
   );
 }

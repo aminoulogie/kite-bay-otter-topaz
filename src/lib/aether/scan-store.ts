@@ -47,6 +47,38 @@ export interface ScanRecord {
    * comparable between scans from the same camera at the same zoom.
    */
   capture?: { facing: "user" | "environment"; zoom: number; iris: number | null };
+  /**
+   * TrueDepth measurements, in real millimetres. The full averaged mesh is in
+   * IndexedDB under `mesh:<id>` (too big for the store); these are the numbers
+   * read off it.
+   */
+  depth?: DepthSummary;
+}
+
+export interface DepthSummary {
+  source: "truedepth";
+  frames: number;
+  distanceMm: number;
+  yawDeg: number;
+  pitchDeg: number;
+  rollDeg: number;
+  /** Interpupillary distance: eye centre to eye centre. */
+  ipdMm: number;
+  symmetryRmsMm: number | null;
+  symmetryP95Mm: number | null;
+  symmetryByThird: { upper: number; middle: number; lower: number } | null;
+  faceWidthMm: number | null;
+  meshHeightMm: number | null;
+  lowerWidthMm: number | null;
+  lowerToFace: number | null;
+  /** Expression at capture, so a "neutral" scan can be checked. */
+  smile: number;
+  jawOpen: number;
+}
+
+/** Where the full mesh of a TrueDepth scan is stored. */
+export function meshKey(scanId: string): string {
+  return `mesh:${scanId}`;
 }
 
 /**
