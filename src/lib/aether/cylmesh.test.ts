@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Cylinder } from "./cylmap.ts";
-import { buildMesh, heatColor } from "./cylmesh.ts";
+import { buildMesh, heatColor, tidy } from "./cylmesh.ts";
 
 const W = 41, H = 31;
 const cyl = (): Cylinder => ({
@@ -12,7 +12,7 @@ const cyl = (): Cylinder => ({
 test("a full patch becomes a closed grid of triangles, placed round the axis", () => {
   const c = cyl();
   const map = new Float32Array(W * H).fill(90);
-  const m = buildMesh(map, c, -60, 2);
+  const m = buildMesh(map, c, -60, 2, undefined, -1000);
   const cols = 21, rows = 16;
   assert.equal(m.positions.length / 3, cols * rows);
   assert.equal(m.indices.length / 3, 2 * (cols - 1) * (rows - 1));
@@ -24,9 +24,9 @@ test("a full patch becomes a closed grid of triangles, placed round the axis", (
 test("gaps and jumps are not bridged", () => {
   const c = cyl();
   const map = new Float32Array(W * H).fill(90);
-  for (let j = 0; j < H; j++) map[j * W + 20] = NaN; // a missing column at θ = 0
+  for (let j = 0; j < H; j++) for (let i = 17; i <= 23; i++) map[j * W + i] = NaN; // a 7° gap round θ = 0
   for (let j = 0; j < H; j++) for (let i = 30; i < W; i++) map[j * W + i] = 120; // a 30 mm cliff
-  const m = buildMesh(map, c, -60, 1);
+  const m = buildMesh(map, c, -60, 1, undefined, -1000);
   for (let t = 0; t < m.indices.length; t += 3) {
     const xs = [0, 1, 2].map((k) => m.positions[m.indices[t + k]! * 3]!);
     const rs = [0, 1, 2].map((k) => Math.hypot(m.positions[m.indices[t + k]! * 3]!, m.positions[m.indices[t + k]! * 3 + 2]! + 60));
@@ -45,8 +45,28 @@ test("heatmap: grey within noise, green out, red in, and the alignment is honour
   // The newer map sits one column round: compareCyl would report di = 1.
   const shifted = new Float32Array(W * H).fill(90);
   shifted[10 * W + 21] = 93;
-  const m = buildMesh(shifted, c, -60, 1, { map: before, di: 1, dj: 0, meanMm: 0, noiseMm: 0.5 });
+  const m = buildMesh(shifted, c, -60, 1, { map: before, di: 1, dj: 0, meanMm: 0, noiseMm: 0.5 }, -1000);
   const v = 10 * W + 21;
   assert.ok(Math.abs(m.change[v]! - 3) < 1e-6, `${m.change[v]}`);
   assert.ok(m.colors[v * 3 + 1]! > 0.8);
+});
+
+test("tidy fills pinholes, keeps big gaps and real edges", () => {
+  const c = cyl();
+  const map = new Float32Array(W * H).fill(90);
+  map[15 * W + 10] = NaN; // a pinhole
+  for (let j = 0; j < H; j++) for (let i = 30; i < 38; i++) map[j * W + i] = NaN; // a real gap
+  for (let j = 0; j < H; j++) map[j * W + 5] = 96; // a 6 mm step (an edge)
+  const t = tidy(map, c);
+  assert.ok(Math.abs(t[15 * W + 10]! - 90) < 1e-6, "pinhole filled");
+  assert.ok(Number.isNaN(t[15 * W + 34]!), "big gap left open");
+  assert.equal(t[10 * W + 5], 96, "edge not smeared");
+});
+
+test("unreliable cells stay grey in the heatmap", () => {
+  const c = cyl();
+  const before = new Float32Array(W * H).fill(90);
+  const now = new Float32Array(W * H).fill(94);
+  const m = buildMesh(now, c, -60, 1, { map: before, di: 0, dj: 0, meanMm: 0, noiseMm: 0.5, reliable: (k) => k % 2 === 0 }, -1000);
+  assert.ok(Number.isNaN(m.change[1]!) && Math.abs(m.change[0]! - 4) < 1e-6);
 });

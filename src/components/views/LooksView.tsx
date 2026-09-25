@@ -693,7 +693,12 @@ type Full = NonNullable<NonNullable<NonNullable<ScanRecord["depth"]>["sweep"]>["
 
 /** How one side of a full scan went, in words: so a failure says why. */
 function sideLine(label: string, st: NonNullable<Full["sides"]>["right"]): string {
-  if (st.holds > 0) return `${label} ${st.holds}/20 held · fit ${st.fitMm?.toFixed(1) ?? "?"} mm`;
+  if (st.holds > 0)
+    return `${label}: ${st.holds} holds used · ${st.overlapMm != null ? `${st.overlapMm.toFixed(1)} mm from the front scan` : `fit ${st.fitMm?.toFixed(1) ?? "?"} mm`}${st.rejected ? ` · ${st.rejected} rejected` : ""}`;
+  if (st.rejected)
+    return `${label}: not used — ${st.rejected} holds ${
+      st.rejectReason === "off the face" ? "didn't line up with the front scan" : st.rejectReason === "no overlap" ? "didn't overlap the front scan" : "fitted too loosely"
+    }. Numbers needing this side are left blank.`;
   const why = st.diag?.outcome ?? (st.received ? `${st.received} sent, ${st.aligned} placed` : "nothing sent");
   const dist = st.diag?.distance != null ? ` · ${(st.diag.distance * 100).toFixed(0)} cm` : "";
   return `${label} 0 · ${why}${st.diag?.depthFrames != null ? ` · ${st.diag.depthFrames} depth frames` : ""}${dist}`;

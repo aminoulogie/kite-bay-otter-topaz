@@ -121,8 +121,25 @@ export function sweepScans(scans: ScanRecord[]): ScanRecord[] {
   return scans.filter((x) => x.depth?.sweep).sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
 }
 
+/** Two scans this close together are a repeat, not a change. */
+const REPEAT_GAP_MS = 45 * 60 * 1000;
+
+/**
+ * The latest pair of full scans taken back to back — a "baseline day". Their
+ * difference is the owner's real repeatability, which beats any estimate:
+ * it includes how they stand, breathe and hold their face, not just sensor noise.
+ */
+export function baselinePair(sweeps: ScanRecord[]): [ScanRecord, ScanRecord] | null {
+  for (let k = sweeps.length - 1; k > 0; k--) {
+    const a = sweeps[k - 1]!, b = sweeps[k]!;
+    if (Date.parse(b.capturedAt) - Date.parse(a.capturedAt) <= REPEAT_GAP_MS) return [a, b];
+  }
+  return null;
+}
+
 export function rows(sweeps: ScanRecord[]): Row[] {
   if (!sweeps.length) return [];
+  const pair = baselinePair(sweeps);
   const latest = sweeps[sweeps.length - 1]!.depth!.sweep!;
   const out: Row[] = [];
   for (const def of METRICS) {
@@ -136,7 +153,12 @@ export function rows(sweeps: ScanRecord[]): Row[] {
     // its own ± borrows the scan's surface noise (mm), 1° (angles) or 0.02
     // (ratios) — never zero, which would call any wobble a change.
     const fallback = def.unit === "°" ? 1 : def.unit === "" ? 0.02 : (latest.cellNoiseMm ?? 0.5);
-    const noise = Math.hypot(now.e ?? fallback, first ? (first.e ?? fallback) : 0);
+    let noise = Math.hypot(now.e ?? fallback, first ? (first.e ?? fallback) : 0);
+    // A measured repeat difference is the difference two scans of an
+    // unchanged face really show — the floor for calling anything a change.
+    const pa = pair ? def.read(pair[0].depth!.sweep!) : null;
+    const pb = pair ? def.read(pair[1].depth!.sweep!) : null;
+    if (pa && pb) noise = Math.max(noise, Math.abs(pa.v - pb.v));
     const shown = delta == null ? 0 : Number(delta.toFixed(def.digits));
     const withinNoise = delta == null ? false : shown === 0 || Math.abs(delta) < 2 * noise;
     const verdict =

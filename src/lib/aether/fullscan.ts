@@ -271,6 +271,50 @@ export function reachBelowChinMm(profile: { y: number; r: number }[], chinY: num
   return Number.isFinite(lowest) ? Math.max(0, chinY - lowest) : 0;
 }
 
+/**
+ * How far a placed hold's surface sits from the front scan where both saw
+ * the face — the band 25–65° round the head, which the sweep saw square-on
+ * enough and a side-on hold sees too. Median, mm; null if they barely overlap.
+ *
+ * This is the check that a hold was placed RIGHT, not just placed: a hold
+ * that fits its own frame well but sits a few mm off the face will read as a
+ * wider cheek or jaw (the first real full scan's 204 mm cheeks).
+ */
+export function overlapErrorMm(T: Mat4, pts: Float32Array, front: Float32Array, c: Cylinder, axisZ: number): number | null {
+  const diffs: number[] = [];
+  for (let p = 0; p < pts.length / 3; p += 2) {
+    const [x, y, z] = apply(T, pts[p * 3]!, pts[p * 3 + 1]!, pts[p * 3 + 2]!);
+    const dz = z - axisZ;
+    const t = (Math.atan2(x, dz) * 180) / Math.PI;
+    if (Math.abs(t) < 25 || Math.abs(t) > 65) continue;
+    const i = Math.round((t - c.thetaMinDeg) / c.thetaStepDeg);
+    const j = Math.round((y - c.yMinMm) / c.yStepMm);
+    if (i < 0 || i >= c.width || j < 0 || j >= c.height) continue;
+    const f = front[j * c.width + i]!;
+    if (Number.isFinite(f)) diffs.push(Math.abs(Math.hypot(x, dz) - f));
+  }
+  if (diffs.length < 150) return null;
+  diffs.sort((a, b) => a - b);
+  return diffs[diffs.length >> 1]!;
+}
+
+/** Limits a hold must meet to be used. */
+export const HOLD_LIMITS = { fitMm: 2, inliers: 0.5, overlapMm: 1.5 };
+
+export type HoldVerdict = "used" | "loose fit" | "off the face" | "no overlap";
+
+export function judgeHold(
+  h: { T: Mat4; pts: Float32Array; rms: number; inliers: number },
+  front: Float32Array,
+  c: Cylinder,
+  axisZ: number,
+): { verdict: HoldVerdict; overlapMm: number | null } {
+  if (h.rms > HOLD_LIMITS.fitMm || h.inliers < HOLD_LIMITS.inliers) return { verdict: "loose fit", overlapMm: null };
+  const o = overlapErrorMm(h.T, h.pts, front, c, axisZ);
+  if (o == null) return { verdict: "no overlap", overlapMm: null };
+  return { verdict: o <= HOLD_LIMITS.overlapMm ? "used" : "off the face", overlapMm: o };
+}
+
 export interface RawSideFrame {
   stage: "turn" | "hold";
   points: string;
@@ -282,6 +326,11 @@ export interface SideStats {
   received?: number;
   /** What the phone saw: how the stage ended, depth frames, distance. */
   diag?: { outcome?: string; depthFrames?: number; turnDepthFrames?: number; distance?: number };
+  /** Holds placed but not used, and the most common reason. */
+  rejected?: number;
+  rejectReason?: HoldVerdict;
+  /** Median distance of used holds from the front scan where both overlap, mm. */
+  overlapMm?: number | null;
   /** Frames placed on the model / lost, and hold frames used. */
   aligned: number;
   lost: number;
@@ -300,7 +349,8 @@ export function extendWithSides(
   sides: { right: RawSideFrame[]; left: RawSideFrame[] },
   diag?: Record<string, SideStats["diag"]>,
 ): { cyl: Cylinder; stats: { right: SideStats; left: SideStats } } {
-  const model = modelPoints(mergeCyl(c), c, axisZ);
+  const front = mergeCyl(c);
+  const model = modelPoints(front, c, axisZ);
   const a = new SideCylinder(c, axisZ);
   const b = new SideCylinder(c, axisZ);
   const stats = {} as { right: SideStats; left: SideStats };
@@ -312,13 +362,29 @@ export function extendWithSides(
       pose: f.pose ? fromArkit(f.pose) : null,
     }));
     const r = registerSide(model, frames, axisZ);
-    for (const h of r.holds) (k++ % 2 ? b : a).add(h.T, h.pts);
+    // Only holds that fit well AND agree with the front scan go in: a wrong
+    // side is worse than no side, because it makes numbers up.
+    let used = 0;
+    const reasons = new Map<HoldVerdict, number>();
+    const overlaps: number[] = [];
+    for (const h of r.holds) {
+      const j = judgeHold(h, front, c, axisZ);
+      if (j.verdict === "used") {
+        (k++ % 2 ? b : a).add(h.T, h.pts);
+        used++;
+        overlaps.push(j.overlapMm!);
+      } else reasons.set(j.verdict, (reasons.get(j.verdict) ?? 0) + 1);
+    }
+    const top = [...reasons.entries()].sort((x, y) => y[1] - x[1])[0];
     stats[side] = {
       received: sides[side].length,
       ...(diag?.[side] ? { diag: diag[side] } : {}),
       aligned: r.aligned,
       lost: r.lost,
-      holds: r.holds.length,
+      holds: used,
+      rejected: r.holds.length - used,
+      ...(top ? { rejectReason: top[0] } : {}),
+      overlapMm: overlaps.length ? overlaps.sort((x, y) => x - y)[overlaps.length >> 1]! : null,
       fitMm: r.meanRmsMm,
     };
   }

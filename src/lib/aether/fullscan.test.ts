@@ -111,3 +111,24 @@ test("an angle no neck makes is not reported", () => {
   const flat = profile().map((q) => ({ y: q.y, r: q.y < -60 ? 100 - (-60 - q.y) * 0.05 : 100 }));
   assert.equal(chinNeck(flat, -10), null);
 });
+
+test("a side hold is used only if it agrees with the front scan where both overlap", async () => {
+  const { judgeHold } = await import("./fullscan.ts");
+  const c = cyl();
+  const front = new Float32Array(W * H).fill(NaN);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (Math.abs(-160 + i) <= 65) front[j * W + i] = 90;
+  // Points on that same 90 mm surface, 25–80° round, in face axes (T = identity).
+  const pts: number[] = [];
+  for (let y = -60; y <= 40; y += 3) for (let t = 25; t <= 80; t += 1.5) {
+    const tr = (t * Math.PI) / 180;
+    pts.push(90 * Math.sin(tr), y, -60 + 90 * Math.cos(tr));
+  }
+  const P = Float32Array.from(pts);
+  const good = judgeHold({ T: identity(), pts: P, rms: 0.8, inliers: 0.9 }, front, c, -60);
+  assert.equal(good.verdict, "used");
+  // The same hold placed 4 mm out to the side: fits its own frame, wrong on the face.
+  const off = identity();
+  off[12] = 4;
+  assert.equal(judgeHold({ T: off, pts: P, rms: 0.8, inliers: 0.9 }, front, c, -60).verdict, "off the face");
+  assert.equal(judgeHold({ T: identity(), pts: P, rms: 3, inliers: 0.9 }, front, c, -60).verdict, "loose fit");
+});

@@ -4,9 +4,9 @@ import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip,
 import { Card } from "@/components/ui/card";
 import { Face3DView, type Face3DHandle } from "@/components/aether/Face3DView";
 import { compareCyl, faceWindow, mergeCyl, type Cylinder } from "@/lib/aether/cylmap";
-import { buildMesh, type MeshData } from "@/lib/aether/cylmesh";
+import { buildMesh, tidy, type MeshData } from "@/lib/aether/cylmesh";
 import { decodeFloat32 } from "@/lib/aether/mesh3d";
-import { METRICS, format, rows, series, sweepScans, type Group, type MetricDef, type Row } from "@/lib/aether/results";
+import { METRICS, baselinePair, format, rows, series, sweepScans, type Group, type MetricDef, type Row } from "@/lib/aether/results";
 import { cylKey, type ScanRecord } from "@/lib/aether/scan-store";
 import { loadScanImage } from "@/lib/habit-photos";
 import { cn } from "@/lib/utils";
@@ -95,12 +95,16 @@ export function LooksResults({
           const oldMap = mergeCyl(old.c);
           const ch = compareCyl(oldMap, map, now.c, faceWindow((old.eye + now.eye) / 2));
           const noise = latest.depth?.sweep?.cellNoiseMm ?? 0.5;
-          if (ch?.shift) before = { map: oldMap, di: ch.shift.di, dj: ch.shift.dj, meanMm: ch.shift.meanMm, noiseMm: 2 * Math.SQRT2 * noise };
+          // Colour only where both halves of this scan agree within 2 mm, so
+          // thin, noisy areas (chest, grazing edges) do not flash red and green.
+          const reliable = (k: number) => Math.abs(now.c.a[k]! - now.c.b[k]!) <= 2;
+          if (ch?.shift)
+            before = { map: oldMap, di: ch.shift.di, dj: ch.shift.dj, meanMm: ch.shift.meanMm, noiseMm: 2 * Math.SQRT2 * noise, reliable };
         }
       }
       if (cancelled) return;
       setMeshNote(first ? null : "Take a second full scan to see the heatmap of change.");
-      setMesh(buildMesh(map, now.c, AXIS_Z, 2, before));
+      setMesh(buildMesh(tidy(map, now.c), now.c, AXIS_Z, 2, before));
     })();
     return () => {
       cancelled = true;
@@ -127,6 +131,16 @@ export function LooksResults({
       <div>
         <h2 className="font-display text-3xl font-extrabold tracking-tight">Looks</h2>
         <p className="text-sm text-accent">{first ? "Changes since your first scan" : "Your latest full scan"}</p>
+        {latest && (
+          <p className="mt-1 text-[0.7rem] leading-snug text-faint">
+            {(() => {
+              const pair = baselinePair(sweeps);
+              return pair
+                ? `Repeatability measured from your back-to-back scans on ${pair[0].date}: a change smaller than those two scans' difference is shown as within noise.`
+                : "Tip: do two full scans back to back once. Their difference becomes your real repeatability, and every change is judged against it.";
+            })()}
+          </p>
+        )}
       </div>
 
       {!latest ? (

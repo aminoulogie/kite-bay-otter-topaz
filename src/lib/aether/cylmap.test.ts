@@ -102,11 +102,31 @@ test("cheek width stops short of the ears", () => {
   for (let j = 0; j < H; j++) {
     const y = Y0 + j * DY;
     for (const e of [95, -95]) {
-      const i = e - T0;
-      if (Math.abs(y - 5) < 25) m[j * W + i] = m[j * W + i]! + 20;
+      // A real ear: ~10° round the head, not a one-cell spike.
+      for (let d = -5; d <= 5; d++) {
+        const i = e + d - T0;
+        if (Math.abs(y - 5) < 25) m[j * W + i] = m[j * W + i]! + 20;
+      }
     }
   }
   const earToEar = bandWidthMm(m, c, -10, 20);
   const cheeks = bandWidthMm(m, c, -10, 20, 75, 70);
   assert.ok(earToEar! - cheeks! > 20, `${earToEar} vs ${cheeks}`);
+});
+
+test("a few stray points off the side do not make a width up", () => {
+  const c = head();
+  const clean = bandWidthMm(mergeCyl(c), c, -10, 20, 95, 75)!;
+  const m = mergeCyl(c);
+  // Hair or noise: single cells 25 mm proud, scattered down both sides.
+  for (let j = 0; j < H; j += 4) for (const t of [72, -72, 88, -88]) m[j * W + (t - T0)] = m[j * W + (t - T0)]! + 25;
+  const noisy = bandWidthMm(m, c, -10, 20, 95, 75)!;
+  assert.ok(Math.abs(noisy - clean) < 1, `${clean} → ${noisy}`);
+});
+
+test("a width needs solid coverage, not scattered points", () => {
+  const c = head();
+  const m = mergeCyl(c);
+  for (let k = 0; k < m.length; k++) if (k % 3) m[k] = NaN; // two thirds missing
+  assert.equal(bandWidthMm(m, c, -10, 20, 95, 75), null);
 });

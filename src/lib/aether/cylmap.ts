@@ -201,29 +201,48 @@ export function bandWidthMm(
   maxThetaDeg = 180,
   reachDeg = 80,
 ): number | null {
-  let best: number | null = null;
+  const widths: number[] = [];
   for (let j = 0; j < c.height; j++) {
     const y = yOf(c, j);
     if (y < yLoMm || y > yHiMm) continue;
-    let lo = Infinity;
-    let hi = -Infinity;
-    let tMin = Infinity;
-    let tMax = -Infinity;
+    // The row round the head, then strays dropped: a cell more than 4 mm off
+    // the median of its neighbours (±3°) is hair, an ear edge or noise, and
+    // one of those at the side is enough to make a width up.
+    const cells: { t: number; r: number }[] = [];
     for (let i = 0; i < c.width; i++) {
       const r = map[j * c.width + i]!;
-      if (!Number.isFinite(r)) continue;
       const t = theta(c, i);
-      if (Math.abs(t) > maxThetaDeg) continue;
-      const x = r * Math.sin((t * Math.PI) / 180);
+      if (Number.isFinite(r) && Math.abs(t) <= maxThetaDeg) cells.push({ t, r });
+    }
+    const kept = cells.filter((cell, k) => {
+      const near = cells
+        .slice(Math.max(0, k - 3), k + 4)
+        .filter((n) => Math.abs(n.t - cell.t) <= 3 * c.thetaStepDeg + 1e-9)
+        .map((n) => n.r)
+        .sort((a, b) => a - b);
+      return near.length >= 3 && Math.abs(cell.r - near[near.length >> 1]!) <= 4;
+    });
+    if (!kept.length) continue;
+    // Solid coverage, not a few scattered points: 70% of the angles across
+    // the reach, and out to it on both sides.
+    const across = kept.filter((q) => Math.abs(q.t) <= reachDeg).length;
+    const needed = ((2 * reachDeg) / c.thetaStepDeg) * 0.7;
+    const tMin = kept[0]!.t;
+    const tMax = kept[kept.length - 1]!.t;
+    if (tMin > -reachDeg || tMax < reachDeg || across < needed) continue;
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const q of kept) {
+      const x = q.r * Math.sin((q.t * Math.PI) / 180);
       lo = Math.min(lo, x);
       hi = Math.max(hi, x);
-      tMin = Math.min(tMin, t);
-      tMax = Math.max(tMax, t);
     }
-    if (tMin > -reachDeg || tMax < reachDeg) continue;
-    best = Math.max(best ?? 0, hi - lo);
+    widths.push(hi - lo);
   }
-  return best;
+  if (!widths.length) return null;
+  // The widest rows, but not the single widest: the 90th percentile.
+  widths.sort((a, b) => a - b);
+  return widths[Math.floor(0.9 * (widths.length - 1))]!;
 }
 
 /**

@@ -22,6 +22,43 @@ const BASE: [number, number, number] = [0.72, 0.74, 0.78];
 /** Neighbouring cells further apart than this are a gap in the scan, not a surface. */
 const MAX_JUMP_MM = 8;
 
+/**
+ * For DISPLAY only — the numbers are always read from the raw surface. Small
+ * holes (a cell missing with most of its 5×5 neighbours present) are filled
+ * with their mean, then every cell is averaged with the neighbours that sit
+ * within 3 mm of it, so the model reads as skin rather than gravel without
+ * rounding off real edges like the jaw line.
+ */
+export function tidy(map: Float32Array, c: Cylinder): Float32Array {
+  const W = c.width, H = c.height;
+  const filled = map.slice();
+  for (let j = 2; j < H - 2; j++)
+    for (let i = 2; i < W - 2; i++) {
+      if (Number.isFinite(map[j * W + i]!)) continue;
+      let s = 0, n = 0;
+      for (let dj = -2; dj <= 2; dj++)
+        for (let di = -2; di <= 2; di++) {
+          const v = map[(j + dj) * W + i + di]!;
+          if (Number.isFinite(v)) { s += v; n++; }
+        }
+      if (n >= 14) filled[j * W + i] = s / n;
+    }
+  const out = filled.slice();
+  for (let j = 1; j < H - 1; j++)
+    for (let i = 1; i < W - 1; i++) {
+      const v = filled[j * W + i]!;
+      if (!Number.isFinite(v)) continue;
+      let s = 0, n = 0;
+      for (let dj = -1; dj <= 1; dj++)
+        for (let di = -1; di <= 1; di++) {
+          const u = filled[(j + dj) * W + i + di]!;
+          if (Number.isFinite(u) && Math.abs(u - v) < 3) { s += u; n++; }
+        }
+      out[j * W + i] = s / n;
+    }
+  return out;
+}
+
 /** Colour for a change: grey within noise, then towards green (out) or red (in) by 3 mm. */
 export function heatColor(changeMm: number, noiseMm: number): [number, number, number] {
   if (!Number.isFinite(changeMm) || Math.abs(changeMm) <= noiseMm) return BASE;
@@ -40,9 +77,17 @@ export function buildMesh(
   c: Cylinder,
   axisZ: number,
   step = 2,
-  before?: { map: Float32Array; di: number; dj: number; meanMm: number; noiseMm: number },
+  before?: {
+    map: Float32Array;
+    di: number;
+    dj: number;
+    meanMm: number;
+    noiseMm: number;
+    /** Cells trusted enough to colour (e.g. both halves of the scan agree); others stay grey. */
+    reliable?: (cell: number) => boolean;
+  },
   /** Rows below this are chest and shoulders: not what the model is for. */
-  minYMm = -215,
+  minYMm = -185,
 ): MeshData {
   const cols = Math.floor((c.width - 1) / step) + 1;
   const rows = Math.floor((c.height - 1) / step) + 1;
@@ -68,7 +113,7 @@ export function buildMesh(
         const pj = j - before.dj;
         if (pi >= 0 && pi < c.width && pj >= 0 && pj < c.height) {
           const old = before.map[pj * c.width + pi]!;
-          if (Number.isFinite(old)) d = r - old - before.meanMm;
+          if (Number.isFinite(old) && (before.reliable?.(j * c.width + i) ?? true)) d = r - old - before.meanMm;
         }
       }
       change.push(d);

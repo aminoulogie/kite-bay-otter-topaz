@@ -627,12 +627,12 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                     holdCount = 0
                     sideDiag[side]?["turnDepthFrames"] = stageDepthFrames
                     stageDepthFrames = 0
-                    message = "Hold still."
+                    message = "Eyes on the sticker. Hold still."
                     ok = true
                 }
             }
         case .holdRight, .holdLeft:
-            message = "Hold still."
+            message = "Eyes on the sticker. Hold still."
             ok = still
             if still, frame.capturedDepthData != nil {
                 recordSideFrame(frame, side: side, stage: "hold", step: 5, face: face)

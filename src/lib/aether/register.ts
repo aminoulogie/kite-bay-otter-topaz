@@ -392,7 +392,7 @@ export interface RegFrame {
 
 export interface RegResult {
   /** Hold frames, placed: camera → face, and the frame. */
-  holds: { T: Mat4; pts: Float32Array }[];
+  holds: { T: Mat4; pts: Float32Array; rms: number; inliers: number }[];
   aligned: number;
   lost: number;
   meanRmsMm: number | null;
@@ -461,7 +461,7 @@ export function registerSide(model: PointIndex, frames: RegFrame[], axisZ = -60)
     aligned++;
     rmsSum += r.rms;
     if (f.stage === "hold") {
-      holds.push({ T: r.T, pts: f.pts });
+      holds.push({ T: r.T, pts: f.pts, rms: r.rms, inliers: r.inliers });
     } else {
       // Grow the model round the head so the next frame, turned further,
       // still overlaps it.

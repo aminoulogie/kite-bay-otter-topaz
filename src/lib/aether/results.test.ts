@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { METRICS, rows, series, sweepScans } from "./results.ts";
+import { METRICS, baselinePair, rows, series, sweepScans } from "./results.ts";
 import type { ScanRecord } from "./scan-store.ts";
 
 function scan(at: string, asym: number, noise: number, jaw: number | null): ScanRecord {
@@ -49,4 +49,16 @@ test("chart series carries the noise band and respects the range", () => {
   assert.equal(all.length, 2);
   assert.ok(Math.abs(all[1]!.hi - 1.0) < 1e-9 && Math.abs(all[1]!.lo - 0.6) < 1e-9);
   assert.equal(series(sweeps, asym, Date.parse("2026-03-15T00:00:00Z")).length, 1);
+});
+
+test("two scans back to back set the noise floor for calling a change", () => {
+  const sweeps = sweepScans([
+    scan("2026-03-01T10:00:00Z", 1.0, 0.02, 118),
+    scan("2026-03-01T10:05:00Z", 1.3, 0.02, 118), // same face, 5 min later: 0.3 apart
+    scan("2026-03-29T10:00:00Z", 1.4, 0.02, 118),
+  ]);
+  assert.equal(baselinePair(sweeps)![1].capturedAt, "2026-03-01T10:05:00Z");
+  // 0.4 from the first scan: outside the ±0.02 each scan claims, but inside
+  // twice the 0.3 the baseline day showed.
+  assert.equal(rows(sweeps).find((r) => r.def.key === "asym")!.withinNoise, true);
 });
