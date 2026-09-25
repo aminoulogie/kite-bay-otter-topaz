@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,8 +19,8 @@ import {
   type Guidance,
 } from "@/lib/aether/assist";
 import { AssistAudio } from "@/lib/aether/assist-audio";
-import { baselineIris, scanSlot } from "@/lib/aether/scan-store";
-import { saveScanImage } from "@/lib/habit-photos";
+import { baselineIris, scanSlot, type ScanRecord } from "@/lib/aether/scan-store";
+import { loadScanImage, saveScanImage } from "@/lib/habit-photos";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -56,10 +56,12 @@ interface AssistSettings {
   voice: boolean;
   /** Hold every scan to the distance of the first like-for-like one. */
   lock: boolean;
+  /** Show the last scan of this pose faintly over the preview, to line up with. */
+  ghost: boolean;
 }
 
 const SETTINGS_KEY = "soma-scan-assist";
-const DEFAULT_SETTINGS: AssistSettings = { facing: "user", zoom: 2, flash: false, sound: true, voice: true, lock: true };
+const DEFAULT_SETTINGS: AssistSettings = { facing: "user", zoom: 2, flash: false, sound: true, voice: true, lock: true, ghost: true };
 
 function loadSettings(): AssistSettings {
   try {
@@ -161,6 +163,31 @@ async function postureOf(dataUrl: string) {
   }
 }
 
+/** A frame's analysis with the burst's median symmetry in place of its own. */
+function withMerged(
+  a: FaceAnalysis,
+  merged: ReturnType<typeof mergeSymmetry>,
+  total: number,
+): FaceAnalysis {
+  if (!merged || merged.used < 2) return a;
+  return {
+    ...a,
+    alpha: merged.alpha,
+    regional: merged.regional as FaceAnalysis["regional"],
+    notes: [...a.notes, `Symmetry is the median of ${merged.used} frames from a ${total}-frame burst.`],
+  };
+}
+
+interface LastBurst {
+  id: string;
+  kind: string;
+  side?: "left" | "right";
+  frames: Measured[];
+  merged: ReturnType<typeof mergeSymmetry>;
+  total: number;
+  chosen: number;
+}
+
 export function ScanSheet({ onClose }: { onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -172,6 +199,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const lastFaceAt = useRef(0);
 
   const addScan = useSoma((s) => s.addScan);
+  const updateScan = useSoma((s) => s.updateScan);
+  const [lastBurst, setLastBurst] = useState<LastBurst | null>(null);
   const scans = useSoma((s) => s.scans);
 
   const [live, setLive] = useState(false);
@@ -216,6 +245,48 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     ? baselineIris(scans, scanSlot({ kind: s.kind, side: s.side }), settings.facing, settings.zoom)
     : null;
   liveRefs.current.baseline = baseline;
+
+  // The last scan of this pose, preferring one taken the same way, shown
+  // faintly over the preview so the same pose can be matched by eye.
+  const slot = scanSlot({ kind: s.kind, side: s.side });
+  const ghostId = useMemo(() => {
+    const same = scans.filter((x) => scanSlot(x) === slot);
+    const alike = same.filter((x) => x.capture?.facing === settings.facing && x.capture?.zoom === settings.zoom);
+    const pool = alike.length ? alike : same;
+    return pool.reduce<ScanRecord | null>((a, b) => (!a || b.capturedAt > a.capturedAt ? b : a), null)?.id ?? null;
+  }, [scans, slot, settings.facing, settings.zoom]);
+  const [ghostUrl, setGhostUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setGhostUrl(null);
+    if (settings.ghost && ghostId) {
+      void loadScanImage(ghostId).then((url) => {
+        if (!cancelled) setGhostUrl(url);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [ghostId, settings.ghost]);
+
+  /** Swap the kept photo for another frame from the same burst. */
+  async function pickFrame(i: number) {
+    const b = lastBurst;
+    const f = b?.frames[i];
+    if (!b || !f || i === b.chosen) return;
+    await saveScanImage(b.id, f.dataUrl);
+    const posture = b.kind === "face_side" ? await postureOf(f.dataUrl) : undefined;
+    updateScan(b.id, {
+      face: withMerged(f.analysis, b.merged, b.total),
+      skin: f.skin,
+      puffiness: f.puffiness,
+      harmony: f.harmony,
+      capture: { facing: settings.facing, zoom: settings.zoom, iris: f.iris },
+      ...(posture ? { posture } : {}),
+    });
+    setLastBurst({ ...b, chosen: i });
+    toast.success("Swapped in that frame");
+  }
 
   const patchSettings = (patch: Partial<AssistSettings>) => {
     setSettings((cur) => {
@@ -583,39 +654,36 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       const merged = mergeSymmetry(
         measured.map((f) => ({ alpha: f.analysis.alpha, regional: f.analysis.regional, gatesOk: f.analysis.gates.ok })),
       );
-      if (merged && merged.used > 1) {
-        best.analysis = {
-          ...best.analysis,
-          alpha: merged.alpha,
-          regional: merged.regional as typeof best.analysis.regional,
-          notes: [...best.analysis.notes, `Symmetry is the median of ${merged.used} frames from an ${measured.length}-frame burst.`],
-        };
-      }
+      const keep = withMerged(best.analysis, merged, measured.length);
       await saveScanImage(id, best.dataUrl);
       const posture = kind === "face_side" ? await postureOf(best.dataUrl) : undefined;
       addScan({
         analyzer: ANALYZER_VERSION,
         id,
         date: getLocalDateKey(new Date()),
-        capturedAt: best.analysis.capturedAt,
+        capturedAt: keep.capturedAt,
         kind,
         ...(s.side ? { side: s.side } : {}),
-        face: best.analysis,
+        face: keep,
         skin: best.skin,
         puffiness: best.puffiness,
         harmony: best.harmony,
         capture: { facing: settings.facing, zoom: settings.zoom, iris: best.iris },
         ...(posture ? { posture } : {}),
       });
-      const q = best.analysis.quality;
+      const q = keep.quality;
       setStatus(
         q?.ready
-          ? `Kept ${s.short}. Light ${best.analysis.lighting?.grade ?? "?"}.`
-          : `Kept the best of ${measured.length}. ${q?.coach ?? best.analysis.gates.reasons[0] ?? ""}`,
+          ? `Kept ${s.short}. Light ${keep.lighting?.grade ?? "?"}.`
+          : `Kept the best of ${measured.length}. ${q?.coach ?? keep.gates.reasons[0] ?? ""}`,
       );
       audio.cue("done");
       audio.announce(`${s.short} captured.`);
-      toast.success(`${s.short} captured · evenness ${(100 - best.analysis.alpha * 100).toFixed(1)}`);
+      toast.success(`${s.short} captured · evenness ${(100 - keep.alpha * 100).toFixed(1)}`);
+      // Keep the runners-up, so a better-looking frame can be swapped in.
+      setLastBurst({
+        id, kind, side: s.side, frames: ranked.slice(0, 4).map((r) => r.f), merged, total: measured.length, chosen: 0,
+      });
       if (q && q.overall >= 0.55 && step < SESSION.length - 1) setStep(step + 1);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Capture failed.");
@@ -734,6 +802,16 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           />
           <canvas ref={canvasRef} className={cn("w-full", live && "hidden")} />
           <canvas ref={smallRef} className="hidden" />
+          {ghostUrl && live && (
+            // Saved photos are un-mirrored frames; mirror them like the preview.
+            <img
+              src={ghostUrl}
+              alt=""
+              aria-hidden
+              className="pointer-events-none absolute inset-0 size-full object-cover opacity-30"
+              style={{ transform: settings.facing === "user" ? "scaleX(-1)" : undefined }}
+            />
+          )}
 
           <svg
             className="pointer-events-none absolute inset-0 size-full"
@@ -891,6 +969,42 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
 
         <p className="mt-2 text-xs text-muted">{status}</p>
 
+        {!live && (
+          <div className="mt-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-xs">
+            <div className="mb-1 font-bold">Before you scan</div>
+            {/* The things that change a reading more than your face does. */}
+            <ul className="space-y-0.5 text-muted">
+              <li>• Hair off the forehead, glasses off</li>
+              <li>• Jaw relaxed, teeth apart, no smile</li>
+              <li>• Same light and time of day as last time</li>
+              <li>• Phone at eye level, stand where you stood before</li>
+            </ul>
+          </div>
+        )}
+
+        {lastBurst && lastBurst.frames.length > 1 && (
+          <div className="mt-2">
+            <div className="mb-1 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+              Kept the best of the burst — tap another to use it instead
+            </div>
+            <div className="flex gap-1.5">
+              {lastBurst.frames.map((f, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => void pickFrame(i)}
+                  className={cn(
+                    "overflow-hidden rounded-lg border-2",
+                    i === lastBurst.chosen ? "border-accent" : "border-transparent opacity-70",
+                  )}
+                >
+                  <img src={f.dataUrl} alt={`Frame ${i + 1}`} className="h-16 w-12 object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {hud && hud.lighting < 0.5 && settings.facing === "user" && !settings.flash && (
           <button
             type="button"
@@ -949,13 +1063,16 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
               Voice
             </Chip>
             <Chip on={settings.lock} onClick={() => patchSettings({ lock: !settings.lock })}>
-              Match 1st
+              Match
+            </Chip>
+            <Chip on={settings.ghost} onClick={() => patchSettings({ ghost: !settings.ghost })}>
+              Ghost
             </Chip>
           </ChipRow>
           <p className="text-[0.62rem] leading-snug text-faint">
             Beeps speed up as you get closer to the pose and come from the side to turn
             toward — best in AirPods. A steady tone means hold still. Sound follows your
-            silent switch. {hwZoom ? "Zoom uses the camera lens." : "Zoom crops the frame: stand further back to fill it, which is what removes selfie distortion."}
+            silent switch. Match holds every scan to your first scan's distance; Ghost shows your last one faintly to line up with. {hwZoom ? "Zoom uses the camera lens." : "Zoom crops the frame: stand further back to fill it, which is what removes selfie distortion."}
           </p>
         </div>
 
