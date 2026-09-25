@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  beepInterval, coverRect, cropForView, cropForZoom, faceSquare, guide, screenCue, smoothSquare, laplacianVariance, median, mergeSymmetry, rankFrames, turnedSide,
+  beepInterval, coverRect, cropForView, cropForZoom, faceSquare, guide, poseHeadBox, screenCue, smoothSquare, laplacianVariance, median, mergeSymmetry, rankFrames, turnedSide,
   type AssistInput,
 } from "./assist.ts";
 
@@ -245,4 +245,35 @@ test("the video covers the 3:4 window, centred, showing the same region cropForV
   // Already 3:4: exactly the window.
   assert.deepEqual(coverRect(1440, 1920), { width: 100, height: 100, left: 0, top: 0 });
   assert.deepEqual(coverRect(0, 0), { width: 100, height: 100, left: 0, top: 0 });
+});
+
+test("pose head turn reads all the way to a true profile, and which way", async () => {
+  const { poseHeadTurn } = await import("./assist.ts");
+  const at = (deg: number, to: "left" | "right") => {
+    // Head centre at the origin; the nose 10 cm out along the facing direction,
+    // ears 7.5 cm either side. The camera looks along +z (z = away from it).
+    // Turning to the person's right moves the nose to the CAMERA's left (−x).
+    const a = ((to === "right" ? -1 : 1) * deg * Math.PI) / 180;
+    const face = { x: Math.sin(a), z: -Math.cos(a) }; // facing the camera: −z
+    const side = { x: Math.cos(a), z: Math.sin(a) }; // the person's left, seen by the camera
+    const w = Array.from({ length: 12 }, () => ({ x: 0, y: 0, z: 0, visibility: 1 }));
+    w[0] = { x: 0.1 * face.x, y: 0, z: 0.1 * face.z, visibility: 1 };
+    w[7] = { x: 0.075 * side.x, y: 0, z: 0.075 * side.z, visibility: 1 }; // left ear
+    w[8] = { x: -0.075 * side.x, y: 0, z: -0.075 * side.z, visibility: 1 }; // right ear
+    return poseHeadTurn(w)!;
+  };
+  for (const deg of [0, 30, 60, 85, 90]) assert.ok(Math.abs(at(deg, "right").yawAbs - deg) < 0.5, `${deg}°`);
+  assert.equal(at(80, "right").turned, "right");
+  assert.equal(at(80, "left").turned, "left");
+  assert.equal(poseHeadTurn(undefined), null);
+});
+
+test("the head box at a profile spans nose to the back of the head", () => {
+  const lms = Array.from({ length: 11 }, () => ({ x: 0.5, y: 0.4, visibility: 0.9 }));
+  lms[0] = { x: 0.4, y: 0.42, visibility: 0.9 }; // nose, to the left
+  lms[7] = { x: 0.5, y: 0.4, visibility: 0.9 }; // near ear
+  lms[8] = { x: 0.49, y: 0.4, visibility: 0.2 }; // hidden ear
+  const b = poseHeadBox(lms, 0.75)!;
+  assert.ok(b.x < 0.4 && b.x + b.w > 0.55, `x ${b.x} w ${b.w}`);
+  assert.ok(b.y < 0.4 && b.y + b.h > 0.45, `y ${b.y} h ${b.h}`);
 });

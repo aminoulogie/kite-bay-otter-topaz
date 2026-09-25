@@ -11,12 +11,12 @@ import { ANALYZER_VERSION, FACE } from "@/lib/aether/landmarks";
 import type { measureHarmony } from "@/lib/aether/harmony";
 import type { analyseSkin } from "@/lib/aether/skin";
 import {
-  detectFaceTolerant, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
+  detectFaceTolerant, detectPose, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
 } from "@/lib/aether/mediapipe";
 import { canvasFromDataUrl, measureCanvas, measurePosture } from "@/lib/aether/measure";
 import {
-  cropForView, distanceCue, faceSquare, guide, irisSize, laplacianVariance, mergeSymmetry, rankFrames,
-  screenCue, smoothSquare, turnedSide, type FaceSquare, type Guidance,
+  cropForView, distanceCue, faceSquare, guide, irisSize, laplacianVariance, mergeSymmetry, poseHeadBox, poseHeadTurn,
+  rankFrames, screenCue, smoothSquare, turnedSide, type FaceSquare, type Guidance,
 } from "@/lib/aether/assist";
 import { AssistAudio } from "@/lib/aether/assist-audio";
 import { autoPlacement, type Placement } from "@/lib/aether/align";
@@ -527,6 +527,27 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   function loop() {
     cancelAnimationFrame(rafRef.current);
     let lastTick = 0;
+    // Held green long enough, and nothing else in flight: take it.
+    const fireWhenHeld = (readyHere: boolean) => {
+      if (!readyHere) liveRefs.current.armed = true;
+      if (readyHere && liveRefs.current.autoFire && liveRefs.current.armed && !liveRefs.current.busy && !liveRefs.current.finished) {
+        held.current += 1;
+        setHolding(held.current);
+        if (held.current >= HOLD_FRAMES) {
+          held.current = 0;
+          setHolding(0);
+          liveRefs.current.armed = false;
+          // Through the ref: this loop was built when the camera opened, and a
+          // direct call would run THAT render's capture — the step, kind and
+          // flash setting of that moment, so a 45° or profile shot was
+          // measured and saved as a front scan.
+          void captureRef.current();
+        }
+      } else if (held.current !== 0) {
+        held.current = 0;
+        setHolding(0);
+      }
+    };
     const tick = async (t: number) => {
       rafRef.current = requestAnimationFrame(tick);
       // Eight times a second, not sixty: the model is the cost, and the coach
@@ -545,6 +566,53 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       if (!ctx) return;
       ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, small.width, small.height);
       try {
+        const sideStep = SESSION[liveRefs.current.step]!;
+        if (sideStep.kind === "face_side") {
+          // A true 90° profile: the face model cannot see a face there, the
+          // body-pose model can (nose and both ears, in 3D).
+          const pr = await detectPose(small);
+          const turn = poseHeadTurn(pr.worldLandmarks?.[0]);
+          const box = poseHeadBox(pr.landmarks?.[0], small.width / Math.max(1, small.height));
+          if (!turn || !box) {
+            if (Date.now() - lastFaceAt.current < FACE_GRACE_MS) return;
+            setSquare(null);
+            held.current = 0;
+            setHolding(0);
+            const lost = guide({
+              kind: sideStep.kind, hasFace: false, yawDeg: 0, pitchDeg: 0, rollDeg: 0,
+              turned: null, quality: { ready: false, lighting: 0, reasons: [] }, faceHeightFrac: 0, smile: 0,
+              targetSide: sideStep.side,
+            });
+            if (!liveRefs.current.busy && !liveRefs.current.finished) audioRef.current?.update(lost);
+            setGuidance(lost);
+            return;
+          }
+          lastFaceAt.current = Date.now();
+          const q = scoreCapture({
+            kind: sideStep.kind, yawDeg: turn.yawAbs, rollDeg: 0, pitchDeg: 0,
+            lighting: sampleLighting(small, box),
+            framing: { faceHeightFrac: 0.45, eyesY: box.y + box.h * 0.45, centerX: box.x + box.w / 2, notes: [] },
+            smile: 0, hasFace: true,
+          });
+          const readyHere = q.ready && turn.turned === sideStep.side;
+          setHud({ ...q, ready: readyHere });
+          setDist(null);
+          const g = guide({
+            kind: sideStep.kind, hasFace: true, yawDeg: turn.yawAbs, pitchDeg: 0, rollDeg: 0,
+            turned: turn.turned, quality: { ...q, ready: readyHere }, faceHeightFrac: 0, smile: 0,
+            targetSide: sideStep.side,
+          });
+          if (!liveRefs.current.busy && !liveRefs.current.finished) audioRef.current?.update(g);
+          setGuidance(g);
+          setPose({ yaw: turn.turned === "right" ? turn.yawAbs : -turn.yawAbs, roll: 0, pitch: 0 });
+          fireWhenHeld(readyHere);
+          const sq = faceSquare(
+            [{ x: box.x, y: box.y }, { x: box.x + box.w, y: box.y + box.h }],
+            liveRefs.current.mirror,
+          );
+          if (sq) setSquare((prev) => smoothSquare(prev, sq));
+          return;
+        }
         const res = await detectFaceTolerant(small);
         const lms = res.landmarks;
         if (!lms) {
@@ -610,25 +678,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         // saying "turn more" is not falsifiable; a yaw of 41° is.
         setPose({ yaw: yawDeg, roll: rollDeg, pitch: pitchDeg });
 
-        if (!readyHere) liveRefs.current.armed = true;
-        // Held green long enough, and nothing else in flight: take it.
-        if (readyHere && liveRefs.current.autoFire && liveRefs.current.armed && !liveRefs.current.busy && !liveRefs.current.finished) {
-          held.current += 1;
-          setHolding(held.current);
-          if (held.current >= HOLD_FRAMES) {
-            held.current = 0;
-            setHolding(0);
-            liveRefs.current.armed = false;
-            // Through the ref: this loop was built when the camera opened, and a
-            // direct call would run THAT render's capture — the step, kind and
-            // flash setting of that moment, so a 45° or profile shot was
-            // measured and saved as a front scan.
-            void captureRef.current();
-          }
-        } else if (held.current !== 0) {
-          held.current = 0;
-          setHolding(0);
-        }
+        fireWhenHeld(readyHere);
         // Mirrored for display only. The preview is flipped so it behaves like
         // a mirror; the ANALYSIS runs on unmirrored pixels, or left and right
         // would swap between the coach and the Face File.
@@ -735,7 +785,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         setStatus(
           posture?.cvaEst != null
             ? `Photo kept. No face metrics at this angle, but neck angle ≈ ${posture.cvaEst.toFixed(1)}°.`
-            : "Photo kept, no measurements — the landmark model cannot read a head turned this far.",
+            : "Profile photo kept. Face measurements at 90° come from the 3D scan.",
         );
         audio.cue("done");
         audio.announce(`${s.short} photo saved.`);

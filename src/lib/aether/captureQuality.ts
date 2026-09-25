@@ -65,16 +65,11 @@ export const SESSION: {
     title: "3 · Profile right",
     short: "Side R",
     side: "right",
-    // Was "keep turning until only one eye and the ear show", which is a full
-    // 90° — and 90° is exactly where the landmark model stops being able to
-    // see a face at all. A shot you cannot take is worth less than a slightly
-    // less side-on one you can, so the target stops short of the cliff.
-    // The landmark model is trained on frontal faces and simply proposes no
-    // face at a hard yaw — so the coaching has to aim at the last angle it can
-    // still read, not at the anatomically ideal one. Past this the photo is
-    // still kept; the measurements are not.
-    coach: "Turn until only your near eye shows — the far eye just gone behind the nose.",
-    yawAbs: [62, 90],
+    // A true side-on profile. The face-landmark model goes blind past ~65°,
+    // so these steps are coached by the body-pose model instead (nose and
+    // both ears in 3D — see poseHeadTurn), which keeps seeing the head at 90°.
+    coach: "Turn your whole head to the right until your nose points at the wall — a true side profile.",
+    yawAbs: [80, 100],
     rollMax: 8,
     pitchMax: 14,
   },
@@ -84,8 +79,8 @@ export const SESSION: {
     kind: "face_side",
     title: "4 · Profile left",
     short: "Side L",
-    coach: "Now the other side. Turn left until the far eyebrow just disappears.",
-    yawAbs: [62, 90],
+    coach: "Now the other side. Turn left until your nose points at the wall.",
+    yawAbs: [80, 100],
     rollMax: 8,
     pitchMax: 14,
     side: "left",

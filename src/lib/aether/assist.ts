@@ -473,3 +473,67 @@ export function distanceCue(current: number | null, baseline: number | null | un
     cue: ratio > 1 + DISTANCE_TOLERANCE ? "back" : ratio < 1 - DISTANCE_TOLERANCE ? "closer" : "ok",
   };
 }
+
+// ---------------------------------------------------------------------------
+// Head turn from the body-pose model, for true profiles
+
+export interface PoseHeadTurn {
+  /** 0 = facing the camera, 90 = a true profile, over 90 = turned past it. */
+  yawAbs: number;
+  /** Which way the head is turned, in the user's own left/right. */
+  turned: "left" | "right";
+}
+
+/**
+ * The face-landmark model stops finding a face around 65–70° of turn, so it
+ * cannot coach a true 90° profile. The body-pose model still finds the nose
+ * and both ears there, in 3D (metres, z = depth away from the camera). The
+ * direction from the middle of the ears to the nose is where the head
+ * points: straight at the camera is 0°, square across it 90°.
+ *
+ * Turning your head to your RIGHT shows the camera your LEFT ear, so the
+ * nearer ear names the other side.
+ */
+export function poseHeadTurn(
+  world: ArrayLike<{ x: number; y: number; z: number; visibility?: number }> | undefined,
+): PoseHeadTurn | null {
+  if (!world || world.length < 9) return null;
+  const nose = world[0]!;
+  const le = world[7]!; // the person's left ear
+  const re = world[8]!;
+  if ((nose.visibility ?? 1) < 0.5 || Math.max(le.visibility ?? 1, re.visibility ?? 1) < 0.5) return null;
+  const mx = (le.x + re.x) / 2;
+  const mz = (le.z + re.z) / 2;
+  const fx = nose.x - mx;
+  const fz = nose.z - mz;
+  if (Math.hypot(fx, fz) < 0.02) return null;
+  // Facing the camera the nose is nearer (fz < 0): atan2(|fx|, −fz) = 0°.
+  const yawAbs = (Math.atan2(Math.abs(fx), -fz) * 180) / Math.PI;
+  return { yawAbs, turned: le.z < re.z ? "right" : "left" };
+}
+
+/**
+ * Where the head is in the frame at a profile, from the body-pose model's 2D
+ * landmarks (fractions of the crop). The face model has lost the face by then,
+ * so its box cannot be used. Nose tip to ear is about 100 mm and the head is
+ * about 230 mm tall, so the nose-to-ear distance sizes the whole head.
+ * `aspect` is width / height of the crop.
+ */
+export function poseHeadBox(
+  lms: ArrayLike<{ x: number; y: number; visibility?: number }> | undefined,
+  aspect = VIEW_ASPECT,
+): { x: number; y: number; w: number; h: number } | null {
+  if (!lms || lms.length < 11) return null;
+  const nose = lms[0]!;
+  const ears = [lms[7]!, lms[8]!].filter((e) => (e.visibility ?? 1) >= 0.5);
+  if (!ears.length || (nose.visibility ?? 1) < 0.5) return null;
+  // The ear furthest from the nose in x is the one in view at a profile.
+  const ear = ears.reduce((a, b) => (Math.abs(b.x - nose.x) > Math.abs(a.x - nose.x) ? b : a));
+  const d = Math.max(0.04, Math.abs(ear.x - nose.x));
+  const h = d * aspect * 2.3;
+  const back = ear.x + Math.sign(ear.x - nose.x || 1) * d * 0.9;
+  const x = Math.min(nose.x, back) - d * 0.1;
+  const w = Math.abs(back - nose.x) + d * 0.2;
+  const y = ear.y - h * 0.45;
+  return { x, y, w, h };
+}
