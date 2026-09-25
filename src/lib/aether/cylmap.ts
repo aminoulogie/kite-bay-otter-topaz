@@ -17,6 +17,11 @@
  * and a fixed window (not "wherever depth landed this time") is compared.
  */
 
+import {
+  chinNeck, midlineProfile, neckSize, posture, reachBelowChinMm,
+  type ChinNeck, type NeckSize, type SideStats,
+} from "./fullscan.ts";
+
 export interface Cylinder {
   a: Float32Array;
   b: Float32Array;
@@ -311,6 +316,8 @@ export function compareCyl(prev: Float32Array, cur: Float32Array, c: Cylinder, w
 }
 
 export interface SweepSummary {
+  /** Full scan only: jaw, neck, profile and posture from the side-on holds. */
+  full?: FullSummary;
   frames: number;
   /** Share of the ring's directions covered. */
   sweepCoverage: number;
@@ -326,8 +333,50 @@ export interface SweepSummary {
   chinBehindNoseMm: number | null;
 }
 
+export interface FullSummary {
+  /** Chin–neck angle, degrees, ± from the two halves. */
+  chinNeckDeg: number | null;
+  chinNeckNoiseDeg: number | null;
+  underChinMm: number | null;
+  neckWidthMm: number | null;
+  neckWidthNoiseMm: number | null;
+  neckDepthMm: number | null;
+  neckDepthPartial: boolean;
+  /** Ellipse estimate from width and depth — what a tape would roughly read. */
+  neckCircumferenceMm: number | null;
+  neckToCheek: number | null;
+  neckToJaw: number | null;
+  /** Against true vertical: + = neck leaning forward / head tipped forward. */
+  neckLeanDeg: number | null;
+  headPitchDeg: number | null;
+  /** How far below the chin the scan reached along the midline, mm. */
+  reachBelowChinMm: number | null;
+  sides: { right: SideStats; left: SideStats } | null;
+}
+
+function fullFrom(
+  map: Float32Array,
+  c: Cylinder,
+  w: FaceWindow,
+  axisZ: number,
+  midlineDeg: number,
+): { cn: ChinNeck | null; neck: NeckSize | null; profile: { y: number; r: number }[] } {
+  const profile = midlineProfile(map, c, midlineDeg);
+  const inWin = profile.filter((p) => p.y >= w.yLoMm && p.y <= w.yHiMm);
+  if (!inWin.length) return { cn: null, neck: null, profile };
+  const nose = inWin.reduce((a, b) => (b.r > a.r ? b : a));
+  const cn = chinNeck(profile, nose.y);
+  return { cn, neck: cn ? neckSize(map, c, cn.cornerY, axisZ) : null, profile };
+}
+
 /** Everything the app stores about a sweep. */
-export function summariseCylinder(c: Cylinder, eyeYMm: number | null, frames: number, sweepCoverage: number): SweepSummary {
+export function summariseCylinder(
+  c: Cylinder,
+  eyeYMm: number | null,
+  frames: number,
+  sweepCoverage: number,
+  full?: { axisZ: number; gravityFace: [number, number, number] | null; sides: { right: SideStats; left: SideStats } | null },
+): SweepSummary {
   const w = faceWindow(eyeYMm);
   const merged = mergeCyl(c);
   const noise = cellNoiseMm(c, w);
@@ -337,15 +386,42 @@ export function summariseCylinder(c: Cylinder, eyeYMm: number | null, frames: nu
   const symA = cylSymmetry(c.a, c, w, halfNoise);
   const symB = cylSymmetry(c.b, c, w, halfNoise);
   const eye = eyeYMm ?? 30;
+  const cheekWidthMm = bandWidthMm(merged, c, eye - 40, eye - 10);
+  const jawWidthMm = bandWidthMm(merged, c, eye - 90, eye - 65);
+  let fullSummary: FullSummary | undefined;
+  if (full && sym) {
+    const m = fullFrom(merged, c, w, full.axisZ, sym.midlineDeg);
+    const ha = fullFrom(c.a, c, w, full.axisZ, sym.midlineDeg);
+    const hb = fullFrom(c.b, c, w, full.axisZ, sym.midlineDeg);
+    const half = (x: number | undefined, y: number | undefined) => (x != null && y != null ? Math.abs(x - y) / 2 : null);
+    const p = full.gravityFace ? posture(full.gravityFace, m.cn?.neckDir ?? null) : null;
+    fullSummary = {
+      chinNeckDeg: m.cn?.angleDeg ?? null,
+      chinNeckNoiseDeg: half(ha.cn?.angleDeg, hb.cn?.angleDeg),
+      underChinMm: m.cn?.underChinMm ?? null,
+      neckWidthMm: m.neck?.widthMm ?? null,
+      neckWidthNoiseMm: half(ha.neck?.widthMm, hb.neck?.widthMm),
+      neckDepthMm: m.neck?.depthMm ?? null,
+      neckDepthPartial: m.neck?.depthPartial ?? true,
+      neckCircumferenceMm: m.neck?.circumferenceMm ?? null,
+      neckToCheek: m.neck && cheekWidthMm ? m.neck.widthMm / cheekWidthMm : null,
+      neckToJaw: m.neck && jawWidthMm ? m.neck.widthMm / jawWidthMm : null,
+      neckLeanDeg: p?.neckLeanDeg ?? null,
+      headPitchDeg: p?.headPitchDeg ?? null,
+      reachBelowChinMm: m.cn ? reachBelowChinMm(m.profile, m.cn.chinY) : null,
+      sides: full.sides,
+    };
+  }
   return {
+    ...(fullSummary ? { full: fullSummary } : {}),
     frames,
     sweepCoverage,
     coverage: coverage(merged, c, w),
     cellNoiseMm: noise,
     symmetry: sym,
     symmetryNoiseMm: symA && symB ? Math.abs(symA.rmsMm - symB.rmsMm) / 2 : null,
-    cheekWidthMm: bandWidthMm(merged, c, eye - 40, eye - 10),
-    jawWidthMm: bandWidthMm(merged, c, eye - 90, eye - 65),
+    cheekWidthMm,
+    jawWidthMm,
     chinBehindNoseMm: sym ? chinBehindNoseMm(merged, c, w, sym.midlineDeg) : null,
   };
 }

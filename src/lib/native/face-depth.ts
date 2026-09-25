@@ -18,8 +18,8 @@ export interface FaceFrameEvent {
   roll?: number;
   /** Metres from the camera. */
   distance?: number;
-  /** Sweep scans: "front" while the still burst runs, then "sweep". */
-  phase?: "front" | "sweep";
+  /** Sweep scans: "front", "sweep", then with sides the turn / hold stages. */
+  phase?: "front" | "sweep" | "turnRight" | "holdRight" | "back" | "turnLeft" | "holdLeft";
 }
 
 export interface FaceDepthResult {
@@ -66,6 +66,18 @@ export interface FaceDepthResult {
   sweepCoverage?: number;
   /** The best ~40° frame each way, for the 2D 45° analysis. */
   obliques?: { image: string; yaw: number }[];
+  /** Straight down in the face's own axes, while standing square-on. */
+  gravityFace?: [number, number, number];
+  /** Full scan: the raw side-on depth frames, for matching onto the face model. */
+  sides?: { right: SideFrameRaw[]; left: SideFrameRaw[] };
+}
+
+export interface SideFrameRaw {
+  stage: "turn" | "hold";
+  /** Base64 Int16 xyz, 0.1 mm, camera axes (x right, y up, z toward you). */
+  points: string;
+  /** Camera → face, metres, column-major 4×4 — only while ARKit still tracks the face. */
+  pose?: number[];
 }
 
 interface FaceDepthPlugin {
@@ -75,6 +87,8 @@ interface FaceDepthPlugin {
     minDistance?: number;
     maxDistance?: number;
     mode?: "still" | "sweep";
+    /** After the sweep, turn right and left side-on for the jaw, neck and profile. */
+    sides?: boolean;
   }): Promise<FaceDepthResult>;
   cancel(): Promise<void>;
   addListener(event: "faceFrame", cb: (e: FaceFrameEvent) => void): Promise<PluginListenerHandle>;

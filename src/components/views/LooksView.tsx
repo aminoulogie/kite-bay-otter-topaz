@@ -106,7 +106,7 @@ export function LooksView() {
    * lets sound start only inside a gesture; the scan module and its Swift side
    * are loaded only now.
    */
-  const scan3d = async (mode: "still" | "sweep" = "sweep") => {
+  const scan3d = async (mode: "still" | "sweep" | "full" = "sweep") => {
     if (depthBusy) return;
     setDepthBusy(true);
     try {
@@ -338,13 +338,19 @@ export function LooksView() {
             </p>
           )}
           {hasTrueDepth ? (
-            <div className="grid grid-cols-[2fr_1fr] gap-2">
-              <Button disabled={depthBusy} onClick={() => void scan3d("sweep")}>
-                {depthBusy ? "Scanning…" : "3D sweep"}
+            <div className="space-y-2">
+              <Button className="w-full" disabled={depthBusy} onClick={() => void scan3d("full")}>
+                {depthBusy ? "Scanning…" : "Full 3D scan · face, sides, neck"}
               </Button>
-              <Button variant="outline" disabled={depthBusy} onClick={() => void scan3d("still")}>
-                Quick front
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="outline" disabled={depthBusy} onClick={() => void scan3d("sweep")}>
+                  Face sweep
+                </Button>
+                <Button variant="outline" disabled={depthBusy} onClick={() => void scan3d("still")}>
+                  Quick front
+                </Button>
+              </div>
+              <ScanSpotGuide />
             </div>
           ) : (
             <p className="text-[0.7rem] text-faint">3D scanning needs the installed iPhone app.</p>
@@ -596,6 +602,7 @@ function SweepMetrics({ d }: { d: NonNullable<ScanRecord["depth"]> }) {
         <Metric label="Chin behind nose tip" value={pm(s.chinBehindNoseMm, cell, 1)} />
         <Metric label="Surface noise" value={cell == null ? "—" : `${cell.toFixed(2)} mm`} />
         <Metric label="Coverage" value={`${Math.round(s.coverage * 100)}% · ring ${Math.round(s.sweepCoverage * 100)}%`} />
+        {s.full && <FullMetrics f={s.full} />}
         {ch && (
           <Metric
             label="Change vs first sweep"
@@ -608,6 +615,57 @@ function SweepMetrics({ d }: { d: NonNullable<ScanRecord["depth"]> }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * The one-time setup that makes full scans repeatable. Distances are what
+ * TrueDepth is most accurate at; the stickers fix the neck's angle, which is
+ * the easiest thing to change by accident between scans.
+ */
+function ScanSpotGuide() {
+  return (
+    <details className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs">
+      <summary className="cursor-pointer font-bold">Set up your scan spot (once)</summary>
+      <ol className="mt-2 list-decimal space-y-1 pl-4 text-muted">
+        <li>Stick the phone to a mirror or wall at eye level, top camera up.</li>
+        <li>Stand facing it, face about 30 cm away. Tape a line at your toes: mark 1.</li>
+        <li>Turn your whole body right until side-on, head still in line with your shoulders — the
+          side of your face about 30 cm from the phone. Tape at your toes: mark 2. Same to the left: mark 3.</li>
+        <li>At each side mark, look level and put a small sticker where your eyes land. Look at it
+          during every hold.</li>
+        <li>Hair behind the ears, no collar, shoulders relaxed, breathe normally.</li>
+      </ol>
+      <p className="mt-2 text-faint">
+        During the scan the voice leads: sweep your head in a circle, then turn right and hold, turn
+        back, turn left and hold. Keep your neck still and turn with your feet.
+      </p>
+    </details>
+  );
+}
+
+/** Side profile, neck and posture from a full scan. */
+function FullMetrics({ f }: { f: NonNullable<NonNullable<NonNullable<ScanRecord["depth"]>["sweep"]>["full"]> }) {
+  const deg = (v: number | null, e?: number | null) =>
+    v == null ? "—" : `${v.toFixed(1)}°${e != null ? ` ± ${e.toFixed(1)}` : ""}`;
+  const mm0 = (v: number | null, e?: number | null) =>
+    v == null ? "—" : `${v.toFixed(0)}${e != null ? ` ± ${e.toFixed(0)}` : ""} mm`;
+  const held = f.sides ? `R ${f.sides.right.holds}/20 · L ${f.sides.left.holds}/20` : "—";
+  return (
+    <>
+      <div className="col-span-2 mt-1 text-[0.6rem] font-bold uppercase tracking-wider text-accent">Profile & neck</div>
+      <Metric label="Chin–neck angle" value={deg(f.chinNeckDeg, f.chinNeckNoiseDeg)} />
+      <Metric label="Under-chin length" value={mm0(f.underChinMm)} />
+      <Metric label="Neck width" value={mm0(f.neckWidthMm, f.neckWidthNoiseMm)} />
+      <Metric label={f.neckDepthPartial ? "Neck depth (partial)" : "Neck depth"} value={mm0(f.neckDepthMm)} />
+      <Metric label="Neck ≈ tape" value={f.neckCircumferenceMm == null ? "—" : `${(f.neckCircumferenceMm / 10).toFixed(1)} cm est.`} />
+      <Metric label="Neck / cheek · jaw" value={`${f.neckToCheek?.toFixed(2) ?? "—"} · ${f.neckToJaw?.toFixed(2) ?? "—"}`} />
+      <div className="col-span-2 mt-1 text-[0.6rem] font-bold uppercase tracking-wider text-accent">Posture (vs gravity)</div>
+      <Metric label="Neck lean forward" value={deg(f.neckLeanDeg)} />
+      <Metric label="Head tipped forward" value={deg(f.headPitchDeg)} />
+      <Metric label="Reached below chin" value={mm0(f.reachBelowChinMm)} />
+      <Metric label="Side holds used" value={held} />
+    </>
   );
 }
 

@@ -85,7 +85,18 @@ Test as a PWA, ship as the native iOS build.
       and off-centre axis removed, noise removed in quadrature), cheek and
       jaw width, chin behind nose tip, change vs the FIRST sweep after
       alignment. The best ~40° frames fill the 45° slot in the same pass.
-- [ ] Verify on device: photo orientation; ring direction; sweep noise level.
+- [x] **Full scan** (face, sides, neck): phone fixed to a mirror, floor marks,
+      eye-level stickers. After the ring sweep the voice leads a whole-body
+      turn right, a still hold side-on, back to front, then left. Turning the
+      body (not the neck) avoids the soft-tissue stretch that makes lateral
+      landmarks the least accurate part of phone face scans, and puts the jaw
+      square-on to the sensor. Past ARKit's ~50° the frames are placed by
+      point-to-plane ICP against the growing model, with a motion forecast
+      for the turn. Adds: chin–neck angle ±, under-chin length, neck width ±,
+      depth, tape estimate, neck/cheek and neck/jaw ratios, neck lean and
+      head tip against gravity, how far below the chin the scan reached.
+- [ ] Verify on device: photo orientation; ring direction; sweep noise;
+      side tracking on a real head; how far down 30 cm reaches.
 - [ ] Landmark-level metrics (gonial angle, canthal tilt, cheekbone projection)
       from vertex indices identified on a real exported mesh.
 

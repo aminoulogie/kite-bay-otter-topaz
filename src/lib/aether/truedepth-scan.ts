@@ -3,6 +3,7 @@ import { guide } from "./assist.ts";
 import { ANALYZER_VERSION } from "./landmarks.ts";
 import { depthSymmetry } from "./depthmap.ts";
 import { compareCyl, faceWindow, mergeCyl, summariseCylinder, type Cylinder } from "./cylmap.ts";
+import { extendWithSides, type SideStats } from "./fullscan.ts";
 import type { Guidance } from "./assist.ts";
 import { decodeFloat32, distanceMm, extents3d, symmetry3d } from "./mesh3d.ts";
 import { cylKey, depthGridKey, meshKey, type DepthSummary, type ScanRecord } from "./scan-store.ts";
@@ -49,8 +50,33 @@ export function sweepGuidance(e: FaceFrameEvent): Guidance {
   };
 }
 
+/** Float32Array → base64, for storing a cylinder the web side built. */
+function encodeFloat32(a: Float32Array): string {
+  const bytes = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+type Extended = { cyl: Cylinder; stats: { right: SideStats; left: SideStats } } | null;
+
+/** The side stages: slow beeps while turning, the steady hold tone when still. */
+export function sideGuidance(e: FaceFrameEvent): Guidance {
+  const holding = e.phase === "holdRight" || e.phase === "holdLeft";
+  const error = holding && e.ok ? 0 : holding ? 0.4 : 0.8;
+  return {
+    instruction: error === 0 ? "hold" : "turn",
+    side: e.phase === "turnRight" ? "right" : e.phase === "turnLeft" ? "left" : null,
+    error,
+    pan: e.phase === "turnRight" ? 1 : e.phase === "turnLeft" ? -1 : 0,
+    beepMs: error === 0 ? 0 : Math.round(140 + error * 810),
+    pitchHz: 660,
+    phrase: e.message,
+  };
+}
+
 /** Read the numbers off a TrueDepth result. Pure, apart from the decode. */
-export function summariseDepth(r: FaceDepthResult): DepthSummary {
+export function summariseDepth(r: FaceDepthResult, extended: Extended = null): DepthSummary {
   const v = decodeFloat32(r.vertices);
   const sym = symmetry3d(v);
   const ext = extents3d(v);
@@ -95,8 +121,11 @@ export function summariseDepth(r: FaceDepthResult): DepthSummary {
     smile: Math.max(r.blendShapes.mouthSmile_L ?? 0, r.blendShapes.mouthSmile_R ?? 0),
     jawOpen: r.blendShapes.jawOpen ?? 0,
     ...(() => {
-      const c = cylinderOf(r);
-      return c ? { sweep: summariseCylinder(c, eyeY(r), r.cylFrames ?? 0, r.sweepCoverage ?? 0) } : {};
+      const c = extended?.cyl ?? cylinderOf(r);
+      const full = r.sides
+        ? { axisZ: r.cylAxisZMm ?? -60, gravityFace: r.gravityFace ?? null, sides: extended?.stats ?? null }
+        : undefined;
+      return c ? { sweep: summariseCylinder(c, eyeY(r), r.cylFrames ?? 0, r.sweepCoverage ?? 0, full) } : {};
     })(),
   };
 }
@@ -141,13 +170,21 @@ async function changeVsFirst(scans: ScanRecord[], c: Cylinder, eye: number): Pro
  */
 export async function runTrueDepthScan(
   audio: AssistAudio,
-  mode: "still" | "sweep" = "still",
+  mode: "still" | "sweep" | "full" = "still",
   history: ScanRecord[] = [],
 ): Promise<{ record: ScanRecord; extra: ScanRecord[] }> {
-  const sweep = mode === "sweep";
+  const sweep = mode !== "still";
+  let lastPhase: string | undefined;
   const handle = await FaceDepth.addListener("faceFrame", (e) => {
-    if (e.phase === "sweep") {
-      audio.update(sweepGuidance(e));
+    // The side stages happen facing away from the screen: every change of
+    // stage is spoken, and holding still gets the steady tone.
+    if (e.phase && e.phase !== lastPhase) {
+      if (e.phase !== "front" && e.phase !== "sweep") audio.announce(e.message);
+      if (e.phase === "holdRight" || e.phase === "holdLeft") audio.cue("target");
+      lastPhase = e.phase;
+    }
+    if (e.phase && e.phase !== "front") {
+      audio.update(e.phase === "sweep" ? sweepGuidance(e) : sideGuidance(e));
       return;
     }
     const d = e.distance;
@@ -170,7 +207,13 @@ export async function runTrueDepthScan(
   try {
     if (sweep) audio.announce("Look straight at the screen, then slowly circle your head.");
     result = sweep
-      ? await FaceDepth.scan({ mode, frames: 30, minDistance: SWEEP_MIN_DISTANCE_M, maxDistance: SWEEP_MAX_DISTANCE_M })
+      ? await FaceDepth.scan({
+          mode: "sweep",
+          sides: mode === "full",
+          frames: 30,
+          minDistance: SWEEP_MIN_DISTANCE_M,
+          maxDistance: SWEEP_MAX_DISTANCE_M,
+        })
       : await FaceDepth.scan({ frames: 30, minDistance: MIN_DISTANCE_M, maxDistance: MAX_DISTANCE_M });
   } finally {
     await handle.remove();
@@ -180,10 +223,17 @@ export async function runTrueDepthScan(
   const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   await saveScanImage(meshKey(id), result.vertices);
   if (result.depthGrid) await saveScanImage(depthGridKey(id), result.depthGrid);
-  const cyl = cylinderOf(result);
-  if (cyl && result.cylA && result.cylB) {
+  const raw = cylinderOf(result);
+  // Placing the side frames is a few seconds of maths; say so rather than sit silent.
+  if (raw && result.sides) {
+    audio.announce("Building your 3D model.");
+    await new Promise((r) => setTimeout(r, 60)); // let the screen and voice update first
+  }
+  const ext: Extended = raw && result.sides ? extendWithSides(raw, result.cylAxisZMm ?? -60, result.sides) : null;
+  const cyl = ext?.cyl ?? raw;
+  if (cyl) {
     const stored: StoredCylinder = {
-      a: result.cylA, b: result.cylB, width: cyl.width, height: cyl.height, thetaMinDeg: cyl.thetaMinDeg,
+      a: encodeFloat32(cyl.a), b: encodeFloat32(cyl.b), width: cyl.width, height: cyl.height, thetaMinDeg: cyl.thetaMinDeg,
       thetaStepDeg: cyl.thetaStepDeg, yMinMm: cyl.yMinMm, yStepMm: cyl.yStepMm, eyeYMm: eyeY(result),
     };
     await saveScanImage(cylKey(id), JSON.stringify(stored));
@@ -196,7 +246,7 @@ export async function runTrueDepthScan(
     date: getLocalDateKey(new Date()),
     capturedAt: new Date().toISOString(),
     kind: "face_front_true",
-    depth: summariseDepth(result),
+    depth: summariseDepth(result, ext),
   };
   if (cyl && record.depth) {
     const change = await changeVsFirst(history, cyl, eyeY(result)).catch(() => undefined);

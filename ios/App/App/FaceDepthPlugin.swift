@@ -1,5 +1,6 @@
 import ARKit
 import Capacitor
+import AVFoundation
 import CoreImage
 import UIKit
 
@@ -50,9 +51,11 @@ public class FaceDepthPlugin: CAPPlugin, CAPBridgedPlugin {
         let minDistance = Float(call.getDouble("minDistance") ?? 0.25)
         let maxDistance = Float(call.getDouble("maxDistance") ?? 0.50)
         let sweep = call.getString("mode") == "sweep"
+        let sides = sweep && (call.getBool("sides") ?? false)
 
         DispatchQueue.main.async {
-            let vc = FaceScanViewController(frames: frames, minDistance: minDistance, maxDistance: maxDistance, sweep: sweep)
+            let vc = FaceScanViewController(frames: frames, minDistance: minDistance, maxDistance: maxDistance,
+                                            sweep: sweep, sides: sides)
             vc.onFrame = { [weak self] info in
                 self?.notifyListeners("faceFrame", data: info)
             }
@@ -113,12 +116,15 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     // alternately to two independent cylinders, A and B: how much they
     // disagree is this scan's own measurement noise.
     let sweep: Bool
-    static let cylThetaMin: Float = -100
+    // ±160° and down to 25 cm below the face origin: the side views reach
+    // round towards the back of the neck, and the neck and collarbone need
+    // rows well below the chin.
+    static let cylThetaMin: Float = -160
     static let cylThetaStep: Float = 1
-    static let cylW = 201
-    static let cylYMin: Float = -0.130
+    static let cylW = 321
+    static let cylYMin: Float = -0.250
     static let cylYStep: Float = 0.0015
-    static let cylH = 147
+    static let cylH = 227
     /// The cylinder's axis: this far behind the face origin, roughly the middle of the head.
     static let cylZc: Float = -0.060
     static let reservoir = 12
@@ -138,6 +144,30 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     private var frontPhoto: (score: Float, url: String)?
     private var obliquePhotos: [Int: (score: Float, url: String, yaw: Float)] = [:]
     private var lastEncode: TimeInterval = 0
+
+    // MARK: Sides
+    //
+    // With `sides`, the ring is followed by two whole-body turns: phone fixed
+    // (on a mirror), feet on floor marks, head locked to the shoulders so the
+    // neck is not twisted. Past ~50° ARKit loses the face, so the frames are
+    // sent raw — each a cloud of depth points in camera space — and the web
+    // side places them on the face model by matching shapes (ICP). Turn
+    // frames chain the tracking round; hold frames, taken standing still
+    // side-on, are what gets measured.
+    enum SideStage: String { case none, turnRight, holdRight, back, turnLeft, holdLeft }
+    let sides: Bool
+    private var sideStage: SideStage = .none
+    private var stageStartedAt: TimeInterval = 0
+    private var sideFrames: [String: [[String: Any]]] = ["right": [], "left": []]
+    private var holdCount = 0
+    private var lastCentre: Float?
+    private var stillCount = 0
+    private var lastFace: ARFaceAnchor?
+    private var gravitySum = SIMD3<Float>(repeating: 0)
+    private var gravityN = 0
+    private static let holdFrames = 20
+    private static let maxTurnFrames = 90
+    private static let stageTimeout: TimeInterval = 30
 
     let targetFrames: Int
     let minDistance: Float
@@ -176,11 +206,12 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     private var depthCount = [UInt16](repeating: 0, count: FaceScanViewController.gridW * FaceScanViewController.gridH)
     private var depthFrames = 0
 
-    init(frames: Int, minDistance: Float, maxDistance: Float, sweep: Bool = false) {
+    init(frames: Int, minDistance: Float, maxDistance: Float, sweep: Bool = false, sides: Bool = false) {
         self.targetFrames = frames
         self.minDistance = minDistance
         self.maxDistance = maxDistance
         self.sweep = sweep
+        self.sides = sides
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -280,6 +311,10 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         guard !finished else { return }
+        if sideStage != .none {
+            handleSides(frame)
+            return
+        }
         let elapsed = Date().timeIntervalSince(startedAt)
         if elapsed > (sweep ? Self.sweepTimeout : Self.timeout) {
             // A sweep that covered most of the head is still worth keeping.
@@ -319,9 +354,15 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         else if blink > 0.5 { message = "Eyes open."; ok = false }
 
         let frontDone = collected >= targetFrames && (depthFrames >= Self.minDepthFrames || collected >= targetFrames * 4)
+        lastFace = face
         if ok && !frontDone {
             accumulate(face, pose: pose, distance: distance)
             accumulateDepth(frame, face: face)
+            // Which way is down, in the face's own axes, while standing
+            // naturally square-on: the reference for neck lean and head tilt.
+            let down = face.transform.inverse * SIMD4<Float>(0, -1, 0, 0)
+            gravitySum += SIMD3(down.x, down.y, down.z)
+            gravityN += 1
         }
         if ok { considerFrontPhoto(frame, pose: pose, blink: blink) }
 
@@ -374,7 +415,14 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         showSweep(sweepMessage, ok: sweepOk || (!frontDone && ok), pose: pose, distance: distance, face: face,
                   front: frontDone, filled: filled)
         if frontDone && filled >= 54 && cylFrames >= 40 {
-            complete(frame: frame, face: face)
+            if sides {
+                sideStage = .turnRight
+                stageStartedAt = frame.timestamp
+                stillCount = 0
+                ring.filled = nil
+            } else {
+                complete(frame: frame, face: face)
+            }
         }
     }
 
@@ -429,6 +477,172 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         if used > 500 { depthFrames += 1 }
     }
 
+    /// Median depth of the middle of the depth image, metres: what is straight
+    /// in front of the camera — the face, or the side of the head.
+    private static func centreDepth(_ data: AVDepthData) -> Float? {
+        let depth = data.depthDataType == kCVPixelFormatType_DepthFloat32
+            ? data : data.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32)
+        let map = depth.depthDataMap
+        CVPixelBufferLockBaseAddress(map, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(map, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(map) else { return nil }
+        let w = CVPixelBufferGetWidth(map), h = CVPixelBufferGetHeight(map)
+        let rowBytes = CVPixelBufferGetBytesPerRow(map)
+        var v: [Float] = []
+        for y in stride(from: h / 2 - 20, to: h / 2 + 20, by: 2) {
+            let row = base.advanced(by: y * rowBytes).assumingMemoryBound(to: Float32.self)
+            for x in stride(from: w / 2 - 20, to: w / 2 + 20, by: 2) {
+                let z = row[x]
+                if z.isFinite && z > 0.1 && z < 1.2 { v.append(z) }
+            }
+        }
+        guard v.count > 50 else { return nil }
+        v.sort()
+        return v[v.count / 2]
+    }
+
+    /// The depth frame as camera-space points (ARKit camera axes), in 0.1 mm
+    /// Int16 triples — small enough to send a hundred frames to the web side.
+    private static func cloud(_ frame: ARFrame, step: Int) -> Data? {
+        guard let raw = frame.capturedDepthData else { return nil }
+        let depth = raw.depthDataType == kCVPixelFormatType_DepthFloat32
+            ? raw : raw.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32)
+        let map = depth.depthDataMap
+        CVPixelBufferLockBaseAddress(map, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(map, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(map) else { return nil }
+        let w = CVPixelBufferGetWidth(map), h = CVPixelBufferGetHeight(map)
+        let rowBytes = CVPixelBufferGetBytesPerRow(map)
+        let k = frame.camera.intrinsics
+        let res = frame.camera.imageResolution
+        let sx = Float(w) / Float(res.width), sy = Float(h) / Float(res.height)
+        let fx = k.columns.0.x * sx, fy = k.columns.1.y * sy
+        let cx = k.columns.2.x * sx, cy = k.columns.2.y * sy
+        var out: [Int16] = []
+        out.reserveCapacity((w / step) * (h / step) * 3)
+        for v in stride(from: 0, to: h, by: step) {
+            let row = base.advanced(by: v * rowBytes).assumingMemoryBound(to: Float32.self)
+            for u in stride(from: 0, to: w, by: step) {
+                let z = row[u]
+                guard z.isFinite, z > 0.12, z < 0.65 else { continue }
+                let x = (Float(u) - cx) / fx * z
+                let y = -(Float(v) - cy) / fy * z
+                out.append(Int16((x * 10000).rounded()))
+                out.append(Int16((y * 10000).rounded()))
+                out.append(Int16((-z * 10000).rounded()))
+            }
+        }
+        guard out.count > 300 else { return nil }
+        return out.withUnsafeBufferPointer { Data(buffer: $0) }
+    }
+
+    private func recordSideFrame(_ frame: ARFrame, side: String, stage: String, step: Int, face: ARFaceAnchor?) {
+        guard let data = Self.cloud(frame, step: step) else { return }
+        var entry: [String: Any] = ["stage": stage, "points": data.base64EncodedString()]
+        if let f = face, f.isTracked {
+            // Camera → face, metres, column-major: the starting guess for matching.
+            let m = f.transform.inverse * frame.camera.transform
+            entry["pose"] = [m.columns.0, m.columns.1, m.columns.2, m.columns.3].flatMap { [$0.x, $0.y, $0.z, $0.w] }
+        }
+        sideFrames[side, default: []].append(entry)
+    }
+
+    private func handleSides(_ frame: ARFrame) {
+        let now = frame.timestamp
+        let face = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first
+        let tracked = face?.isTracked == true
+        var yaw: Float?
+        if let f = face, tracked { yaw = Self.angles(frame.camera.viewMatrix(for: .portrait) * f.transform).yaw }
+        if let f = face, tracked { lastFace = f }
+
+        var centre: Float?
+        if let d = frame.capturedDepthData {
+            centre = Self.centreDepth(d)
+            if let c = centre, let last = lastCentre, abs(c - last) < 0.0015 { stillCount += 1 } else if centre != nil { stillCount = 0 }
+            lastCentre = centre
+        }
+        let still = stillCount >= 6
+        let side = (sideStage == .turnRight || sideStage == .holdRight) ? "right" : "left"
+        let way = side == "right" ? "right" : "left"
+        var message = ""
+        var ok = false
+        var progress: Float = 0
+
+        // A stage that never settles is skipped rather than failing the scan.
+        if now - stageStartedAt > Self.stageTimeout {
+            advanceSide(frame, now: now)
+            return
+        }
+
+        switch sideStage {
+        case .turnRight, .turnLeft:
+            message = "Turn your whole body \(way), slowly, onto the side mark."
+            if frame.capturedDepthData != nil, (sideFrames[side]?.count ?? 0) < Self.maxTurnFrames {
+                recordSideFrame(frame, side: side, stage: "turn", step: 8, face: face)
+            }
+            // Past where ARKit can follow the face — or clearly turned while
+            // it still can — and standing still: that is the side-on stop.
+            let turned = !tracked || (yaw.map { abs($0) > 60 } ?? true)
+            if turned && still, let c = centre {
+                if c < 0.22 { message = "Step back a little." }
+                else if c > 0.42 { message = "Step a little closer." }
+                else {
+                    sideStage = sideStage == .turnRight ? .holdRight : .holdLeft
+                    stageStartedAt = now
+                    holdCount = 0
+                    message = "Hold still."
+                    ok = true
+                }
+            }
+        case .holdRight, .holdLeft:
+            message = "Hold still."
+            ok = still
+            if still, frame.capturedDepthData != nil {
+                recordSideFrame(frame, side: side, stage: "hold", step: 5, face: face)
+                holdCount += 1
+            }
+            progress = Float(holdCount) / Float(Self.holdFrames)
+            if holdCount >= Self.holdFrames { advanceSide(frame, now: now); return }
+        case .back:
+            message = "Done. Turn back to face the phone."
+            if tracked, let y = yaw, abs(y) < 12 {
+                sideStage = .turnLeft
+                stageStartedAt = now
+                stillCount = 0
+                message = "Now turn your whole body left, slowly."
+            }
+        case .none:
+            return
+        }
+
+        label.text = message
+        label.textColor = ok ? .systemGreen : .label
+        ring.tracking = tracked
+        ring.progress = progress
+        let wall = Date().timeIntervalSince1970
+        guard wall - lastNotify > 0.12 else { return }
+        lastNotify = wall
+        var info: [String: Any] = ["tracked": tracked, "ok": ok, "message": message,
+                                   "collected": holdCount, "target": Self.holdFrames, "phase": sideStage.rawValue]
+        if let c = centre { info["distance"] = c }
+        onFrame?(info)
+    }
+
+    private func advanceSide(_ frame: ARFrame, now: TimeInterval) {
+        stageStartedAt = now
+        stillCount = 0
+        holdCount = 0
+        switch sideStage {
+        case .turnRight, .holdRight: sideStage = .back
+        case .back: sideStage = .turnLeft
+        default:
+            sideStage = .none
+            if let f = lastFace { complete(frame: frame, face: f) } else {
+                finish(.failure(ScanError.failed("Lost the face model before finishing.")))
+            }
+        }
+    }
+
     /// Every depth pixel (every other one — still ~75,000 a frame) onto the
     /// cylinder, as a random sample per cell so memory stays fixed.
     private func accumulateCylinder(_ frame: ARFrame, face: ARFaceAnchor) {
@@ -469,7 +683,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                 let pf = toFace * pc
                 let dz = pf.z - zc
                 let r = (pf.x * pf.x + dz * dz).squareRoot()
-                guard r > 0.03, r < 0.15, pf.z > -0.10 else { continue }
+                guard r > 0.03, r < 0.15, pf.z > -0.14 else { continue }
                 let theta = atan2(pf.x, dz) * deg
                 guard abs(theta - thetaCamera) < Self.maxGrazing else { continue }
                 let i = Int(((theta - Self.cylThetaMin) / Self.cylThetaStep).rounded())
@@ -645,6 +859,13 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             var obliques: [[String: Any]] = []
             for (_, o) in obliquePhotos { obliques.append(["image": o.url, "yaw": Double(o.yaw)]) }
             result["obliques"] = obliques
+            if gravityN > 0 {
+                let g = simd_normalize(gravitySum / Float(gravityN))
+                result["gravityFace"] = [g.x, g.y, g.z]
+            }
+            if sides {
+                result["sides"] = ["right": sideFrames["right"] ?? [], "left": sideFrames["left"] ?? []]
+            }
         }
 
         // The averaged depth surface, mm, NaN where too few samples landed
