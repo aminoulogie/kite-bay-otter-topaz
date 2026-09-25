@@ -46,7 +46,7 @@ export const SESSION: {
     kind: "face_front_true",
     title: "1 · Front",
     short: "Front",
-    coach: "Look into the lens. Eyes on the marks. Jaw unclenched.",
+    coach: "Look into the lens. Face in the square. Jaw unclenched.",
     yawAbs: [0, 8],
     rollMax: 2.5,
     pitchMax: 8,
@@ -138,7 +138,7 @@ export function framingFromLandmarks(pts: Pt[]): FramingReport {
   const centerX = li && ri ? (li.x + ri.x) / 2 : 0.5;
   if (faceHeightFrac < 0.28) notes.push("Move closer — face should fill about half the frame.");
   else if (faceHeightFrac > 0.72) notes.push("Step back — chin and hairline are clipped.");
-  if (eyesY < 0.22) notes.push("Drop the camera. Eyes should sit on the upper marks.");
+  if (eyesY < 0.22) notes.push("Drop the camera a little. Eyes should sit in the upper part of the frame.");
   else if (eyesY > 0.52) notes.push("Raise the camera to eye height.");
   if (Math.abs(centerX - 0.5) > 0.14) notes.push("Slide the phone so the face sits on the midline.");
   return { faceHeightFrac, eyesY, centerX, notes };

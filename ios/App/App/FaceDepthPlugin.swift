@@ -105,6 +105,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     var onFinish: ((Result<[String: Any], Error>) -> Void)?
 
     private let sceneView = ARSCNView(frame: .zero)
+    private let ring = ScanRingView(frame: .zero)
     private let label = UILabel()
     private let progress = UIProgressView(progressViewStyle: .default)
     private var vertexSums: [SIMD3<Float>] = []
@@ -153,24 +154,29 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         sceneView.automaticallyUpdatesLighting = true
         view.addSubview(sceneView)
 
+        // Face ID's look: a plain screen, a round window onto the camera, and
+        // a ring of ticks that fills as frames are collected.
+        ring.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(ring)
+
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.textColor = .white
-        label.font = .boldSystemFont(ofSize: 18)
+        label.textColor = .label
+        label.font = .systemFont(ofSize: 20, weight: .semibold)
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.backgroundColor = UIColor.black.withAlphaComponent(0.55)
         label.text = "Look straight at the screen."
         view.addSubview(label)
 
+        // The ring shows progress; the bar is kept only as the value's home.
+        progress.isHidden = true
         progress.translatesAutoresizingMaskIntoConstraints = false
-        progress.progressTintColor = UIColor(red: 0.83, green: 0.99, blue: 0.31, alpha: 1)
         view.addSubview(progress)
 
         let cancelButton = UIButton(type: .system)
         cancelButton.translatesAutoresizingMaskIntoConstraints = false
         cancelButton.setTitle("Cancel", for: .normal)
         cancelButton.titleLabel?.font = .boldSystemFont(ofSize: 17)
-        cancelButton.tintColor = .white
+        cancelButton.tintColor = .label
         cancelButton.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         view.addSubview(cancelButton)
 
@@ -179,12 +185,16 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             sceneView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             sceneView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             sceneView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            ring.topAnchor.constraint(equalTo: view.topAnchor),
+            ring.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ring.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            ring.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             cancelButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             cancelButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
-            label.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            label.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            label.bottomAnchor.constraint(equalTo: progress.topAnchor, constant: -8),
-            label.heightAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            label.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            label.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            NSLayoutConstraint(item: label, attribute: .centerY, relatedBy: .equal,
+                               toItem: view, attribute: .bottom, multiplier: 0.76, constant: 0),
             progress.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
             progress.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
             progress.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
@@ -344,8 +354,10 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
 
     private func show(_ text: String, ok: Bool, pose: (yaw: Float, pitch: Float, roll: Float)?, distance: Float?, face: ARFaceAnchor?) {
         label.text = text
-        label.textColor = ok ? UIColor(red: 0.2, green: 0.85, blue: 0.4, alpha: 1) : .white
+        label.textColor = ok ? .systemGreen : .label
         progress.progress = Float(collected) / Float(targetFrames)
+        ring.progress = progress.progress
+        ring.tracking = face != nil
 
         let now = Date().timeIntervalSince1970
         guard now - lastNotify > 0.12 else { return }
@@ -447,5 +459,70 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         guard let cg = context.createCGImage(image, from: image.extent),
               let data = UIImage(cgImage: cg).jpegData(compressionQuality: 0.85) else { return nil }
         return "data:image/jpeg;base64," + data.base64EncodedString()
+    }
+}
+
+/**
+ * Face ID-style frame: the screen's background colour everywhere except a
+ * round window onto the camera, ringed by 60 ticks that turn green as the
+ * scan fills up.
+ */
+final class ScanRingView: UIView {
+    private static let count = 60
+    private let cover = CAShapeLayer()
+    private var ticks: [CAShapeLayer] = []
+
+    /// 0–1.
+    var progress: Float = 0 { didSet { if progress != oldValue { paint() } } }
+    /// A face is in view: unfilled ticks go from faint to grey.
+    var tracking = false { didSet { if tracking != oldValue { paint() } } }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        cover.fillRule = .evenOdd
+        layer.addSublayer(cover)
+        for _ in 0..<Self.count {
+            let t = CAShapeLayer()
+            t.lineWidth = 4
+            t.lineCap = .round
+            layer.addSublayer(t)
+            ticks.append(t)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let r = min(bounds.width, bounds.height) * 0.33
+        let c = CGPoint(x: bounds.midX, y: bounds.height * 0.40)
+        let path = UIBezierPath(rect: bounds)
+        path.append(UIBezierPath(ovalIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)))
+        cover.frame = bounds
+        cover.path = path.cgPath
+        for (i, t) in ticks.enumerated() {
+            let a = -CGFloat.pi / 2 + CGFloat(i) * 2 * .pi / CGFloat(Self.count)
+            let tick = UIBezierPath()
+            tick.move(to: CGPoint(x: c.x + cos(a) * (r + 14), y: c.y + sin(a) * (r + 14)))
+            tick.addLine(to: CGPoint(x: c.x + cos(a) * (r + 34), y: c.y + sin(a) * (r + 34)))
+            t.frame = bounds
+            t.path = tick.cgPath
+        }
+        paint()
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        paint()
+    }
+
+    private func paint() {
+        cover.fillColor = UIColor.systemBackground.cgColor
+        let filled = Int((progress * Float(Self.count)).rounded())
+        let idle = tracking ? UIColor.systemGray2 : UIColor.systemGray4
+        for (i, t) in ticks.enumerated() {
+            t.strokeColor = (i < filled ? UIColor.systemGreen : idle).resolvedColor(with: traitCollection).cgColor
+        }
     }
 }

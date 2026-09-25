@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  beepInterval, cropForZoom, guide, laplacianVariance, median, mergeSymmetry, rankFrames, turnedSide,
+  beepInterval, cropForView, cropForZoom, faceSquare, guide, screenCue, smoothSquare, laplacianVariance, median, mergeSymmetry, rankFrames, turnedSide,
   type AssistInput,
 } from "./assist.ts";
 
@@ -189,4 +189,42 @@ test("a baseline distance outranks the generic framing band", () => {
   const g = guide(input({ faceHeightFrac: 0.2, distance: "ok", yawDeg: 40 }));
   assert.notEqual(g.instruction, "closer");
   assert.equal(guide(input({ distance: "back" })).instruction, "back");
+});
+
+test("the view is always 3:4, whatever shape the camera sends", () => {
+  for (const [w, h] of [[1920, 1080], [1080, 1920], [1440, 1920], [1080, 1080], [640, 480]]) {
+    const c = cropForView(w!, h!, 1);
+    assert.ok(Math.abs(c.sw / c.sh - 3 / 4) < 0.01, `${w}x${h} → ${c.sw}x${c.sh}`);
+    assert.ok(c.sx >= 0 && c.sy >= 0 && c.sx + c.sw <= w! && c.sy + c.sh <= h!, "inside the frame");
+  }
+  assert.deepEqual(cropForView(1440, 1920, 1), { sx: 0, sy: 0, sw: 1440, sh: 1920 });
+  const z = cropForView(1920, 1080, 2);
+  assert.equal(z.sw, 405);
+  assert.equal(z.sh, 540);
+});
+
+test("the face square covers the face, square on screen, and mirrors with the preview", () => {
+  const pts = [{ x: 0.4, y: 0.3 }, { x: 0.6, y: 0.6 }];
+  const sq = faceSquare(pts, false)!;
+  assert.ok(Math.abs(sq.cx - 0.5) < 1e-9 && Math.abs(sq.cy - 0.45) < 1e-9);
+  // 0.3 of the height = 0.4 of the width in a 3:4 window: the taller side wins.
+  assert.ok(Math.abs(sq.side - 0.4 * 1.12) < 1e-9, `${sq.side}`);
+  assert.ok(Math.abs(faceSquare([{ x: 0.1, y: 0.3 }, { x: 0.3, y: 0.5 }], true)!.cx - 0.8) < 1e-9);
+  assert.equal(faceSquare([], false), null);
+});
+
+test("the tracker glides toward the face", () => {
+  const a = { cx: 0, cy: 0, side: 0.5 };
+  const b = smoothSquare(a, { cx: 1, cy: 1, side: 0.5 }, 0.5);
+  assert.deepEqual(b, { cx: 0.5, cy: 0.5, side: 0.5 });
+  assert.deepEqual(smoothSquare(null, a), a);
+});
+
+test("ring cue: mirror keeps the user's side on screen, the back camera flips it", () => {
+  const g = { instruction: "turn", side: "right", error: 0.5, pan: 1, beepMs: 300, pitchHz: 660, phrase: "" } as const;
+  assert.equal(screenCue(g, true), "right");
+  assert.equal(screenCue(g, false), "left");
+  assert.equal(screenCue({ ...g, instruction: "chinUp", side: null }, true), "up");
+  assert.equal(screenCue({ ...g, instruction: "hold", side: null }, true), null);
+  assert.equal(screenCue(null, true), null);
 });

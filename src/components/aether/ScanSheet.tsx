@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { SwitchCamera, X, Zap, ZapOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import type { FaceAnalysis } from "@/lib/aether/analyzeFace";
@@ -15,12 +15,13 @@ import {
 } from "@/lib/aether/mediapipe";
 import { canvasFromDataUrl, measureCanvas, measurePosture } from "@/lib/aether/measure";
 import {
-  cropForZoom, distanceCue, guide, irisSize, laplacianVariance, mergeSymmetry, rankFrames, turnedSide,
-  type Guidance,
+  cropForView, distanceCue, faceSquare, guide, irisSize, laplacianVariance, mergeSymmetry, rankFrames,
+  screenCue, smoothSquare, turnedSide, type FaceSquare, type Guidance,
 } from "@/lib/aether/assist";
 import { AssistAudio } from "@/lib/aether/assist-audio";
 import { autoPlacement, type Placement } from "@/lib/aether/align";
 import { ALIGN_H, ALIGN_W, AlignSheet } from "@/components/aether/AlignSheet";
+import { FaceRing } from "@/components/aether/FaceRing";
 import { baselineIris, scanSlot, type ScanRecord } from "@/lib/aether/scan-store";
 import { loadScanImage, saveScanImage } from "@/lib/habit-photos";
 import { getLocalDateKey } from "@/lib/soma";
@@ -211,7 +212,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
   const [burstPct, setBurstPct] = useState(0);
   const [hud, setHud] = useState<Quality | null>(null);
-  const [eyes, setEyes] = useState<{ lx: number; ly: number; rx: number; ry: number; mx: number } | null>(null);
+  const [square, setSquare] = useState<FaceSquare | null>(null);
   const [status, setStatus] = useState("Open the camera. Front → 45° → profile.");
   const [pose, setPose] = useState<{ yaw: number; roll: number; pitch: number } | null>(null);
   const [autoFire, setAutoFire] = useState(true);
@@ -306,10 +307,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const done = new Set(scans.map(scanSlot));
   const slotOf = (x: (typeof SESSION)[number]) => scanSlot({ kind: x.kind, side: x.side });
   const ready = hud?.ready ?? false;
-  // Guides are drawn for a turn to the user's right as seen in the mirrored
-  // front preview. The left step turns the other way, and the back camera's
-  // preview is not a mirror — each flips the drawing, both cancel out.
-  const flipGuide = (s.side === "left") !== (settings.facing === "environment");
+  // Hold fills the first half of the ring, the burst the second.
+  const ringProgress = busy ? 0.5 + burstPct / 200 : (holding / HOLD_FRAMES) * 0.5;
+  const frontGlow = settings.flash && settings.facing === "user" && live;
 
   // The camera and the animation frame both have to stop when this closes, or
   // the light stays on and the loop keeps running behind the diary.
@@ -344,6 +344,22 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       if (!track || !caps?.zoom) return false;
       const z = Math.max(caps.zoom.min, Math.min(caps.zoom.max, zoom));
       void track.applyConstraints({ advanced: [{ zoom: z } as MediaTrackConstraintSet] }).catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * The back camera's LED, where the browser exposes it (the `torch`
+   * constraint). Returns false where it does not, so the caller can say so.
+   */
+  async function setTorch(on: boolean): Promise<boolean> {
+    try {
+      const track = streamRef.current?.getVideoTracks()[0];
+      const caps = track?.getCapabilities?.() as (MediaTrackCapabilities & { torch?: boolean }) | undefined;
+      if (!track || !caps?.torch) return false;
+      await track.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
       return true;
     } catch {
       return false;
@@ -452,7 +468,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       if (!video || !small || video.readyState < 2) return;
       // The same centre crop the preview shows and the capture keeps, so the
       // landmarks, the guides and the saved photo all describe one frame.
-      const c = cropForZoom(video.videoWidth, video.videoHeight, liveRefs.current.zoom);
+      const c = cropForView(video.videoWidth, video.videoHeight, liveRefs.current.zoom);
       small.width = 320;
       small.height = Math.round(320 * (c.sh / Math.max(1, c.sw)));
       const ctx = small.getContext("2d");
@@ -473,7 +489,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
               smile: 0, hasFace: false,
             }),
           );
-          setEyes(null);
+          setSquare(null);
           held.current = 0;
           setHolding(0);
           const lost = guide({
@@ -537,13 +553,11 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           held.current = 0;
           setHolding(0);
         }
-        const li = pts[FACE.leftInner];
-        const ri = pts[FACE.rightInner];
         // Mirrored for display only. The preview is flipped so it behaves like
         // a mirror; the ANALYSIS runs on unmirrored pixels, or left and right
         // would swap between the coach and the Face File.
-        const fx = (x: number) => (liveRefs.current.mirror ? 1 - x : x);
-        if (li && ri) setEyes({ lx: fx(li.x), ly: li.y, rx: fx(ri.x), ry: ri.y, mx: fx((li.x + ri.x) / 2) });
+        const sq = faceSquare(pts, liveRefs.current.mirror);
+        if (sq) setSquare((prev) => smoothSquare(prev, sq));
       } catch {
         // A dropped frame during live detection is not worth a message.
       }
@@ -555,7 +569,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
-    const c = cropForZoom(video.videoWidth || 1080, video.videoHeight || 1440, liveRefs.current.zoom);
+    const c = cropForView(video.videoWidth || 1080, video.videoHeight || 1440, liveRefs.current.zoom);
     canvas.width = c.sw;
     canvas.height = c.sh;
     const ctx = canvas.getContext("2d");
@@ -595,12 +609,18 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     setBurstPct(0);
     audio.update(null);
     audio.cue("capture");
-    // The screen is the flash, so it only helps when it faces you.
+    // Front: the screen is the flash. Back: the LED torch, for the burst only.
     const flash = settings.flash && settings.facing === "user";
+    const torch = settings.flash && settings.facing === "environment" ? await setTorch(true) : false;
+    if (settings.flash && settings.facing === "environment" && !torch) {
+      toast("This browser can't switch on the camera light — shooting without it.");
+    }
     if (flash) {
       setFlashing(true);
       await sleep(FLASH_SETTLE_MS);
     }
+    // The LED takes longer than the screen for exposure to settle on.
+    if (torch) await sleep(FLASH_SETTLE_MS * 2);
     try {
       const frames: Grab[] = [];
       for (let i = 0; i < BURST; i++) {
@@ -610,6 +630,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         if (i < BURST - 1) await sleep(80);
       }
       setFlashing(false);
+      if (torch) void setTorch(false);
       if (!frames.length) {
         setStatus("Nothing came back from the camera. Try again.");
         return;
@@ -692,6 +713,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       setStatus(err instanceof Error ? err.message : "Capture failed.");
     } finally {
       setFlashing(false);
+      if (torch) void setTorch(false);
       setBusy(false);
       // A short cooldown, or the frame right after a capture is still green and
       // fires again immediately.
@@ -806,7 +828,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         <div className="mb-2 flex gap-1.5" data-no-swipe-nav>
           {SESSION.map((x, i) => (
             <button
-              key={x.kind}
+              key={slotOf(x)}
               type="button"
               onClick={() => setStep(i)}
               className={cn(
@@ -824,22 +846,36 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           ))}
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-black">
-          {/* Mirrored preview so it behaves like a mirror. The analysis reads
-              the unmirrored canvas below, so left and right never swap. */}
+        {/* One fixed 3:4 window, whatever shape the camera delivers: the frame
+            is centre-cropped to 3:4 for the preview, the analysis and the
+            saved photo alike, so what you see is exactly what is measured. */}
+        <div
+          className="relative mx-auto aspect-[3/4] w-full max-w-[calc(64svh*0.75)] overflow-hidden rounded-2xl border border-border bg-black transition-shadow"
+          style={
+            frontGlow
+              ? // A ring light while you frame: the screen round the window lights your face.
+                { boxShadow: `0 0 0 10px ${FLASH_COLOR}, 0 0 36px 16px ${FLASH_COLOR}` }
+              : undefined
+          }
+        >
           {/* Mirrored for the front camera only, and scaled by the digital zoom
               so the preview shows exactly the centre crop that is analysed. */}
           <video
             ref={videoRef}
-            className="w-full"
+            className="absolute inset-0 size-full object-cover"
             style={{
               transform: `scale(${(settings.facing === "user" ? -1 : 1) * (hwZoom ? 1 : settings.zoom)}, ${hwZoom ? 1 : settings.zoom})`,
             }}
             playsInline
             muted
           />
-          <canvas ref={canvasRef} className={cn("w-full", live && "hidden")} />
+          <canvas ref={canvasRef} className="hidden" />
           <canvas ref={smallRef} className="hidden" />
+          {!live && (
+            <div className="absolute inset-0 grid place-items-center text-xs font-bold text-white/50">
+              Tap Camera to start
+            </div>
+          )}
           {ghostUrl && live && (
             // Saved photos are un-mirrored frames; mirror them like the preview.
             <img
@@ -851,88 +887,42 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             />
           )}
 
-          <svg
-            className="pointer-events-none absolute inset-0 size-full"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-          >
-            <line x1="33" y1="8" x2="33" y2="92" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
-            <line x1="66" y1="8" x2="66" y2="92" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
-            <line x1="8" y1="33" x2="92" y2="33" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
-            <line x1="8" y1="66" x2="92" y2="66" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
-            {/* Centred only for the front shot. A turned face is not supposed
-                to straddle the middle of the frame, and a bright line saying it
-                should is the same mistake as the two eye marks. */}
-            <line
-              x1="50" y1="6" x2="50" y2="94"
-              stroke={
-                kind !== "face_front_true"
-                  ? "rgba(255,255,255,.10)"
-                  : ready
-                    ? "rgba(48,209,88,.75)"
-                    : "rgba(255,255,255,.4)"
-              }
-              strokeWidth={kind === "face_front_true" ? 0.3 : 0.18}
+          {live && (
+            <FaceRing
+              square={square}
+              ready={ready}
+              progress={ringProgress}
+              cue={screenCue(guidance, settings.facing === "user")}
             />
-            <line x1="12" y1="40" x2="88" y2="40" stroke="rgba(255,255,255,.35)" strokeWidth="0.22" />
+          )}
 
-            {/* The eye marks belong to the POSE, not to the screen. Drawing two
-                of them on the profile step asked for something a profile
-                cannot do — you cannot put both eyes on marks when one of them
-                is behind your nose — so the guide was telling you that you had
-                failed at the exact moment you had done it right.
-
-                The profile line bulges right, so these steps all turn the face
-                to the right of frame: the near eye moves toward the nose side
-                and the far one narrows to nothing as it passes behind it. */}
-            {kind === "face_front_true" && (
-              <>
-                <ellipse cx="38" cy="40" rx="9" ry="6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
-                <ellipse cx="62" cy="40" rx="9" ry="6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
-                <ellipse cx="50" cy="48" rx="28" ry="36" fill="none" stroke="rgba(255,255,255,.22)" strokeWidth="0.3" />
-              </>
-            )}
-
-            {kind === "face_oblique" && (
-              <g transform={flipGuide ? "matrix(-1 0 0 1 100 0)" : undefined}>
-                {/* Near eye keeps its width; the far one is foreshortened and
-                    sits close to the nose line, which is what 45° looks like. */}
-                <ellipse cx="44" cy="40" rx="8.5" ry="5.6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
-                <ellipse cx="66" cy="40" rx="4.5" ry="5" fill="none" stroke="rgba(10,132,255,.5)" strokeWidth="0.35" />
-                <path d="M58 16 C78 28 82 70 62 88" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
-              </g>
-            )}
-
-            {kind === "face_side" && (
-              <g transform={flipGuide ? "matrix(-1 0 0 1 100 0)" : undefined}>
-                {/* ONE eye. The other is behind the nose at a true profile. */}
-                <ellipse cx="60" cy="40" rx="7" ry="5.4" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
-                {/* And the ear, which is the landmark a profile is judged on —
-                    the CVA measurement is taken from the tragus. */}
-                <circle cx="33" cy="43" r="4.5" fill="none" stroke="rgba(10,132,255,.5)" strokeWidth="0.35" />
-                {/* Counter-flipped about its own x so the word reads forwards. */}
-                <text
-                  x="33" y="51.5" fill="rgba(10,132,255,.6)" fontSize="3" textAnchor="middle"
-                  transform={flipGuide ? "matrix(-1 0 0 1 66 0)" : undefined}
-                >
-                  ear
-                </text>
-                <path d="M68 14 C88 30 90 72 70 90" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
-              </g>
-            )}
-            {eyes && (
-              <>
-                <circle cx={eyes.lx * 100} cy={eyes.ly * 100} r="1.1" fill="#0a84ff" />
-                <circle cx={eyes.rx * 100} cy={eyes.ry * 100} r="1.1" fill="#0a84ff" />
-                {/* The midline is only meaningful where there is a midline to
-                    be on. At profile it is behind the face and lining up to it
-                    would be actively wrong. */}
-                {kind === "face_front_true" && (
-                  <line x1={eyes.mx * 100} y1="8" x2={eyes.mx * 100} y2="92" stroke="rgba(10,132,255,.35)" strokeWidth="0.2" />
-                )}
-              </>
-            )}
-          </svg>
+          {/* Camera controls on the picture, where a phone camera has them. */}
+          <div className="absolute right-2 top-2 flex flex-col gap-2" data-no-swipe-nav>
+            <button
+              type="button"
+              aria-label={settings.flash ? "Flash on" : "Flash off"}
+              aria-pressed={settings.flash}
+              onClick={() => patchSettings({ flash: !settings.flash })}
+              className={cn(
+                "grid size-9 place-items-center rounded-full backdrop-blur",
+                settings.flash ? "bg-[#ffd60a] text-black" : "bg-black/50 text-white",
+              )}
+            >
+              {settings.flash ? <Zap className="size-4" /> : <ZapOff className="size-4" />}
+            </button>
+            <button
+              type="button"
+              aria-label="Switch camera"
+              onClick={() => {
+                const f = settings.facing === "user" ? "environment" : "user";
+                patchSettings({ facing: f });
+                if (live) void startCam({ facing: f });
+              }}
+              className="grid size-9 place-items-center rounded-full bg-black/50 text-white backdrop-blur"
+            >
+              <SwitchCamera className="size-4" />
+            </button>
+          </div>
 
           {hud && (
             <div className="absolute left-2 top-2 flex gap-1.5">
@@ -968,7 +958,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           {pose && (
             // The raw angles, so the coach line can be checked rather than
             // taken on faith. "Turn more" is not falsifiable; 41° is.
-            <div className="absolute right-2 top-2 rounded-lg bg-black/55 px-2 py-1 text-right text-[0.55rem] font-bold tabular text-white/75">
+            <div className="absolute bottom-10 right-2 rounded-lg bg-black/55 px-2 py-1 text-right text-[0.55rem] font-bold tabular text-white/75">
               <div>yaw {pose.yaw.toFixed(0)}°</div>
               <div className="text-white/50">
                 target {s.yawAbs[0]}–{s.yawAbs[1]}°
@@ -987,16 +977,6 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
               ? `Hold… ${Math.max(1, HOLD_FRAMES - holding)}`
               : (guidance?.phrase ?? hud?.coach ?? s.coach)}
           </div>
-
-          {holding > 0 && (
-            // A ring closing round the frame, so the countdown is visible
-            // without looking away from your own face.
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-2xl border-4 border-emerald-400 transition-opacity"
-              style={{ opacity: holding / HOLD_FRAMES }}
-            />
-          )}
 
           {burstPct > 0 && (
             <div className="absolute inset-x-0 top-0 h-1 bg-white/10">
@@ -1043,13 +1023,13 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {hud && hud.lighting < 0.5 && settings.facing === "user" && !settings.flash && (
+        {hud && hud.lighting < 0.5 && !settings.flash && (
           <button
             type="button"
             onClick={() => patchSettings({ flash: true })}
             className="mt-2 w-full rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-left text-xs font-bold text-amber-200"
           >
-            Too dark for a reliable reading — tap to turn on the screen flash
+            Too dark for a reliable reading — tap to turn on the flash
           </button>
         )}
 
@@ -1087,11 +1067,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             ))}
           </ChipRow>
           <ChipRow label="Assist">
-            <Chip
-              on={settings.flash && settings.facing === "user"}
-              disabled={settings.facing !== "user"}
-              onClick={() => patchSettings({ flash: !settings.flash })}
-            >
+            <Chip on={settings.flash} onClick={() => patchSettings({ flash: !settings.flash })}>
               Flash
             </Chip>
             <Chip on={settings.sound} onClick={() => patchSettings({ sound: !settings.sound })}>

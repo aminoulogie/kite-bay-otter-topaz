@@ -230,6 +230,84 @@ export function cropForZoom(width: number, height: number, zoom: number): CropRe
   return { sx: Math.round((width - sw) / 2), sy: Math.round((height - sh) / 2), sw, sh };
 }
 
+/** The camera window's shape, width over height: always portrait 3:4. */
+export const VIEW_ASPECT = 3 / 4;
+
+/**
+ * The part of a camera frame that is shown, analysed and saved: the largest
+ * centred 3:4 rectangle, then the digital zoom's centre crop of that.
+ *
+ * Cameras hand back 4:3, 3:4, 16:9 or square depending on lens, browser and
+ * orientation. Cropping every one of them to one shape is what keeps the
+ * window from changing size and keeps scans comparable with each other.
+ */
+export function cropForView(width: number, height: number, zoom: number, aspect = VIEW_ASPECT): CropRect {
+  let bw = width;
+  let bh = height;
+  if (bw / Math.max(1, bh) > aspect) bw = bh * aspect;
+  else bh = bw / aspect;
+  const z = Math.max(1, zoom || 1);
+  const sw = Math.round(bw / z);
+  const sh = Math.round(bh / z);
+  return { sx: Math.round((width - sw) / 2), sy: Math.round((height - sh) / 2), sw, sh };
+}
+
+export interface FaceSquare {
+  /** Centre, as fractions of the window's width and height. */
+  cx: number;
+  cy: number;
+  /** Side of the square, as a fraction of the window's WIDTH. */
+  side: number;
+}
+
+/**
+ * A square around the face for the on-screen tracker, from landmarks given as
+ * fractions of the (unmirrored) crop. Mirrored for display when the preview is.
+ */
+export function faceSquare(
+  pts: ArrayLike<{ x: number; y: number }>,
+  mirror: boolean,
+  aspect = VIEW_ASPECT,
+): FaceSquare | null {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!;
+    x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x);
+    y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y);
+  }
+  if (!Number.isFinite(x0) || x1 <= x0 || y1 <= y0) return null;
+  // Heights are fractions of the window's height, which is width / aspect.
+  const side = Math.max(x1 - x0, (y1 - y0) / aspect) * 1.12;
+  const cx = (x0 + x1) / 2;
+  return { cx: mirror ? 1 - cx : cx, cy: (y0 + y1) / 2, side };
+}
+
+/** Ease the tracker toward a new position so it glides rather than jitters. */
+export function smoothSquare(prev: FaceSquare | null, next: FaceSquare, k = 0.55): FaceSquare {
+  if (!prev) return next;
+  return {
+    cx: prev.cx + (next.cx - prev.cx) * k,
+    cy: prev.cy + (next.cy - prev.cy) * k,
+    side: prev.side + (next.side - prev.side) * k,
+  };
+}
+
+/**
+ * Which edge of the ring to light for a correction, on SCREEN. The guidance
+ * speaks in the user's own left/right; the front preview is a mirror, so
+ * their right is the screen's right there and the screen's left on the back
+ * camera.
+ */
+export function screenCue(g: Guidance | null, mirror: boolean): "left" | "right" | "up" | "down" | null {
+  if (!g) return null;
+  if (g.instruction === "chinUp") return "up";
+  if (g.instruction === "chinDown") return "down";
+  if ((g.instruction === "turn" || g.instruction === "ease") && g.side) {
+    return mirror ? g.side : g.side === "left" ? "right" : "left";
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Burst: sharpness and merge
 
