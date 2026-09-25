@@ -823,8 +823,12 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                 let pf = toFace * pc
                 let dz = pf.z - zc
                 let r = (pf.x * pf.x + dz * dz).squareRoot()
-                guard r > 0.03, r < 0.15, pf.z > -0.14 else { continue }
+                guard r > 0.03, pf.z > -0.14 else { continue }
                 let theta = atan2(pf.x, dz) * deg
+                // 15 cm from the axis holds the head everywhere but the nose,
+                // which reaches past it. In front of the face and above the
+                // chin nothing else can be there, so the limit is 20 cm.
+                guard r < (abs(theta) < 45 && pf.y > -0.08 ? 0.20 : 0.15) else { continue }
                 guard abs(theta - thetaCamera) < Self.maxGrazing else { continue }
                 let i = Int(((theta - Self.cylThetaMin) / Self.cylThetaStep).rounded())
                 let j = Int(((pf.y - Self.cylYMin) / Self.cylYStep).rounded())

@@ -416,7 +416,8 @@ function headOnly(pts: Float32Array, T: Mat4, axisZ: number): Float32Array {
   for (let i = 0; i < pts.length / 3; i++) {
     const [x, y, z] = apply(T, pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!);
     const dz = z - axisZ;
-    if (y > -200 && y < 130 && x * x + dz * dz < 140 * 140) out.push(pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!);
+    const lim = Math.abs(Math.atan2(x, dz)) < Math.PI / 4 && y > -80 ? 200 : 140;
+    if (y > -200 && y < 130 && x * x + dz * dz < lim * lim) out.push(pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!);
   }
   return Float32Array.from(out);
 }
@@ -424,7 +425,9 @@ function headOnly(pts: Float32Array, T: Mat4, axisZ: number): Float32Array {
 /** Only head and neck go into the model; shoulders turn with the body but are not the head. */
 function inRegion(x: number, y: number, z: number, axisZ: number): boolean {
   const dz = z - axisZ;
-  return y > -250 && y < 120 && x * x + dz * dz < 150 * 150;
+  // The nose reaches past 15 cm from the axis; in front, above the chin, allow 20.
+  const lim = Math.abs(Math.atan2(x, dz)) < Math.PI / 4 && y > -80 ? 200 : 150;
+  return y > -250 && y < 120 && x * x + dz * dz < lim * lim;
 }
 
 /** Chain the frames of one side round from the front, as described above. */

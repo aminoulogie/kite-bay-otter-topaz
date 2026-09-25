@@ -19,6 +19,16 @@ const SIDE_WINS_DEG = 55;
 const thetaOf = (c: Cylinder, i: number) => c.thetaMinDeg + i * c.thetaStepDeg;
 const yOf = (c: Cylinder, j: number) => c.yMinMm + j * c.yStepMm;
 
+/**
+ * How far from the axis a reading may sit, mm. 15 cm holds the head
+ * everywhere but the nose, which reaches past it — a hard 15 cm left the nose
+ * out of the model. In front of the face and above the chin nothing else can
+ * be there, so the limit is 20 cm. Same rule as the phone's sweep.
+ */
+export function maxRadiusMm(thetaDeg: number, yMm: number): number {
+  return Math.abs(thetaDeg) < 45 && yMm > -80 ? 200 : 150;
+}
+
 /** The sweep's surface as points, the model the side frames are matched to. */
 export function modelPoints(map: Float32Array, c: Cylinder, axisZ: number): PointIndex {
   const index = new PointIndex(8);
@@ -56,8 +66,8 @@ export class SideCylinder {
       const [x, y, z] = apply(T, pts[p * 3]!, pts[p * 3 + 1]!, pts[p * 3 + 2]!);
       const dz = z - this.axisZ;
       const r = Math.hypot(x, dz);
-      if (r < 30 || r > 150) continue;
       const t = (Math.atan2(x, dz) * 180) / Math.PI;
+      if (r < 30 || r > maxRadiusMm(t, y)) continue;
       if (Math.abs(t - thetaCam) > MAX_GRAZING) continue;
       const i = Math.round((t - c.thetaMinDeg) / c.thetaStepDeg);
       const j = Math.round((y - c.yMinMm) / c.yStepMm);

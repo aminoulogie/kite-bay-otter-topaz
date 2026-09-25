@@ -132,3 +132,20 @@ test("a side hold is used only if it agrees with the front scan where both overl
   assert.equal(judgeHold({ T: off, pts: P, rms: 0.8, inliers: 0.9 }, front, c, -60).verdict, "off the face");
   assert.equal(judgeHold({ T: identity(), pts: P, rms: 3, inliers: 0.9 }, front, c, -60).verdict, "loose fit");
 });
+
+test("the nose is kept: readings past 15 cm are allowed in front of the face only", async () => {
+  const { maxRadiusMm } = await import("./fullscan.ts");
+  assert.equal(maxRadiusMm(0, -20), 200, "nose tip, straight ahead");
+  assert.equal(maxRadiusMm(80, -20), 150, "beside the head");
+  assert.equal(maxRadiusMm(0, -150), 150, "below the chin: chest, not nose");
+  // A nose-tip reading 165 mm in front of the axis lands in the cylinder.
+  const c = {
+    a: new Float32Array(41 * 41), b: new Float32Array(41 * 41), width: 41, height: 41,
+    thetaMinDeg: -20, thetaStepDeg: 1, yMinMm: -50, yStepMm: 1.5,
+  };
+  const s = new SideCylinder(c, -60);
+  for (let k = 0; k < 3; k++) s.add(identity(), Float32Array.from([0, -20, 105]));
+  const m = s.medians();
+  const cell = Math.round((-20 + 50) / 1.5) * 41 + 20;
+  assert.ok(Math.abs(m[cell]! - 165) < 1e-3, `${m[cell]}`);
+});

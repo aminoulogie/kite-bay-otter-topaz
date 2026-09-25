@@ -31,7 +31,8 @@ function headOnly(pts: Float32Array, T: Mat4, axisZ: number): Float32Array {
   for (let i = 0; i < pts.length / 3; i++) {
     const [x, y, z] = apply(T, pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!);
     const dz = z - axisZ;
-    if (y > -140 && y < 110 && x * x + dz * dz < 130 * 130) out.push(pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!);
+    const lim = Math.abs(Math.atan2(x, dz)) < Math.PI / 4 && y > -80 ? 200 : 130; // keep the nose: it is the best shape to match on
+    if (y > -140 && y < 110 && x * x + dz * dz < lim * lim) out.push(pts[i * 3]!, pts[i * 3 + 1]!, pts[i * 3 + 2]!);
   }
   return Float32Array.from(out);
 }
