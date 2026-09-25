@@ -5,8 +5,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { SwipeRow } from "@/components/SwipeRow";
-import { depthGridKey, latestByKind, meshKey, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { bodyKey, depthGridKey, latestByKind, meshKey, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
 import { trueDepthAvailable } from "@/lib/native/face-depth";
+import { bodyScanAvailable, type BodyScanMode } from "@/lib/native/body-depth";
+import { leftRightDiffPct, type Segment } from "@/lib/aether/body3d";
 import type { AssistAudio } from "@/lib/aether/assist-audio";
 import { symmetryPercent } from "@/lib/aether/harmony";
 import { deleteScanImage } from "@/lib/habit-photos";
@@ -76,9 +78,19 @@ export function LooksView() {
   const [hasTrueDepth, setHasTrueDepth] = useState(false);
   const [depthBusy, setDepthBusy] = useState(false);
   const depthAudio = useRef<AssistAudio | null>(null);
+  const [bodyScan, setBodyScan] = useState<{ supported: boolean; lidar: boolean }>({ supported: false, lidar: false });
+  const [bodyBusy, setBodyBusy] = useState<BodyScanMode | null>(null);
   useEffect(() => {
     void trueDepthAvailable().then(setHasTrueDepth);
+    void bodyScanAvailable().then(setBodyScan);
   }, []);
+  const latestBody = useMemo(() => {
+    const newest = newestFirst(scans);
+    return {
+      front: newest.find((x) => x.body?.mode === "front")?.body ?? null,
+      side: newest.find((x) => x.body?.mode === "side")?.body ?? null,
+    };
+  }, [scans]);
   const latestDepth = useMemo(
     () => newestFirst(scans).find((x) => x.depth)?.depth ?? null,
     [scans],
@@ -111,6 +123,27 @@ export function LooksView() {
       if (!/cancelled/i.test(msg)) toast.error(msg);
     } finally {
       setDepthBusy(false);
+    }
+  };
+
+  /** The native LiDAR body scan; same gesture rule for audio as scan3d. */
+  const scanBody = async (mode: BodyScanMode) => {
+    if (bodyBusy) return;
+    setBodyBusy(mode);
+    try {
+      const [{ AssistAudio }, { runBodyScan }] = await Promise.all([
+        import("@/lib/aether/assist-audio"),
+        import("@/lib/aether/body-scan"),
+      ]);
+      depthAudio.current ??= new AssistAudio();
+      depthAudio.current.enable();
+      addScan(await runBodyScan(mode, depthAudio.current));
+      toast.success(mode === "side" ? "Side body scan saved" : "Front body scan saved");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Body scan failed.";
+      if (!/cancelled/i.test(msg)) toast.error(msg);
+    } finally {
+      setBodyBusy(null);
     }
   };
 
@@ -189,6 +222,7 @@ export function LooksView() {
           void deleteScanImage(meshKey(scan.id));
           void deleteScanImage(depthGridKey(scan.id));
         }
+        if (scan.body) void deleteScanImage(bodyKey(scan.id));
       }
     }, 8000);
   };
@@ -297,6 +331,61 @@ export function LooksView() {
               is perfectly even. This scan has no raw depth; take a new 3D scan to measure it.
             </p>
           )}
+        </Card>
+      )}
+
+      {(bodyScan.supported || latestBody.front || latestBody.side) && (
+        <Card key="lidar-body">
+          <CardTitle>Body scan · LiDAR</CardTitle>
+          {latestBody.front || latestBody.side ? (
+            <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+              {latestBody.front && (
+                <>
+                  <Metric label="Shoulder width" value={seg(latestBody.front.metrics.segments.shoulderWidth)} />
+                  <Metric label="Hip joints width" value={seg(latestBody.front.metrics.segments.hipWidth)} />
+                  <Metric label="Knee in · L / R" value={degPair(latestBody.front.metrics.front?.kneeValgusL, latestBody.front.metrics.front?.kneeValgusR)} />
+                  <Metric label="Ankle gap (centres)" value={mm(latestBody.front.metrics.front?.ankleGapMm, 0)} />
+                  <Metric label="Left shoulder higher" value={mm(latestBody.front.metrics.front?.shoulderLeftHigherMm, 0)} />
+                  <Metric label="Left hip higher" value={mm(latestBody.front.metrics.front?.hipLeftHigherMm, 0)} />
+                  <Metric label="Arm R vs L" value={pct(latestBody.front.metrics.segments.upperArmL, latestBody.front.metrics.segments.upperArmR)} />
+                  <Metric label="Thigh R vs L" value={pct(latestBody.front.metrics.segments.thighL, latestBody.front.metrics.segments.thighR)} />
+                </>
+              )}
+              {latestBody.side?.metrics.side && (
+                <>
+                  <Metric label="Neck–ear angle" value={deg(latestBody.side.metrics.side.neckEarDeg)} />
+                  <Metric label="Ear ahead of shoulder" value={mm(latestBody.side.metrics.side.headAheadMm, 0)} />
+                  <Metric label="Shoulders ahead of hips" value={mm(latestBody.side.metrics.side.shoulderAheadMm, 0)} />
+                  <Metric label="Knee locked back" value={deg(latestBody.side.metrics.side.kneeBackDeg)} />
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="mb-3 text-xs text-muted">
+              Phone on the wall, back camera, 1.5–4.5 m away. The LiDAR reads the real distance to each
+              joint, so lengths and angles are in real millimetres. Beeps and voice guide you.
+            </p>
+          )}
+          {bodyScan.supported ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Button disabled={!!bodyBusy} onClick={() => void scanBody("front")}>
+                {bodyBusy === "front" ? "Scanning…" : "Front"}
+              </Button>
+              <Button disabled={!!bodyBusy} onClick={() => void scanBody("side")}>
+                {bodyBusy === "side" ? "Scanning…" : "Side"}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-[0.7rem] text-faint">Body scanning needs the installed iPhone app.</p>
+          )}
+          <p className="mt-2 text-[0.7rem] leading-snug text-faint">
+            Joint centre to joint centre, so widths read narrower than a tape measure. Neck–ear angle is
+            for tracking change only — not comparable with clinical norms. Pelvic tilt and back rounding
+            cannot be read from joints and are not shown.
+            {(latestBody.front && !latestBody.front.lidar) || (latestBody.side && !latestBody.side.lidar)
+              ? " This phone gave no LiDAR depth: fitted-model numbers only."
+              : ""}
+          </p>
         </Card>
       )}
 
@@ -455,6 +544,23 @@ function LoadingSheet({ label }: { label: string }) {
 
 function mm(v: number | null | undefined, digits: number): string {
   return v == null ? "—" : `${v.toFixed(digits)} mm`;
+}
+
+function seg(s: Segment | null): string {
+  return s ? `${s.mm.toFixed(0)} mm${s.src === "model" ? " ·m" : ""}` : "—";
+}
+
+function deg(v: number | null | undefined): string {
+  return v == null ? "—" : `${v.toFixed(1)}°`;
+}
+
+function degPair(l: number | null | undefined, r: number | null | undefined): string {
+  return `${deg(l)} / ${deg(r)}`;
+}
+
+function pct(l: Segment | null, r: Segment | null): string {
+  const d = leftRightDiffPct(l, r);
+  return d == null ? "—" : `${d > 0 ? "+" : ""}${d.toFixed(1)}%`;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

@@ -80,6 +80,23 @@ Test as a PWA, ship as the native iOS build.
 - [ ] Landmark-level metrics (gonial angle, canthal tilt, cheekbone projection)
       from vertex indices identified on a real exported mesh.
 
+## LiDAR body scan (native build)
+
+- [x] Swift plugin `BodyDepth` (ios/App/App/BodyDepthPlugin.swift): ARKit body
+      tracking on the back camera with LiDAR scene depth. Gates: whole body in
+      view, 1.5–4.5 m, square to the phone (front) or side-on (side), holding
+      still. 60 frames averaged; ARKit's fitted skeleton plus every image joint
+      placed in 3D by the LiDAR depth (5×5 median), both in metres in the
+      body's own space. Status streamed to the web app for beeps and voice.
+- [x] Metrics (`body3d.ts`): shoulder / hip-joint width, torso, upper arm,
+      forearm, thigh, shin (left vs right), knee in/out angle per leg, knee and
+      ankle gap, shoulder and hip level; side-on: neck–ear angle, ear ahead of
+      shoulders, shoulders ahead of hips, knee locked back. LiDAR joints
+      preferred, fitted model as fallback, labelled.
+- [x] Skeletons stored in IndexedDB (`body:<id>`) for re-reading later.
+- [ ] Verify on device: person's left/right naming, sign of knee angles.
+- Not measurable from joints: pelvic tilt, upper-back rounding.
+
 ### All decisions
 
 | Feature | Decision |

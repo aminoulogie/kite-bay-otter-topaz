@@ -3,12 +3,14 @@ import UIKit
 
 /**
  * The app's root view controller. Exists only to register plugins that live
- * inside this project rather than in an npm package — FaceDepthPlugin — since
+ * inside this project rather than in an npm package — FaceDepthPlugin and
+ * BodyDepthPlugin — since
  * Capacitor discovers packaged plugins automatically but local ones must be
  * handed to the bridge here.
  */
 class MainViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(FaceDepthPlugin())
+        bridge?.registerPluginInstance(BodyDepthPlugin())
     }
 }

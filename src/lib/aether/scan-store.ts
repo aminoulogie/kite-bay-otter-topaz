@@ -18,6 +18,7 @@ import type { PostureAnalysis } from "./analyzePosture.ts";
 import type { CaptureKind } from "./captureQuality.ts";
 import type { SkinReport } from "./skin.ts";
 import type { Reading } from "./harmony.ts";
+import type { BodyMetrics } from "./body3d.ts";
 import { ANALYZER_VERSION } from "./landmarks.ts";
 
 export interface ScanRecord {
@@ -53,6 +54,22 @@ export interface ScanRecord {
    * read off it.
    */
   depth?: DepthSummary;
+  /**
+   * LiDAR body scan. Both averaged skeletons are in IndexedDB under
+   * `body:<id>`, so the numbers can be re-read if the maths improves.
+   */
+  body?: BodySummary;
+}
+
+export interface BodySummary {
+  source: "lidar";
+  mode: "front" | "side";
+  frames: number;
+  distanceMm: number;
+  estimatedScale: number;
+  /** False on a phone that tracked the body without LiDAR depth: model numbers only. */
+  lidar: boolean;
+  metrics: BodyMetrics;
 }
 
 export interface DepthSummary {
@@ -88,6 +105,11 @@ export interface DepthSummary {
     depthFrames: number;
     coverage: number;
   };
+}
+
+/** Where the averaged skeletons of a LiDAR body scan are stored. */
+export function bodyKey(scanId: string): string {
+  return `body:${scanId}`;
 }
 
 /** Where the raw depth grid of a TrueDepth scan is stored. */
@@ -133,6 +155,7 @@ export function scanSlot(scan: Pick<ScanRecord, "kind" | "side">): string {
 
 /** True when this scan was measured by an older analyser and should be re-measured. */
 export function needsReanalysis(scan: ScanRecord): boolean {
+  if (scan.body) return false; // a LiDAR scan has no photo analysis to redo
   return (scan.analyzer ?? scan.face?.analyzerVersion) !== ANALYZER_VERSION;
 }
 
