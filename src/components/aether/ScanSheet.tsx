@@ -19,6 +19,8 @@ import {
   type Guidance,
 } from "@/lib/aether/assist";
 import { AssistAudio } from "@/lib/aether/assist-audio";
+import { autoPlacement, type Placement } from "@/lib/aether/align";
+import { ALIGN_H, ALIGN_W, AlignSheet } from "@/components/aether/AlignSheet";
 import { baselineIris, scanSlot, type ScanRecord } from "@/lib/aether/scan-store";
 import { loadScanImage, saveScanImage } from "@/lib/habit-photos";
 import { getLocalDateKey } from "@/lib/soma";
@@ -201,6 +203,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const addScan = useSoma((s) => s.addScan);
   const updateScan = useSoma((s) => s.updateScan);
   const [lastBurst, setLastBurst] = useState<LastBurst | null>(null);
+  const [aligning, setAligning] = useState<{ img: HTMLImageElement; auto: Placement | null } | null>(null);
   const scans = useSoma((s) => s.scans);
 
   const [live, setLive] = useState(false);
@@ -699,7 +702,10 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     }
   }
 
-  /** A still from the library, through exactly the same pipeline. */
+  /**
+   * A still from the library: find the face, open the aligner already lined
+   * up on it, and measure only once it sits on the guides.
+   */
   async function fromFile(file: File) {
     setBusy(true);
     try {
@@ -710,11 +716,34 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         i.onerror = () => reject(new Error("Could not read that image."));
         i.src = URL.createObjectURL(file);
       });
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      canvas.width = img.width;
-      canvas.height = img.height;
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
       canvas.getContext("2d")?.drawImage(img, 0, 0);
+      const found = await detectFaceTolerant(canvas).catch(() => null);
+      let auto: Placement | null = null;
+      if (found?.landmarks) {
+        const px = (i: number) => {
+          const q = found.landmarks![i];
+          return q ? { x: q.x * img.naturalWidth, y: q.y * img.naturalHeight } : null;
+        };
+        const l = px(FACE.leftIris), r = px(FACE.rightIris), brow = px(FACE.glabella), chin = px(FACE.chin);
+        if (l && r && brow && chin) auto = autoPlacement(l, r, brow, chin, ALIGN_W, ALIGN_H);
+      }
+      setAligning({ img, auto });
+      setStatus(auto ? "Lined up on your face — adjust if needed." : "No face found automatically. Place it by hand.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Import failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Measure an aligned import, through exactly the capture pipeline. */
+  async function saveImported(canvas: HTMLCanvasElement) {
+    setAligning(null);
+    setBusy(true);
+    try {
       const m = await measureCanvas(canvas, kind);
       const posture = kind === "face_side" ? await measurePosture(canvas) : undefined;
       if (!m && !posture) {
@@ -747,6 +776,15 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+      {aligning && (
+        <AlignSheet
+          img={aligning.img}
+          auto={aligning.auto}
+          front={kind === "face_front_true"}
+          onCancel={() => setAligning(null)}
+          onUse={(c) => void saveImported(c)}
+        />
+      )}
       {flashing && (
         // The whole screen becomes the light. Warm, not blue-white: truer skin
         // tone and less squinting, which also keeps the eyes measurable.
@@ -1119,7 +1157,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         </button>
 
         <label className="mt-2 flex h-11 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-2 text-sm font-semibold">
-          Import a still instead
+          Import from camera roll
           <input
             type="file"
             accept="image/*"
