@@ -262,6 +262,8 @@ export function chinBehindNoseMm(map: Float32Array, c: Cylinder, w: FaceWindow, 
 export interface CylChange {
   /** RMS surface change after the best alignment, mm. */
   rmsMm: number;
+  /** The alignment found: columns and rows the newer map was slid by, and the overall offset removed. */
+  shift?: { di: number; dj: number; meanMm: number };
   /** Mean change by region, mm: + = the surface moved OUT (fuller). */
   byRegion: { left: number; right: number; upper: number; lower: number };
   cells: number;
@@ -320,7 +322,12 @@ export function compareCyl(prev: Float32Array, cur: Float32Array, c: Cylinder, w
     }
   }
   const m = (k: string) => (reg[k]![1] ? reg[k]![0] / reg[k]![1] : 0);
-  return { rmsMm: best.rms, byRegion: { left: m("left"), right: m("right"), upper: m("upper"), lower: m("lower") }, cells: best.cells };
+  return {
+    rmsMm: best.rms,
+    shift: { di: best.di, dj: best.dj, meanMm: best.mean },
+    byRegion: { left: m("left"), right: m("right"), upper: m("upper"), lower: m("lower") },
+    cells: best.cells,
+  };
 }
 
 export interface SweepSummary {

@@ -9,6 +9,7 @@ import { bodyKey, cylKey, depthGridKey, latestByKind, meshKey, misfiledAs, needs
 import { trueDepthAvailable } from "@/lib/native/face-depth";
 import { bodyScanAvailable, type BodyScanMode } from "@/lib/native/body-depth";
 import { leftRightDiffPct, type Segment } from "@/lib/aether/body3d";
+import { LooksResults } from "@/components/aether/LooksResults";
 import type { AssistAudio } from "@/lib/aether/assist-audio";
 import { symmetryPercent } from "@/lib/aether/harmony";
 import { deleteScanImage } from "@/lib/habit-photos";
@@ -76,6 +77,10 @@ export function LooksView() {
   const [swiped, setSwiped] = useState<string | null>(null);
   const [redo, setRedo] = useState<{ done: number; total: number } | null>(null);
   const addScan = useSoma((s) => s.addScan);
+  // Results first once there is a full scan to show; the scan list otherwise.
+  const [page, setPage] = useState<"results" | "scans">(() =>
+    useSoma.getState().scans.some((x) => x.depth?.sweep) ? "results" : "scans",
+  );
   const [hasTrueDepth, setHasTrueDepth] = useState(false);
   const [depthBusy, setDepthBusy] = useState(false);
   const depthAudio = useRef<AssistAudio | null>(null);
@@ -247,7 +252,41 @@ export function LooksView() {
     }, 8000);
   };
 
+  const pages = (
+    <div className="mb-3 flex rounded-full border border-border p-1" data-no-swipe-nav>
+      {(["results", "scans"] as const).map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => setPage(p)}
+          className={cn(
+            "h-8 flex-1 rounded-full text-xs font-bold capitalize",
+            page === p ? "bg-accent text-accent-ink" : "text-muted",
+          )}
+        >
+          {p === "results" ? "3D Results" : "Scans"}
+        </button>
+      ))}
+    </div>
+  );
+
+  if (page === "results") {
+    return (
+      <div>
+        {pages}
+        <LooksResults
+          scans={scans}
+          scanning={depthBusy}
+          onScan={() => (hasTrueDepth ? void scan3d("full") : toast.error("3D scanning needs the installed iPhone app."))}
+          setupGuide={<ScanSpotGuide open />}
+        />
+      </div>
+    );
+  }
+
   return (
+    <>
+    {pages}
     <WidgetGrid tab="looks">
       <Card key="latest">
         <CardTitle>Latest front</CardTitle>
@@ -562,6 +601,7 @@ export function LooksView() {
         </Suspense>
       )}
     </WidgetGrid>
+    </>
   );
 }
 
@@ -627,9 +667,9 @@ function SweepMetrics({ d, prev }: { d: NonNullable<ScanRecord["depth"]>; prev: 
  * TrueDepth is most accurate at; the stickers fix the neck's angle, which is
  * the easiest thing to change by accident between scans.
  */
-function ScanSpotGuide() {
+function ScanSpotGuide({ open = false }: { open?: boolean }) {
   return (
-    <details className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs">
+    <details open={open} className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs">
       <summary className="cursor-pointer font-bold">Set up your scan spot (once)</summary>
       <ol className="mt-2 list-decimal space-y-1 pl-4 text-muted">
         <li>Stick the phone to a mirror or wall at eye level, top camera up.</li>
