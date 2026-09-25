@@ -336,6 +336,20 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const ringProgress = busy ? 0.5 + burstPct / 200 : (holding / HOLD_FRAMES) * 0.5;
   const frontGlow = settings.flash && settings.facing === "user" && live;
 
+  // Back camera with flash selected: the LED stays on for the whole preview,
+  // so the frame is lit while you line up, not only for the burst. Asked for
+  // again shortly after, since the camera starting up can switch it off.
+  const backLight = settings.flash && settings.facing === "environment" && live;
+  useEffect(() => {
+    if (!backLight) {
+      void setTorch(false);
+      return;
+    }
+    void setTorch(true);
+    const again = window.setTimeout(() => void setTorch(true), 600);
+    return () => window.clearTimeout(again);
+  }, [backLight]);
+
   // Draw the preview: every animation frame, the analysed crop of the camera
   // frame, mirrored for the front camera, at the canvas's own pixel size.
   useEffect(() => {
@@ -385,6 +399,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     () => () => {
       cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      void import("@/lib/native/torch").then((m) => m.setNativeTorch(false));
       audioRef.current?.dispose();
     },
     [],
@@ -421,19 +436,24 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   }
 
   /**
-   * The back camera's LED, where the browser exposes it (the `torch`
-   * constraint). Returns false where it does not, so the caller can say so.
+   * The back camera's LED. The iOS web view's stream has no `torch`
+   * constraint, so the native build switches it through the Torch plugin;
+   * a browser that does offer the constraint uses that. Returns false when
+   * neither can, so the caller can say so.
    */
   async function setTorch(on: boolean): Promise<boolean> {
     try {
       const track = streamRef.current?.getVideoTracks()[0];
       const caps = track?.getCapabilities?.() as (MediaTrackCapabilities & { torch?: boolean }) | undefined;
-      if (!track || !caps?.torch) return false;
-      await track.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
-      return true;
+      if (track && caps?.torch) {
+        await track.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
+        return true;
+      }
     } catch {
-      return false;
+      // Fall through to the native switch.
     }
+    const { setNativeTorch } = await import("@/lib/native/torch");
+    return setNativeTorch(on);
   }
 
   /**
@@ -735,11 +755,12 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     setBurstPct(0);
     audio.update(null);
     audio.cue("capture");
-    // Front: the screen is the flash. Back: the LED torch, for the burst only.
+    // Front: the screen is the flash. Back: the LED torch, already on for the
+    // preview; asked for again in case the camera switched it off.
     const flash = settings.flash && settings.facing === "user";
     const torch = settings.flash && settings.facing === "environment" ? await setTorch(true) : false;
     if (settings.flash && settings.facing === "environment" && !torch) {
-      toast("This browser can't switch on the camera light — shooting without it.");
+      toast("Couldn't switch on the camera light — shooting without it.");
     }
     if (flash) {
       setFlashing(true);
@@ -756,7 +777,6 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         if (i < BURST - 1) await sleep(80);
       }
       setFlashing(false);
-      if (torch) void setTorch(false);
       if (!frames.length) {
         setStatus("Nothing came back from the camera. Try again.");
         return;
@@ -841,7 +861,6 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       setStatus(err instanceof Error ? err.message : "Capture failed.");
     } finally {
       setFlashing(false);
-      if (torch) void setTorch(false);
       setBusy(false);
       // A short cooldown, or the frame right after a capture is still green and
       // fires again immediately.
