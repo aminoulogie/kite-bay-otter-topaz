@@ -64,6 +64,8 @@ export interface AssistInput {
   smile: number;
   /** Profile steps: the side this step wants, in the user's left/right. */
   targetSide?: "left" | "right";
+  /** Against the first matching scan; when present it replaces the generic framing check. */
+  distance?: "closer" | "back" | "ok" | null;
 }
 
 const BASE_HZ = 660;
@@ -133,11 +135,16 @@ export function guide(input: AssistInput): Guidance {
     return out("light", 0.8, "Too dark. Turn on the flash or face a light.");
   }
 
+  // Matching the first scan's distance beats the generic framing band: the
+  // point is that this photo and that one were taken from the same place.
+  if (input.distance === "closer") return out("closer", 0.35, "A little closer, to match your first scan.");
+  if (input.distance === "back") return out("back", 0.35, "A little further back, to match your first scan.");
+
   // Framing: distance first — pose cannot be judged on a face the size of a coin.
-  if (input.faceHeightFrac > 0 && input.faceHeightFrac < 0.28) {
+  if (input.distance == null && input.faceHeightFrac > 0 && input.faceHeightFrac < 0.28) {
     return out("closer", clamp01((0.28 - input.faceHeightFrac) / 0.2 + 0.2), "Come a little closer.");
   }
-  if (input.faceHeightFrac > 0.72) {
+  if (input.distance == null && input.faceHeightFrac > 0.72) {
     return out("back", clamp01((input.faceHeightFrac - 0.72) / 0.2 + 0.2), "Move back a little.");
   }
 
@@ -295,4 +302,74 @@ export function mergeSymmetry(
     if (m != null) regional[key] = m;
   }
   return { alpha, regional, used: pool.length };
+}
+
+// ---------------------------------------------------------------------------
+// Distance: iris size, and matching the first scan
+
+/** The four points round each iris in MediaPipe's 478-point mesh. */
+const IRIS_RINGS = [
+  [469, 470, 471, 472],
+  [474, 475, 476, 477],
+] as const;
+
+/**
+ * How big the iris looks, as a fraction of the frame's HEIGHT.
+ *
+ * The visible iris is about 11.7mm across in almost every adult, which makes
+ * it a ruler that comes with the face: bigger in frame means closer to the
+ * lens. Two details keep it honest:
+ *
+ * - The largest distance across the ring is used, not the horizontal one. A
+ *   turned head squashes the iris sideways but not vertically, so the longest
+ *   chord stays close to the true diameter from front to profile.
+ * - x is rescaled by the frame's aspect before measuring, so the answer is in
+ *   one unit rather than a mix of widths and heights.
+ *
+ * The nearer eye is used (the larger of the two): at 45° and in profile the
+ * far iris is partly hidden behind the nose.
+ */
+export function irisSize(
+  pts: ({ x: number; y: number } | undefined)[],
+  width: number,
+  height: number,
+): number | null {
+  if (!(width > 0) || !(height > 0) || pts.length < 478) return null;
+  const aspect = width / height;
+  let best = 0;
+  for (const ring of IRIS_RINGS) {
+    const p = ring.map((i) => pts[i]);
+    if (p.some((q) => !q)) continue;
+    for (let a = 0; a < p.length; a++) {
+      for (let b = a + 1; b < p.length; b++) {
+        const dx = (p[a]!.x - p[b]!.x) * aspect;
+        const dy = p[a]!.y - p[b]!.y;
+        best = Math.max(best, Math.hypot(dx, dy));
+      }
+    }
+  }
+  return best > 0 ? best : null;
+}
+
+/** How far the current distance may drift from the baseline, either way. */
+export const DISTANCE_TOLERANCE = 0.06;
+
+/**
+ * Closer, back, or matched — against the first scan of this kind taken with
+ * the same camera and zoom. Null when there is no baseline to match.
+ *
+ * Only a like-for-like baseline counts: a different lens or zoom changes how
+ * big the same iris looks at the same distance, so comparing across them
+ * would coach you to the wrong place.
+ */
+export function distanceCue(current: number | null, baseline: number | null | undefined): {
+  ratio: number;
+  cue: "closer" | "back" | "ok";
+} | null {
+  if (!current || !baseline) return null;
+  const ratio = current / baseline;
+  return {
+    ratio,
+    cue: ratio > 1 + DISTANCE_TOLERANCE ? "back" : ratio < 1 - DISTANCE_TOLERANCE ? "closer" : "ok",
+  };
 }

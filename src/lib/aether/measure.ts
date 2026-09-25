@@ -9,6 +9,7 @@ import {
 } from "./mediapipe.ts";
 import { analyseSkin, puffinessRatio } from "./skin.ts";
 import { ANALYZER_VERSION } from "./landmarks.ts";
+import { irisSize } from "./assist.ts";
 import type { ScanRecord } from "./scan-store.ts";
 import { loadScanImage } from "../habit-photos.ts";
 
@@ -24,6 +25,8 @@ export interface Measurement {
   skin: ReturnType<typeof analyseSkin>;
   puffiness: number | null;
   harmony: ReturnType<typeof measureHarmony>;
+  /** Iris size in frame heights — the distance ruler (assist.ts irisSize). */
+  iris: number | null;
 }
 
 /** Face metrics from a canvas already holding the photo, or null when no face is found. */
@@ -56,6 +59,7 @@ export async function measureCanvas(canvas: HTMLCanvasElement, kind: CaptureKind
     skin: analyseSkin(pixels, pts),
     puffiness: puffinessRatio(pts),
     harmony: measureHarmony(pts),
+    iris: irisSize(pts, canvas.width, canvas.height),
   };
 }
 

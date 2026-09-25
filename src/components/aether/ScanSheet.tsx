@@ -15,10 +15,11 @@ import {
 } from "@/lib/aether/mediapipe";
 import { canvasFromDataUrl, measureCanvas, measurePosture } from "@/lib/aether/measure";
 import {
-  cropForZoom, guide, laplacianVariance, mergeSymmetry, rankFrames, turnedSide, type Guidance,
+  cropForZoom, distanceCue, guide, irisSize, laplacianVariance, mergeSymmetry, rankFrames, turnedSide,
+  type Guidance,
 } from "@/lib/aether/assist";
 import { AssistAudio } from "@/lib/aether/assist-audio";
-import { scanSlot } from "@/lib/aether/scan-store";
+import { baselineIris, scanSlot } from "@/lib/aether/scan-store";
 import { saveScanImage } from "@/lib/habit-photos";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -53,10 +54,12 @@ interface AssistSettings {
   flash: boolean;
   sound: boolean;
   voice: boolean;
+  /** Hold every scan to the distance of the first like-for-like one. */
+  lock: boolean;
 }
 
 const SETTINGS_KEY = "soma-scan-assist";
-const DEFAULT_SETTINGS: AssistSettings = { facing: "user", zoom: 2, flash: false, sound: true, voice: true };
+const DEFAULT_SETTINGS: AssistSettings = { facing: "user", zoom: 2, flash: false, sound: true, voice: true, lock: true };
 
 function loadSettings(): AssistSettings {
   try {
@@ -124,6 +127,7 @@ interface Measured {
   harmony: ReturnType<typeof measureHarmony>;
   dataUrl: string;
   sharpness: number;
+  iris: number | null;
 }
 
 /**
@@ -185,6 +189,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [hwZoom, setHwZoom] = useState(false);
   const [flashing, setFlashing] = useState(false);
   const [guidance, setGuidance] = useState<Guidance | null>(null);
+  const [dist, setDist] = useState<ReturnType<typeof distanceCue>>(null);
   const audioRef = useRef<AssistAudio | null>(null);
   audioRef.current ??= new AssistAudio();
   const audio = audioRef.current;
@@ -193,7 +198,10 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
 
   // Read inside the animation loop, which is attached once and would otherwise
   // close over the first render's values for the life of the screen.
-  const liveRefs = useRef({ autoFire, busy: false, step: 0, zoom: 2 as number, mirror: true });
+  const liveRefs = useRef({
+    autoFire, busy: false, step: 0, zoom: 2 as number, mirror: true,
+    baseline: null as number | null,
+  });
 
   const s = SESSION[step]!;
   const kind = s.kind;
@@ -203,6 +211,11 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   liveRefs.current.zoom = hwZoom ? 1 : settings.zoom;
   // Only the front camera behaves like a mirror.
   liveRefs.current.mirror = settings.facing === "user";
+  // The iris size to match, or null (lock off, or nothing like-for-like yet).
+  const baseline = settings.lock
+    ? baselineIris(scans, scanSlot({ kind: s.kind, side: s.side }), settings.facing, settings.zoom)
+    : null;
+  liveRefs.current.baseline = baseline;
 
   const patchSettings = (patch: Partial<AssistSettings>) => {
     setSettings((cur) => {
@@ -416,13 +429,19 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           smile,
           hasFace: true,
         });
-        setHud(q);
+        // Distance against the first like-for-like scan: part of "green", so
+        // the shutter never fires from a different spot than last time.
+        const cue = distanceCue(irisSize(pts, small.width, small.height), liveRefs.current.baseline);
+        const readyHere = q.ready && (!cue || cue.cue === "ok");
+        setHud({ ...q, ready: readyHere });
+        setDist(cue);
         // One instruction per frame, played as sound: rate for distance to
         // target, left/right ear for which way to turn, pitch for up/down.
         const g = guide({
           kind: stepKind, hasFace: true, yawDeg, pitchDeg, rollDeg,
           turned: turnedSide(pts[FACE.noseTip]?.x, pts[FACE.leftOuter]?.x, pts[FACE.rightOuter]?.x),
-          quality: q, faceHeightFrac: framing.faceHeightFrac, smile,
+          quality: { ...q, ready: readyHere }, faceHeightFrac: framing.faceHeightFrac, smile,
+          distance: cue?.cue ?? null,
           targetSide: SESSION[liveRefs.current.step]!.side,
         });
         if (!liveRefs.current.busy) audioRef.current?.update(g);
@@ -432,7 +451,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         setPose({ yaw: yawDeg, roll: rollDeg, pitch: pitchDeg });
 
         // Held green long enough, and nothing else in flight: take it.
-        if (q.ready && liveRefs.current.autoFire && !liveRefs.current.busy) {
+        if (readyHere && liveRefs.current.autoFire && !liveRefs.current.busy) {
           held.current += 1;
           setHolding(held.current);
           if (held.current >= HOLD_FRAMES) {
@@ -585,6 +604,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         skin: best.skin,
         puffiness: best.puffiness,
         harmony: best.harmony,
+        capture: { facing: settings.facing, zoom: settings.zoom, iris: best.iris },
         ...(posture ? { posture } : {}),
       });
       const q = best.analysis.quality;
@@ -815,6 +835,17 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
                   {label} {Math.round(v * 100)}
                 </span>
               ))}
+              {dist && (
+                // Shown as the ratio to the first scan, so "how far off" is a number.
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[0.55rem] font-extrabold tabular-nums",
+                    dist.cue === "ok" ? "bg-emerald-500/25 text-emerald-300" : "bg-danger/25 text-red-300",
+                  )}
+                >
+                  DIST {dist.cue === "ok" ? "✓" : dist.cue === "back" ? "↓ back" : "↑ closer"}
+                </span>
+              )}
             </div>
           )}
 
@@ -916,6 +947,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             </Chip>
             <Chip on={settings.voice} onClick={() => patchSettings({ voice: !settings.voice })}>
               Voice
+            </Chip>
+            <Chip on={settings.lock} onClick={() => patchSettings({ lock: !settings.lock })}>
+              Match 1st
             </Chip>
           </ChipRow>
           <p className="text-[0.62rem] leading-snug text-faint">

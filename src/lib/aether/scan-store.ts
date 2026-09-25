@@ -42,6 +42,31 @@ export interface ScanRecord {
   analyzer?: string;
   /** Profile shots: which way the head was turned, in the user's own left/right. */
   side?: "left" | "right";
+  /**
+   * How the photo was taken. The iris size (see assist.ts irisSize) is only
+   * comparable between scans from the same camera at the same zoom.
+   */
+  capture?: { facing: "user" | "environment"; zoom: number; iris: number | null };
+}
+
+/**
+ * The iris size to match: the FIRST scan in this slot taken with the same
+ * camera and zoom. The first, not the latest — matching the latest lets the
+ * distance creep a little every week, and after two months nothing lines up.
+ */
+export function baselineIris(
+  scans: ScanRecord[],
+  slot: string,
+  facing: "user" | "environment",
+  zoom: number,
+): number | null {
+  let first: ScanRecord | null = null;
+  for (const s of scans) {
+    const c = s.capture;
+    if (!c?.iris || c.facing !== facing || c.zoom !== zoom || scanSlot(s) !== slot) continue;
+    if (!first || s.capturedAt < first.capturedAt) first = s;
+  }
+  return first?.capture?.iris ?? null;
 }
 
 /**

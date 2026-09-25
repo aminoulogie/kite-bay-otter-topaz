@@ -157,3 +157,36 @@ test("a slight wrong-way drift is not called the wrong side", () => {
   assert.doesNotMatch(g.phrase, /Other side/);
   assert.equal(g.side, "left", "but it is still sent toward the step's side");
 });
+
+test("iris size is the longest chord, so a turned (squashed) iris still reads its true height", async () => {
+  const { irisSize } = await import("./assist.ts");
+  const pts: { x: number; y: number }[] = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5 }));
+  // A round iris of height 0.02 (frame heights), on a square frame.
+  const ring = (cx: number, squash: number) => [
+    { x: cx + 0.01 * squash, y: 0.4 }, { x: cx, y: 0.39 }, { x: cx - 0.01 * squash, y: 0.4 }, { x: cx, y: 0.41 },
+  ];
+  ring(0.4, 1).forEach((p, i) => (pts[469 + i] = p));
+  ring(0.6, 1).forEach((p, i) => (pts[474 + i] = p));
+  const front = irisSize(pts, 1000, 1000)!;
+  ring(0.4, 0.3).forEach((p, i) => (pts[469 + i] = p));
+  ring(0.6, 0.3).forEach((p, i) => (pts[474 + i] = p));
+  const turned = irisSize(pts, 1000, 1000)!;
+  assert.ok(Math.abs(front - 0.02) < 1e-9, `front ${front}`);
+  assert.ok(Math.abs(turned - 0.02) < 1e-9, `turned ${turned}`);
+  assert.equal(irisSize(pts.slice(0, 468), 1000, 1000), null, "no iris points, no reading");
+});
+
+test("distance cue: bigger iris than baseline means step back", async () => {
+  const { distanceCue } = await import("./assist.ts");
+  assert.equal(distanceCue(0.022, 0.02)!.cue, "back");
+  assert.equal(distanceCue(0.018, 0.02)!.cue, "closer");
+  assert.equal(distanceCue(0.0205, 0.02)!.cue, "ok");
+  assert.equal(distanceCue(0.02, null), null);
+});
+
+test("a baseline distance outranks the generic framing band", () => {
+  // Face looks small by the generic band, but it matches the first scan: fine.
+  const g = guide(input({ faceHeightFrac: 0.2, distance: "ok", yawDeg: 40 }));
+  assert.notEqual(g.instruction, "closer");
+  assert.equal(guide(input({ distance: "back" })).instruction, "back");
+});

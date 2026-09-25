@@ -32,3 +32,17 @@ test("profiles file by side; old profiles without a side file as right", async (
   assert.equal(m.get("face_side:right")?.id, "r");
   assert.equal(m.get("face_side:left")?.id, "l");
 });
+
+test("the distance baseline is the FIRST like-for-like scan, never another camera or zoom", async () => {
+  const { baselineIris } = await import("./scan-store.ts");
+  const cap = (facing: "user" | "environment", zoom: number, iris: number) => ({ facing, zoom, iris });
+  const scans: ScanRecord[] = [
+    { ...base, id: "later", capturedAt: "2026-09-25T10:00:00Z", capture: cap("user", 2, 0.03) },
+    { ...base, id: "first", capturedAt: "2026-09-20T10:00:00Z", capture: cap("user", 2, 0.02) },
+    { ...base, id: "zoom1", capturedAt: "2026-09-10T10:00:00Z", capture: cap("user", 1, 0.01) },
+    { ...base, id: "back", capturedAt: "2026-09-01T10:00:00Z", capture: cap("environment", 2, 0.05) },
+    { ...base, id: "side", kind: "face_side", capturedAt: "2026-09-01T10:00:00Z", capture: cap("user", 2, 0.07) },
+  ];
+  assert.equal(baselineIris(scans, "face_front_true", "user", 2), 0.02);
+  assert.equal(baselineIris(scans, "face_front_true", "environment", 3), null);
+});
