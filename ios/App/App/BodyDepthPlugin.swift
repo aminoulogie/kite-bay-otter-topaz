@@ -31,9 +31,15 @@ public class BodyDepthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
     ]
 
-    private var scanner: BodyScanViewController?
+    // UIViewController, not BodyScanViewController: the app still targets
+    // iOS 13 and a stored property cannot carry an iOS 14 type.
+    private var scanner: UIViewController?
 
     @objc func isSupported(_ call: CAPPluginCall) {
+        guard #available(iOS 14.0, *) else {
+            call.resolve(["supported": false, "lidar": false])
+            return
+        }
         call.resolve([
             "supported": ARBodyTrackingConfiguration.isSupported,
             "lidar": ARBodyTrackingConfiguration.supportsFrameSemantics(.sceneDepth),
@@ -41,7 +47,7 @@ public class BodyDepthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func scan(_ call: CAPPluginCall) {
-        guard ARBodyTrackingConfiguration.isSupported else {
+        guard #available(iOS 14.0, *), ARBodyTrackingConfiguration.isSupported else {
             call.reject("Body tracking is not available on this device.")
             return
         }
@@ -65,12 +71,13 @@ public class BodyDepthPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func cancel(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            self.scanner?.cancel()
+            if #available(iOS 14.0, *) { (self.scanner as? BodyScanViewController)?.cancel() }
             call.resolve()
         }
     }
 }
 
+@available(iOS 14.0, *)
 final class BodyScanViewController: UIViewController, ARSessionDelegate {
     enum ScanError: LocalizedError {
         case cancelled
@@ -351,7 +358,7 @@ final class BodyScanViewController: UIViewController, ARSessionDelegate {
             }
         }
 
-        scaleSum += body.estimatedScaleFactor
+        scaleSum += Float(body.estimatedScaleFactor)
         anchorScaleSum += simd_length(SIMD3(body.transform.columns.0.x, body.transform.columns.0.y, body.transform.columns.0.z))
         distanceSum += distance
         collected += 1
