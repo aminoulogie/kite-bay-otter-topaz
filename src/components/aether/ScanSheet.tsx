@@ -2,17 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { analyzeFaceLandmarks, type FaceAnalysis } from "@/lib/aether/analyzeFace";
+import type { FaceAnalysis } from "@/lib/aether/analyzeFace";
 import {
   SESSION, faceBox, framingFromLandmarks, proxyPose, sampleLighting, scoreCapture,
   type Quality,
 } from "@/lib/aether/captureQuality";
-import { FACE } from "@/lib/aether/landmarks";
-import { measureHarmony } from "@/lib/aether/harmony";
-import { analyseSkin, puffinessRatio } from "@/lib/aether/skin";
+import { ANALYZER_VERSION, FACE } from "@/lib/aether/landmarks";
+import type { measureHarmony } from "@/lib/aether/harmony";
+import type { analyseSkin } from "@/lib/aether/skin";
 import {
-  detectFace, detectFaceTolerant, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
+  detectFaceTolerant, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
 } from "@/lib/aether/mediapipe";
+import { canvasFromDataUrl, measureCanvas, measurePosture } from "@/lib/aether/measure";
 import { saveScanImage } from "@/lib/habit-photos";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -91,6 +92,15 @@ interface PhotoOnly {
 }
 
 type Grab = Measured | PhotoOnly;
+
+/** Neck carriage from the KEPT profile photo — see measurePosture. */
+async function postureOf(dataUrl: string) {
+  try {
+    return await measurePosture(await canvasFromDataUrl(dataUrl));
+  } catch {
+    return undefined;
+  }
+}
 
 export function ScanSheet({ onClose }: { onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -304,39 +314,14 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const res = await detectFaceTolerant(canvas);
-    const lms = res.landmarks;
-    if (!lms) {
+    const m = await measureCanvas(canvas, kind);
+    if (!m) {
       // No landmarks anywhere in this frame. The PHOTO is still worth keeping —
       // see the note on photoOnly below — so it comes back without an analysis
       // rather than as nothing at all.
       return { photoOnly: true, dataUrl: canvas.toDataURL("image/jpeg", 0.82) };
     }
-    const pts = landmarksToPts(lms);
-    const eu = eulerFromMatrix4(res.matrix);
-    const proxy = proxyPose(pts);
-    const lighting = sampleLighting(canvas, faceBox(pts));
-    const framing = framingFromLandmarks(pts);
-    const smile = smileFromBlendshapes(res.blendshapes as never);
-    const yawDeg = eu?.yawDeg ?? proxy.yawDeg;
-    const rollDeg = eu?.rollDeg ?? proxy.rollDeg;
-    const pitchDeg = eu?.pitchDeg ?? proxy.pitchDeg;
-    const quality = scoreCapture({ kind, yawDeg, rollDeg, pitchDeg, lighting, framing, smile, hasFace: true });
-    const analysis = analyzeFaceLandmarks(pts, {
-      yawDeg, pitchDeg, rollDeg,
-      poseSource: eu ? "matrix" : "proxy",
-      lighting, framing, quality, smileBlend: smile,
-    });
-    // Pixel measurements come off the SAME canvas the landmarks were found on,
-    // so a patch placed at a landmark lands on the skin it names.
-    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return {
-      analysis,
-      skin: analyseSkin(pixels, pts),
-      puffiness: puffinessRatio(pts),
-      harmony: measureHarmony(pts),
-      dataUrl: canvas.toDataURL("image/jpeg", 0.82),
-    };
+    return { ...m, dataUrl: canvas.toDataURL("image/jpeg", 0.82) };
   }
 
   /**
@@ -382,15 +367,21 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       // month's is most of what a profile is for, and an invented measurement
       // would be far worse than an honest picture.
       if (!measured.length) {
-        await saveScanImage(id, frames[frames.length - 1]!.dataUrl);
+        const photo = frames[frames.length - 1]!.dataUrl;
+        await saveScanImage(id, photo);
+        const posture = kind === "face_side" ? await postureOf(photo) : undefined;
         addScan({
+          analyzer: ANALYZER_VERSION,
           id,
           date: getLocalDateKey(new Date()),
           capturedAt: new Date().toISOString(),
           kind,
+          ...(posture ? { posture } : {}),
         });
         setStatus(
-          "Photo kept, no measurements — the landmark model cannot read a head turned this far.",
+          posture?.cvaEst != null
+            ? `Photo kept. No face metrics at this angle, but neck angle ≈ ${posture.cvaEst.toFixed(1)}°.`
+            : "Photo kept, no measurements — the landmark model cannot read a head turned this far.",
         );
         toast.success(`${s.short} photo saved`);
         if (step < SESSION.length - 1) setStep(step + 1);
@@ -400,7 +391,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       measured.sort((a, b) => (b.analysis.quality?.overall ?? 0) - (a.analysis.quality?.overall ?? 0));
       const best = measured[0]!;
       await saveScanImage(id, best.dataUrl);
+      const posture = kind === "face_side" ? await postureOf(best.dataUrl) : undefined;
       addScan({
+        analyzer: ANALYZER_VERSION,
         id,
         date: getLocalDateKey(new Date()),
         capturedAt: best.analysis.capturedAt,
@@ -409,6 +402,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         skin: best.skin,
         puffiness: best.puffiness,
         harmony: best.harmony,
+        ...(posture ? { posture } : {}),
       });
       const q = best.analysis.quality;
       setStatus(
@@ -447,34 +441,28 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       canvas.width = img.width;
       canvas.height = img.height;
       canvas.getContext("2d")?.drawImage(img, 0, 0);
-      const res = await detectFace(canvas);
-      const lms = res.faceLandmarks?.[0];
-      if (!lms) {
+      const m = await measureCanvas(canvas, kind);
+      const posture = kind === "face_side" ? await measurePosture(canvas) : undefined;
+      if (!m && !posture) {
         setStatus("No face found in that image.");
         return;
       }
-      const pts = landmarksToPts(lms);
-      const eu = eulerFromMatrix4(res.facialTransformationMatrixes?.[0]?.data as number[] | undefined);
-      const proxy = proxyPose(pts);
-      const analysis = analyzeFaceLandmarks(pts, {
-        yawDeg: eu?.yawDeg ?? proxy.yawDeg,
-        pitchDeg: eu?.pitchDeg ?? proxy.pitchDeg,
-        rollDeg: eu?.rollDeg ?? proxy.rollDeg,
-        poseSource: eu ? "matrix" : "proxy",
-        lighting: sampleLighting(canvas, faceBox(pts)),
-        framing: framingFromLandmarks(pts),
-      });
-      const pixels = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height);
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
       await saveScanImage(id, canvas.toDataURL("image/jpeg", 0.82));
       addScan({
-        id, date: getLocalDateKey(new Date()), capturedAt: analysis.capturedAt, kind,
-        face: analysis,
-        skin: analyseSkin(pixels, pts),
-        puffiness: puffinessRatio(pts),
-        harmony: measureHarmony(pts),
+        analyzer: ANALYZER_VERSION,
+        id,
+        date: getLocalDateKey(new Date()),
+        capturedAt: m?.analysis.capturedAt ?? new Date().toISOString(),
+        kind,
+        ...(m ? { face: m.analysis, skin: m.skin, puffiness: m.puffiness, harmony: m.harmony } : {}),
+        ...(posture ? { posture } : {}),
       });
-      setStatus(`Imported as ${s.short}. Evenness ${(100 - analysis.alpha * 100).toFixed(1)}.`);
+      setStatus(
+        m
+          ? `Imported as ${s.short}. Evenness ${(100 - m.analysis.alpha * 100).toFixed(1)}.`
+          : `Imported as ${s.short}. Neck angle ≈ ${posture!.cvaEst?.toFixed(1) ?? "?"}°.`,
+      );
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Import failed.");
     } finally {

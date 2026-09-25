@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { SwipeRow } from "@/components/SwipeRow";
-import { latestByKind, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { latestByKind, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
 import { symmetryPercent } from "@/lib/aether/harmony";
 import { deleteScanImage } from "@/lib/habit-photos";
 import { agoLabel } from "@/lib/last-time";
@@ -50,17 +50,63 @@ export function LooksView() {
   const scans = useSoma((s) => s.scans);
   const removeScan = useSoma((s) => s.removeScan);
   const restoreScan = useSoma((s) => s.restoreScan);
+  const updateScan = useSoma((s) => s.updateScan);
 
   const [scanning, setScanning] = useState(false);
   const [open, setOpen] = useState<ScanRecord | null>(null);
   const [comparing, setComparing] = useState(false);
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [redo, setRedo] = useState<{ done: number; total: number } | null>(null);
 
   const today = getLocalDateKey(new Date());
   const rows = useMemo(() => newestFirst(scans), [scans]);
   const latest = useMemo(() => latestByKind(scans), [scans]);
   const trend = useMemo(() => evennessTrend(scans), [scans]);
   const front = latest.get("face_front_true");
+  const stale = useMemo(() => scans.filter(needsReanalysis), [scans]);
+
+  /**
+   * Re-measure every scan an older analyser produced.
+   *
+   * Sequential, not parallel: each one is a full-resolution decode plus two
+   * model passes, and a phone doing twenty at once is a phone that stops
+   * responding. The analyser is imported here, on tap, for the same reason
+   * the capture screen is lazy.
+   */
+  const reanalyseAll = async () => {
+    if (redo) return;
+    const todo = [...stale];
+    setRedo({ done: 0, total: todo.length });
+    let remeasured = 0;
+    let skipped = 0;
+    try {
+      const [{ loadVision }, { reanalyseScan }] = await Promise.all([
+        import("@/lib/aether/mediapipe"),
+        import("@/lib/aether/measure"),
+      ]);
+      await loadVision();
+      for (let i = 0; i < todo.length; i++) {
+        const result = await reanalyseScan(todo[i]!).catch(() => null);
+        if (result) {
+          updateScan(todo[i]!.id, result.patch);
+          if (result.remeasured) remeasured++;
+          else skipped++;
+        } else {
+          skipped++;
+        }
+        setRedo({ done: i + 1, total: todo.length });
+      }
+      toast.success(
+        skipped
+          ? `Re-measured ${remeasured}. ${skipped} kept as they were (no photo or no face found).`
+          : `Re-measured all ${remeasured} scans.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Re-analysis failed.");
+    } finally {
+      setRedo(null);
+    }
+  };
 
   // Only gated-clean front captures compare. Two readings taken at different
   // yaw are not the same measurement, and subtracting them produces a change
@@ -136,6 +182,20 @@ export function LooksView() {
           which is a hole in the page with nothing to say what it is. With the
           key here the whole expression is simply absent and the grid skips
           the cell. */}
+      {stale.length > 0 && (
+        <Card key="reanalyse">
+          <CardTitle>Measured before the angle fix</CardTitle>
+          <p className="mb-3 text-xs leading-relaxed text-muted">
+            {stale.length} {stale.length === 1 ? "scan was" : "scans were"} measured while the app
+            read head turns on the wrong axis, so a slightly turned head could pass and be scored.
+            Re-measure them from the saved photos with the fixed analyser.
+          </p>
+          <Button className="w-full" disabled={!!redo} onClick={() => void reanalyseAll()}>
+            {redo ? `Re-measuring ${redo.done}/${redo.total}…` : `Re-analyse ${stale.length}`}
+          </Button>
+        </Card>
+      )}
+
       {latest.size > 0 && (
         <div key="gallery" className="grid grid-cols-3 gap-2">
           {["face_front_true", "face_oblique", "face_side"].map((k) => {
@@ -157,6 +217,13 @@ export function LooksView() {
                 <div className="tabular font-display text-lg font-extrabold">
                   {sc?.face ? `${symmetryPercent(sc.face.alpha)}%` : "—"}
                 </div>
+                {/* Profile shots also carry the neck angle, which is the number
+                    the neck and posture work is meant to move. */}
+                {sc?.posture?.cvaEst != null && (
+                  <div className="tabular text-[0.65rem] font-bold text-faint">
+                    neck {sc.posture.cvaEst.toFixed(1)}°
+                  </div>
+                )}
               </button>
             );
           })}
@@ -204,6 +271,9 @@ export function LooksView() {
                   <div className="min-w-0">
                     <div className="truncate text-sm font-bold">
                       {KIND_LABEL[sc.kind] ?? sc.kind}
+                      {needsReanalysis(sc) ? (
+                        <span className="ml-1.5 text-[0.6rem] font-bold text-faint">pre-fix</span>
+                      ) : null}
                       {sc.face && !sc.face.gates.ok ? (
                         <span className="ml-1.5 text-[0.6rem] font-bold text-warn">gated</span>
                       ) : null}
@@ -211,6 +281,7 @@ export function LooksView() {
                     <div className="text-[0.7rem] text-faint">
                       {sc.date}
                       {sc.face ? ` · ${symmetryPercent(sc.face.alpha)}% symmetry` : ""}
+                      {sc.posture?.cvaEst != null ? ` · neck ${sc.posture.cvaEst.toFixed(1)}°` : ""}
                     </div>
                   </div>
                   <ChevronRight className="size-4 shrink-0 text-faint" />

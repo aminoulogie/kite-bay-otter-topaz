@@ -18,6 +18,7 @@ import type { PostureAnalysis } from "./analyzePosture.ts";
 import type { CaptureKind } from "./captureQuality.ts";
 import type { SkinReport } from "./skin.ts";
 import type { Reading } from "./harmony.ts";
+import { ANALYZER_VERSION } from "./landmarks.ts";
 
 export interface ScanRecord {
   id: string;
@@ -33,6 +34,17 @@ export interface ScanRecord {
   puffiness?: number | null;
   /** Every canon measured against its published norm. */
   harmony?: Reading[];
+  /**
+   * The analyser that last measured this scan. Absent on scans taken before
+   * the field existed — which is exactly the set that predates the head-angle
+   * fix, so absence means "measured by an older analyser".
+   */
+  analyzer?: string;
+}
+
+/** True when this scan was measured by an older analyser and should be re-measured. */
+export function needsReanalysis(scan: ScanRecord): boolean {
+  return (scan.analyzer ?? scan.face?.analyzerVersion) !== ANALYZER_VERSION;
 }
 
 /** Evenness as a percentage, from the raw Procrustes distance. */

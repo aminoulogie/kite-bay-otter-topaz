@@ -158,7 +158,10 @@ export function scoreCapture(opts: {
   const rollScore = Math.max(0, 1 - rollAbs / (step.rollMax * 2.2));
   if (rollAbs > step.rollMax) reasons.push(`Level the phone / head. Roll ${rollAbs.toFixed(1)}°.`);
   const pitchScore = Math.max(0, 1 - pitchAbs / (step.pitchMax * 2.2));
-  if (pitchAbs > step.pitchMax) reasons.push(opts.pitchDeg > 0 ? "Chin down a little." : "Chin up a little.");
+  // Positive pitch is chin DOWN (both the matrix and the landmark proxy agree
+  // on that sign — see pose-angles.ts), so the correction is the opposite way.
+  // This line used to tell a lowered chin to drop further.
+  if (pitchAbs > step.pitchMax) reasons.push(opts.pitchDeg > 0 ? "Chin up a little." : "Chin down a little.");
   /**
    * Yaw GATES alignment; roll and pitch only trim it.
    *

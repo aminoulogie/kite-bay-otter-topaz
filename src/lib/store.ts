@@ -445,6 +445,8 @@ export interface SomaStore {
   scans: ScanRecord[];
   addScan: (scan: ScanRecord) => void;
   removeScan: (id: string) => void;
+  /** Merge a re-measurement into a stored scan, keeping its id, date and kind. */
+  updateScan: (id: string, patch: Partial<Omit<ScanRecord, "id" | "date" | "kind">>) => void;
   restoreScan: (index: number, scan: ScanRecord) => void;
   /** Money and mind, both dated logs, both persisted with everything else. */
   ledger: LedgerEntry[];
@@ -2358,6 +2360,8 @@ export const useSoma = create<SomaStore>()(
       },
       addScan: (scan) => set({ scans: [...get().scans, scan] }),
       removeScan: (id) => set({ scans: get().scans.filter((x) => x.id !== id) }),
+      updateScan: (id, patch) =>
+        set({ scans: get().scans.map((x) => (x.id === id ? { ...x, ...patch } : x)) }),
       restoreScan: (index, scan) => {
         const next = [...get().scans];
         next.splice(Math.max(0, Math.min(index, next.length)), 0, scan);

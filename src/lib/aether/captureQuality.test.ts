@@ -230,3 +230,15 @@ test("a level head cannot rescue the wrong angle", () => {
   });
   assert.ok(tilted.alignment < level.alignment);
 });
+
+test("a lowered chin is told to come UP, and a raised one to come down", () => {
+  const base = {
+    kind: "face_front_true" as const, yawDeg: 0, rollDeg: 0,
+    lighting: { grade: "good" as const, mean: 140, contrast: 30, leftRightDelta: 8, highlightPct: 0.01, shadowPct: 0.01, notes: [] },
+    framing: { faceHeightFrac: 0.46, eyesY: 0.38, centerX: 0.5, notes: [] },
+    smile: 0.1, hasFace: true,
+  };
+  // Positive pitch = chin down (pose-angles.ts).
+  assert.ok(scoreCapture({ ...base, pitchDeg: 20 }).reasons.includes("Chin up a little."));
+  assert.ok(scoreCapture({ ...base, pitchDeg: -20 }).reasons.includes("Chin down a little."));
+});
