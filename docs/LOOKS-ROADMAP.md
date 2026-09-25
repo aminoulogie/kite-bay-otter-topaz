@@ -1,0 +1,102 @@
+# Looks tab — roadmap
+
+Decisions from a 45-question planning session (2026-09-25). Each answer below
+is the owner's; notes in *italics* are technical constraints that shape it.
+
+Device: **iPhone 14 Pro Max** — TrueDepth front camera, LiDAR, 1×/2×/3× lenses.
+Test as a PWA, ship as the native iOS build.
+
+---
+
+## Phase 1 — fix the analyser ✅ (shipped)
+
+- [x] **Head-angle bug.** `eulerFromMatrix4` read MediaPipe's matrix on the
+      wrong axes: a head turn landed in *pitch*, a tilt in *yaw*. The 45° and
+      profile steps could not go green, and a turned head could pass the front
+      gate and be scored. Fixed in `src/lib/aether/pose-angles.ts`, with tests.
+- [x] **Chin coaching was inverted** — a lowered chin was told to drop further.
+- [x] **Posture was never measured.** `analyzePosture.ts` existed but nothing
+      called it. Profile shots (captured or imported) now run the body-pose
+      model and store a neck angle (CVA estimate), shown on the Profile tile
+      and in the scan list.
+- [x] **Angles were bent by the photo's shape** (x normalised by width, y by
+      height). Posture now rescales before measuring.
+- [x] **Guessed landmarks no longer count** — a posture reading needs a
+      visible ear and shoulder, or nothing is claimed.
+- [x] **Neck in the muscle map** — 4 neck exercises in the catalogue; neck work
+      now counts in the heatmap, weekly volume (MEV 2 / MAV 6 / MRV 12) and
+      strength trends. Custom names containing "neck" are no longer filed as
+      biceps curls or triceps extensions.
+- [x] **Re-analyse old scans** — scans carry an `analyzer` version; anything
+      measured before `aether-face-1.3.0` is flagged "pre-fix" and can be
+      re-measured from its saved photo in one tap.
+- [x] One shared measurement pipeline (`measure.ts`) for live capture,
+      camera-roll import and re-analysis.
+
+## Phase 2 — capture assist
+
+| Feature | Decision |
+|---|---|
+| Camera | Front **and** back camera. Back camera mounted on a wall with a suction mount. |
+| Zoom | **2× default, changeable** (1×/2×/3×). *Safari exposes little lens control; the native build can pick the telephoto directly.* |
+| Screen flash | **Warm white, auto-suggested** when the frame is dark, manual toggle. |
+| Audio | **Beeps + English voice.** Parking-sensor beeps: rate = how close to target; **left/right panned in AirPods** for direction, pitch for up/down. Distinct sounds: *on target → hold still*, *capturing*, *done*. |
+| Silent switch | **Respect it** — no sound on silent. |
+| Haptics | **Yes** (native build): tap on target, stronger on capture. |
+| Trigger | **Auto-capture when aligned** — no timer. |
+| Burst | ~8 frames, **auto-pick the best, tap to override**. |
+| Merge | **Average the measurements** across good frames; keep one photo. |
+| Profile | **Both left and right** sides. |
+| Camera-roll import | **Auto-align to the guides, then nudge** (drag / pinch / rotate). |
+| Recommended extras | Iris-based distance in cm; baseline lock (same camera/zoom/distance/light as the first scan); ghost overlay of the last scan; pre-scan checklist. |
+
+## Phase 3 — measurements
+
+**Framing:** norms **and scores, blunt.** Benchmarked against **"ideal"
+ratios**, with **every ratio tagged by evidence level** (e.g. golden ratio =
+weak). Wording: **blunt facts, no insults.** Every weak area is split into
+**trainable / grooming / medical / can't change**.
+
+- **3D face — TrueDepth (native):** real-millimetre face mesh.
+- **Face metrics:** jaw & chin (width, gonial angle, projection), profile
+  angles (neck–chin, nasofrontal), facial thirds & ratios, eye area (canthal
+  tilt, eyelid exposure).
+- **Under-eyes:** dark circles, puffiness/bags, hollows/tear trough.
+- **Skin:** acne/spot count, redness, texture/pores.
+- **Hair (minoxidil tracking):** hairline with hair **pulled back**, top /
+  mid-scalp, **crown** (back camera on the wall + audio), temples L & R.
+  Photos **wet**. Thinning is at the crown and top as well as the hairline.
+- **Body — LiDAR (native):** shoulder width & shoulder-to-waist, torso / back
+  length, arm & leg lengths (left vs right).
+- **Posture:** forward head, rounded shoulders, pelvic tilt, upper-back
+  rounding. *The pose model gives ear, shoulder and hip joints only; pelvic
+  tilt and back rounding need LiDAR depth or a body contour, not joints.*
+- **Knock knees:** ankle gap standing (knees touching) and hip-knee-ankle
+  angle from a front photo; **corrective exercises added to the programme**
+  (glute med / hip abductors, foot work; physio if painful).
+
+## Phase 4 — tracking
+
+- Reminders: **face weekly, body/hair every 2 weeks.**
+- Visuals: **before/after slider**, **time-lapse video**, **charts per
+  measurement.**
+- Links: neck cm ↔ profile score; posture ↔ neck/back volume; body ratios ↔
+  bodyweight; skin ↔ sleep/diet.
+
+## Storage
+
+- Photos stay **on the device, in the app's own storage**.
+- **Backups hold file paths only**, not image data, so they stay small
+  (currently ~17 MB because images are embedded).
+- Restoring a backup with a missing photo **keeps the data and shows "photo
+  missing"**.
+
+## Native build
+
+- No Mac. **GitHub Actions macOS runner** builds the IPA.
+- **Free Apple account.** *A free account cannot sign from CI and its builds
+  expire after 7 days. Practical path: CI produces an unsigned IPA, then
+  re-sign and install from a PC with Sideloadly or AltStore every 7 days. A
+  paid account ($99/yr) would allow TestFlight and proper CI signing.*
+- Delivery: **push straight to `main`**, with tests, typecheck, lint and a
+  build run before every push.
