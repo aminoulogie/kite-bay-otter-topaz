@@ -224,6 +224,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [guidance, setGuidance] = useState<Guidance | null>(null);
   const [dist, setDist] = useState<ReturnType<typeof distanceCue>>(null);
   const audioRef = useRef<AssistAudio | null>(null);
+  /** The latest render's capture, for the auto-shutter in the frame loop. */
+  const captureRef = useRef<() => Promise<void>>(async () => {});
   audioRef.current ??= new AssistAudio();
   const audio = audioRef.current;
   audio.sound = settings.sound;
@@ -547,7 +549,11 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           if (held.current >= HOLD_FRAMES) {
             held.current = 0;
             setHolding(0);
-            void capture();
+            // Through the ref: this loop was built when the camera opened, and a
+            // direct call would run THAT render's capture — the step, kind and
+            // flash setting of that moment, so a 45° or profile shot was
+            // measured and saved as a front scan.
+            void captureRef.current();
           }
         } else if (held.current !== 0) {
           held.current = 0;
@@ -723,6 +729,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       setTimeout(() => setBurstPct(0), 400);
     }
   }
+
+  captureRef.current = capture;
 
   /**
    * A still from the library: find the face, open the aligner already lined

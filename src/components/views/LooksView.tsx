@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { SwipeRow } from "@/components/SwipeRow";
-import { bodyKey, depthGridKey, latestByKind, meshKey, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { bodyKey, depthGridKey, latestByKind, meshKey, misfiledAs, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
 import { trueDepthAvailable } from "@/lib/native/face-depth";
 import { bodyScanAvailable, type BodyScanMode } from "@/lib/native/body-depth";
 import { leftRightDiffPct, type Segment } from "@/lib/aether/body3d";
@@ -68,6 +68,7 @@ export function LooksView() {
   const removeScan = useSoma((s) => s.removeScan);
   const restoreScan = useSoma((s) => s.restoreScan);
   const updateScan = useSoma((s) => s.updateScan);
+  const refileScan = useSoma((s) => s.refileScan);
 
   const [scanning, setScanning] = useState(false);
   const [open, setOpen] = useState<ScanRecord | null>(null);
@@ -153,6 +154,16 @@ export function LooksView() {
   const trend = useMemo(() => evennessTrend(scans), [scans]);
   const front = latest.get("face_front_true");
   const stale = useMemo(() => scans.filter(needsReanalysis), [scans]);
+  const refiled = stale.some((x) => x.analyzer === "refiled");
+
+  // Turned shots the old auto-shutter filed as Front go back to their real
+  // slot, then show up below for re-measuring as the pose they are.
+  useEffect(() => {
+    const wrong = scans.map((x) => [x, misfiledAs(x)] as const).filter(([, m]) => m);
+    if (!wrong.length) return;
+    for (const [x, m] of wrong) refileScan(x.id, m!.kind, m!.side);
+    toast(`Moved ${wrong.length} turned ${wrong.length === 1 ? "shot" : "shots"} out of Front into 45° / profile.`);
+  }, [scans, refileScan]);
 
   /**
    * Re-measure every scan an older analyser produced.
@@ -391,11 +402,11 @@ export function LooksView() {
 
       {stale.length > 0 && (
         <Card key="reanalyse">
-          <CardTitle>Measured before the angle fix</CardTitle>
+          <CardTitle>{refiled ? "Scans to re-measure" : "Measured before the angle fix"}</CardTitle>
           <p className="mb-3 text-xs leading-relaxed text-muted">
-            {stale.length} {stale.length === 1 ? "scan was" : "scans were"} measured while the app
-            read head turns on the wrong axis, so a slightly turned head could pass and be scored.
-            Re-measure them from the saved photos with the fixed analyser.
+            {refiled
+              ? `${stale.length} ${stale.length === 1 ? "scan needs" : "scans need"} measuring again: some 45° and profile shots were saved as Front and scored as front faces. They are back in their own slots; re-measure them as the pose they really are.`
+              : `${stale.length} ${stale.length === 1 ? "scan was" : "scans were"} measured while the app read head turns on the wrong axis, so a slightly turned head could pass and be scored. Re-measure them from the saved photos with the fixed analyser.`}
           </p>
           <Button className="w-full" disabled={!!redo} onClick={() => void reanalyseAll()}>
             {redo ? `Re-measuring ${redo.done}/${redo.total}…` : `Re-analyse ${stale.length}`}

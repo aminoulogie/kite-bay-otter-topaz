@@ -19,7 +19,8 @@ import type { CaptureKind } from "./captureQuality.ts";
 import type { SkinReport } from "./skin.ts";
 import type { Reading } from "./harmony.ts";
 import type { BodyMetrics } from "./body3d.ts";
-import { ANALYZER_VERSION } from "./landmarks.ts";
+import { ANALYZER_VERSION, MESH_KEYS } from "./landmarks.ts";
+import { turnedSide } from "./assist.ts";
 
 export interface ScanRecord {
   id: string;
@@ -151,6 +152,25 @@ export function baselineIris(
  */
 export function scanSlot(scan: Pick<ScanRecord, "kind" | "side">): string {
   return scan.kind === "face_side" ? `face_side:${scan.side ?? "right"}` : scan.kind;
+}
+
+/**
+ * A 45° or profile shot that was filed as a front scan.
+ *
+ * Until the auto-shutter bug was fixed, every automatic capture used the step
+ * that was showing when the camera opened — nearly always Front — so turned
+ * faces were saved, and measured, as front scans. The head angle measured at
+ * the time gives them away: a front shot is gated to under 8°, so a "front"
+ * scan turned 20° or more was not taken as one. The side it faced comes from
+ * the stored landmarks, the same way the live coach works it out.
+ */
+export function misfiledAs(scan: ScanRecord): { kind: "face_oblique" | "face_side"; side?: "left" | "right" } | null {
+  if (scan.kind !== "face_front_true" || scan.depth || scan.body || !scan.face) return null;
+  const yaw = Math.abs(scan.face.yawDeg);
+  if (!Number.isFinite(yaw) || yaw < 20) return null;
+  const at = (k: (typeof MESH_KEYS)[number]) => scan.face!.mesh[MESH_KEYS.indexOf(k)]?.x;
+  const side = turnedSide(at("noseTip"), at("leftOuter"), at("rightOuter")) ?? undefined;
+  return { kind: yaw < 45 ? "face_oblique" : "face_side", ...(side ? { side } : {}) };
 }
 
 /** True when this scan was measured by an older analyser and should be re-measured. */

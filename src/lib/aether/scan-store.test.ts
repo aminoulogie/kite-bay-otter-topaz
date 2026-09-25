@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { FaceAnalysis } from "./analyzeFace.ts";
-import { ANALYZER_VERSION } from "./landmarks.ts";
-import { needsReanalysis, type ScanRecord } from "./scan-store.ts";
+import { ANALYZER_VERSION, MESH_KEYS } from "./landmarks.ts";
+import { misfiledAs, needsReanalysis, type ScanRecord } from "./scan-store.ts";
 
 const base: ScanRecord = { id: "a", date: "2026-09-20", capturedAt: "2026-09-20T10:00:00Z", kind: "face_front_true" };
 const face = (v: string) => ({ analyzerVersion: v }) as FaceAnalysis;
@@ -45,4 +45,26 @@ test("the distance baseline is the FIRST like-for-like scan, never another camer
   ];
   assert.equal(baselineIris(scans, "face_front_true", "user", 2), 0.02);
   assert.equal(baselineIris(scans, "face_front_true", "environment", 3), null);
+});
+
+function faceAt(yawDeg: number, noseX: number): FaceAnalysis {
+  const mesh = MESH_KEYS.map(() => ({ x: 0.5, y: 0.5, z: 0 }));
+  mesh[MESH_KEYS.indexOf("noseTip")] = { x: noseX, y: 0.5, z: 0 };
+  mesh[MESH_KEYS.indexOf("leftOuter")] = { x: 0.4, y: 0.4, z: 0 };
+  mesh[MESH_KEYS.indexOf("rightOuter")] = { x: 0.6, y: 0.4, z: 0 };
+  return { yawDeg, mesh } as unknown as FaceAnalysis;
+}
+const front = (face?: FaceAnalysis) =>
+  ({ id: "a", date: "2026-09-25", capturedAt: "", kind: "face_front_true", face }) as const;
+
+test("a turned 'front' scan is refiled to the pose it was taken at", () => {
+  assert.deepEqual(misfiledAs(front(faceAt(35, 0.4))), { kind: "face_oblique", side: "right" });
+  assert.deepEqual(misfiledAs(front(faceAt(-70, 0.6))), { kind: "face_side", side: "left" });
+});
+
+test("real front scans, 3D scans and non-front scans stay where they are", () => {
+  assert.equal(misfiledAs(front(faceAt(4, 0.5))), null);
+  assert.equal(misfiledAs(front()), null);
+  assert.equal(misfiledAs({ ...front(faceAt(40, 0.4)), depth: {} as never }), null);
+  assert.equal(misfiledAs({ ...front(faceAt(40, 0.4)), kind: "face_oblique" }), null);
 });

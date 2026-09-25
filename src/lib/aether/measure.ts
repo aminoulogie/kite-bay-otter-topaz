@@ -120,6 +120,9 @@ export async function reanalyseScan(scan: ScanRecord): Promise<{ patch: ScanPatc
   const posture = kind === "face_side" ? await measurePosture(canvas) : undefined;
   const patch: ScanPatch = { analyzer: ANALYZER_VERSION };
   if (m) Object.assign(patch, { face: m.analysis, skin: m.skin, puffiness: m.puffiness, harmony: m.harmony });
+  // A refiled scan's old numbers were measured as the WRONG pose: unlike an
+  // older analyser's reading they are not worth keeping if this one finds nothing.
+  else if (scan.analyzer === "refiled") Object.assign(patch, { face: undefined, skin: undefined, puffiness: undefined, harmony: undefined });
   if (posture) patch.posture = posture;
   return { patch, remeasured: !!m || !!posture };
 }
