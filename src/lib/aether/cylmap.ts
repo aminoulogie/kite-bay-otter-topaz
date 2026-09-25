@@ -464,3 +464,29 @@ export function summariseCylinder(
     chinBehindNoseMm: sym ? chinBehindNoseMm(merged, c, w, sym.midlineDeg) : null,
   };
 }
+
+/**
+ * An older scan's cylinder on a newer scan's grid, or null if they cannot be
+ * compared. The grid has grown upward (more forehead) over time; rows either
+ * scan lacks are left empty, so every comparison still uses only cells both
+ * scans measured.
+ */
+export function onGrid(old: Cylinder, grid: Cylinder): Cylinder | null {
+  if (
+    old.width !== grid.width || old.thetaMinDeg !== grid.thetaMinDeg || old.thetaStepDeg !== grid.thetaStepDeg ||
+    old.yStepMm !== grid.yStepMm
+  ) return null;
+  if (old.height === grid.height && old.yMinMm === grid.yMinMm) return old;
+  const shift = Math.round((old.yMinMm - grid.yMinMm) / grid.yStepMm);
+  if (Math.abs(old.yMinMm - grid.yMinMm - shift * grid.yStepMm) > 1e-3) return null;
+  const move = (src: Float32Array) => {
+    const out = new Float32Array(grid.width * grid.height).fill(NaN);
+    for (let j = 0; j < old.height; j++) {
+      const jj = j + shift;
+      if (jj < 0 || jj >= grid.height) continue;
+      out.set(src.subarray(j * old.width, (j + 1) * old.width), jj * grid.width);
+    }
+    return out;
+  };
+  return { ...grid, a: move(old.a), b: move(old.b) };
+}

@@ -116,7 +116,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     // alternately to two independent cylinders, A and B: how much they
     // disagree is this scan's own measurement noise.
     let sweep: Bool
-    // ±160° and down to 25 cm below the face origin: the side views reach
+    // ±160°, 15 cm above to 25 cm below the face origin: the side views reach
     // round towards the back of the neck, and the neck and collarbone need
     // rows well below the chin.
     static let cylThetaMin: Float = -160
@@ -124,7 +124,9 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     static let cylW = 321
     static let cylYMin: Float = -0.250
     static let cylYStep: Float = 0.0015
-    static let cylH = 227
+    // Up to 15 cm above the face origin: 9 cm stopped at the hairline and
+    // sliced the top of the forehead off flat.
+    static let cylH = 267
     /// The cylinder's axis: this far behind the face origin, roughly the middle of the head.
     static let cylZc: Float = -0.060
     static let reservoir = 12

@@ -141,3 +141,19 @@ test("sweep audio steers onto the target: faster near it, from its side, pitched
   assert.equal(sweepGuidance({ ...base, targetError: 10, targetDir: "up" }).pitchHz, 880);
   assert.equal(sweepGuidance({ ...base, targetError: 10, targetDir: "left" }).pan, -1);
 });
+
+test("an older, shorter grid is compared on the newer one, row for row", async () => {
+  const { onGrid } = await import("./cylmap.ts");
+  const mk = (h: number, fill: (j: number) => number) => {
+    const a = new Float32Array(3 * h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < 3; i++) a[j * 3 + i] = fill(j);
+    return { a, b: a.slice(), width: 3, height: h, thetaMinDeg: -1, thetaStepDeg: 1, yMinMm: -250, yStepMm: 1.5 };
+  };
+  const old = mk(4, (j) => 100 + j);
+  const grid = mk(6, () => 0);
+  const g = onGrid(old, grid)!;
+  assert.equal(g.height, 6);
+  assert.equal(g.a[3 * 3], 103, "same height, same row");
+  assert.ok(Number.isNaN(g.a[5 * 3]!), "rows the old scan never had stay empty");
+  assert.equal(onGrid({ ...old, width: 4 }, grid), null);
+});

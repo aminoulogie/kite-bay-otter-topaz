@@ -2,7 +2,7 @@ import type { AssistAudio } from "./assist-audio.ts";
 import { guide } from "./assist.ts";
 import { ANALYZER_VERSION } from "./landmarks.ts";
 import { depthSymmetry } from "./depthmap.ts";
-import { compareCyl, faceWindow, mergeCyl, summariseCylinder, type Cylinder } from "./cylmap.ts";
+import { compareCyl, faceWindow, mergeCyl, onGrid, summariseCylinder, type Cylinder } from "./cylmap.ts";
 import { extendWithSides, type SideStats } from "./fullscan.ts";
 import { alignOnAnchors } from "./align3d.ts";
 import { decodeSweepFrames, refineSweep, type RefineStats } from "./refine.ts";
@@ -173,8 +173,13 @@ async function changeVsFirst(scans: ScanRecord[], c: Cylinder, eye: number): Pro
   const raw = await loadScanImage(cylKey(first.id));
   if (!raw) return undefined;
   const p = JSON.parse(raw) as StoredCylinder;
-  if (p.width !== c.width || p.height !== c.height) return undefined;
-  const prev = mergeCyl({ ...c, a: decodeFloat32(p.a), b: decodeFloat32(p.b) });
+  const was = onGrid(
+    { a: decodeFloat32(p.a), b: decodeFloat32(p.b), width: p.width, height: p.height,
+      thetaMinDeg: p.thetaMinDeg, thetaStepDeg: p.thetaStepDeg, yMinMm: p.yMinMm, yStepMm: p.yStepMm },
+    c,
+  );
+  if (!was) return undefined;
+  const prev = mergeCyl(was);
   const eyeY = (p.eyeYMm + eye) / 2;
   // Line the two up on forehead and nose bridge first (align3d.ts), so a
   // different nod or shift is not counted as change.

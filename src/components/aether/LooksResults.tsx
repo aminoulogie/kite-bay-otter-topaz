@@ -4,7 +4,7 @@ import { ChevronRight, RotateCcw, Triangle } from "lucide-react";
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card } from "@/components/ui/card";
 import { Face3DView, type Face3DHandle } from "@/components/aether/Face3DView";
-import { compareCyl, faceWindow, mergeCyl, type Cylinder } from "@/lib/aether/cylmap";
+import { compareCyl, faceWindow, mergeCyl, onGrid, type Cylinder } from "@/lib/aether/cylmap";
 import { buildMesh, tidy, type MeshData } from "@/lib/aether/cylmesh";
 import { alignOnAnchors } from "@/lib/aether/align3d";
 import { decodeFloat32 } from "@/lib/aether/mesh3d";
@@ -102,8 +102,9 @@ export function LooksResults({
       let before: Parameters<typeof buildMesh>[4];
       if (first) {
         const old = await loadCylinder(first.id);
-        if (old && old.c.width === now.c.width && old.c.height === now.c.height) {
-          const oldMap = mergeCyl(old.c);
+        const oldC = old ? onGrid(old.c, now.c) : null;
+        if (old && oldC) {
+          const oldMap = mergeCyl(oldC);
           const eye = (old.eye + now.eye) / 2;
           // Moved onto the first scan by forehead and nose bridge, so the
           // colours show the face changing, not the head held differently.
