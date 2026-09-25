@@ -74,6 +74,25 @@ export interface DepthSummary {
   /** Expression at capture, so a "neutral" scan can be checked. */
   smile: number;
   jawOpen: number;
+  /**
+   * Symmetry measured on the RAW depth surface — the real shape, not the
+   * fitted mesh. Absent when the device delivered no depth.
+   */
+  raw?: {
+    rmsMm: number;
+    p95Mm: number;
+    byThird: { upper: number; middle: number; lower: number };
+    /** Person's left minus right, mm: positive = left sits further forward. */
+    leftMinusRightMm: { upper: number; middle: number; lower: number };
+    residualYawDeg: number;
+    depthFrames: number;
+    coverage: number;
+  };
+}
+
+/** Where the raw depth grid of a TrueDepth scan is stored. */
+export function depthGridKey(scanId: string): string {
+  return `depth:${scanId}`;
 }
 
 /** Where the full mesh of a TrueDepth scan is stored. */

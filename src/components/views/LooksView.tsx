@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { SwipeRow } from "@/components/SwipeRow";
-import { latestByKind, meshKey, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { depthGridKey, latestByKind, meshKey, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
 import { trueDepthAvailable } from "@/lib/native/face-depth";
 import type { AssistAudio } from "@/lib/aether/assist-audio";
 import { symmetryPercent } from "@/lib/aether/harmony";
@@ -185,7 +185,10 @@ export function LooksView() {
     setTimeout(() => {
       if (!useSoma.getState().scans.some((x) => x.id === scan.id)) {
         void deleteScanImage(scan.id);
-        if (scan.depth) void deleteScanImage(meshKey(scan.id));
+        if (scan.depth) {
+          void deleteScanImage(meshKey(scan.id));
+          void deleteScanImage(depthGridKey(scan.id));
+        }
       }
     }, 8000);
   };
@@ -246,7 +249,21 @@ export function LooksView() {
           <CardTitle>3D scan · TrueDepth</CardTitle>
           {latestDepth ? (
             <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-              <Metric label="Asymmetry (RMS)" value={mm(latestDepth.symmetryRmsMm, 2)} />
+              {latestDepth.raw && (
+                <>
+                  {/* The measured surface first: this is the real shape. */}
+                  <Metric label="Asymmetry · raw depth" value={mm(latestDepth.raw.rmsMm, 2)} />
+                  <Metric label="Worst areas · raw" value={mm(latestDepth.raw.p95Mm, 2)} />
+                  <Metric
+                    label="Fuller side (up / mid / low)"
+                    value={(["upper", "middle", "lower"] as const)
+                      .map((k) => side(latestDepth.raw!.leftMinusRightMm[k]))
+                      .join(" / ")}
+                  />
+                  <Metric label="Depth frames" value={`${latestDepth.raw.depthFrames}`} />
+                </>
+              )}
+              <Metric label={latestDepth.raw ? "Asymmetry · mesh" : "Asymmetry (RMS)"} value={mm(latestDepth.symmetryRmsMm, 2)} />
               <Metric label="Worst areas (95th)" value={mm(latestDepth.symmetryP95Mm, 2)} />
               {latestDepth.symmetryByThird && (
                 <Metric
@@ -272,12 +289,12 @@ export function LooksView() {
           ) : (
             <p className="text-[0.7rem] text-faint">3D scanning needs the installed iPhone app.</p>
           )}
-          {latestDepth?.symmetryRmsMm != null && latestDepth.symmetryRmsMm < 0.3 && (
+          {latestDepth && !latestDepth.raw && latestDepth.symmetryRmsMm != null && latestDepth.symmetryRmsMm < 0.3 && (
             // Honest flag: ARKit may fit faces symmetrically, in which case the
             // mesh cannot show asymmetry and this figure means nothing yet.
             <p className="mt-2 text-[0.7rem] leading-snug text-warn">
               Near-zero asymmetry usually means the fitted mesh is forcing symmetry, not that your face
-              is perfectly even. Symmetry will move to the raw depth map in a later update.
+              is perfectly even. This scan has no raw depth; take a new 3D scan to measure it.
             </p>
           )}
         </Card>
@@ -383,7 +400,11 @@ export function LooksView() {
                       {sc.date}
                       {sc.face ? ` · ${symmetryPercent(sc.face.alpha)}% symmetry` : ""}
                       {sc.posture?.cvaEst != null ? ` · neck ${sc.posture.cvaEst.toFixed(1)}°` : ""}
-                      {sc.depth?.symmetryRmsMm != null ? ` · 3D ${sc.depth.symmetryRmsMm.toFixed(2)} mm` : ""}
+                      {sc.depth?.raw
+                        ? ` · 3D ${sc.depth.raw.rmsMm.toFixed(2)} mm`
+                        : sc.depth?.symmetryRmsMm != null
+                          ? ` · 3D mesh ${sc.depth.symmetryRmsMm.toFixed(2)} mm`
+                          : ""}
                     </div>
                   </div>
                   <ChevronRight className="size-4 shrink-0 text-faint" />
@@ -443,4 +464,10 @@ function Metric({ label, value }: { label: string; value: string }) {
       <div className="tabular font-bold">{value}</div>
     </div>
   );
+}
+
+/** Which side sits further forward, ignoring differences under 0.3 mm. */
+function side(leftMinusRight: number): string {
+  if (Math.abs(leftMinusRight) < 0.3) return "even";
+  return leftMinusRight > 0 ? "L" : "R";
 }

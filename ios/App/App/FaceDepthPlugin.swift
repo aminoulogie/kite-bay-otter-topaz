@@ -119,6 +119,21 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     private var startedAt = Date()
     private var triangleIndices: [Int16] = []
 
+    // Raw TrueDepth depth, averaged onto a grid in the FACE's axes: each cell
+    // holds the mean z (how far forward the surface is) at that x/y. Unlike
+    // the mesh this is measured, not fitted — noisier per frame, but averaged
+    // over many frames it shows the face's real shape, asymmetry included.
+    static let cell: Float = 0.0015
+    static let gridXMin: Float = -0.090
+    static let gridYMin: Float = -0.120
+    static let gridW = 120  // 180 mm
+    static let gridH = 134  // 201 mm
+    /// Depth arrives at ~15/s against 60 video frames, so wait for this many.
+    private static let minDepthFrames = 15
+    private var depthSum = [Float](repeating: 0, count: FaceScanViewController.gridW * FaceScanViewController.gridH)
+    private var depthCount = [UInt16](repeating: 0, count: FaceScanViewController.gridW * FaceScanViewController.gridH)
+    private var depthFrames = 0
+
     init(frames: Int, minDistance: Float, maxDistance: Float) {
         self.targetFrames = frames
         self.minDistance = minDistance
@@ -245,10 +260,68 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         else if smile > 0.3 || jawOpen > 0.2 { message = "Relax your mouth, teeth apart."; ok = false }
         else if blink > 0.5 { message = "Eyes open."; ok = false }
 
-        if ok { accumulate(face, pose: pose, distance: distance) }
+        if ok {
+            accumulate(face, pose: pose, distance: distance)
+            accumulateDepth(frame, face: face)
+        }
         show(message, ok: ok, pose: pose, distance: distance, face: face)
 
-        if collected >= targetFrames { complete(frame: frame, face: face) }
+        // Enough mesh frames AND enough depth frames — or, if this device never
+        // delivers depth, give up waiting for it after four times as long.
+        if collected >= targetFrames && (depthFrames >= Self.minDepthFrames || collected >= targetFrames * 4) {
+            complete(frame: frame, face: face)
+        }
+    }
+
+    /// Unproject every depth pixel into 3D, move it into the face's own axes
+    /// using ARKit's pose, and add it to the grid. Pixels further than 15 cm in
+    /// front of or behind the face plane are background, hair or hands.
+    private func accumulateDepth(_ frame: ARFrame, face: ARFaceAnchor) {
+        guard let raw = frame.capturedDepthData else { return }
+        let depth = raw.depthDataType == kCVPixelFormatType_DepthFloat32
+            ? raw : raw.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32)
+        let map = depth.depthDataMap
+        CVPixelBufferLockBaseAddress(map, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(map, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(map) else { return }
+        let w = CVPixelBufferGetWidth(map)
+        let h = CVPixelBufferGetHeight(map)
+        let rowBytes = CVPixelBufferGetBytesPerRow(map)
+
+        // The depth map covers the same view as the colour frame at a lower
+        // resolution, so the colour camera's intrinsics scale straight down.
+        let k = frame.camera.intrinsics
+        let res = frame.camera.imageResolution
+        let sx = Float(w) / Float(res.width)
+        let sy = Float(h) / Float(res.height)
+        let fx = k.columns.0.x * sx, fy = k.columns.1.y * sy
+        let cx = k.columns.2.x * sx, cy = k.columns.2.y * sy
+
+        // Camera (ARKit axes: x right, y up, z back) → world → face.
+        let toFace = face.transform.inverse * frame.camera.transform
+        let W = Self.gridW, H = Self.gridH, cell = Self.cell
+        let x0 = Self.gridXMin, y0 = Self.gridYMin
+        var used = 0
+        for v in 0..<h {
+            let row = base.advanced(by: v * rowBytes).assumingMemoryBound(to: Float32.self)
+            for u in 0..<w {
+                let z = row[u]
+                guard z.isFinite, z > 0.1, z < 1.0 else { continue }
+                // Pixel → camera: image y runs down and depth runs forward,
+                // both opposite to ARKit's camera axes.
+                let pc = SIMD4<Float>((Float(u) - cx) / fx * z, -(Float(v) - cy) / fy * z, -z, 1)
+                let pf = toFace * pc
+                guard abs(pf.z) < 0.15 else { continue }
+                let i = Int((pf.x - x0) / cell)
+                let j = Int((pf.y - y0) / cell)
+                guard i >= 0, i < W, j >= 0, j < H else { continue }
+                let idx = j * W + i
+                depthSum[idx] += pf.z
+                if depthCount[idx] < UInt16.max { depthCount[idx] += 1 }
+                used += 1
+            }
+        }
+        if used > 500 { depthFrames += 1 }
     }
 
     private func accumulate(_ face: ARFaceAnchor, pose: (yaw: Float, pitch: Float, roll: Float), distance: Float) {
@@ -323,6 +396,25 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             "imageResolution": [Double(frame.camera.imageResolution.width), Double(frame.camera.imageResolution.height)],
         ]
         if let photo = Self.portraitJPEG(frame.capturedImage) { result["image"] = photo }
+
+        // The averaged depth surface, mm, NaN where too few samples landed
+        // (a single sample is too noisy to trust).
+        if depthFrames > 0 {
+            var grid = [Float](repeating: .nan, count: depthSum.count)
+            var filled = 0
+            for i in 0..<grid.count where depthCount[i] >= 3 {
+                grid[i] = depthSum[i] / Float(depthCount[i]) * 1000
+                filled += 1
+            }
+            let gridData = grid.withUnsafeBufferPointer { Data(buffer: $0) }
+            result["depthGrid"] = gridData.base64EncodedString()
+            result["depthGridWidth"] = Self.gridW
+            result["depthGridHeight"] = Self.gridH
+            result["depthCellMm"] = Double(Self.cell * 1000)
+            result["depthOriginMm"] = [Double(Self.gridXMin * 1000), Double(Self.gridYMin * 1000)]
+            result["depthFrames"] = depthFrames
+            result["depthCoverage"] = Double(filled) / Double(grid.count)
+        }
         finish(.success(result))
     }
 

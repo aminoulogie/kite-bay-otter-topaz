@@ -1,8 +1,9 @@
 import type { AssistAudio } from "./assist-audio.ts";
 import { guide } from "./assist.ts";
 import { ANALYZER_VERSION } from "./landmarks.ts";
+import { depthSymmetry } from "./depthmap.ts";
 import { decodeFloat32, distanceMm, extents3d, symmetry3d } from "./mesh3d.ts";
-import { meshKey, type DepthSummary, type ScanRecord } from "./scan-store.ts";
+import { depthGridKey, meshKey, type DepthSummary, type ScanRecord } from "./scan-store.ts";
 import { FaceDepth, MAX_DISTANCE_M, MIN_DISTANCE_M, type FaceDepthResult } from "../native/face-depth.ts";
 import { saveScanImage } from "../habit-photos.ts";
 import { getLocalDateKey } from "../soma/dates.ts";
@@ -12,7 +13,30 @@ export function summariseDepth(r: FaceDepthResult): DepthSummary {
   const v = decodeFloat32(r.vertices);
   const sym = symmetry3d(v);
   const ext = extents3d(v);
+  const raw =
+    r.depthGrid && r.depthGridWidth && r.depthGridHeight && r.depthCellMm && r.depthOriginMm
+      ? depthSymmetry({
+          z: decodeFloat32(r.depthGrid),
+          width: r.depthGridWidth,
+          height: r.depthGridHeight,
+          cellMm: r.depthCellMm,
+          originMm: r.depthOriginMm,
+        })
+      : null;
   return {
+    ...(raw
+      ? {
+          raw: {
+            rmsMm: raw.rmsMm,
+            p95Mm: raw.p95Mm,
+            byThird: raw.byThird,
+            leftMinusRightMm: raw.leftMinusRightMm,
+            residualYawDeg: raw.residualYawDeg,
+            depthFrames: r.depthFrames ?? 0,
+            coverage: r.depthCoverage ?? 0,
+          },
+        }
+      : {}),
     source: "truedepth",
     frames: r.frames,
     distanceMm: r.distance * 1000,
@@ -68,6 +92,7 @@ export async function runTrueDepthScan(audio: AssistAudio): Promise<ScanRecord> 
 
   const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   await saveScanImage(meshKey(id), result.vertices);
+  if (result.depthGrid) await saveScanImage(depthGridKey(id), result.depthGrid);
   if (result.image) await saveScanImage(id, result.image);
 
   const record: ScanRecord = {

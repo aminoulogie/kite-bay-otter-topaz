@@ -71,9 +71,12 @@ Test as a PWA, ship as the native iOS build.
 - [x] 3D metrics: mirror asymmetry (RMS, 95th percentile, by third) with the
       midline found rather than assumed, IPD, face width, lower/face width.
 - [x] Mesh stored in IndexedDB (`mesh:<id>`), summary on the scan.
-- [ ] Verify on device: photo orientation, and whether ARKit's fitted mesh
-      carries real asymmetry. If it reads ~0 mm, move symmetry to the raw
-      `AVDepthData` depth map.
+- [x] Raw TrueDepth depth (`ARFrame.capturedDepthData`): every depth pixel
+      of each gated frame is unprojected, moved into the face's axes and
+      averaged onto a 1.5 mm grid (≥15 depth frames). Symmetry is measured on
+      that measured surface — midline searched, residual head turn removed —
+      per third, with which side sits further forward.
+- [ ] Verify on device: photo orientation; raw vs mesh asymmetry side by side.
 - [ ] Landmark-level metrics (gonial angle, canthal tilt, cheekbone projection)
       from vertex indices identified on a real exported mesh.
 

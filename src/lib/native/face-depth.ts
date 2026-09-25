@@ -40,6 +40,15 @@ export interface FaceDepthResult {
   imageResolution: [number, number];
   /** One colour frame, upright, as a JPEG data URL. */
   image?: string;
+  /** Raw TrueDepth surface: base64 Float32 z in mm per grid cell, NaN = no data. */
+  depthGrid?: string;
+  depthGridWidth?: number;
+  depthGridHeight?: number;
+  depthCellMm?: number;
+  depthOriginMm?: [number, number];
+  depthFrames?: number;
+  /** Fraction of grid cells with enough samples. */
+  depthCoverage?: number;
 }
 
 interface FaceDepthPlugin {
