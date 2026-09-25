@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ChevronRight, RotateCcw, Triangle } from "lucide-react";
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card } from "@/components/ui/card";
@@ -11,6 +12,9 @@ import { METRICS, baselinePair, format, rows, series, sweepScans, type Group, ty
 import { cylKey, type ScanRecord } from "@/lib/aether/scan-store";
 import { loadScanImage } from "@/lib/habit-photos";
 import { cn } from "@/lib/utils";
+import { useSoma } from "@/lib/store";
+import { getLocalDateKey } from "@/lib/soma";
+import { NOISE_CM, tapeHistory } from "@/lib/tape-history";
 
 interface Stored {
   a: string;
@@ -117,12 +121,26 @@ export function LooksResults({
     };
   }, [latest, first]);
 
-  const def = METRICS.find((m) => m.key === metric && table.some((r) => r.def.key === m.key)) ?? table[0]?.def;
+  // The tape measure, from Body → Measure: the one neck number a tape does
+  // better than any scan (the scan cannot see the nape).
+  const nutrition = useSoma((s) => s.nutrition);
+  const tape = useMemo(() => tapeHistory(nutrition, "neck", 1000), [nutrition]);
+
+  const def =
+    metric === TAPE_DEF.key && tape.latest
+      ? TAPE_DEF
+      : (METRICS.find((m) => m.key === metric && table.some((r) => r.def.key === m.key)) ?? table[0]?.def);
   const since = RANGES.find((r) => r.label === range)!.ms;
-  const points = useMemo(
-    () => (def ? series(sweeps, def, since === Infinity ? 0 : Date.now() - since) : []),
-    [sweeps, def, since],
-  );
+  const points = useMemo(() => {
+    const from = since === Infinity ? 0 : Date.now() - since;
+    if (def?.key === TAPE_DEF.key) {
+      return [...tape.readings]
+        .reverse()
+        .map((r) => ({ t: Date.parse(`${r.date}T12:00:00`), date: r.date, v: r.value, lo: r.value - NOISE_CM, hi: r.value + NOISE_CM, n: 1 }))
+        .filter((p) => p.t >= from);
+    }
+    return def ? series(sweeps, def, from) : [];
+  }, [sweeps, def, since, tape]);
 
   return (
     <div className="space-y-3 pb-4">
@@ -216,7 +234,7 @@ export function LooksResults({
 
           {(["Face", "Side profile", "Neck", "Posture"] as const).map((g) => {
             const items = table.filter((r) => r.def.group === g);
-            if (!items.length) return null;
+            if (!items.length && !(g === "Neck")) return null;
             return (
               <Card key={g} className="p-3">
                 <div className="flex gap-3">
@@ -228,6 +246,9 @@ export function LooksResults({
                     {items.map((r) => (
                       <MetricRow key={r.def.key} r={r} active={def?.key === r.def.key} onPick={() => setMetric(r.def.key)} />
                     ))}
+                    {g === "Neck" && (
+                      <NeckTape active={def?.key === TAPE_DEF.key} onPick={() => setMetric(TAPE_DEF.key)} />
+                    )}
                   </div>
                 </div>
               </Card>
@@ -300,6 +321,84 @@ export function LooksResults({
           {first && def && <BeforeAfter first={first} latest={latest} def={def} />}
         </>
       )}
+    </div>
+  );
+}
+
+/** The tape reading, charted like the scan metrics: ±0.25 cm is tape placement. */
+const TAPE_DEF: MetricDef = {
+  key: "neckTape",
+  group: "Neck",
+  label: "Neck (tape)",
+  unit: "cm",
+  digits: 1,
+  better: "up",
+  tag: () => "Measured",
+  read: () => null,
+  about: "Tape just below the Adam's apple, level, relaxed, once a week. Changes under 0.5 cm are tape placement, not neck.",
+};
+
+/**
+ * The neck tape in the Neck card: latest reading, change since the first,
+ * and a field to log today's. Writes to the same place Body → Measure does,
+ * merged, so the day's other sites are kept.
+ */
+function NeckTape({ active, onPick }: { active: boolean; onPick: () => void }) {
+  const nutrition = useSoma((s) => s.nutrition);
+  const ensureDay = useSoma((s) => s.ensureDay);
+  const patchDay = useSoma((s) => s.patchDay);
+  const all = useMemo(() => tapeHistory(nutrition, "neck", 1000), [nutrition]);
+  const [draft, setDraft] = useState("");
+  const latest = all.latest;
+  const first = all.readings[all.readings.length - 1];
+  const delta = latest && first && all.readings.length > 1 ? latest.value - first.value : null;
+  const within = delta != null && Math.abs(delta) < 2 * NOISE_CM;
+  const save = () => {
+    const v = Number(draft.replace(",", "."));
+    if (!Number.isFinite(v) || v < 20 || v > 70) {
+      toast.error("Neck in cm, e.g. 38.5");
+      return;
+    }
+    const today = getLocalDateKey(new Date());
+    ensureDay(today);
+    const existing = useSoma.getState().nutrition[today]?.measurements ?? {};
+    patchDay(today, { measurements: { ...existing, neck: Math.round(v * 10) / 10 } });
+    setDraft("");
+    toast.success(`Neck ${v.toFixed(1)} cm saved for today`);
+  };
+  return (
+    <div className="mt-1 border-t border-border pt-2">
+      <button type="button" onClick={onPick} className={cn("flex w-full items-center gap-2 rounded-lg py-1.5 text-left", active && "bg-surface-2/60")}>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[0.85rem] leading-tight">Neck (tape)</span>
+          <span className="mt-0.5 inline-block rounded-full bg-surface-2 px-1.5 py-px text-[0.55rem] font-bold text-muted">Tape</span>
+        </span>
+        <span className="tabular w-[5.2rem] shrink-0 text-right text-sm font-bold">
+          {latest ? `${latest.value.toFixed(1)} cm` : "—"}
+          {latest && <span className="block text-[0.6rem] font-semibold text-faint">{latest.date}</span>}
+        </span>
+        <span
+          className={cn(
+            "tabular flex w-[4.8rem] shrink-0 items-center justify-end gap-1 text-[0.7rem] font-bold",
+            delta == null || within ? "text-muted" : delta > 0 ? "text-emerald-400" : "text-red-400",
+          )}
+        >
+          {delta == null ? (latest ? "first" : "") : within ? "within noise" : `${delta > 0 ? "+" : ""}${delta.toFixed(1)} cm`}
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-faint" />
+      </button>
+      <div className="mt-1 flex gap-2">
+        <input
+          inputMode="decimal"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Today's tape, cm"
+          className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-surface-2 px-3 text-sm"
+        />
+        <button type="button" onClick={save} className="h-9 rounded-lg bg-accent px-3 text-xs font-bold text-accent-ink">
+          Save
+        </button>
+      </div>
     </div>
   );
 }

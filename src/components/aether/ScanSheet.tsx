@@ -15,7 +15,7 @@ import {
 } from "@/lib/aether/mediapipe";
 import { canvasFromDataUrl, measureCanvas, measurePosture } from "@/lib/aether/measure";
 import {
-  coverRect, cropForView, distanceCue, faceSquare, guide, irisSize, laplacianVariance, mergeSymmetry, rankFrames,
+  cropForView, distanceCue, faceSquare, guide, irisSize, laplacianVariance, mergeSymmetry, rankFrames,
   screenCue, smoothSquare, turnedSide, type FaceSquare, type Guidance,
 } from "@/lib/aether/assist";
 import { AssistAudio } from "@/lib/aether/assist-audio";
@@ -227,8 +227,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [burstPct, setBurstPct] = useState(0);
   const [hud, setHud] = useState<Quality | null>(null);
   const [square, setSquare] = useState<FaceSquare | null>(null);
-  /** The camera's real frame size, to place the video by hand (see coverRect). */
-  const [videoSize, setVideoSize] = useState<[number, number]>([0, 0]);
+  /** The visible preview: every camera frame drawn cropped, see the effect below. */
+  const previewRef = useRef<HTMLCanvasElement>(null);
   const [hasTrueDepth, setHasTrueDepth] = useState(false);
   const [status, setStatus] = useState("Open the camera. Front → 45° → profile.");
   const [pose, setPose] = useState<{ yaw: number; roll: number; pitch: number } | null>(null);
@@ -335,6 +335,37 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   // Hold fills the first half of the ring, the burst the second.
   const ringProgress = busy ? 0.5 + burstPct / 200 : (holding / HOLD_FRAMES) * 0.5;
   const frontGlow = settings.flash && settings.facing === "user" && live;
+
+  // Draw the preview: every animation frame, the analysed crop of the camera
+  // frame, mirrored for the front camera, at the canvas's own pixel size.
+  useEffect(() => {
+    if (!live) return;
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const video = videoRef.current;
+      const cv = previewRef.current;
+      if (!video || !cv || video.readyState < 2 || !video.videoWidth) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.round(cv.clientWidth * dpr);
+      const h = Math.round(cv.clientHeight * dpr);
+      if (!w || !h) return;
+      if (cv.width !== w) cv.width = w;
+      if (cv.height !== h) cv.height = h;
+      const ctx = cv.getContext("2d");
+      if (!ctx) return;
+      const c = cropForView(video.videoWidth, video.videoHeight, liveRefs.current.zoom);
+      ctx.save();
+      if (liveRefs.current.mirror) {
+        ctx.translate(w, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, w, h);
+      ctx.restore();
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [live]);
 
   // Open the camera with the sheet: the tap on Scan is the gesture that asks
   // for it. Sound needs a gesture of its own on iOS, so the first touch
@@ -445,8 +476,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         : undefined;
     const pending = navigator.mediaDevices.getUserMedia({
       video: tele
-        ? { deviceId: { exact: tele.deviceId }, width: { ideal: 1920 }, height: { ideal: 2560 } }
-        : { facingMode: want.facing, width: { ideal: 1920 }, height: { ideal: 2560 } },
+        ? { deviceId: { exact: tele.deviceId }, width: { ideal: 1440 }, height: { ideal: 1920 }, aspectRatio: { ideal: 3 / 4 } }
+        : { facingMode: want.facing, width: { ideal: 1440 }, height: { ideal: 1920 }, aspectRatio: { ideal: 3 / 4 } },
       audio: false,
     });
     setStatus("Allow the camera when asked…");
@@ -479,7 +510,6 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     } catch {
       // Autoplay refusal on a muted inline video is rare and not fatal.
     }
-    setVideoSize([videoRef.current.videoWidth, videoRef.current.videoHeight]);
     setLive(true);
     setHwZoom(!!tele || applyTrackZoom(stream, want.zoom));
 
@@ -506,9 +536,6 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       const video = videoRef.current;
       const small = smallRef.current;
       if (!video || !small || video.readyState < 2) return;
-      setVideoSize((cur) =>
-        cur[0] === video.videoWidth && cur[1] === video.videoHeight ? cur : [video.videoWidth, video.videoHeight],
-      );
       // The same centre crop the preview shows and the capture keeps, so the
       // landmarks, the guides and the saved photo all describe one frame.
       const c = cropForView(video.videoWidth, video.videoHeight, liveRefs.current.zoom);
@@ -950,21 +977,19 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           className="relative mx-auto aspect-[3/4] w-full max-w-[calc(64svh*0.75)] overflow-hidden rounded-2xl border border-border bg-black"
           style={{ containerType: "inline-size" }}
         >
-          {/* Mirrored for the front camera only, and scaled by the digital zoom
-              so the preview shows exactly the centre crop that is analysed. */}
+          {/* The camera's own <video> only feeds the frames: it stays in the
+              page (iOS stops decoding a video that is display:none) but out of
+              sight. What you see is the preview canvas, drawn from exactly the
+              crop that is analysed — so no shape of camera frame (the iPhone
+              sometimes hands back square video) can leave bars, and the face
+              square can never drift off the face. */}
           <video
             ref={videoRef}
-            className="absolute max-h-none max-w-none"
-            style={{
-              ...(() => {
-                const r = coverRect(videoSize[0], videoSize[1]);
-                return { width: `${r.width}%`, height: `${r.height}%`, left: `${r.left}%`, top: `${r.top}%` };
-              })(),
-              transform: `scale(${(settings.facing === "user" ? -1 : 1) * (hwZoom ? 1 : settings.zoom)}, ${hwZoom ? 1 : settings.zoom})`,
-            }}
+            className="pointer-events-none absolute left-0 top-0 size-px opacity-0"
             playsInline
             muted
           />
+          <canvas ref={previewRef} className="absolute inset-0 size-full" />
           <canvas ref={canvasRef} className="hidden" />
           <canvas ref={smallRef} className="hidden" />
           {!live && (

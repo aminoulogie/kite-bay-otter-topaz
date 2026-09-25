@@ -6,7 +6,7 @@ const GREEN = "#30d158";
 /** Where the tracker rests when there is no face: centre, a little high. */
 const IDLE: FaceSquare = { cx: 0.5, cy: 0.44, side: 0.5 };
 /** The ring's box is this much bigger than the face square. */
-const RING = 1.42;
+const RING = 1.3;
 
 const CUE_ANGLE = { up: -90, right: 0, down: 90, left: 180 } as const;
 
@@ -62,10 +62,10 @@ export function FaceRing({
           return (
             <line
               key={i}
-              x1={Math.cos(a) * 44.5}
-              y1={Math.sin(a) * 44.5}
-              x2={Math.cos(a) * 49}
-              y2={Math.sin(a) * 49}
+              x1={Math.cos(a) * 46}
+              y1={Math.sin(a) * 46}
+              x2={Math.cos(a) * 49.5}
+              y2={Math.sin(a) * 49.5}
               stroke={color}
               strokeWidth={1.6}
               strokeLinecap="round"
@@ -79,7 +79,7 @@ export function FaceRing({
           width={half * 2}
           height={half * 2}
           // Round enough that the corners stay inside the ring of ticks.
-          rx={13}
+          rx={20}
           fill="none"
           stroke={stroke}
           strokeWidth={1.1}
