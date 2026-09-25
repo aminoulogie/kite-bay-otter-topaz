@@ -383,7 +383,7 @@ export function icp(
 }
 
 export interface RegFrame {
-  stage: "turn" | "hold";
+  stage: "turn" | "hold" | "posture";
   /** Flat xyz, mm, camera axes. */
   pts: Float32Array;
   /** Camera → face from ARKit, when it still tracked; mm. */
@@ -393,6 +393,8 @@ export interface RegFrame {
 export interface RegResult {
   /** Hold frames, placed: camera → face, and the frame. */
   holds: { T: Mat4; pts: Float32Array; rms: number; inliers: number }[];
+  /** Posture frames (a step back, side-on), placed the same way. */
+  posture: { T: Mat4; pts: Float32Array; rms: number; inliers: number }[];
   aligned: number;
   lost: number;
   meanRmsMm: number | null;
@@ -433,6 +435,7 @@ export function registerSide(model: PointIndex, frames: RegFrame[], axisZ = -60)
   // turn slide by unnoticed. Matching then only has to correct the forecast.
   let step: Mat4 | null = null;
   const holds: RegResult["holds"] = [];
+  const posture: RegResult["posture"] = [];
   let aligned = 0;
   let lost = 0;
   let rmsSum = 0;
@@ -460,7 +463,9 @@ export function registerSide(model: PointIndex, frames: RegFrame[], axisZ = -60)
     T = r.T;
     aligned++;
     rmsSum += r.rms;
-    if (f.stage === "hold") {
+    if (f.stage === "posture") {
+      posture.push({ T: r.T, pts: f.pts, rms: r.rms, inliers: r.inliers });
+    } else if (f.stage === "hold") {
       holds.push({ T: r.T, pts: f.pts, rms: r.rms, inliers: r.inliers });
     } else {
       // Grow the model round the head so the next frame, turned further,
@@ -473,7 +478,7 @@ export function registerSide(model: PointIndex, frames: RegFrame[], axisZ = -60)
       }
     }
   }
-  return { holds, aligned, lost, meanRmsMm: aligned ? rmsSum / aligned : null };
+  return { holds, posture, aligned, lost, meanRmsMm: aligned ? rmsSum / aligned : null };
 }
 
 /** Base64 Int16 xyz in 0.1 mm → Float32 mm. */

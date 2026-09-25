@@ -308,15 +308,49 @@ export function judgeHold(
   front: Float32Array,
   c: Cylinder,
   axisZ: number,
+  limits: { fitMm: number; inliers: number; overlapMm: number } = HOLD_LIMITS,
 ): { verdict: HoldVerdict; overlapMm: number | null } {
-  if (h.rms > HOLD_LIMITS.fitMm || h.inliers < HOLD_LIMITS.inliers) return { verdict: "loose fit", overlapMm: null };
+  if (h.rms > limits.fitMm || h.inliers < limits.inliers) return { verdict: "loose fit", overlapMm: null };
   const o = overlapErrorMm(h.T, h.pts, front, c, axisZ);
   if (o == null) return { verdict: "no overlap", overlapMm: null };
-  return { verdict: o <= HOLD_LIMITS.overlapMm ? "used" : "off the face", overlapMm: o };
+  return { verdict: o <= limits.overlapMm ? "used" : "off the face", overlapMm: o };
+}
+
+/**
+ * Posture frames are taken from ~55 cm, where depth is noisier: they only
+ * have to be placed well enough to show head, neck, shoulders and upper back
+ * in the right place — centimetre questions — not to measure the face.
+ */
+export const POSTURE_LIMITS = { fitMm: 3, inliers: 0.4, overlapMm: 3 };
+
+/** What the side views saw beyond the head: neck, shoulders, upper back — for showing, as points. */
+export const CLOUD_LIMITS = { yMinMm: -520, yMaxMm: 140, reachMm: 330, voxelMm: 3 };
+
+/**
+ * Every point of the used holds and posture frames, placed on the face,
+ * thinned to one per 3 mm cube. Unlike the cylinder, nothing is trimmed to
+ * the head: this is what shows the whole neck, the shoulders and the upper
+ * back from the side.
+ */
+export function sideCloud(frames: { T: Mat4; pts: Float32Array }[], axisZ: number): Float32Array {
+  const L = CLOUD_LIMITS;
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const f of frames) {
+    for (let p = 0; p < f.pts.length / 3; p++) {
+      const [x, y, z] = apply(f.T, f.pts[p * 3]!, f.pts[p * 3 + 1]!, f.pts[p * 3 + 2]!);
+      if (y < L.yMinMm || y > L.yMaxMm || Math.hypot(x, z - axisZ) > L.reachMm) continue;
+      const k = (Math.floor(x / L.voxelMm) + 512) * 1048576 + (Math.floor(y / L.voxelMm) + 512) * 1024 + (Math.floor(z / L.voxelMm) + 512);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(x, y, z);
+    }
+  }
+  return Float32Array.from(out);
 }
 
 export interface RawSideFrame {
-  stage: "turn" | "hold";
+  stage: "turn" | "hold" | "posture" | "front" | "sweep";
   points: string;
   pose?: number[];
 }
@@ -325,7 +359,9 @@ export interface SideStats {
   /** Frames the phone sent for this side. */
   received?: number;
   /** What the phone saw: how the stage ended, depth frames, distance. */
-  diag?: { outcome?: string; depthFrames?: number; turnDepthFrames?: number; distance?: number };
+  diag?: { outcome?: string; depthFrames?: number; turnDepthFrames?: number; distance?: number; posture?: string };
+  /** Posture frames (right side, a step back) that were placed and used. */
+  postureUsed?: number;
   /** Holds placed but not used, and the most common reason. */
   rejected?: number;
   rejectReason?: HoldVerdict;
@@ -348,16 +384,19 @@ export function extendWithSides(
   axisZ: number,
   sides: { right: RawSideFrame[]; left: RawSideFrame[] },
   diag?: Record<string, SideStats["diag"]>,
-): { cyl: Cylinder; stats: { right: SideStats; left: SideStats } } {
+): { cyl: Cylinder; stats: { right: SideStats; left: SideStats }; cloud: Float32Array } {
   const front = mergeCyl(c);
+  const cloudFrames: { T: Mat4; pts: Float32Array }[] = [];
   const model = modelPoints(front, c, axisZ);
   const a = new SideCylinder(c, axisZ);
   const b = new SideCylinder(c, axisZ);
   const stats = {} as { right: SideStats; left: SideStats };
   let k = 0;
   for (const side of ["right", "left"] as const) {
-    const frames: RegFrame[] = sides[side].map((f) => ({
-      stage: f.stage,
+    const frames: RegFrame[] = sides[side]
+      .filter((f) => f.stage === "turn" || f.stage === "hold" || f.stage === "posture")
+      .map((f) => ({
+      stage: f.stage as RegFrame["stage"],
       pts: decodeCloud(f.points),
       pose: f.pose ? fromArkit(f.pose) : null,
     }));
@@ -371,9 +410,16 @@ export function extendWithSides(
       const j = judgeHold(h, front, c, axisZ);
       if (j.verdict === "used") {
         (k++ % 2 ? b : a).add(h.T, h.pts);
+        cloudFrames.push(h);
         used++;
         overlaps.push(j.overlapMm!);
       } else reasons.set(j.verdict, (reasons.get(j.verdict) ?? 0) + 1);
+    }
+    let postureUsed = 0;
+    for (const p of r.posture) {
+      if (judgeHold(p, front, c, axisZ, POSTURE_LIMITS).verdict !== "used") continue;
+      cloudFrames.push(p);
+      postureUsed++;
     }
     const top = [...reasons.entries()].sort((x, y) => y[1] - x[1])[0];
     stats[side] = {
@@ -382,6 +428,7 @@ export function extendWithSides(
       aligned: r.aligned,
       lost: r.lost,
       holds: used,
+      ...(r.posture.length ? { postureUsed } : {}),
       rejected: r.holds.length - used,
       ...(top ? { rejectReason: top[0] } : {}),
       overlapMm: overlaps.length ? overlaps.sort((x, y) => x - y)[overlaps.length >> 1]! : null,
@@ -391,5 +438,6 @@ export function extendWithSides(
   return {
     cyl: { ...c, a: mergeSides(c.a, a.medians(), c), b: mergeSides(c.b, b.medians(), c) },
     stats,
+    cloud: sideCloud(cloudFrames, axisZ),
   };
 }

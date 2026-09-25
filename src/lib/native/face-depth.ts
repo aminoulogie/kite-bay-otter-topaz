@@ -19,7 +19,7 @@ export interface FaceFrameEvent {
   /** Metres from the camera. */
   distance?: number;
   /** Sweep scans: "front", "sweep", then with sides the turn / hold stages. */
-  phase?: "front" | "sweep" | "turnRight" | "holdRight" | "back" | "turnLeft" | "holdLeft";
+  phase?: "front" | "sweep" | "turnRight" | "holdRight" | "stepBack" | "holdPosture" | "back" | "turnLeft" | "holdLeft";
   /** Sweep: degrees from where the head points to the next move's target, and which way it is. */
   targetError?: number;
   targetDir?: "up" | "down" | "left" | "right" | "";
@@ -82,7 +82,8 @@ export interface FaceDepthResult {
 }
 
 export interface SideFrameRaw {
-  stage: "turn" | "hold";
+  /** "posture": side-on from the posture mark, a step further back. */
+  stage: "turn" | "hold" | "posture" | "front" | "sweep";
   /** Base64 Int16 xyz, 0.1 mm, camera axes (x right, y up, z toward you). */
   points: string;
   /** Camera → face, metres, column-major 4×4 — only while ARKit still tracks the face. */

@@ -8,7 +8,7 @@ import { alignOnAnchors } from "./align3d.ts";
 import { decodeSweepFrames, refineSweep, type RefineStats } from "./refine.ts";
 import type { Guidance } from "./assist.ts";
 import { decodeFloat32, distanceMm, extents3d, symmetry3d } from "./mesh3d.ts";
-import { cylKey, depthGridKey, meshKey, type DepthSummary, type ScanRecord } from "./scan-store.ts";
+import { cloudKey, cylKey, depthGridKey, meshKey, type DepthSummary, type ScanRecord } from "./scan-store.ts";
 import {
   FaceDepth, MAX_DISTANCE_M, MIN_DISTANCE_M, SWEEP_MAX_DISTANCE_M, SWEEP_MIN_DISTANCE_M,
   type FaceDepthResult, type FaceFrameEvent,
@@ -77,11 +77,11 @@ function encodeFloat32(a: Float32Array): string {
 }
 
 /** The surface the summary reads, when the web side improved on the phone's: re-placed frames and/or sides. */
-type Extended = { cyl: Cylinder; stats: { right: SideStats; left: SideStats } | null } | null;
+type Extended = { cyl: Cylinder; stats: { right: SideStats; left: SideStats } | null; cloud?: Float32Array } | null;
 
 /** The side stages: slow beeps while turning, the steady hold tone when still. */
 export function sideGuidance(e: FaceFrameEvent): Guidance {
-  const holding = e.phase === "holdRight" || e.phase === "holdLeft";
+  const holding = e.phase === "holdRight" || e.phase === "holdLeft" || e.phase === "holdPosture";
   const error = holding && e.ok ? 0 : holding ? 0.4 : 0.8;
   return {
     instruction: error === 0 ? "hold" : "turn",
@@ -205,7 +205,7 @@ export async function runTrueDepthScan(
     // stage is spoken, and holding still gets the steady tone.
     if (e.phase && e.phase !== lastPhase) {
       if (e.phase !== "front" && e.phase !== "sweep") audio.announce(e.message);
-      if (e.phase === "holdRight" || e.phase === "holdLeft") audio.cue("target");
+      if (e.phase === "holdRight" || e.phase === "holdLeft" || e.phase === "holdPosture") audio.cue("target");
       lastPhase = e.phase;
     }
     // A chime as each of the four head moves is done.
@@ -270,6 +270,8 @@ export async function runTrueDepthScan(
   }
   const ext: Extended = base && result.sides ? extendWithSides(base, result.cylAxisZMm ?? -60, result.sides, result.sideDiag) : null;
   const cyl = ext?.cyl ?? base;
+  const cloud = ext?.cloud ?? null;
+  if (cloud && cloud.length) await saveScanImage(cloudKey(id), encodeFloat32(cloud));
   if (cyl) {
     const stored: StoredCylinder = {
       a: encodeFloat32(cyl.a), b: encodeFloat32(cyl.b), width: cyl.width, height: cyl.height, thetaMinDeg: cyl.thetaMinDeg,

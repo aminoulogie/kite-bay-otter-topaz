@@ -102,3 +102,19 @@ test("end to end: side frames, as the phone sends them, extend the model and mea
   assert.ok(s.jawWidthMm != null, "jaw width now measurable round both sides");
   assert.ok(f.neckLeanDeg != null && Math.abs(f.neckLeanDeg) < 8, `lean ${f.neckLeanDeg}`);
 });
+
+test("a step back side-on adds the neck, shoulders and upper back as a cloud", () => {
+  const front = frontCylinder();
+  const right = sideFrames(-1);
+  // Stepping back from 300 to 550 mm, still side-on, then the posture hold.
+  const d = -90;
+  const at = (dist: number) =>
+    rotY(d, dist * Math.sin((d * Math.PI) / 180), -40, AXIS + dist * Math.cos((d * Math.PI) / 180));
+  for (let dist = 320; dist <= 540; dist += 20) right.push(frame(at(dist), "turn", false));
+  for (let k = 0; k < 4; k++) right.push({ ...frame(at(550), "hold", false), stage: "posture" });
+  const { stats, cloud } = extendWithSides(front, AXIS, { right, left: sideFrames(1) });
+  assert.ok((stats.right.postureUsed ?? 0) >= 2, JSON.stringify(stats.right));
+  let low = 0;
+  for (let i = 1; i < cloud.length; i += 3) if (cloud[i]! < -250) low++;
+  assert.ok(low > 200, `points below the neck (shoulders): ${low}`);
+});

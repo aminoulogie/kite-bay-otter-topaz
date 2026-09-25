@@ -9,7 +9,7 @@ import { buildMesh, tidy, type MeshData } from "@/lib/aether/cylmesh";
 import { alignOnAnchors } from "@/lib/aether/align3d";
 import { decodeFloat32 } from "@/lib/aether/mesh3d";
 import { METRICS, baselinePair, format, rows, series, sweepScans, type Group, type MetricDef, type Row } from "@/lib/aether/results";
-import { cylKey, type ScanRecord } from "@/lib/aether/scan-store";
+import { cloudKey, cylKey, type ScanRecord } from "@/lib/aether/scan-store";
 import { loadScanImage } from "@/lib/habit-photos";
 import { cn } from "@/lib/utils";
 import { useSoma } from "@/lib/store";
@@ -74,6 +74,7 @@ export function LooksResults({
   const table = useMemo(() => rows(sweeps), [sweeps]);
   const [heatmap, setHeatmap] = useState(true);
   const [mesh, setMesh] = useState<MeshData | null>(null);
+  const [cloud, setCloud] = useState<Float32Array | null>(null);
   const [meshNote, setMeshNote] = useState<string | null>(null);
   const [showSetup, setShowSetup] = useState(false);
   const [metric, setMetric] = useState<string>("lean");
@@ -84,7 +85,11 @@ export function LooksResults({
   useEffect(() => {
     let cancelled = false;
     setMesh(null);
+    setCloud(null);
     if (!latest) return;
+    void loadScanImage(cloudKey(latest.id)).then((b64) => {
+      if (!cancelled && b64) setCloud(decodeFloat32(b64));
+    });
     void (async () => {
       const now = await loadCylinder(latest.id);
       if (cancelled) return;
@@ -177,7 +182,7 @@ export function LooksResults({
         <>
           <Card className="relative h-[22rem] overflow-hidden p-0">
             {mesh ? (
-              <Face3DView ref={viewer} mesh={mesh} heatmap={heatmap && !!first} />
+              <Face3DView ref={viewer} mesh={mesh} heatmap={heatmap && !!first} cloud={cloud} />
             ) : (
               <div className="grid size-full place-items-center px-6 text-center text-xs text-muted">
                 {meshNote ?? "Building your model…"}
@@ -208,15 +213,20 @@ export function LooksResults({
               </div>
             )}
             <div className="absolute right-3 top-3 flex flex-col gap-2">
-              {[
-                ["Front", 0],
-                ["L side", -90],
-                ["R side", 90],
-              ].map(([label, yaw]) => (
+              {(
+                [
+                  ["Front", 0],
+                  ["L side", -90],
+                  ["R side", 90],
+                  // The posture hold is taken on the right: side-on, pulled
+                  // back, looking down the body to take in the upper back.
+                  ...(cloud ? ([["Posture", 90, 1500, 140]] as const) : []),
+                ] as [string, number, number?, number?][]
+              ).map(([label, yaw, dist, lift]) => (
                 <button
                   key={label}
                   type="button"
-                  onClick={() => viewer.current?.view(yaw as number)}
+                  onClick={() => viewer.current?.view(yaw, dist, lift)}
                   className="rounded-full border border-border bg-black/50 px-2.5 py-1 text-[0.65rem] font-bold backdrop-blur"
                 >
                   {label}

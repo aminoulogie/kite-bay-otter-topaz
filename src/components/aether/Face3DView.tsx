@@ -2,8 +2,12 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import type { MeshData } from "@/lib/aether/cylmesh";
 
 export interface Face3DHandle {
-  /** Turn to a preset: 0 = front, −90 = the person's left side, 90 = their right. */
-  view(yawDeg: number): void;
+  /**
+   * Turn to a preset: 0 = front, −90 = the person's left side, 90 = their
+   * right. `dist` pulls back, `lift` moves the view down the body (mm) —
+   * the Posture preset uses both to take in neck, shoulders and upper back.
+   */
+  view(yawDeg: number, dist?: number, lift?: number): void;
   reset(): void;
 }
 
@@ -14,14 +18,14 @@ const SKIN: [number, number, number] = [0.72, 0.74, 0.78];
  * appears). Drag to turn, pinch or scroll to zoom. Face axes are kept: the
  * person's left is on the viewer's right, as when facing someone.
  */
-export const Face3DView = forwardRef<Face3DHandle, { mesh: MeshData; heatmap: boolean }>(function Face3DView(
-  { mesh, heatmap },
+export const Face3DView = forwardRef<Face3DHandle, { mesh: MeshData; heatmap: boolean; cloud?: Float32Array | null }>(function Face3DView(
+  { mesh, heatmap, cloud },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
   const control = useRef<Face3DHandle | null>(null);
   useImperativeHandle(ref, () => ({
-    view: (y) => control.current?.view(y),
+    view: (y, d, l) => control.current?.view(y, d, l),
     reset: () => control.current?.reset(),
   }));
 
@@ -83,17 +87,29 @@ export const Face3DView = forwardRef<Face3DHandle, { mesh: MeshData; heatmap: bo
       obj.position.copy(centre).multiplyScalar(-1);
       const turn = new THREE.Group();
       turn.add(obj);
+      // Neck, shoulders and upper back from the side views: points, not a
+      // surface — they are measured once from one side, not fused all round.
+      let pointsGeo: InstanceType<typeof THREE.BufferGeometry> | null = null;
+      let pointsMat: InstanceType<typeof THREE.PointsMaterial> | null = null;
+      if (cloud && cloud.length) {
+        pointsGeo = new THREE.BufferGeometry();
+        pointsGeo.setAttribute("position", new THREE.BufferAttribute(cloud, 3));
+        pointsMat = new THREE.PointsMaterial({ color: 0xaab4c8, size: 2.6, sizeAttenuation: true });
+        const pts = new THREE.Points(pointsGeo, pointsMat);
+        pts.position.copy(centre).multiplyScalar(-1);
+        turn.add(pts);
+      }
       scene.add(turn);
 
       // Three-quarter to start, like the mockup: it shows depth at a glance.
-      const start = { yaw: -25, pitch: 5, dist: 820 };
+      const start = { yaw: -25, pitch: 5, dist: 820, lift: 0 };
       const state = { ...start };
       let raf = 0;
       const draw = () => {
         raf = 0;
         turn.rotation.set((state.pitch * Math.PI) / 180, (state.yaw * Math.PI) / 180, 0, "YXZ");
-        camera.position.set(0, 0, state.dist);
-        camera.lookAt(0, 0, 0);
+        camera.position.set(0, -state.lift, state.dist);
+        camera.lookAt(0, -state.lift, 0);
         renderer.render(scene, camera);
       };
       const redraw = () => {
@@ -150,9 +166,11 @@ export const Face3DView = forwardRef<Face3DHandle, { mesh: MeshData; heatmap: bo
       ro.observe(el);
 
       control.current = {
-        view: (y) => {
+        view: (y, d, l) => {
           state.yaw = y;
           state.pitch = 0;
+          state.dist = d ?? start.dist;
+          state.lift = l ?? 0;
           redraw();
         },
         reset: () => {
@@ -171,6 +189,8 @@ export const Face3DView = forwardRef<Face3DHandle, { mesh: MeshData; heatmap: bo
         if (raf) cancelAnimationFrame(raf);
         geo.dispose();
         mat.dispose();
+        pointsGeo?.dispose();
+        pointsMat?.dispose();
         renderer.dispose();
         renderer.domElement.remove();
         control.current = null;
@@ -180,7 +200,7 @@ export const Face3DView = forwardRef<Face3DHandle, { mesh: MeshData; heatmap: bo
       disposed = true;
       cleanup();
     };
-  }, [mesh, heatmap]);
+  }, [mesh, heatmap, cloud]);
 
   return <div ref={host} className="size-full" data-no-swipe-nav />;
 });

@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { SwipeRow } from "@/components/SwipeRow";
-import { bodyKey, cylKey, depthGridKey, latestByKind, meshKey, misfiledAs, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { bodyKey, cloudKey, cylKey, depthGridKey, latestByKind, meshKey, misfiledAs, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
 import { trueDepthAvailable } from "@/lib/native/face-depth";
 import { bodyScanAvailable, type BodyScanMode } from "@/lib/native/body-depth";
 import { leftRightDiffPct, type Segment } from "@/lib/aether/body3d";
@@ -246,6 +246,7 @@ export function LooksView() {
           void deleteScanImage(meshKey(scan.id));
           void deleteScanImage(depthGridKey(scan.id));
           void deleteScanImage(cylKey(scan.id));
+          void deleteScanImage(cloudKey(scan.id));
         }
         if (scan.body) void deleteScanImage(bodyKey(scan.id));
       }
@@ -684,11 +685,15 @@ function ScanSpotGuide({ open = false }: { open?: boolean }) {
           side of your face about 30 cm from the phone. Tape at your toes: mark 2. Same to the left: mark 3.</li>
         <li>At each side mark, look level and put a small sticker where your eyes land. Look at it
           during every hold.</li>
+        <li>Posture mark: from the right side mark, take one normal step straight back (the phone about
+          50–60 cm from your shoulder) and tape it too. The voice sends you there after the right
+          hold, to take in your neck, shoulders and upper back.</li>
         <li>Hair behind the ears, no collar, shoulders relaxed, breathe normally.</li>
       </ol>
       <p className="mt-2 text-faint">
-        During the scan the voice leads: sweep your head in a circle, then turn right and hold, turn
-        back, turn left and hold. Keep your neck still and turn with your feet.
+        During the scan the voice leads: four head moves, then turn right and hold, step back to the
+        posture mark and hold, return to the front, turn left and hold. Keep your neck still and turn
+        with your feet.
       </p>
     </details>
   );
@@ -699,6 +704,16 @@ type Full = NonNullable<NonNullable<NonNullable<ScanRecord["depth"]>["sweep"]>["
 
 /** How one side of a full scan went, in words: so a failure says why. */
 function sideLine(label: string, st: NonNullable<Full["sides"]>["right"]): string {
+  const posture =
+    st.postureUsed != null
+      ? ` · posture ${st.postureUsed ? `${st.postureUsed} frames used` : "not used"}`
+      : st.diag?.posture && st.diag.posture !== "held"
+        ? ` · posture: ${st.diag.posture}`
+        : "";
+  return sideCore(label, st) + posture;
+}
+
+function sideCore(label: string, st: NonNullable<Full["sides"]>["right"]): string {
   if (st.holds > 0)
     return `${label}: ${st.holds} holds used · ${st.overlapMm != null ? `${st.overlapMm.toFixed(1)} mm from the front scan` : `fit ${st.fitMm?.toFixed(1) ?? "?"} mm`}${st.rejected ? ` · ${st.rejected} rejected` : ""}`;
   if (st.rejected)

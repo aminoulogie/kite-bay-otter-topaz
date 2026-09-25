@@ -115,6 +115,11 @@ export interface DepthSummary {
   changeVsFirst?: CylChange & { firstId: string; anchorRmsMm?: number };
 }
 
+/** Where a full scan's side-view point cloud (neck, shoulders, upper back) is stored: base64 Float32 xyz, mm. */
+export function cloudKey(scanId: string): string {
+  return `cloud:${scanId}`;
+}
+
 /** Where a sweep's two cylinders are stored (JSON). */
 export function cylKey(scanId: string): string {
   return `cyl:${scanId}`;
