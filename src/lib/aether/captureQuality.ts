@@ -39,6 +39,8 @@ export const SESSION: {
   yawAbs: [number, number];
   rollMax: number;
   pitchMax: number;
+  /** For profile steps: which way the user turns (their own left/right). */
+  side?: "left" | "right";
 }[] = [
   {
     kind: "face_front_true",
@@ -60,8 +62,9 @@ export const SESSION: {
   },
   {
     kind: "face_side",
-    title: "3 · Profile",
-    short: "Side",
+    title: "3 · Profile right",
+    short: "Side R",
+    side: "right",
     // Was "keep turning until only one eye and the ear show", which is a full
     // 90° — and 90° is exactly where the landmark model stops being able to
     // see a face at all. A shot you cannot take is worth less than a slightly
@@ -74,6 +77,18 @@ export const SESSION: {
     yawAbs: [52, 90],
     rollMax: 8,
     pitchMax: 14,
+  },
+  {
+    // The same shot, turned the other way. Both sides exist because faces are
+    // not symmetric and the question is often "is one side different".
+    kind: "face_side",
+    title: "4 · Profile left",
+    short: "Side L",
+    coach: "Now the other side. Turn left until the far eyebrow just disappears.",
+    yawAbs: [52, 90],
+    rollMax: 8,
+    pitchMax: 14,
+    side: "left",
   },
 ];
 

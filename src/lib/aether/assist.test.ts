@@ -138,3 +138,22 @@ test("merge takes the median of the frames that passed, so one bad frame cannot 
   assert.equal(m.used, 3);
   assert.equal(mergeSymmetry([]), null);
 });
+
+test("profile-left step with the head turned right is told it is the wrong side", () => {
+  const g = guide(input({ kind: "face_side", yawDeg: 40, turned: "right", targetSide: "left" }));
+  assert.equal(g.instruction, "ease");
+  assert.equal(g.side, "left");
+  assert.equal(g.pan, -1);
+  assert.match(g.phrase, /Other side/);
+});
+
+test("a square head on the profile-left step is sent left, not right", () => {
+  const g = guide(input({ kind: "face_side", yawDeg: 2, turned: null, targetSide: "left" }));
+  assert.equal(g.side, "left");
+});
+
+test("a slight wrong-way drift is not called the wrong side", () => {
+  const g = guide(input({ kind: "face_side", yawDeg: 8, turned: "right", targetSide: "left" }));
+  assert.doesNotMatch(g.phrase, /Other side/);
+  assert.equal(g.side, "left", "but it is still sent toward the step's side");
+});

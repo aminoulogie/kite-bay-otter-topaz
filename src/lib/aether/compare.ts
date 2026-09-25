@@ -13,7 +13,7 @@
  * "+2.1% symmetry" that means the head was turned four degrees further.
  */
 
-import type { ScanRecord } from "./scan-store.ts";
+import { scanSlot, type ScanRecord } from "./scan-store.ts";
 
 /** Beyond this much difference in head angle the readings are not the same measurement. */
 export const MAX_POSE_DELTA_DEG = 4;
@@ -68,6 +68,7 @@ export function comparability(a: ScanRecord, b: ScanRecord): Comparability {
   const rollDelta = absDelta(num(a.face?.rollDeg), num(b.face?.rollDeg));
 
   if (a.kind !== b.kind) reasons.push("Different poses — a profile and a front shot measure different things.");
+  else if (scanSlot(a) !== scanSlot(b)) reasons.push("Opposite sides — a left and a right profile are different halves of the face.");
   if (a.id === b.id) reasons.push("That is the same capture twice.");
 
   if (!a.face || !b.face) {

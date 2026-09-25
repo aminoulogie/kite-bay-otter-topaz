@@ -19,3 +19,16 @@ test("a scan taken or re-measured by the current analyser is not flagged again",
   // Re-measured, but the photo no longer yielded a face: old face kept, stamp current.
   assert.equal(needsReanalysis({ ...base, analyzer: ANALYZER_VERSION, face: face("aether-face-1.2.0") }), false);
 });
+
+test("profiles file by side; old profiles without a side file as right", async () => {
+  const { scanSlot, latestByKind } = await import("./scan-store.ts");
+  assert.equal(scanSlot({ kind: "face_side", side: "left" }), "face_side:left");
+  assert.equal(scanSlot({ kind: "face_side" }), "face_side:right");
+  assert.equal(scanSlot({ kind: "face_front_true" }), "face_front_true");
+  const m = latestByKind([
+    { ...base, id: "r", kind: "face_side", side: "right" },
+    { ...base, id: "l", kind: "face_side", side: "left", capturedAt: "2026-09-21T10:00:00Z" },
+  ]);
+  assert.equal(m.get("face_side:right")?.id, "r");
+  assert.equal(m.get("face_side:left")?.id, "l");
+});

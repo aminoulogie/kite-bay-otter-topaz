@@ -46,6 +46,19 @@ const KIND_LABEL: Record<string, string> = {
   posture_front: "Posture front",
 };
 
+/** Gallery tiles, one per comparable slot (see scanSlot). */
+const SLOTS: { slot: string; label: string }[] = [
+  { slot: "face_front_true", label: "Front" },
+  { slot: "face_oblique", label: "45°" },
+  { slot: "face_side:right", label: "Profile R" },
+  { slot: "face_side:left", label: "Profile L" },
+];
+
+function scanLabel(sc: ScanRecord): string {
+  if (sc.kind === "face_side") return sc.side === "left" ? "Profile L" : "Profile R";
+  return KIND_LABEL[sc.kind] ?? sc.kind;
+}
+
 export function LooksView() {
   const scans = useSoma((s) => s.scans);
   const removeScan = useSoma((s) => s.removeScan);
@@ -197,8 +210,8 @@ export function LooksView() {
       )}
 
       {latest.size > 0 && (
-        <div key="gallery" className="grid grid-cols-3 gap-2">
-          {["face_front_true", "face_oblique", "face_side"].map((k) => {
+        <div key="gallery" className="grid grid-cols-4 gap-2">
+          {SLOTS.map(({ slot: k, label }) => {
             const sc = latest.get(k);
             return (
               <button
@@ -212,7 +225,7 @@ export function LooksView() {
                 )}
               >
                 <div className="text-[0.55rem] font-bold uppercase tracking-wider text-faint">
-                  {KIND_LABEL[k]}
+                  {label}
                 </div>
                 <div className="tabular font-display text-lg font-extrabold">
                   {sc?.face ? `${symmetryPercent(sc.face.alpha)}%` : "—"}
@@ -270,7 +283,7 @@ export function LooksView() {
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-bold">
-                      {KIND_LABEL[sc.kind] ?? sc.kind}
+                      {scanLabel(sc)}
                       {needsReanalysis(sc) ? (
                         <span className="ml-1.5 text-[0.6rem] font-bold text-faint">pre-fix</span>
                       ) : null}

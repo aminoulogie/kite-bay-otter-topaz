@@ -62,6 +62,8 @@ export interface AssistInput {
   quality: Pick<Quality, "ready" | "lighting" | "reasons">;
   faceHeightFrac: number;
   smile: number;
+  /** Profile steps: the side this step wants, in the user's left/right. */
+  targetSide?: "left" | "right";
 }
 
 const BASE_HZ = 660;
@@ -142,10 +144,22 @@ export function guide(input: AssistInput): Guidance {
   // Yaw — the whole point of the 45° and profile steps.
   const yaw = Math.abs(input.yawDeg);
   const [lo, hi] = step.yawAbs;
+
+  // A profile step for one side, and the head is clearly turned the other
+  // way: that is not "turn more", it is "wrong side". Only once the turn is
+  // unmistakable, so a head drifting through square is not told off.
+  if (input.targetSide && input.turned && input.turned !== input.targetSide && yaw > 15) {
+    return out("ease", clamp01(yaw / 60), `Other side. Turn your head ${input.targetSide}.`, {
+      side: input.targetSide,
+      pan: panFor(input.targetSide),
+    });
+  }
   if (yaw < lo) {
     // Keep going the way you already are; from square, the guides are drawn
     // for a turn to your right.
-    const side = input.turned ?? "right";
+    // A step that names its side always sends you that way; otherwise keep
+    // going the way you already are.
+    const side = input.targetSide ?? input.turned ?? "right";
     const err = (lo - yaw) / Math.max(lo, 25);
     const phrase =
       step.kind === "face_front_true" ? "Hold still." : `Turn your head ${side}.`;

@@ -18,6 +18,7 @@ import {
   cropForZoom, guide, laplacianVariance, mergeSymmetry, rankFrames, turnedSide, type Guidance,
 } from "@/lib/aether/assist";
 import { AssistAudio } from "@/lib/aether/assist-audio";
+import { scanSlot } from "@/lib/aether/scan-store";
 import { saveScanImage } from "@/lib/habit-photos";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -214,8 +215,14 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       return next;
     });
   };
-  const done = new Set(scans.map((x) => x.kind));
+  // Done-ness is per slot, so taking the right profile does not tick the left.
+  const done = new Set(scans.map(scanSlot));
+  const slotOf = (x: (typeof SESSION)[number]) => scanSlot({ kind: x.kind, side: x.side });
   const ready = hud?.ready ?? false;
+  // Guides are drawn for a turn to the user's right as seen in the mirrored
+  // front preview. The left step turns the other way, and the back camera's
+  // preview is not a mirror — each flips the drawing, both cancel out.
+  const flipGuide = (s.side === "left") !== (settings.facing === "environment");
 
   // The camera and the animation frame both have to stop when this closes, or
   // the light stays on and the loop keeps running behind the diary.
@@ -385,6 +392,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           const lost = guide({
             kind: SESSION[liveRefs.current.step]!.kind, hasFace: false, yawDeg: 0, pitchDeg: 0, rollDeg: 0,
             turned: null, quality: { ready: false, lighting: 0, reasons: [] }, faceHeightFrac: 0, smile: 0,
+            targetSide: SESSION[liveRefs.current.step]!.side,
           });
           if (!liveRefs.current.busy) audioRef.current?.update(lost);
           setGuidance(lost);
@@ -415,6 +423,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           kind: stepKind, hasFace: true, yawDeg, pitchDeg, rollDeg,
           turned: turnedSide(pts[FACE.noseTip]?.x, pts[FACE.leftOuter]?.x, pts[FACE.rightOuter]?.x),
           quality: q, faceHeightFrac: framing.faceHeightFrac, smile,
+          targetSide: SESSION[liveRefs.current.step]!.side,
         });
         if (!liveRefs.current.busy) audioRef.current?.update(g);
         setGuidance(g);
@@ -530,6 +539,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           date: getLocalDateKey(new Date()),
           capturedAt: new Date().toISOString(),
           kind,
+          ...(s.side ? { side: s.side } : {}),
           ...(posture ? { posture } : {}),
         });
         setStatus(
@@ -570,6 +580,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         date: getLocalDateKey(new Date()),
         capturedAt: best.analysis.capturedAt,
         kind,
+        ...(s.side ? { side: s.side } : {}),
         face: best.analysis,
         skin: best.skin,
         puffiness: best.puffiness,
@@ -630,6 +641,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         date: getLocalDateKey(new Date()),
         capturedAt: m?.analysis.capturedAt ?? new Date().toISOString(),
         kind,
+        ...(s.side ? { side: s.side } : {}),
         ...(m ? { face: m.analysis, skin: m.skin, puffiness: m.puffiness, harmony: m.harmony } : {}),
         ...(posture ? { posture } : {}),
       });
@@ -675,13 +687,13 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
                 "h-9 flex-1 rounded-full text-xs font-bold transition-colors",
                 step === i
                   ? "bg-accent text-accent-ink"
-                  : done.has(x.kind)
+                  : done.has(slotOf(x))
                     ? "bg-emerald-500/20 text-emerald-300"
                     : "bg-surface-2 text-muted",
               )}
             >
               {x.short}
-              {done.has(x.kind) ? " ✓" : ""}
+              {done.has(slotOf(x)) ? " ✓" : ""}
             </button>
           ))}
         </div>
@@ -746,27 +758,31 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             )}
 
             {kind === "face_oblique" && (
-              <>
+              <g transform={flipGuide ? "matrix(-1 0 0 1 100 0)" : undefined}>
                 {/* Near eye keeps its width; the far one is foreshortened and
                     sits close to the nose line, which is what 45° looks like. */}
                 <ellipse cx="44" cy="40" rx="8.5" ry="5.6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
                 <ellipse cx="66" cy="40" rx="4.5" ry="5" fill="none" stroke="rgba(10,132,255,.5)" strokeWidth="0.35" />
                 <path d="M58 16 C78 28 82 70 62 88" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
-              </>
+              </g>
             )}
 
             {kind === "face_side" && (
-              <>
+              <g transform={flipGuide ? "matrix(-1 0 0 1 100 0)" : undefined}>
                 {/* ONE eye. The other is behind the nose at a true profile. */}
                 <ellipse cx="60" cy="40" rx="7" ry="5.4" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
                 {/* And the ear, which is the landmark a profile is judged on —
                     the CVA measurement is taken from the tragus. */}
                 <circle cx="33" cy="43" r="4.5" fill="none" stroke="rgba(10,132,255,.5)" strokeWidth="0.35" />
-                <text x="33" y="51.5" fill="rgba(10,132,255,.6)" fontSize="3" textAnchor="middle">
+                {/* Counter-flipped about its own x so the word reads forwards. */}
+                <text
+                  x="33" y="51.5" fill="rgba(10,132,255,.6)" fontSize="3" textAnchor="middle"
+                  transform={flipGuide ? "matrix(-1 0 0 1 66 0)" : undefined}
+                >
                   ear
                 </text>
                 <path d="M68 14 C88 30 90 72 70 90" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
-              </>
+              </g>
             )}
             {eyes && (
               <>

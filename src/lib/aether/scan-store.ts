@@ -40,6 +40,19 @@ export interface ScanRecord {
    * fix, so absence means "measured by an older analyser".
    */
   analyzer?: string;
+  /** Profile shots: which way the head was turned, in the user's own left/right. */
+  side?: "left" | "right";
+}
+
+/**
+ * The comparable "slot" a scan belongs to: its kind, and for profiles also its
+ * side, because a left profile and a right profile are different photographs
+ * of different halves of a face. Profiles from before sides were recorded were
+ * all taken turning right (the only direction the guides drew), so they file
+ * as right.
+ */
+export function scanSlot(scan: Pick<ScanRecord, "kind" | "side">): string {
+  return scan.kind === "face_side" ? `face_side:${scan.side ?? "right"}` : scan.kind;
 }
 
 /** True when this scan was measured by an older analyser and should be re-measured. */
@@ -64,8 +77,9 @@ export function evennessOf(face: FaceAnalysis | undefined): number | null {
 export function latestByKind(scans: ScanRecord[]): Map<string, ScanRecord> {
   const out = new Map<string, ScanRecord>();
   for (const s of scans) {
-    const prev = out.get(s.kind);
-    if (!prev || s.capturedAt > prev.capturedAt) out.set(s.kind, s);
+    const slot = scanSlot(s);
+    const prev = out.get(slot);
+    if (!prev || s.capturedAt > prev.capturedAt) out.set(slot, s);
   }
   return out;
 }
