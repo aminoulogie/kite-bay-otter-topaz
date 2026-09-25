@@ -37,6 +37,22 @@ const eyeY = (r: FaceDepthResult) => (r.leftEye[1] + r.rightEye[1]) / 2;
  * it fills — the same "faster = closer" as the rest of the coach.
  */
 export function sweepGuidance(e: FaceFrameEvent): Guidance {
+  // Steering onto the next move's target: beeps quicken as the head nears
+  // it, come from the side to turn to, and rise for up / fall for down —
+  // the same sound language as the rest of the coach.
+  if (e.ok && e.targetDir) {
+    const error = Math.max(0.05, Math.min(1, (e.targetError ?? 30) / 30));
+    const dir = e.targetDir;
+    return {
+      instruction: dir === "up" ? "chinUp" : dir === "down" ? "chinDown" : "turn",
+      side: dir === "left" || dir === "right" ? dir : null,
+      error,
+      pan: dir === "right" ? 1 : dir === "left" ? -1 : 0,
+      beepMs: Math.round(140 + error * 810),
+      pitchHz: dir === "up" ? 880 : dir === "down" ? 440 : 660,
+      phrase: e.message,
+    };
+  }
   const done = e.target ? e.collected / e.target : 0;
   const error = e.ok ? Math.max(0.05, 1 - done) : 0.9;
   return {
@@ -175,6 +191,7 @@ export async function runTrueDepthScan(
 ): Promise<{ record: ScanRecord; extra: ScanRecord[] }> {
   const sweep = mode !== "still";
   let lastPhase: string | undefined;
+  let looks = 0;
   const handle = await FaceDepth.addListener("faceFrame", (e) => {
     // The side stages happen facing away from the screen: every change of
     // stage is spoken, and holding still gets the steady tone.
@@ -182,6 +199,11 @@ export async function runTrueDepthScan(
       if (e.phase !== "front" && e.phase !== "sweep") audio.announce(e.message);
       if (e.phase === "holdRight" || e.phase === "holdLeft") audio.cue("target");
       lastPhase = e.phase;
+    }
+    // A chime as each of the four head moves is done.
+    if (e.looksDone != null && e.looksDone > looks) {
+      looks = e.looksDone;
+      audio.cue("capture");
     }
     if (e.phase && e.phase !== "front") {
       audio.update(e.phase === "sweep" ? sweepGuidance(e) : sideGuidance(e));

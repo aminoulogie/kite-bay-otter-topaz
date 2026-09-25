@@ -20,6 +20,11 @@ export interface FaceFrameEvent {
   distance?: number;
   /** Sweep scans: "front", "sweep", then with sides the turn / hold stages. */
   phase?: "front" | "sweep" | "turnRight" | "holdRight" | "back" | "turnLeft" | "holdLeft";
+  /** Sweep: degrees from where the head points to the next move's target, and which way it is. */
+  targetError?: number;
+  targetDir?: "up" | "down" | "left" | "right" | "";
+  /** Sweep: how many of the four moves are done. */
+  looksDone?: number;
 }
 
 export interface FaceDepthResult {

@@ -130,3 +130,14 @@ test("a width needs solid coverage, not scattered points", () => {
   for (let k = 0; k < m.length; k++) if (k % 3) m[k] = NaN; // two thirds missing
   assert.equal(bandWidthMm(m, c, -10, 20, 95, 75), null);
 });
+
+test("sweep audio steers onto the target: faster near it, from its side, pitched for up/down", async () => {
+  const { sweepGuidance } = await import("./truedepth-scan.ts");
+  const base = { tracked: true, ok: true, message: "", collected: 0, target: 60, phase: "sweep" as const };
+  const far = sweepGuidance({ ...base, targetError: 25, targetDir: "right" });
+  const near = sweepGuidance({ ...base, targetError: 4, targetDir: "right" });
+  assert.ok(near.beepMs < far.beepMs);
+  assert.equal(far.pan, 1);
+  assert.equal(sweepGuidance({ ...base, targetError: 10, targetDir: "up" }).pitchHz, 880);
+  assert.equal(sweepGuidance({ ...base, targetError: 10, targetDir: "left" }).pan, -1);
+});

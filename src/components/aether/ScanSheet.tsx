@@ -252,6 +252,12 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   // close over the first render's values for the life of the screen.
   const liveRefs = useRef({
     autoFire, busy: false, step: 0, zoom: 2 as number, mirror: true,
+    // Auto-shoot fires once per pose: after a shot you have to leave the pose
+    // before it can fire again. Without this, a frame still green after the
+    // shot fired again a second later — on the last step, forever.
+    armed: true,
+    // Every angle done: the coach goes quiet instead of talking on.
+    finished: false,
     baseline: null as number | null,
   });
 
@@ -358,6 +364,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     held.current = 0;
     setHolding(0);
+    liveRefs.current.armed = true;
+    liveRefs.current.finished = false;
     // Spoken, because on the profile step the screen is out of sight.
     if (live) audioRef.current?.announce(SESSION[step]!.coach);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -532,7 +540,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             turned: null, quality: { ready: false, lighting: 0, reasons: [] }, faceHeightFrac: 0, smile: 0,
             targetSide: SESSION[liveRefs.current.step]!.side,
           });
-          if (!liveRefs.current.busy) audioRef.current?.update(lost);
+          if (!liveRefs.current.busy && !liveRefs.current.finished) audioRef.current?.update(lost);
           setGuidance(lost);
           return;
         }
@@ -569,19 +577,21 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           distance: cue?.cue ?? null,
           targetSide: SESSION[liveRefs.current.step]!.side,
         });
-        if (!liveRefs.current.busy) audioRef.current?.update(g);
+        if (!liveRefs.current.busy && !liveRefs.current.finished) audioRef.current?.update(g);
         setGuidance(g);
         // Shown so the gates can be checked rather than trusted. A coach line
         // saying "turn more" is not falsifiable; a yaw of 41° is.
         setPose({ yaw: yawDeg, roll: rollDeg, pitch: pitchDeg });
 
+        if (!readyHere) liveRefs.current.armed = true;
         // Held green long enough, and nothing else in flight: take it.
-        if (readyHere && liveRefs.current.autoFire && !liveRefs.current.busy) {
+        if (readyHere && liveRefs.current.autoFire && liveRefs.current.armed && !liveRefs.current.busy && !liveRefs.current.finished) {
           held.current += 1;
           setHolding(held.current);
           if (held.current >= HOLD_FRAMES) {
             held.current = 0;
             setHolding(0);
+            liveRefs.current.armed = false;
             // Through the ref: this loop was built when the camera opened, and a
             // direct call would run THAT render's capture — the step, kind and
             // flash setting of that moment, so a 45° or profile shot was
@@ -704,6 +714,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         audio.announce(`${s.short} photo saved.`);
         toast.success(`${s.short} photo saved`);
         if (step < SESSION.length - 1) setStep(step + 1);
+        else finishIfAllDone();
         return;
       }
 
@@ -748,6 +759,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         id, kind, side: s.side, frames: ranked.slice(0, 4).map((r) => r.f), merged, total: measured.length, chosen: 0,
       });
       if (q && q.overall >= 0.55 && step < SESSION.length - 1) setStep(step + 1);
+      else finishIfAllDone();
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Capture failed.");
     } finally {
@@ -764,6 +776,16 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   }
 
   captureRef.current = capture;
+
+  /** Every angle has a scan: say so once, and stop coaching. */
+  function finishIfAllDone() {
+    const have = new Set(useSoma.getState().scans.map(scanSlot));
+    if (!SESSION.every((x) => have.has(slotOf(x)))) return;
+    liveRefs.current.finished = true;
+    audio.update(null);
+    audio.announce("All four angles done. You can close the scan.");
+    setStatus("All four angles captured. Tap a step to retake one, or close.");
+  }
 
   /**
    * The Front step on the Face ID camera. ARKit needs that camera to itself,
@@ -924,7 +946,10 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         {/* One fixed 3:4 window, whatever shape the camera delivers: the frame
             is centre-cropped to 3:4 for the preview, the analysis and the
             saved photo alike, so what you see is exactly what is measured. */}
-        <div className="relative mx-auto aspect-[3/4] w-full max-w-[calc(64svh*0.75)] overflow-hidden rounded-2xl border border-border bg-black">
+        <div
+          className="relative mx-auto aspect-[3/4] w-full max-w-[calc(64svh*0.75)] overflow-hidden rounded-2xl border border-border bg-black"
+          style={{ containerType: "inline-size" }}
+        >
           {/* Mirrored for the front camera only, and scaled by the digital zoom
               so the preview shows exactly the centre crop that is analysed. */}
           <video
@@ -962,15 +987,15 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             // Ring light: a warm frame INSIDE the window, thicker toward the
             // middle as the slider goes up. The window keeps its place, so
             // nothing above or below is covered.
+            // A border in container-width units (the slider's % of the width),
+            // with an outer radius that grows with it so the INNER edge keeps
+            // a 32 px round corner at any thickness.
             <div
               aria-hidden
               className="pointer-events-none absolute inset-0"
               style={{
-                padding: `${settings.glow}%`,
-                background: FLASH_COLOR,
-                WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
-                WebkitMaskComposite: "xor",
-                mask: "linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0)",
+                border: `${settings.glow}cqw solid ${FLASH_COLOR}`,
+                borderRadius: `calc(${settings.glow}cqw + 32px)`,
               }}
             />
           )}

@@ -150,6 +150,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         (15, "Now turn your head to your right, then back."),
     ]
     private var looksDone = [Bool](repeating: false, count: 4)
+    private var sweepExtras: [String: Any] = [:]
     private var lastPose: (yaw: Float, pitch: Float, t: TimeInterval)?
     private var frontPhoto: (score: Float, url: String)?
     private var obliquePhotos: [Int: (score: Float, url: String, yaw: Float)] = [:]
@@ -436,6 +437,25 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             considerObliquePhoto(frame, pose: pose, blink: blink)
         }
         let filled = ticks.filter { $0 }.count
+        // Target and cursor for the ring; the same numbers go to the app's
+        // audio coach so beeps quicken as the head nears the target.
+        var targetError: Float = 0
+        var targetDir = ""
+        if frontDone, let next = looksDone.firstIndex(of: false) {
+            let t = Self.looks[next].tick
+            ring.target = t
+            let a = (-90 + Float(t) * 6) * .pi / 180
+            // Screen position of the head direction, in units of the 20° a move needs.
+            let cur = SIMD2<Float>(-pose.yaw, pose.pitch) / 20
+            let want = SIMD2<Float>(cos(a), sin(a))
+            ring.cursor = CGPoint(x: CGFloat(cur.x), y: CGFloat(cur.y))
+            targetError = simd_length(want - cur) * 20
+            targetDir = t == 0 ? "up" : t == 15 ? "right" : t == 30 ? "down" : "left"
+        } else {
+            ring.target = nil
+            ring.cursor = frontDone ? nil : CGPoint(x: CGFloat(-pose.yaw / 20), y: CGFloat(pose.pitch / 20))
+        }
+        sweepExtras = ["targetError": targetError, "targetDir": targetDir, "looksDone": looksDone.filter { $0 }.count]
         showSweep(sweepMessage, ok: sweepOk || (!frontDone && ok), pose: pose, distance: distance, face: face,
                   front: frontDone, filled: filled)
         if frontDone && !looksDone.contains(false) && cylFrames >= 40 {
@@ -444,6 +464,8 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                 stageStartedAt = frame.timestamp
                 stillCount = 0
                 ring.filled = nil
+                ring.target = nil
+                ring.cursor = nil
             } else {
                 complete(frame: frame, face: face)
             }
@@ -807,9 +829,11 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         let now = Date().timeIntervalSince1970
         guard now - lastNotify > 0.12 else { return }
         lastNotify = now
-        onFrame?(["tracked": true, "ok": ok, "message": text, "collected": front ? filled : collected,
-                  "target": front ? 60 : targetFrames, "phase": front ? "sweep" : "front",
-                  "yaw": pose.yaw, "pitch": pose.pitch, "roll": pose.roll, "distance": distance])
+        var info: [String: Any] = ["tracked": true, "ok": ok, "message": text, "collected": front ? filled : collected,
+                                   "target": front ? 60 : targetFrames, "phase": front ? "sweep" : "front",
+                                   "yaw": pose.yaw, "pitch": pose.pitch, "roll": pose.roll, "distance": distance]
+        for (k, v) in sweepExtras { info[k] = v }
+        onFrame?(info)
     }
 
     private func accumulate(_ face: ARFaceAnchor, pose: (yaw: Float, pitch: Float, roll: Float), distance: Float) {
@@ -978,6 +1002,14 @@ final class ScanRingView: UIView {
 
     /// 0–1.
     var progress: Float = 0 { didSet { if progress != oldValue { paint() } } }
+    private let targetLayer = CAShapeLayer()
+    private let cursorLayer = CAShapeLayer()
+    private var centre = CGPoint.zero
+    private var radius: CGFloat = 0
+    /// Where to point the head next: a tick index (0 top, 15 right, 30 bottom, 45 left), or nil.
+    var target: Int? { didSet { if target != oldValue { place() } } }
+    /// Where the head points now, on screen: unit = the 20° a move needs.
+    var cursor: CGPoint? { didSet { place() } }
     /// Sweep mode: exactly which ticks are done, Face ID style. Overrides progress.
     var filled: [Bool]? { didSet { if filled != oldValue { paint() } } }
     /// A face is in view: unfilled ticks go from faint to grey.
@@ -995,6 +1027,48 @@ final class ScanRingView: UIView {
             layer.addSublayer(t)
             ticks.append(t)
         }
+        targetLayer.fillColor = UIColor.systemYellow.cgColor
+        targetLayer.strokeColor = UIColor.white.cgColor
+        targetLayer.lineWidth = 2
+        cursorLayer.fillColor = UIColor.systemBlue.cgColor
+        cursorLayer.strokeColor = UIColor.white.cgColor
+        cursorLayer.lineWidth = 2
+        layer.addSublayer(targetLayer)
+        layer.addSublayer(cursorLayer)
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 1
+        pulse.toValue = 0.35
+        pulse.duration = 0.6
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        targetLayer.add(pulse, forKey: "pulse")
+    }
+
+    /// The target sits just outside the ring where the head should point; the
+    /// cursor moves from the middle towards the ring as the head turns, so
+    /// "steer the blue dot onto the yellow one" is the whole instruction.
+    private func place() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let t = target {
+            let a = -CGFloat.pi / 2 + CGFloat(t) * 2 * .pi / CGFloat(Self.count)
+            let p = CGPoint(x: centre.x + cos(a) * (radius + 48), y: centre.y + sin(a) * (radius + 48))
+            targetLayer.path = UIBezierPath(arcCenter: p, radius: 13, startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath
+            targetLayer.isHidden = false
+        } else {
+            targetLayer.isHidden = true
+        }
+        if let c = cursor {
+            let m = min(1.25, hypot(c.x, c.y))
+            let d = hypot(c.x, c.y) > 0 ? CGPoint(x: c.x / hypot(c.x, c.y), y: c.y / hypot(c.x, c.y)) : .zero
+            let reach = radius + 48
+            let p = CGPoint(x: centre.x + d.x * m * reach, y: centre.y + d.y * m * reach)
+            cursorLayer.path = UIBezierPath(arcCenter: p, radius: 9, startAngle: 0, endAngle: 2 * .pi, clockwise: true).cgPath
+            cursorLayer.isHidden = false
+        } else {
+            cursorLayer.isHidden = true
+        }
+        CATransaction.commit()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
@@ -1003,6 +1077,10 @@ final class ScanRingView: UIView {
         super.layoutSubviews()
         let r = min(bounds.width, bounds.height) * 0.33
         let c = CGPoint(x: bounds.midX, y: bounds.height * 0.40)
+        centre = c
+        radius = r
+        targetLayer.frame = bounds
+        cursorLayer.frame = bounds
         let path = UIBezierPath(rect: bounds)
         path.append(UIBezierPath(ovalIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)))
         cover.frame = bounds
@@ -1016,6 +1094,7 @@ final class ScanRingView: UIView {
             t.path = tick.cgPath
         }
         paint()
+        place()
     }
 
     override func traitCollectionDidChange(_ previous: UITraitCollection?) {
