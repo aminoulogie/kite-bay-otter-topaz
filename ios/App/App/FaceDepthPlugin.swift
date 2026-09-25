@@ -49,9 +49,10 @@ public class FaceDepthPlugin: CAPPlugin, CAPBridgedPlugin {
         let frames = max(5, min(120, call.getInt("frames") ?? 30))
         let minDistance = Float(call.getDouble("minDistance") ?? 0.25)
         let maxDistance = Float(call.getDouble("maxDistance") ?? 0.50)
+        let sweep = call.getString("mode") == "sweep"
 
         DispatchQueue.main.async {
-            let vc = FaceScanViewController(frames: frames, minDistance: minDistance, maxDistance: maxDistance)
+            let vc = FaceScanViewController(frames: frames, minDistance: minDistance, maxDistance: maxDistance, sweep: sweep)
             vc.onFrame = { [weak self] info in
                 self?.notifyListeners("faceFrame", data: info)
             }
@@ -97,6 +98,46 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     private static let maxPitch: Float = 7
     private static let maxRoll: Float = 3
     private static let timeout: TimeInterval = 45
+    private static let sweepTimeout: TimeInterval = 90
+
+    // MARK: Sweep
+    //
+    // A Face ID-style scan: after a still front burst, the head circles
+    // slowly and every depth pixel lands on a CYLINDER round the head's
+    // vertical axis — radius r at (angle θ round the head, height y), both in
+    // the face's own axes. A front-only height map cannot hold the cheeks and
+    // jaw sides; a cylinder holds everything from one ear to the other.
+    //
+    // Each cell keeps a random sample of up to 12 readings and reports their
+    // MEDIAN, so frames with a slipped pose cannot drag it. Depth frames go
+    // alternately to two independent cylinders, A and B: how much they
+    // disagree is this scan's own measurement noise.
+    let sweep: Bool
+    static let cylThetaMin: Float = -100
+    static let cylThetaStep: Float = 1
+    static let cylW = 201
+    static let cylYMin: Float = -0.130
+    static let cylYStep: Float = 0.0015
+    static let cylH = 147
+    /// The cylinder's axis: this far behind the face origin, roughly the middle of the head.
+    static let cylZc: Float = -0.060
+    static let reservoir = 12
+    /// A reading this many degrees round from where the camera looks straight
+    /// at the surface is too oblique for TrueDepth to be trusted.
+    static let maxGrazing: Float = 60
+    /// Degrees per second of head movement above which depth and pose smear.
+    static let maxSpeed: Float = 40
+    private var cylA = [Float](repeating: 0, count: FaceScanViewController.cylW * FaceScanViewController.cylH * FaceScanViewController.reservoir)
+    private var cylB = [Float](repeating: 0, count: FaceScanViewController.cylW * FaceScanViewController.cylH * FaceScanViewController.reservoir)
+    private var cntA = [UInt16](repeating: 0, count: FaceScanViewController.cylW * FaceScanViewController.cylH)
+    private var cntB = [UInt16](repeating: 0, count: FaceScanViewController.cylW * FaceScanViewController.cylH)
+    private var cylFrames = 0
+    private var rng: UInt32 = 0x9E3779B9
+    private var ticks = [Bool](repeating: false, count: 60)
+    private var lastPose: (yaw: Float, pitch: Float, t: TimeInterval)?
+    private var frontPhoto: (score: Float, url: String)?
+    private var obliquePhotos: [Int: (score: Float, url: String, yaw: Float)] = [:]
+    private var lastEncode: TimeInterval = 0
 
     let targetFrames: Int
     let minDistance: Float
@@ -135,10 +176,11 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     private var depthCount = [UInt16](repeating: 0, count: FaceScanViewController.gridW * FaceScanViewController.gridH)
     private var depthFrames = 0
 
-    init(frames: Int, minDistance: Float, maxDistance: Float) {
+    init(frames: Int, minDistance: Float, maxDistance: Float, sweep: Bool = false) {
         self.targetFrames = frames
         self.minDistance = minDistance
         self.maxDistance = maxDistance
+        self.sweep = sweep
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -238,8 +280,14 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         guard !finished else { return }
-        if Date().timeIntervalSince(startedAt) > Self.timeout {
-            finish(.failure(ScanError.failed("Could not hold a steady, neutral pose in time. Try again with even light.")))
+        let elapsed = Date().timeIntervalSince(startedAt)
+        if elapsed > (sweep ? Self.sweepTimeout : Self.timeout) {
+            // A sweep that covered most of the head is still worth keeping.
+            if sweep, collected >= 10, cylFrames >= 20, let face = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first {
+                complete(frame: frame, face: face)
+            } else {
+                finish(.failure(ScanError.failed("Could not hold a steady, neutral pose in time. Try again with even light.")))
+            }
             return
         }
         guard let face = frame.anchors.compactMap({ $0 as? ARFaceAnchor }).first, face.isTracked else {
@@ -270,15 +318,62 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         else if smile > 0.3 || jawOpen > 0.2 { message = "Relax your mouth, teeth apart."; ok = false }
         else if blink > 0.5 { message = "Eyes open."; ok = false }
 
-        if ok {
+        let frontDone = collected >= targetFrames && (depthFrames >= Self.minDepthFrames || collected >= targetFrames * 4)
+        if ok && !frontDone {
             accumulate(face, pose: pose, distance: distance)
             accumulateDepth(frame, face: face)
         }
-        show(message, ok: ok, pose: pose, distance: distance, face: face)
+        if ok { considerFrontPhoto(frame, pose: pose, blink: blink) }
 
-        // Enough mesh frames AND enough depth frames — or, if this device never
-        // delivers depth, give up waiting for it after four times as long.
-        if collected >= targetFrames && (depthFrames >= Self.minDepthFrames || collected >= targetFrames * 4) {
+        guard sweep else {
+            show(message, ok: ok, pose: pose, distance: distance, face: face)
+            // Enough mesh frames AND enough depth frames — or, if this device never
+            // delivers depth, give up waiting for it after four times as long.
+            if frontDone { complete(frame: frame, face: face) }
+            return
+        }
+
+        // Sweep: the still front burst first, then the circle.
+        let now = frame.timestamp
+        var speed: Float = 0
+        if let last = lastPose, now > last.t {
+            speed = hypot(pose.yaw - last.yaw, pose.pitch - last.pitch) / Float(now - last.t)
+        }
+        lastPose = (pose.yaw, pose.pitch, now)
+        var sweepMessage = message
+        var sweepOk = false
+        if !frontDone {
+            sweepMessage = ok ? "Hold still, looking straight at the screen…" : message
+        } else if distance < minDistance {
+            sweepMessage = "Move the phone a little further away."
+        } else if distance > maxDistance {
+            sweepMessage = "Bring the phone a little closer."
+        } else if smile > 0.3 || jawOpen > 0.2 {
+            sweepMessage = "Relax your mouth, teeth apart."
+        } else if abs(pose.yaw) > 48 || abs(pose.pitch) > 32 || abs(pose.roll) > 14 {
+            sweepMessage = "Not so far — keep your eyes on the screen."
+        } else if speed > Self.maxSpeed {
+            sweepMessage = "Slower."
+        } else {
+            sweepOk = true
+            sweepMessage = "Slowly move your head in a circle."
+        }
+        if sweepOk, frame.capturedDepthData != nil {
+            accumulateCylinder(frame, face: face)
+            // Face ID's ring: the ticks in the direction the head points fill.
+            // The preview is a mirror: a head turned to its left (yaw > 0)
+            // points to the screen's left; chin down (pitch > 0) points down.
+            if hypot(pose.yaw, pose.pitch) >= 15 {
+                let a = atan2(pose.pitch, -pose.yaw) * 180 / .pi
+                let i = Int(((a + 90) / 6).rounded())
+                for d in -1...1 { ticks[((i + d) % 60 + 60) % 60] = true }
+            }
+            considerObliquePhoto(frame, pose: pose, blink: blink)
+        }
+        let filled = ticks.filter { $0 }.count
+        showSweep(sweepMessage, ok: sweepOk || (!frontDone && ok), pose: pose, distance: distance, face: face,
+                  front: frontDone, filled: filled)
+        if frontDone && filled >= 54 && cylFrames >= 40 {
             complete(frame: frame, face: face)
         }
     }
@@ -332,6 +427,131 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             }
         }
         if used > 500 { depthFrames += 1 }
+    }
+
+    /// Every depth pixel (every other one — still ~75,000 a frame) onto the
+    /// cylinder, as a random sample per cell so memory stays fixed.
+    private func accumulateCylinder(_ frame: ARFrame, face: ARFaceAnchor) {
+        guard let raw = frame.capturedDepthData else { return }
+        let depth = raw.depthDataType == kCVPixelFormatType_DepthFloat32
+            ? raw : raw.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32)
+        let map = depth.depthDataMap
+        CVPixelBufferLockBaseAddress(map, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(map, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(map) else { return }
+        let w = CVPixelBufferGetWidth(map)
+        let h = CVPixelBufferGetHeight(map)
+        let rowBytes = CVPixelBufferGetBytesPerRow(map)
+        let k = frame.camera.intrinsics
+        let res = frame.camera.imageResolution
+        let sx = Float(w) / Float(res.width)
+        let sy = Float(h) / Float(res.height)
+        let fx = k.columns.0.x * sx, fy = k.columns.1.y * sy
+        let cx = k.columns.2.x * sx, cy = k.columns.2.y * sy
+
+        let toFace = face.transform.inverse * frame.camera.transform
+        let camera = toFace.columns.3
+        let deg: Float = 180 / .pi
+        let zc = Self.cylZc
+        let thetaCamera = atan2(camera.x, camera.z - zc) * deg
+        let W = Self.cylW, H = Self.cylH, R = Self.reservoir
+        let toA = cylFrames % 2 == 0
+        var used = 0
+        var v = 0
+        while v < h {
+            let row = base.advanced(by: v * rowBytes).assumingMemoryBound(to: Float32.self)
+            var u = 0
+            while u < w {
+                let z = row[u]
+                u += 2
+                guard z.isFinite, z > 0.1, z < 0.7 else { continue }
+                let pc = SIMD4<Float>((Float(u - 2) - cx) / fx * z, -(Float(v) - cy) / fy * z, -z, 1)
+                let pf = toFace * pc
+                let dz = pf.z - zc
+                let r = (pf.x * pf.x + dz * dz).squareRoot()
+                guard r > 0.03, r < 0.15, pf.z > -0.10 else { continue }
+                let theta = atan2(pf.x, dz) * deg
+                guard abs(theta - thetaCamera) < Self.maxGrazing else { continue }
+                let i = Int(((theta - Self.cylThetaMin) / Self.cylThetaStep).rounded())
+                let j = Int(((pf.y - Self.cylYMin) / Self.cylYStep).rounded())
+                guard i >= 0, i < W, j >= 0, j < H else { continue }
+                let cell = j * W + i
+                let mm = r * 1000
+                // Reservoir sampling: every reading ever seen has the same
+                // chance of being among the 12 kept.
+                rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5
+                if toA {
+                    let n = Int(cntA[cell])
+                    if n < R { cylA[cell * R + n] = mm } else {
+                        let slot = Int(rng % UInt32(n + 1)); if slot < R { cylA[cell * R + slot] = mm }
+                    }
+                    if cntA[cell] < UInt16.max { cntA[cell] += 1 }
+                } else {
+                    let n = Int(cntB[cell])
+                    if n < R { cylB[cell * R + n] = mm } else {
+                        let slot = Int(rng % UInt32(n + 1)); if slot < R { cylB[cell * R + slot] = mm }
+                    }
+                    if cntB[cell] < UInt16.max { cntB[cell] += 1 }
+                }
+                used += 1
+            }
+            v += 2
+        }
+        if used > 400 { cylFrames += 1 }
+    }
+
+    /// Median of each cell's kept readings, mm; NaN with fewer than 3.
+    private static func medians(_ samples: [Float], _ counts: [UInt16]) -> [Float] {
+        let R = reservoir
+        var out = [Float](repeating: .nan, count: counts.count)
+        var buf = [Float](repeating: 0, count: R)
+        for c in 0..<counts.count {
+            let n = min(Int(counts[c]), R)
+            guard n >= 3 else { continue }
+            for k in 0..<n { buf[k] = samples[c * R + k] }
+            let sorted = buf[0..<n].sorted()
+            out[c] = n % 2 == 1 ? sorted[n / 2] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+        }
+        return out
+    }
+
+    /// Keep the squarest, eyes-open front frame as the scan's photo. JPEG
+    /// encoding is slow, so at most one every 0.4 s.
+    private func considerFrontPhoto(_ frame: ARFrame, pose: (yaw: Float, pitch: Float, roll: Float), blink: Float) {
+        guard blink < 0.4 else { return }
+        let score = abs(pose.yaw) + abs(pose.pitch) + 2 * abs(pose.roll)
+        let now = frame.timestamp
+        if let best = frontPhoto, best.score <= score + 0.5 { return }
+        guard now - lastEncode > 0.4, let url = Self.portraitJPEG(frame.capturedImage) else { return }
+        lastEncode = now
+        frontPhoto = (score, url)
+    }
+
+    /// The best 45°-ish frame on each side, for the 2D oblique analysis.
+    private func considerObliquePhoto(_ frame: ARFrame, pose: (yaw: Float, pitch: Float, roll: Float), blink: Float) {
+        let yaw = abs(pose.yaw)
+        guard blink < 0.4, yaw >= 28, yaw <= 48, abs(pose.pitch) <= 8, abs(pose.roll) <= 6 else { return }
+        let side = pose.yaw > 0 ? 1 : -1
+        let score = abs(yaw - 38) + abs(pose.pitch) + abs(pose.roll)
+        let now = frame.timestamp
+        if let best = obliquePhotos[side], best.score <= score + 0.5 { return }
+        guard now - lastEncode > 0.4, let url = Self.portraitJPEG(frame.capturedImage) else { return }
+        lastEncode = now
+        obliquePhotos[side] = (score, url, pose.yaw)
+    }
+
+    private func showSweep(_ text: String, ok: Bool, pose: (yaw: Float, pitch: Float, roll: Float), distance: Float,
+                           face: ARFaceAnchor, front: Bool, filled: Int) {
+        label.text = text
+        label.textColor = ok ? .systemGreen : .label
+        ring.tracking = true
+        if front { ring.filled = ticks } else { ring.progress = Float(collected) / Float(targetFrames) }
+        let now = Date().timeIntervalSince1970
+        guard now - lastNotify > 0.12 else { return }
+        lastNotify = now
+        onFrame?(["tracked": true, "ok": ok, "message": text, "collected": front ? filled : collected,
+                  "target": front ? 60 : targetFrames, "phase": front ? "sweep" : "front",
+                  "yaw": pose.yaw, "pitch": pose.pitch, "roll": pose.roll, "distance": distance])
     }
 
     private func accumulate(_ face: ARFaceAnchor, pose: (yaw: Float, pitch: Float, roll: Float), distance: Float) {
@@ -407,7 +627,25 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                            k.columns.2.x, k.columns.2.y, k.columns.2.z],
             "imageResolution": [Double(frame.camera.imageResolution.width), Double(frame.camera.imageResolution.height)],
         ]
-        if let photo = Self.portraitJPEG(frame.capturedImage) { result["image"] = photo }
+        if let photo = frontPhoto?.url ?? Self.portraitJPEG(frame.capturedImage) { result["image"] = photo }
+        if sweep && cylFrames > 0 {
+            let a = Self.medians(cylA, cntA)
+            let b = Self.medians(cylB, cntB)
+            result["cylA"] = a.withUnsafeBufferPointer { Data(buffer: $0) }.base64EncodedString()
+            result["cylB"] = b.withUnsafeBufferPointer { Data(buffer: $0) }.base64EncodedString()
+            result["cylWidth"] = Self.cylW
+            result["cylHeight"] = Self.cylH
+            result["cylThetaMinDeg"] = Double(Self.cylThetaMin)
+            result["cylThetaStepDeg"] = Double(Self.cylThetaStep)
+            result["cylYMinMm"] = Double(Self.cylYMin * 1000)
+            result["cylYStepMm"] = Double(Self.cylYStep * 1000)
+            result["cylAxisZMm"] = Double(Self.cylZc * 1000)
+            result["cylFrames"] = cylFrames
+            result["sweepCoverage"] = Double(ticks.filter { $0 }.count) / 60
+            var obliques: [[String: Any]] = []
+            for (_, o) in obliquePhotos { obliques.append(["image": o.url, "yaw": Double(o.yaw)]) }
+            result["obliques"] = obliques
+        }
 
         // The averaged depth surface, mm, NaN where too few samples landed
         // (a single sample is too noisy to trust).
@@ -474,6 +712,8 @@ final class ScanRingView: UIView {
 
     /// 0–1.
     var progress: Float = 0 { didSet { if progress != oldValue { paint() } } }
+    /// Sweep mode: exactly which ticks are done, Face ID style. Overrides progress.
+    var filled: [Bool]? { didSet { if filled != oldValue { paint() } } }
     /// A face is in view: unfilled ticks go from faint to grey.
     var tracking = false { didSet { if tracking != oldValue { paint() } } }
 
@@ -519,10 +759,11 @@ final class ScanRingView: UIView {
 
     private func paint() {
         cover.fillColor = UIColor.systemBackground.cgColor
-        let filled = Int((progress * Float(Self.count)).rounded())
+        let count = Int((progress * Float(Self.count)).rounded())
         let idle = tracking ? UIColor.systemGray2 : UIColor.systemGray4
         for (i, t) in ticks.enumerated() {
-            t.strokeColor = (i < filled ? UIColor.systemGreen : idle).resolvedColor(with: traitCollection).cgColor
+            let done = filled.map { i < $0.count && $0[i] } ?? (i < count)
+            t.strokeColor = (done ? UIColor.systemGreen : idle).resolvedColor(with: traitCollection).cgColor
         }
     }
 }

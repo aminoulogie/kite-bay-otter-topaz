@@ -18,6 +18,8 @@ export interface FaceFrameEvent {
   roll?: number;
   /** Metres from the camera. */
   distance?: number;
+  /** Sweep scans: "front" while the still burst runs, then "sweep". */
+  phase?: "front" | "sweep";
 }
 
 export interface FaceDepthResult {
@@ -49,11 +51,31 @@ export interface FaceDepthResult {
   depthFrames?: number;
   /** Fraction of grid cells with enough samples. */
   depthCoverage?: number;
+  /** Sweep only: the two independent cylinders, base64 Float32 radius mm, NaN = none. */
+  cylA?: string;
+  cylB?: string;
+  cylWidth?: number;
+  cylHeight?: number;
+  cylThetaMinDeg?: number;
+  cylThetaStepDeg?: number;
+  cylYMinMm?: number;
+  cylYStepMm?: number;
+  cylAxisZMm?: number;
+  cylFrames?: number;
+  /** Share of the ring's directions covered. */
+  sweepCoverage?: number;
+  /** The best ~40° frame each way, for the 2D 45° analysis. */
+  obliques?: { image: string; yaw: number }[];
 }
 
 interface FaceDepthPlugin {
   isSupported(): Promise<{ supported: boolean }>;
-  scan(options?: { frames?: number; minDistance?: number; maxDistance?: number }): Promise<FaceDepthResult>;
+  scan(options?: {
+    frames?: number;
+    minDistance?: number;
+    maxDistance?: number;
+    mode?: "still" | "sweep";
+  }): Promise<FaceDepthResult>;
   cancel(): Promise<void>;
   addListener(event: "faceFrame", cb: (e: FaceFrameEvent) => void): Promise<PluginListenerHandle>;
 }
@@ -63,6 +85,9 @@ export const FaceDepth = registerPlugin<FaceDepthPlugin>("FaceDepth");
 /** Distance window the scan accepts — where TrueDepth is most accurate. */
 export const MIN_DISTANCE_M = 0.25;
 export const MAX_DISTANCE_M = 0.5;
+/** The sweep holds a tighter band, where TrueDepth is at its most accurate. */
+export const SWEEP_MIN_DISTANCE_M = 0.26;
+export const SWEEP_MAX_DISTANCE_M = 0.38;
 
 /** True only in the native build, on a phone with a TrueDepth camera. */
 export async function trueDepthAvailable(): Promise<boolean> {

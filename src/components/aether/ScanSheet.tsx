@@ -778,14 +778,18 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     try {
       const { runTrueDepthScan } = await import("@/lib/aether/truedepth-scan");
       audio.enable();
-      const record = await runTrueDepthScan(audio);
+      const { record, extra } = await runTrueDepthScan(audio, "sweep", scans);
       addScan(record);
+      extra.forEach(addScan);
+      const sym = record.depth?.sweep?.symmetry;
+      const noise = record.depth?.sweep?.symmetryNoiseMm;
       toast.success(
-        record.depth?.raw
-          ? `3D front saved · raw asymmetry ${record.depth.raw.rmsMm.toFixed(2)} mm`
-          : "3D front saved",
+        sym
+          ? `3D sweep saved · asymmetry ${sym.rmsMm.toFixed(2)}${noise != null ? ` ± ${noise.toFixed(2)}` : ""} mm`
+          : "3D sweep saved",
       );
-      if (step === 0) setStep(1);
+      // The sweep also filled 45°, so the next thing left is a profile.
+      setStep(extra.length ? 2 : 1);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "3D scan failed.";
       if (!/cancelled/i.test(msg)) toast.error(msg);
@@ -1091,9 +1095,10 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             onClick={() => void trueDepthFront()}
             className="mt-2 w-full rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-left text-xs font-bold text-accent disabled:opacity-50"
           >
-            Scan the front in 3D with the Face ID camera (TrueDepth)
+            3D sweep with the Face ID camera (most accurate)
             <span className="block text-[0.62rem] font-semibold text-faint">
-              Real millimetres and raw depth. This window uses the normal camera.
+              Look straight, then circle your head slowly like Face ID setup. Front and 45° in one
+              pass, in real millimetres, with its own error margin.
             </span>
           </button>
         )}

@@ -19,6 +19,7 @@ import type { CaptureKind } from "./captureQuality.ts";
 import type { SkinReport } from "./skin.ts";
 import type { Reading } from "./harmony.ts";
 import type { BodyMetrics } from "./body3d.ts";
+import type { CylChange, SweepSummary } from "./cylmap.ts";
 import { ANALYZER_VERSION, MESH_KEYS } from "./landmarks.ts";
 import { turnedSide } from "./assist.ts";
 
@@ -106,6 +107,15 @@ export interface DepthSummary {
     depthFrames: number;
     coverage: number;
   };
+  /** Face ID-style sweep: the fused 3D surface's numbers, each with its own noise. */
+  sweep?: SweepSummary;
+  /** Surface change against the FIRST sweep, after alignment. */
+  changeVsFirst?: CylChange & { firstId: string };
+}
+
+/** Where a sweep's two cylinders are stored (JSON). */
+export function cylKey(scanId: string): string {
+  return `cyl:${scanId}`;
 }
 
 /** Where the averaged skeletons of a LiDAR body scan are stored. */

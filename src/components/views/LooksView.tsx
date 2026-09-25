@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { SwipeRow } from "@/components/SwipeRow";
-import { bodyKey, depthGridKey, latestByKind, meshKey, misfiledAs, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { bodyKey, cylKey, depthGridKey, latestByKind, meshKey, misfiledAs, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
 import { trueDepthAvailable } from "@/lib/native/face-depth";
 import { bodyScanAvailable, type BodyScanMode } from "@/lib/native/body-depth";
 import { leftRightDiffPct, type Segment } from "@/lib/aether/body3d";
@@ -93,7 +93,11 @@ export function LooksView() {
     };
   }, [scans]);
   const latestDepth = useMemo(
-    () => newestFirst(scans).find((x) => x.depth)?.depth ?? null,
+    () => newestFirst(scans).find((x) => x.depth && !x.depth.sweep)?.depth ?? null,
+    [scans],
+  );
+  const latestSweep = useMemo(
+    () => newestFirst(scans).find((x) => x.depth?.sweep)?.depth ?? null,
     [scans],
   );
 
@@ -102,7 +106,7 @@ export function LooksView() {
    * lets sound start only inside a gesture; the scan module and its Swift side
    * are loaded only now.
    */
-  const scan3d = async () => {
+  const scan3d = async (mode: "still" | "sweep" = "sweep") => {
     if (depthBusy) return;
     setDepthBusy(true);
     try {
@@ -112,12 +116,16 @@ export function LooksView() {
       ]);
       depthAudio.current ??= new AssistAudio();
       depthAudio.current.enable();
-      const record = await runTrueDepthScan(depthAudio.current);
+      const { record, extra } = await runTrueDepthScan(depthAudio.current, mode, scans);
       addScan(record);
+      extra.forEach(addScan);
+      const sym = record.depth?.sweep?.symmetry;
       toast.success(
-        record.depth?.symmetryRmsMm != null
-          ? `3D scan saved · asymmetry ${record.depth.symmetryRmsMm.toFixed(2)} mm`
-          : "3D scan saved",
+        sym
+          ? `3D sweep saved · asymmetry ${sym.rmsMm.toFixed(2)} ± ${(record.depth?.sweep?.symmetryNoiseMm ?? 0).toFixed(2)} mm`
+          : record.depth?.symmetryRmsMm != null
+            ? `3D scan saved · asymmetry ${record.depth.symmetryRmsMm.toFixed(2)} mm`
+            : "3D scan saved",
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : "3D scan failed.";
@@ -232,6 +240,7 @@ export function LooksView() {
         if (scan.depth) {
           void deleteScanImage(meshKey(scan.id));
           void deleteScanImage(depthGridKey(scan.id));
+          void deleteScanImage(cylKey(scan.id));
         }
         if (scan.body) void deleteScanImage(bodyKey(scan.id));
       }
@@ -289,9 +298,10 @@ export function LooksView() {
           which is a hole in the page with nothing to say what it is. With the
           key here the whole expression is simply absent and the grid skips
           the cell. */}
-      {(hasTrueDepth || latestDepth) && (
+      {(hasTrueDepth || latestDepth || latestSweep) && (
         <Card key="truedepth">
           <CardTitle>3D scan · TrueDepth</CardTitle>
+          {latestSweep?.sweep && <SweepMetrics d={latestSweep} />}
           {latestDepth ? (
             <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
               {latestDepth.raw && (
@@ -321,16 +331,21 @@ export function LooksView() {
               <Metric label="Lower / face width" value={latestDepth.lowerToFace?.toFixed(2) ?? "—"} />
               <Metric label="Scanned from" value={`${(latestDepth.distanceMm / 10).toFixed(0)} cm`} />
             </div>
-          ) : (
+          ) : latestSweep ? null : (
             <p className="mb-3 text-xs text-muted">
               Uses the Face ID camera&apos;s infrared depth to measure your face in real millimetres —
               no photo distortion, works in dim light. Everything stays on this phone.
             </p>
           )}
           {hasTrueDepth ? (
-            <Button className="w-full" disabled={depthBusy} onClick={() => void scan3d()}>
-              {depthBusy ? "Scanning…" : latestDepth ? "New 3D scan" : "Start 3D scan"}
-            </Button>
+            <div className="grid grid-cols-[2fr_1fr] gap-2">
+              <Button disabled={depthBusy} onClick={() => void scan3d("sweep")}>
+                {depthBusy ? "Scanning…" : "3D sweep"}
+              </Button>
+              <Button variant="outline" disabled={depthBusy} onClick={() => void scan3d("still")}>
+                Quick front
+              </Button>
+            </div>
           ) : (
             <p className="text-[0.7rem] text-faint">3D scanning needs the installed iPhone app.</p>
           )}
@@ -555,6 +570,49 @@ function LoadingSheet({ label }: { label: string }) {
 
 function mm(v: number | null | undefined, digits: number): string {
   return v == null ? "—" : `${v.toFixed(digits)} mm`;
+}
+
+/**
+ * The sweep's numbers, each with its ±. A change between two sweeps smaller
+ * than the ± is noise, and saying so is the point.
+ */
+function SweepMetrics({ d }: { d: NonNullable<ScanRecord["depth"]> }) {
+  const s = d.sweep!;
+  const pm = (v: number | null | undefined, e: number | null | undefined, digits: number) =>
+    v == null ? "—" : `${v.toFixed(digits)}${e != null ? ` ± ${e.toFixed(digits)}` : ""} mm`;
+  const cell = s.cellNoiseMm;
+  const ch = d.changeVsFirst;
+  return (
+    <div className="mb-3 space-y-2">
+      <div className="text-[0.6rem] font-bold uppercase tracking-wider text-accent">Latest sweep</div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        <Metric label="Asymmetry · 3D" value={pm(s.symmetry?.rmsMm, s.symmetryNoiseMm, 2)} />
+        <Metric
+          label="Fuller side (up / mid / low)"
+          value={s.symmetry ? (["upper", "middle", "lower"] as const).map((k) => side(s.symmetry!.leftMinusRightMm[k])).join(" / ") : "—"}
+        />
+        <Metric label="Cheek width" value={pm(s.cheekWidthMm, cell, 1)} />
+        <Metric label="Jaw width" value={pm(s.jawWidthMm, cell, 1)} />
+        <Metric label="Chin behind nose tip" value={pm(s.chinBehindNoseMm, cell, 1)} />
+        <Metric label="Surface noise" value={cell == null ? "—" : `${cell.toFixed(2)} mm`} />
+        <Metric label="Coverage" value={`${Math.round(s.coverage * 100)}% · ring ${Math.round(s.sweepCoverage * 100)}%`} />
+        {ch && (
+          <Metric
+            label="Change vs first sweep"
+            value={
+              cell != null && ch.rmsMm < 2 * cell * Math.SQRT2
+                ? `${ch.rmsMm.toFixed(2)} mm · within noise`
+                : `${ch.rmsMm.toFixed(2)} mm · L ${signed(ch.byRegion.left)} R ${signed(ch.byRegion.right)}`
+            }
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function signed(v: number): string {
+  return `${v >= 0 ? "+" : ""}${v.toFixed(1)}`;
 }
 
 function seg(s: Segment | null): string {

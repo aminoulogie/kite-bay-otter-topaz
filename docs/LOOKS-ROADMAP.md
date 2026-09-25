@@ -76,7 +76,16 @@ Test as a PWA, ship as the native iOS build.
       averaged onto a 1.5 mm grid (≥15 depth frames). Symmetry is measured on
       that measured surface — midline searched, residual head turn removed —
       per third, with which side sits further forward.
-- [ ] Verify on device: photo orientation; raw vs mesh asymmetry side by side.
+- [x] **Face ID-style sweep** (most accurate): a still front burst, then a
+      slow head circle; every depth pixel is fused onto a cylinder round the
+      head (θ × height, 1° × 1.5 mm), median of up to 12 readings per cell,
+      only near-square-on readings, 26–38 cm. Frames alternate into two
+      independent cylinders, so every figure carries the scan's own ± and a
+      change smaller than the noise is reported as noise. Symmetry (midline
+      and off-centre axis removed, noise removed in quadrature), cheek and
+      jaw width, chin behind nose tip, change vs the FIRST sweep after
+      alignment. The best ~40° frames fill the 45° slot in the same pass.
+- [ ] Verify on device: photo orientation; ring direction; sweep noise level.
 - [ ] Landmark-level metrics (gonial angle, canthal tilt, cheekbone projection)
       from vertex indices identified on a real exported mesh.
 
