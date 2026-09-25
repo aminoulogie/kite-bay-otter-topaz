@@ -14,6 +14,10 @@ import {
   detectFaceTolerant, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
 } from "@/lib/aether/mediapipe";
 import { canvasFromDataUrl, measureCanvas, measurePosture } from "@/lib/aether/measure";
+import {
+  cropForZoom, guide, laplacianVariance, mergeSymmetry, rankFrames, turnedSide, type Guidance,
+} from "@/lib/aether/assist";
+import { AssistAudio } from "@/lib/aether/assist-audio";
 import { saveScanImage } from "@/lib/habit-photos";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -33,7 +37,56 @@ import { cn } from "@/lib/utils";
  * next photograph comparable to the last one rather than merely to exist.
  */
 
-const BURST = 5;
+/**
+ * Frames per capture. Eight at 80ms is about 0.6s — long enough to include a
+ * sharp, level frame, short enough that nobody drifts out of pose.
+ */
+const BURST = 8;
+
+type Facing = "user" | "environment";
+type Zoom = 1 | 2 | 3;
+
+interface AssistSettings {
+  facing: Facing;
+  zoom: Zoom;
+  flash: boolean;
+  sound: boolean;
+  voice: boolean;
+}
+
+const SETTINGS_KEY = "soma-scan-assist";
+const DEFAULT_SETTINGS: AssistSettings = { facing: "user", zoom: 2, flash: false, sound: true, voice: true };
+
+function loadSettings(): AssistSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return raw ? { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<AssistSettings>) } : DEFAULT_SETTINGS;
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+/** Warm white: truer skin than blue-white LCD light, and less of a glare. */
+const FLASH_COLOR = "#fff1dc";
+/** Exposure needs a moment to adapt to the screen flash before frames count. */
+const FLASH_SETTLE_MS = 260;
+
+/** Focus score for a frame, measured on a small copy so it stays cheap. */
+function sharpnessOf(source: HTMLCanvasElement): number {
+  try {
+    const w = 256;
+    const h = Math.max(3, Math.round((w * source.height) / Math.max(1, source.width)));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return 0;
+    ctx.drawImage(source, 0, 0, w, h);
+    return laplacianVariance(ctx.getImageData(0, 0, w, h).data, w, h);
+  } catch {
+    return 0;
+  }
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -69,6 +122,7 @@ interface Measured {
   puffiness: number | null;
   harmony: ReturnType<typeof measureHarmony>;
   dataUrl: string;
+  sharpness: number;
 }
 
 /**
@@ -125,15 +179,41 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [pose, setPose] = useState<{ yaw: number; roll: number; pitch: number } | null>(null);
   const [autoFire, setAutoFire] = useState(true);
   const [holding, setHolding] = useState(0);
+  const [settings, setSettings] = useState<AssistSettings>(loadSettings);
+  /** True when the camera itself zooms (a lens or track zoom) — no crop needed. */
+  const [hwZoom, setHwZoom] = useState(false);
+  const [flashing, setFlashing] = useState(false);
+  const [guidance, setGuidance] = useState<Guidance | null>(null);
+  const audioRef = useRef<AssistAudio | null>(null);
+  audioRef.current ??= new AssistAudio();
+  const audio = audioRef.current;
+  audio.sound = settings.sound;
+  audio.voice = settings.voice;
 
   // Read inside the animation loop, which is attached once and would otherwise
   // close over the first render's values for the life of the screen.
-  const liveRefs = useRef({ autoFire, busy: false, step: 0 });
+  const liveRefs = useRef({ autoFire, busy: false, step: 0, zoom: 2 as number, mirror: true });
 
   const s = SESSION[step]!;
   const kind = s.kind;
   liveRefs.current.autoFire = autoFire;
   liveRefs.current.step = step;
+  // The crop the frames are taken with: none when the camera zooms itself.
+  liveRefs.current.zoom = hwZoom ? 1 : settings.zoom;
+  // Only the front camera behaves like a mirror.
+  liveRefs.current.mirror = settings.facing === "user";
+
+  const patchSettings = (patch: Partial<AssistSettings>) => {
+    setSettings((cur) => {
+      const next = { ...cur, ...patch };
+      try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+      } catch {
+        /* private mode: settings last for this visit */
+      }
+      return next;
+    });
+  };
   const done = new Set(scans.map((x) => x.kind));
   const ready = hud?.ready ?? false;
 
@@ -143,6 +223,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     () => () => {
       cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      audioRef.current?.dispose();
     },
     [],
   );
@@ -152,7 +233,28 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     held.current = 0;
     setHolding(0);
+    // Spoken, because on the profile step the screen is out of sight.
+    if (live) audioRef.current?.announce(SESSION[step]!.coach);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
+
+  /**
+   * Zoom inside the camera track where the browser allows it (Chrome on
+   * Android). Returns false where it does not — iOS Safari — and the frames
+   * are cropped instead.
+   */
+  function applyTrackZoom(stream: MediaStream, zoom: number): boolean {
+    try {
+      const track = stream.getVideoTracks()[0];
+      const caps = track?.getCapabilities?.() as (MediaTrackCapabilities & { zoom?: { min: number; max: number } }) | undefined;
+      if (!track || !caps?.zoom) return false;
+      const z = Math.max(caps.zoom.min, Math.min(caps.zoom.max, zoom));
+      void track.applyConstraints({ advanced: [{ zoom: z } as MediaTrackConstraintSet] }).catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * Ask for the camera FIRST, before anything that awaits.
@@ -168,15 +270,34 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
    * behind the preview afterwards. That also happens to be the better screen:
    * the picture appears immediately instead of after a blank ten seconds.
    */
-  async function startCam() {
+  async function startCam(override?: Partial<AssistSettings>) {
+    const want = { ...settings, ...override };
+    // Inside the tap: the only moment iOS lets sound and speech start.
+    audio.enable();
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus("This browser has no camera access. It needs a secure (https) page.");
       return;
     }
 
     // Started before any await, so the tap is still what is asking.
+    // 3x on the back camera asks for the telephoto LENS by name, which only
+    // resolves once a camera permission exists (labels are blank before).
+    // Real optics beat a crop: same framing from further back, full detail.
+    //
+    // Looked up ONLY for that case: it is an await, and every other path must
+    // reach getUserMedia with no await in between (see above). enumerateDevices
+    // is fast, and a tap on "3x" is itself the gesture, but the common path
+    // stays exactly as it was.
+    const tele =
+      want.facing === "environment" && want.zoom === 3
+        ? (await navigator.mediaDevices.enumerateDevices().catch(() => [] as MediaDeviceInfo[])).find(
+            (d) => d.kind === "videoinput" && /telephoto/i.test(d.label),
+          )
+        : undefined;
     const pending = navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 2560 } },
+      video: tele
+        ? { deviceId: { exact: tele.deviceId }, width: { ideal: 1920 }, height: { ideal: 2560 } }
+        : { facingMode: want.facing, width: { ideal: 1920 }, height: { ideal: 2560 } },
       audio: false,
     });
     setStatus("Allow the camera when asked…");
@@ -210,6 +331,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       // Autoplay refusal on a muted inline video is rare and not fatal.
     }
     setLive(true);
+    setHwZoom(!!tele || applyTrackZoom(stream, want.zoom));
 
     // The model loads behind a live preview rather than in front of a blank one.
     setStatus("Camera on. Loading the face model…");
@@ -234,11 +356,14 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       const video = videoRef.current;
       const small = smallRef.current;
       if (!video || !small || video.readyState < 2) return;
+      // The same centre crop the preview shows and the capture keeps, so the
+      // landmarks, the guides and the saved photo all describe one frame.
+      const c = cropForZoom(video.videoWidth, video.videoHeight, liveRefs.current.zoom);
       small.width = 320;
-      small.height = Math.round(320 * (video.videoHeight / Math.max(1, video.videoWidth)));
+      small.height = Math.round(320 * (c.sh / Math.max(1, c.sw)));
       const ctx = small.getContext("2d");
       if (!ctx) return;
-      ctx.drawImage(video, 0, 0, small.width, small.height);
+      ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, small.width, small.height);
       try {
         const res = await detectFaceTolerant(small);
         const lms = res.landmarks;
@@ -257,6 +382,12 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           setEyes(null);
           held.current = 0;
           setHolding(0);
+          const lost = guide({
+            kind: SESSION[liveRefs.current.step]!.kind, hasFace: false, yawDeg: 0, pitchDeg: 0, rollDeg: 0,
+            turned: null, quality: { ready: false, lighting: 0, reasons: [] }, faceHeightFrac: 0, smile: 0,
+          });
+          if (!liveRefs.current.busy) audioRef.current?.update(lost);
+          setGuidance(lost);
           return;
         }
         lastFaceAt.current = Date.now();
@@ -266,15 +397,27 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         const yawDeg = eu?.yawDeg ?? proxy.yawDeg;
         const rollDeg = eu?.rollDeg ?? proxy.rollDeg;
         const pitchDeg = eu?.pitchDeg ?? proxy.pitchDeg;
+        const framing = framingFromLandmarks(pts);
+        const smile = smileFromBlendshapes(res.blendshapes as never);
+        const stepKind = SESSION[liveRefs.current.step]!.kind;
         const q = scoreCapture({
-          kind: SESSION[liveRefs.current.step]!.kind,
+          kind: stepKind,
           yawDeg, rollDeg, pitchDeg,
           lighting: sampleLighting(small, faceBox(pts)),
-          framing: framingFromLandmarks(pts),
-          smile: smileFromBlendshapes(res.blendshapes as never),
+          framing,
+          smile,
           hasFace: true,
         });
         setHud(q);
+        // One instruction per frame, played as sound: rate for distance to
+        // target, left/right ear for which way to turn, pitch for up/down.
+        const g = guide({
+          kind: stepKind, hasFace: true, yawDeg, pitchDeg, rollDeg,
+          turned: turnedSide(pts[FACE.noseTip]?.x, pts[FACE.leftOuter]?.x, pts[FACE.rightOuter]?.x),
+          quality: q, faceHeightFrac: framing.faceHeightFrac, smile,
+        });
+        if (!liveRefs.current.busy) audioRef.current?.update(g);
+        setGuidance(g);
         // Shown so the gates can be checked rather than trusted. A coach line
         // saying "turn more" is not falsifiable; a yaw of 41° is.
         setPose({ yaw: yawDeg, roll: rollDeg, pitch: pitchDeg });
@@ -297,7 +440,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         // Mirrored for display only. The preview is flipped so it behaves like
         // a mirror; the ANALYSIS runs on unmirrored pixels, or left and right
         // would swap between the coach and the Face File.
-        if (li && ri) setEyes({ lx: 1 - li.x, ly: li.y, rx: 1 - ri.x, ry: ri.y, mx: 1 - (li.x + ri.x) / 2 });
+        const fx = (x: number) => (liveRefs.current.mirror ? 1 - x : x);
+        if (li && ri) setEyes({ lx: fx(li.x), ly: li.y, rx: fx(ri.x), ry: ri.y, mx: fx((li.x + ri.x) / 2) });
       } catch {
         // A dropped frame during live detection is not worth a message.
       }
@@ -309,11 +453,12 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
-    canvas.width = video.videoWidth || 1080;
-    canvas.height = video.videoHeight || 1440;
+    const c = cropForZoom(video.videoWidth || 1080, video.videoHeight || 1440, liveRefs.current.zoom);
+    canvas.width = c.sw;
+    canvas.height = c.sh;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, c.sw, c.sh);
     const m = await measureCanvas(canvas, kind);
     if (!m) {
       // No landmarks anywhere in this frame. The PHOTO is still worth keeping —
@@ -321,7 +466,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       // rather than as nothing at all.
       return { photoOnly: true, dataUrl: canvas.toDataURL("image/jpeg", 0.82) };
     }
-    return { ...m, dataUrl: canvas.toDataURL("image/jpeg", 0.82) };
+    return { ...m, dataUrl: canvas.toDataURL("image/jpeg", 0.82), sharpness: sharpnessOf(canvas) };
   }
 
   /**
@@ -346,6 +491,14 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     setBusy(true);
     liveRefs.current.busy = true;
     setBurstPct(0);
+    audio.update(null);
+    audio.cue("capture");
+    // The screen is the flash, so it only helps when it faces you.
+    const flash = settings.flash && settings.facing === "user";
+    if (flash) {
+      setFlashing(true);
+      await sleep(FLASH_SETTLE_MS);
+    }
     try {
       const frames: Grab[] = [];
       for (let i = 0; i < BURST; i++) {
@@ -354,6 +507,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         setBurstPct(((i + 1) / BURST) * 100);
         if (i < BURST - 1) await sleep(80);
       }
+      setFlashing(false);
       if (!frames.length) {
         setStatus("Nothing came back from the camera. Try again.");
         return;
@@ -383,13 +537,31 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             ? `Photo kept. No face metrics at this angle, but neck angle ≈ ${posture.cvaEst.toFixed(1)}°.`
             : "Photo kept, no measurements — the landmark model cannot read a head turned this far.",
         );
+        audio.cue("done");
+        audio.announce(`${s.short} photo saved.`);
         toast.success(`${s.short} photo saved`);
         if (step < SESSION.length - 1) setStep(step + 1);
         return;
       }
 
-      measured.sort((a, b) => (b.analysis.quality?.overall ?? 0) - (a.analysis.quality?.overall ?? 0));
-      const best = measured[0]!;
+      // Best frame by pose/light quality, sharpness breaking ties — then the
+      // symmetry reading is the median of every frame that passed its gates,
+      // so the kept number does not hinge on one instant.
+      const ranked = rankFrames(
+        measured.map((f) => ({ f, overall: f.analysis.quality?.overall ?? 0, sharpness: f.sharpness })),
+      );
+      const best = ranked[0]!.f;
+      const merged = mergeSymmetry(
+        measured.map((f) => ({ alpha: f.analysis.alpha, regional: f.analysis.regional, gatesOk: f.analysis.gates.ok })),
+      );
+      if (merged && merged.used > 1) {
+        best.analysis = {
+          ...best.analysis,
+          alpha: merged.alpha,
+          regional: merged.regional as typeof best.analysis.regional,
+          notes: [...best.analysis.notes, `Symmetry is the median of ${merged.used} frames from an ${measured.length}-frame burst.`],
+        };
+      }
       await saveScanImage(id, best.dataUrl);
       const posture = kind === "face_side" ? await postureOf(best.dataUrl) : undefined;
       addScan({
@@ -410,11 +582,14 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           ? `Kept ${s.short}. Light ${best.analysis.lighting?.grade ?? "?"}.`
           : `Kept the best of ${measured.length}. ${q?.coach ?? best.analysis.gates.reasons[0] ?? ""}`,
       );
+      audio.cue("done");
+      audio.announce(`${s.short} captured.`);
       toast.success(`${s.short} captured · evenness ${(100 - best.analysis.alpha * 100).toFixed(1)}`);
       if (q && q.overall >= 0.55 && step < SESSION.length - 1) setStep(step + 1);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Capture failed.");
     } finally {
+      setFlashing(false);
       setBusy(false);
       // A short cooldown, or the frame right after a capture is still green and
       // fires again immediately.
@@ -472,6 +647,11 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+      {flashing && (
+        // The whole screen becomes the light. Warm, not blue-white: truer skin
+        // tone and less squinting, which also keeps the eyes measurable.
+        <div aria-hidden className="fixed inset-0 z-[80]" style={{ background: FLASH_COLOR }} />
+      )}
       <div className="flex items-center justify-between border-b border-border px-4 pb-3">
         <div>
           <div className="font-display text-sm font-extrabold">Scan</div>
@@ -509,7 +689,17 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         <div className="relative overflow-hidden rounded-2xl border border-border bg-black">
           {/* Mirrored preview so it behaves like a mirror. The analysis reads
               the unmirrored canvas below, so left and right never swap. */}
-          <video ref={videoRef} className="w-full -scale-x-100" playsInline muted />
+          {/* Mirrored for the front camera only, and scaled by the digital zoom
+              so the preview shows exactly the centre crop that is analysed. */}
+          <video
+            ref={videoRef}
+            className="w-full"
+            style={{
+              transform: `scale(${(settings.facing === "user" ? -1 : 1) * (hwZoom ? 1 : settings.zoom)}, ${hwZoom ? 1 : settings.zoom})`,
+            }}
+            playsInline
+            muted
+          />
           <canvas ref={canvasRef} className={cn("w-full", live && "hidden")} />
           <canvas ref={smallRef} className="hidden" />
 
@@ -632,7 +822,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           >
             {holding > 0
               ? `Hold… ${Math.max(1, HOLD_FRAMES - holding)}`
-              : (hud?.coach ?? s.coach)}
+              : (guidance?.phrase ?? hud?.coach ?? s.coach)}
           </div>
 
           {holding > 0 && (
@@ -653,6 +843,71 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         </div>
 
         <p className="mt-2 text-xs text-muted">{status}</p>
+
+        {hud && hud.lighting < 0.5 && settings.facing === "user" && !settings.flash && (
+          <button
+            type="button"
+            onClick={() => patchSettings({ flash: true })}
+            className="mt-2 w-full rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-left text-xs font-bold text-amber-200"
+          >
+            Too dark for a reliable reading — tap to turn on the screen flash
+          </button>
+        )}
+
+        <div className="mt-3 space-y-2" data-no-swipe-nav>
+          <ChipRow label="Camera">
+            {(["user", "environment"] as const).map((f) => (
+              <Chip
+                key={f}
+                on={settings.facing === f}
+                onClick={() => {
+                  if (settings.facing === f) return;
+                  patchSettings({ facing: f });
+                  if (live) void startCam({ facing: f });
+                }}
+              >
+                {f === "user" ? "Front" : "Back"}
+              </Chip>
+            ))}
+          </ChipRow>
+          <ChipRow label="Zoom">
+            {([1, 2, 3] as const).map((z) => (
+              <Chip
+                key={z}
+                on={settings.zoom === z}
+                onClick={() => {
+                  if (settings.zoom === z) return;
+                  patchSettings({ zoom: z });
+                  // A lens change (3x telephoto) needs a new stream; a crop does not,
+                  // but restarting keeps the two paths identical.
+                  if (live) void startCam({ zoom: z });
+                }}
+              >
+                {z}×
+              </Chip>
+            ))}
+          </ChipRow>
+          <ChipRow label="Assist">
+            <Chip
+              on={settings.flash && settings.facing === "user"}
+              disabled={settings.facing !== "user"}
+              onClick={() => patchSettings({ flash: !settings.flash })}
+            >
+              Flash
+            </Chip>
+            <Chip on={settings.sound} onClick={() => patchSettings({ sound: !settings.sound })}>
+              Beeps
+            </Chip>
+            <Chip on={settings.voice} onClick={() => patchSettings({ voice: !settings.voice })}>
+              Voice
+            </Chip>
+          </ChipRow>
+          <p className="text-[0.62rem] leading-snug text-faint">
+            Beeps speed up as you get closer to the pose and come from the side to turn
+            toward — best in AirPods. A steady tone means hold still. Sound follows your
+            silent switch. {hwZoom ? "Zoom uses the camera lens." : "Zoom crops the frame: stand further back to fill it, which is what removes selfie distortion."}
+          </p>
+        </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Button onClick={() => void startCam()}>{live ? "Restart camera" : "Camera"}</Button>
@@ -718,5 +973,33 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         </p>
       </div>
     </div>
+  );
+}
+
+function ChipRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-12 shrink-0 text-[0.6rem] font-bold uppercase tracking-wider text-faint">{label}</span>
+      <div className="flex flex-1 gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+function Chip({
+  on, disabled, onClick, children,
+}: { on: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-pressed={on}
+      className={cn(
+        "h-8 flex-1 rounded-full text-xs font-bold transition-colors disabled:opacity-40",
+        on ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted",
+      )}
+    >
+      {children}
+    </button>
   );
 }

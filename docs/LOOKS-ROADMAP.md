@@ -35,6 +35,34 @@ Test as a PWA, ship as the native iOS build.
 
 ## Phase 2 — capture assist
 
+### 2a ✅ (shipped)
+
+- [x] Front / back camera switch; the preview mirrors only for the front camera.
+- [x] Zoom 1× / 2× / 3×, remembered on the device. Back 3× asks for the
+      telephoto lens by name; elsewhere the camera zooms itself where the
+      browser allows (Android) or the frame is centre-cropped (iOS Safari).
+      Preview, guides, landmarks and the saved photo all use the same crop.
+- [x] Warm screen flash, with a "too dark" prompt; front camera only.
+- [x] Parking-sensor beeps (rate = distance to the target pose), panned to the
+      side to turn toward, higher pitch for "chin up" / lower for "chin down",
+      a steady hold tone when on target, and capture / done sounds.
+- [x] English voice coach, throttled so it never talks over itself; each new
+      step is announced. Sound follows the silent switch.
+- [x] Native haptics through the Capacitor plugin (the PWA on iPhone has none).
+- [x] 8-frame burst ranked by quality then sharpness; symmetry is the median
+      of every frame that passed its gates.
+
+### 2b — next
+
+- [ ] Tap to override the auto-picked frame.
+- [ ] Both profile sides as separate steps.
+- [ ] Camera-roll import: auto-align to the guides, then drag / pinch / rotate.
+- [ ] Iris-based distance and baseline lock (match the first scan's distance).
+- [ ] Ghost overlay of the last scan; pre-scan checklist.
+- [ ] A full-body side step for posture (shoulder and hip in frame).
+
+### All decisions
+
 | Feature | Decision |
 |---|---|
 | Camera | Front **and** back camera. Back camera mounted on a wall with a suction mount. |
