@@ -8,12 +8,12 @@ import { alignOnAnchors } from "./align3d.ts";
 import { decodeSweepFrames, refineSweep, type RefineStats } from "./refine.ts";
 import type { Guidance } from "./assist.ts";
 import { decodeFloat32, distanceMm, extents3d, symmetry3d } from "./mesh3d.ts";
-import { cloudKey, cylKey, depthGridKey, meshKey, type DepthSummary, type ScanRecord } from "./scan-store.ts";
+import { cloudKey, cylKey, depthGridKey, meshKey, rawKey, type DepthSummary, type ScanRecord } from "./scan-store.ts";
 import {
   FaceDepth, MAX_DISTANCE_M, MIN_DISTANCE_M, SWEEP_MAX_DISTANCE_M, SWEEP_MIN_DISTANCE_M,
   type FaceDepthResult, type FaceFrameEvent,
 } from "../native/face-depth.ts";
-import { loadScanImage, saveScanImage } from "../habit-photos.ts";
+import { deleteScanImage, loadScanImage, saveScanImage } from "../habit-photos.ts";
 import { getLocalDateKey } from "../soma/dates.ts";
 
 /** The sweep's cylinders, decoded; null for a still scan. */
@@ -81,13 +81,13 @@ type Extended = { cyl: Cylinder; stats: { right: SideStats; left: SideStats } | 
 
 /** The side stages: slow beeps while turning, the steady hold tone when still. */
 export function sideGuidance(e: FaceFrameEvent): Guidance {
-  const holding = e.phase === "holdRight" || e.phase === "holdLeft" || e.phase === "holdPosture";
+  const holding = e.phase?.startsWith("hold") ?? false;
   const error = holding && e.ok ? 0 : holding ? 0.4 : 0.8;
   return {
     instruction: error === 0 ? "hold" : "turn",
-    side: e.phase === "turnRight" ? "right" : e.phase === "turnLeft" ? "left" : null,
+    side: e.phase === "turnRight" ? "right" : e.phase === "turnLeft" || e.phase === "turnPostureLeft" ? "left" : null,
     error,
-    pan: e.phase === "turnRight" ? 1 : e.phase === "turnLeft" ? -1 : 0,
+    pan: e.phase === "turnRight" ? 1 : e.phase === "turnLeft" || e.phase === "turnPostureLeft" ? -1 : 0,
     beepMs: error === 0 ? 0 : Math.round(140 + error * 810),
     pitchHz: 660,
     phrase: e.message,
@@ -205,7 +205,7 @@ export async function runTrueDepthScan(
     // stage is spoken, and holding still gets the steady tone.
     if (e.phase && e.phase !== lastPhase) {
       if (e.phase !== "front" && e.phase !== "sweep") audio.announce(e.message);
-      if (e.phase === "holdRight" || e.phase === "holdLeft" || e.phase === "holdPosture") audio.cue("target");
+      if (e.phase.startsWith("hold")) audio.cue("target");
       lastPhase = e.phase;
     }
     // A chime as each of the four head moves is done.
@@ -272,6 +272,13 @@ export async function runTrueDepthScan(
   const cyl = ext?.cyl ?? base;
   const cloud = ext?.cloud ?? null;
   if (cloud && cloud.length) await saveScanImage(cloudKey(id), encodeFloat32(cloud));
+  // The raw capture of this scan, for exporting if it misbehaves; older
+  // scans' raw captures are dropped (they are several MB each).
+  if (result.sides) {
+    const { image: _image, obliques: _obliques, vertices: _v, triangles: _t, depthGrid: _g, ...raw } = result;
+    await saveScanImage(rawKey(id), JSON.stringify({ format: "soma-raw-1", capturedAt: new Date().toISOString(), ...raw }));
+    for (const x of history) if (x.depth?.sweep) void deleteScanImage(rawKey(x.id));
+  }
   if (cyl) {
     const stored: StoredCylinder = {
       a: encodeFloat32(cyl.a), b: encodeFloat32(cyl.b), width: cyl.width, height: cyl.height, thetaMinDeg: cyl.thetaMinDeg,

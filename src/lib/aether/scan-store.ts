@@ -115,6 +115,15 @@ export interface DepthSummary {
   changeVsFirst?: CylChange & { firstId: string; anchorRmsMm?: number };
 }
 
+/**
+ * Where the newest full scan's RAW capture is kept (JSON): the side and sweep
+ * frames exactly as the phone sent them. Only the latest scan's is kept — it
+ * exists so a failing scan can be exported and replayed off the phone.
+ */
+export function rawKey(scanId: string): string {
+  return `raw:${scanId}`;
+}
+
 /** Where a full scan's side-view point cloud (neck, shoulders, upper back) is stored: base64 Float32 xyz, mm. */
 export function cloudKey(scanId: string): string {
   return `cloud:${scanId}`;

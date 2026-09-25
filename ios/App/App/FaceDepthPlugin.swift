@@ -144,7 +144,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     /// down, head to the left, head to the right. Each is the ring's tick
     /// index it points at (screen: 0 top, 15 right, 30 bottom, 45 left).
     private static let looks: [(tick: Int, say: String)] = [
-        (0, "Slowly tilt your chin up, then back."),
+        (0, "Step 1 of 5: slowly tilt your chin up, then back."),
         (30, "Now slowly chin down, then back."),
         (45, "Now turn your head to your left, then back."),
         (15, "Now turn your head to your right, then back."),
@@ -175,7 +175,15 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     // side-on, are what gets measured.
     // After the right side hold: one step back to the posture mark, side-on,
     // so the frame takes in the neck, shoulders and upper back.
-    enum SideStage: String { case none, turnRight, holdRight, stepBack, holdPosture, back, turnLeft, holdLeft }
+    // The order, all the close work first, then all the far: left side at
+    // 30 cm, round through the front to the right side at 30 cm, one step back
+    // to the posture mark, then round to the left side there.
+    enum SideStage: String {
+        case none, turnLeft, holdLeft, turnRight, holdRight, stepBack, holdPostureRight, turnPostureLeft, holdPostureLeft
+    }
+    /// A turn to the far side has to pass the front first, so standing on the
+    /// side just left is not mistaken for having arrived.
+    private var passedFront = false
     private static let postureFrames = 12
     let sides: Bool
     private var sideStage: SideStage = .none
@@ -481,7 +489,8 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                   front: frontDone, filled: filled)
         if frontDone && !looksDone.contains(false) && cylFrames >= 40 {
             if sides {
-                sideStage = .turnRight
+                sideStage = .turnLeft
+                passedFront = true
                 stageStartedAt = frame.timestamp
                 stillCount = 0
                 ring.filled = nil
@@ -633,6 +642,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         var yaw: Float?
         if let f = face, tracked { yaw = Self.angles(frame.camera.viewMatrix(for: .portrait) * f.transform).yaw }
         if let f = face, tracked { lastFace = f }
+        if tracked, let y = yaw, abs(y) < 20 { passedFront = true }
 
         var centre: Float?
         if let d = frame.capturedDepthData, let b = Self.bodyDepth(d) {
@@ -643,18 +653,20 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             lastBody = b.body
         }
         let still = stillCount >= 5
-        let side = [.turnRight, .holdRight, .stepBack, .holdPosture].contains(sideStage) ? "right" : "left"
-        let way = side == "right" ? "right" : "left"
+        let rightStages: [SideStage] = [.turnRight, .holdRight, .stepBack, .holdPostureRight]
+        let side = rightStages.contains(sideStage) ? "right" : "left"
+        let posture = [.stepBack, .holdPostureRight, .turnPostureLeft, .holdPostureLeft].contains(sideStage)
         var message = ""
         var ok = false
         var progress: Float = 0
 
         // A stage that never settles is skipped rather than failing the scan.
         if now - stageStartedAt > Self.stageTimeout {
-            if sideStage == .stepBack || sideStage == .holdPosture {
-                sideDiag["right"]?["posture"] = sideStage == .stepBack ? "never still at the posture mark" : "posture hold not finished"
-            } else if sideStage != .back {
-                sideDiag[side]?["outcome"] = sideStage == .turnRight || sideStage == .turnLeft ? "never still side-on" : "hold not finished"
+            if posture {
+                sideDiag[side]?["posture"] = [.stepBack, .turnPostureLeft].contains(sideStage)
+                    ? "never still at the posture mark" : "posture hold not finished"
+            } else {
+                sideDiag[side]?["outcome"] = [.turnLeft, .turnRight].contains(sideStage) ? "never still side-on" : "hold not finished"
                 sideDiag[side]?["depthFrames"] = stageDepthFrames
                 if let c = centre { sideDiag[side]?["distance"] = Double(c) }
             }
@@ -662,20 +674,24 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             return
         }
 
+        // Past where ARKit can follow the face — or clearly turned while it
+        // still can — after passing the front: that is side-on.
+        let turned = passedFront && (!tracked || (yaw.map { abs($0) > 60 } ?? true))
+        let turnCap = Self.maxTurnFrames + Self.holdFrames + 120
+
         switch sideStage {
-        case .turnRight, .turnLeft:
-            message = "Turn your whole body \(way), slowly, onto the side mark."
-            if frame.capturedDepthData != nil, (sideFrames[side]?.count ?? 0) < Self.maxTurnFrames {
+        case .turnLeft, .turnRight:
+            message = sideStage == .turnLeft
+                ? "Step 2 of 5: turn your whole body left, onto the side mark."
+                : "Step 3 of 5: turn right, round through the front, to the right side mark."
+            if frame.capturedDepthData != nil, (sideFrames[side]?.count ?? 0) < turnCap {
                 recordSideFrame(frame, side: side, stage: "turn", step: 8, face: face)
             }
-            // Past where ARKit can follow the face — or clearly turned while
-            // it still can — and standing still: that is the side-on stop.
-            let turned = !tracked || (yaw.map { abs($0) > 60 } ?? true)
             if turned && still, let c = centre {
                 if c < 0.22 { message = "Step back a little." }
                 else if c > 0.42 { message = "Step a little closer." }
                 else {
-                    sideStage = sideStage == .turnRight ? .holdRight : .holdLeft
+                    sideStage = sideStage == .turnLeft ? .holdLeft : .holdRight
                     stageStartedAt = now
                     holdCount = 0
                     sideDiag[side]?["turnDepthFrames"] = stageDepthFrames
@@ -684,7 +700,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                     ok = true
                 }
             }
-        case .holdRight, .holdLeft:
+        case .holdLeft, .holdRight:
             message = "Eyes on the sticker. Hold still."
             ok = still
             if still, frame.capturedDepthData != nil {
@@ -699,21 +715,24 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                 advanceSide(frame, now: now)
                 return
             }
-        case .stepBack:
-            // Frames while stepping back chain the tracking out to the new
-            // distance, the way the turn frames chain it round.
-            message = "Take one step back to the posture mark. Stay side-on."
-            if frame.capturedDepthData != nil, (sideFrames[side]?.count ?? 0) < Self.maxTurnFrames + Self.holdFrames + 60 {
+        case .stepBack, .turnPostureLeft:
+            // Frames while moving chain the tracking out to the posture mark
+            // (and round to the other side), the way turn frames do.
+            message = sideStage == .stepBack
+                ? "Step 4 of 5: one step back to the posture mark. Stay side-on."
+                : "Step 5 of 5: at the posture mark, turn round to face left side-on."
+            if frame.capturedDepthData != nil, (sideFrames[side]?.count ?? 0) < turnCap + 80 {
                 recordSideFrame(frame, side: side, stage: "turn", step: 8, face: face)
             }
-            if still, let c = centre, c > 0.42, c < 0.75 {
-                sideStage = .holdPosture
+            let arrived = sideStage == .stepBack || turned
+            if arrived && still, let c = centre, c > 0.42, c < 0.75 {
+                sideStage = sideStage == .stepBack ? .holdPostureRight : .holdPostureLeft
                 stageStartedAt = now
                 holdCount = 0
                 message = "Stand tall and relaxed. Hold still."
                 ok = true
             }
-        case .holdPosture:
+        case .holdPostureRight, .holdPostureLeft:
             message = "Stand tall and relaxed. Hold still."
             ok = still
             if still, frame.capturedDepthData != nil {
@@ -722,17 +741,9 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             }
             progress = Float(holdCount) / Float(Self.postureFrames)
             if holdCount >= Self.postureFrames {
-                sideDiag["right"]?["posture"] = "held"
+                sideDiag[side]?["posture"] = "held"
                 advanceSide(frame, now: now)
                 return
-            }
-        case .back:
-            message = "Done. Step back to your front mark and face the phone."
-            if tracked, let y = yaw, abs(y) < 12 {
-                sideStage = .turnLeft
-                stageStartedAt = now
-                stillCount = 0
-                message = "Now turn your whole body left, slowly."
             }
         case .none:
             return
@@ -757,10 +768,13 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         holdCount = 0
         stageDepthFrames = 0
         switch sideStage {
-        case .turnRight: sideStage = .back
-        case .holdRight: sideStage = .stepBack
-        case .stepBack, .holdPosture: sideStage = .back
-        case .back: sideStage = .turnLeft
+        case .turnLeft, .holdLeft:
+            sideStage = .turnRight
+            passedFront = false
+        case .turnRight, .holdRight: sideStage = .stepBack
+        case .stepBack, .holdPostureRight:
+            sideStage = .turnPostureLeft
+            passedFront = false
         default:
             sideStage = .none
             if let f = lastFace { complete(frame: frame, face: f) } else {

@@ -172,7 +172,10 @@ test("the profile target stops short of where the model goes blind", () => {
   // asking for it is asking for a shot that cannot be taken.
   const side = SESSION.find((s) => s.kind === "face_side")!;
   assert.ok(side.yawAbs[1] <= 90, "never demands past a full profile");
-  assert.ok(side.yawAbs[0] <= 55, "and starts within reach of the detector");
+  // Raised from 52° to 62° at the owner's request (52° did not look like a
+  // profile): still inside the ~65–70° where the detector keeps finding a
+  // face. A true 90° profile comes from the 3D scan's side holds instead.
+  assert.ok(side.yawAbs[0] <= 65, "and starts within reach of the detector");
 });
 
 test("a comfortable near-profile is ready", () => {

@@ -19,7 +19,9 @@ export interface FaceFrameEvent {
   /** Metres from the camera. */
   distance?: number;
   /** Sweep scans: "front", "sweep", then with sides the turn / hold stages. */
-  phase?: "front" | "sweep" | "turnRight" | "holdRight" | "stepBack" | "holdPosture" | "back" | "turnLeft" | "holdLeft";
+  phase?:
+    | "front" | "sweep" | "turnLeft" | "holdLeft" | "turnRight" | "holdRight"
+    | "stepBack" | "holdPostureRight" | "turnPostureLeft" | "holdPostureLeft";
   /** Sweep: degrees from where the head points to the next move's target, and which way it is. */
   targetError?: number;
   targetDir?: "up" | "down" | "left" | "right" | "";
@@ -78,7 +80,7 @@ export interface FaceDepthResult {
   /** Full scan: the raw side-on depth frames, for matching onto the face model. */
   sides?: { right: SideFrameRaw[]; left: SideFrameRaw[] };
   /** Per side: how the stage ended, depth frames seen, nearest distance (m). */
-  sideDiag?: Record<string, { outcome?: string; depthFrames?: number; turnDepthFrames?: number; distance?: number }>;
+  sideDiag?: Record<string, { outcome?: string; depthFrames?: number; turnDepthFrames?: number; distance?: number; posture?: string }>;
 }
 
 export interface SideFrameRaw {

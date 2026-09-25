@@ -8,7 +8,7 @@
 
 import type { Cylinder } from "./cylmap.ts";
 import { mergeCyl } from "./cylmap.ts";
-import { apply, decodeCloud, fromArkit, PointIndex, registerSide, type Mat4, type RegFrame } from "./register.ts";
+import { apply, decodeCloud, fromArkit, icp, PointIndex, registerSide, type Mat4, type RegFrame } from "./register.ts";
 
 const RES = 12;
 /** Readings more than this many degrees off square-on are too oblique to trust. */
@@ -298,6 +298,29 @@ export function overlapErrorMm(T: Mat4, pts: Float32Array, front: Float32Array, 
   return diffs[diffs.length >> 1]!;
 }
 
+/**
+ * The chain round the head can drift a few mm by the time it is side-on.
+ * Before a hold is judged it is fitted once more — against the FRONT scan
+ * only (not the model the chain grew), on just its cheek and jaw points
+ * (15–80° round), which is exactly where it must agree. If that fit is poor
+ * the chained pose is kept and the check decides.
+ */
+export function refineOnFront(
+  h: { T: Mat4; pts: Float32Array; rms: number; inliers: number },
+  frontModel: PointIndex,
+  axisZ: number,
+): { T: Mat4; pts: Float32Array; rms: number; inliers: number } {
+  const sel: number[] = [];
+  for (let p = 0; p < h.pts.length / 3; p++) {
+    const [x, y, z] = apply(h.T, h.pts[p * 3]!, h.pts[p * 3 + 1]!, h.pts[p * 3 + 2]!);
+    const t = Math.abs((Math.atan2(x, z - axisZ) * 180) / Math.PI);
+    if (t >= 15 && t <= 80 && y > -130 && y < 90) sel.push(h.pts[p * 3]!, h.pts[p * 3 + 1]!, h.pts[p * 3 + 2]!);
+  }
+  if (sel.length / 3 < 400) return h;
+  const r = icp(frontModel, Float32Array.from(sel), h.T, 1500, [6, 4, 3, 2.5, 2]);
+  return r.rms <= 2.5 && r.inliers >= 0.5 ? { ...h, T: r.T } : h;
+}
+
 /** Limits a hold must meet to be used. */
 export const HOLD_LIMITS = { fitMm: 2, inliers: 0.5, overlapMm: 1.5 };
 
@@ -360,6 +383,8 @@ export interface SideStats {
   received?: number;
   /** What the phone saw: how the stage ended, depth frames, distance. */
   diag?: { outcome?: string; depthFrames?: number; turnDepthFrames?: number; distance?: number; posture?: string };
+  /** Median distance of REJECTED holds from the front scan, mm: how far off they were. */
+  rejectedOverlapMm?: number | null;
   /** Posture frames (right side, a step back) that were placed and used. */
   postureUsed?: number;
   /** Holds placed but not used, and the most common reason. */
@@ -388,6 +413,7 @@ export function extendWithSides(
   const front = mergeCyl(c);
   const cloudFrames: { T: Mat4; pts: Float32Array }[] = [];
   const model = modelPoints(front, c, axisZ);
+  const frontModel = modelPoints(front, c, axisZ);
   const a = new SideCylinder(c, axisZ);
   const b = new SideCylinder(c, axisZ);
   const stats = {} as { right: SideStats; left: SideStats };
@@ -406,8 +432,11 @@ export function extendWithSides(
     let used = 0;
     const reasons = new Map<HoldVerdict, number>();
     const overlaps: number[] = [];
-    for (const h of r.holds) {
+    const missed: number[] = [];
+    for (const placed of r.holds) {
+      const h = refineOnFront(placed, frontModel, axisZ);
       const j = judgeHold(h, front, c, axisZ);
+      if (j.verdict === "off the face" && j.overlapMm != null) missed.push(j.overlapMm);
       if (j.verdict === "used") {
         (k++ % 2 ? b : a).add(h.T, h.pts);
         cloudFrames.push(h);
@@ -416,7 +445,8 @@ export function extendWithSides(
       } else reasons.set(j.verdict, (reasons.get(j.verdict) ?? 0) + 1);
     }
     let postureUsed = 0;
-    for (const p of r.posture) {
+    for (const placed of r.posture) {
+      const p = refineOnFront(placed, frontModel, axisZ);
       if (judgeHold(p, front, c, axisZ, POSTURE_LIMITS).verdict !== "used") continue;
       cloudFrames.push(p);
       postureUsed++;
@@ -428,6 +458,7 @@ export function extendWithSides(
       aligned: r.aligned,
       lost: r.lost,
       holds: used,
+      ...(missed.length ? { rejectedOverlapMm: missed.sort((x, y) => x - y)[missed.length >> 1]! } : {}),
       ...(r.posture.length ? { postureUsed } : {}),
       rejected: r.holds.length - used,
       ...(top ? { rejectReason: top[0] } : {}),

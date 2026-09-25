@@ -115,7 +115,9 @@ export async function buildBackup(data: Record<string, unknown>): Promise<Backup
       display: await blobToDataUrl(p.display),
     });
   }
-  const scanImages = await allScanImages();
+  // A full scan's raw capture (`raw:<id>`) is several MB of frames kept only
+  // for exporting a misbehaving scan; it has no place in a backup.
+  const scanImages = (await allScanImages()).filter((img) => !img.id.startsWith("raw:"));
   const exercisePhotos: BackupExercisePhoto[] = [];
   for (const p of await allExercisePhotos()) {
     exercisePhotos.push({ key: p.key, dataUrl: await blobToDataUrl(p.blob) });

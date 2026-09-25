@@ -73,8 +73,8 @@ export const SESSION: {
     // face at a hard yaw — so the coaching has to aim at the last angle it can
     // still read, not at the anatomically ideal one. Past this the photo is
     // still kept; the measurements are not.
-    coach: "Turn until the far eyebrow just disappears — no further, or it stops reading.",
-    yawAbs: [52, 90],
+    coach: "Turn until only your near eye shows — the far eye just gone behind the nose.",
+    yawAbs: [62, 90],
     rollMax: 8,
     pitchMax: 14,
   },
@@ -85,7 +85,7 @@ export const SESSION: {
     title: "4 · Profile left",
     short: "Side L",
     coach: "Now the other side. Turn left until the far eyebrow just disappears.",
-    yawAbs: [52, 90],
+    yawAbs: [62, 90],
     rollMax: 8,
     pitchMax: 14,
     side: "left",

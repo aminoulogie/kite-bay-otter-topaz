@@ -686,14 +686,14 @@ function ScanSpotGuide({ open = false }: { open?: boolean }) {
         <li>At each side mark, look level and put a small sticker where your eyes land. Look at it
           during every hold.</li>
         <li>Posture mark: from the right side mark, take one normal step straight back (the phone about
-          50–60 cm from your shoulder) and tape it too. The voice sends you there after the right
-          hold, to take in your neck, shoulders and upper back.</li>
+          50–60 cm from your shoulder) and tape it too. You turn on that spot for both posture holds.</li>
         <li>Hair behind the ears, no collar, shoulders relaxed, breathe normally.</li>
       </ol>
       <p className="mt-2 text-faint">
-        During the scan the voice leads: four head moves, then turn right and hold, step back to the
-        posture mark and hold, return to the front, turn left and hold. Keep your neck still and turn
-        with your feet.
+        During the scan the voice leads, in five steps: (1) look at the screen and do the four head
+        moves; (2) turn left onto the side mark and hold; (3) turn right, through the front, onto the
+        right mark and hold; (4) one step back to the posture mark, hold; (5) turn round to the left
+        there and hold. Keep your neck still and turn with your feet.
       </p>
     </details>
   );
@@ -718,8 +718,14 @@ function sideCore(label: string, st: NonNullable<Full["sides"]>["right"]): strin
     return `${label}: ${st.holds} holds used · ${st.overlapMm != null ? `${st.overlapMm.toFixed(1)} mm from the front scan` : `fit ${st.fitMm?.toFixed(1) ?? "?"} mm`}${st.rejected ? ` · ${st.rejected} rejected` : ""}`;
   if (st.rejected)
     return `${label}: not used — ${st.rejected} holds ${
-      st.rejectReason === "off the face" ? "didn't line up with the front scan" : st.rejectReason === "no overlap" ? "didn't overlap the front scan" : "fitted too loosely"
+      st.rejectReason === "off the face"
+        ? `sat ${st.rejectedOverlapMm != null ? `${st.rejectedOverlapMm.toFixed(1)} mm` : "too far"} off the front scan (limit 1.5)`
+        : st.rejectReason === "no overlap"
+          ? "didn't overlap the front scan"
+          : "fitted too loosely"
     }. Numbers needing this side are left blank.`;
+  if (st.received && !st.holds)
+    return `${label}: none placed — ${st.aligned} of ${st.received} frames matched the model, ${st.lost} lost${st.diag?.outcome ? ` · ${st.diag.outcome}` : ""}`;
   const why = st.diag?.outcome ?? (st.received ? `${st.received} sent, ${st.aligned} placed` : "nothing sent");
   const dist = st.diag?.distance != null ? ` · ${(st.diag.distance * 100).toFixed(0)} cm` : "";
   return `${label} 0 · ${why}${st.diag?.depthFrames != null ? ` · ${st.diag.depthFrames} depth frames` : ""}${dist}`;

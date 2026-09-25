@@ -443,7 +443,9 @@ export function summariseCylinder(
       neckCircumferenceMm: m.neck?.circumferenceMm ?? null,
       neckToCheek: m.neck && cheekWidthMm ? m.neck.widthMm / cheekWidthMm : null,
       neckToJaw: m.neck && jawWidthMm ? m.neck.widthMm / jawWidthMm : null,
-      neckLeanDeg: p?.neckLeanDeg ?? null,
+      // Beyond ±35° the neck line was fitted to something else (chest, jaw):
+      // no standing neck leans that far, so say nothing rather than that.
+      neckLeanDeg: p?.neckLeanDeg != null && Math.abs(p.neckLeanDeg) <= 35 ? p.neckLeanDeg : null,
       headPitchDeg: p?.headPitchDeg ?? null,
       reachBelowChinMm: m.cn ? reachBelowChinMm(m.profile, m.cn.chinY) : null,
       sides: full.sides,

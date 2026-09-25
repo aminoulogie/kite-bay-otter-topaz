@@ -9,7 +9,8 @@ import { buildMesh, tidy, type MeshData } from "@/lib/aether/cylmesh";
 import { alignOnAnchors } from "@/lib/aether/align3d";
 import { decodeFloat32 } from "@/lib/aether/mesh3d";
 import { METRICS, baselinePair, format, rows, series, sweepScans, type Group, type MetricDef, type Row } from "@/lib/aether/results";
-import { cloudKey, cylKey, type ScanRecord } from "@/lib/aether/scan-store";
+import { cloudKey, cylKey, rawKey, type ScanRecord } from "@/lib/aether/scan-store";
+import { saveBackupFile } from "@/lib/backup";
 import { loadScanImage } from "@/lib/habit-photos";
 import { cn } from "@/lib/utils";
 import { useSoma } from "@/lib/store";
@@ -329,6 +330,8 @@ export function LooksResults({
           )}
 
           {first && def && <BeforeAfter first={first} latest={latest} def={def} />}
+
+          <ExportRaw scanId={latest.id} date={latest.date} />
         </>
       )}
     </div>
@@ -410,6 +413,43 @@ function NeckTape({ active, onPick }: { active: boolean; onPick: () => void }) {
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * The newest full scan's raw frames as a file — to send for troubleshooting,
+ * so a side that will not line up can be replayed and fixed off the phone.
+ */
+function ExportRaw({ scanId, date }: { scanId: string; date: string }) {
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const raw = await loadScanImage(rawKey(scanId));
+      if (!raw) {
+        toast.error("No raw data for this scan — only the newest full scan keeps it.");
+        return;
+      }
+      const how = await saveBackupFile(raw, `soma-scan-${date}.json`);
+      toast.success(how === "shared" ? "Scan data ready to send" : "Scan data downloaded");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not export the scan.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => void run()}
+      className="w-full rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-left text-xs disabled:opacity-50"
+    >
+      <span className="font-bold">{busy ? "Preparing…" : "Export this scan's raw data"}</span>
+      <span className="block text-[0.62rem] text-faint">
+        A file with the depth frames exactly as captured — send it for troubleshooting. Only the newest full scan keeps it.
+      </span>
+    </button>
   );
 }
 
