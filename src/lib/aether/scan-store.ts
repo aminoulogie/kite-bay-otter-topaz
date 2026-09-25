@@ -247,3 +247,51 @@ export function evennessTrend(scans: ScanRecord[]): { date: string; evenness: nu
     .filter((p) => Number.isFinite(p.evenness))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
+
+/** The Scans list's filter chips. */
+export type ScanFilter = "all" | "front" | "oblique" | "left" | "right" | "3d";
+
+export const SCAN_FILTERS: { id: ScanFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "front", label: "Front" },
+  { id: "oblique", label: "45°" },
+  { id: "left", label: "Side L" },
+  { id: "right", label: "Side R" },
+  { id: "3d", label: "3D" },
+];
+
+/** Whether a capture belongs under a filter chip. 2D chips leave 3D scans out. */
+export function matchesFilter(scan: ScanRecord, f: ScanFilter): boolean {
+  const is3d = !!scan.depth;
+  switch (f) {
+    case "all": return true;
+    case "3d": return is3d;
+    case "front": return !is3d && scan.kind === "face_front_true";
+    case "oblique": return !is3d && scan.kind === "face_oblique";
+    case "left": return !is3d && scan.kind === "face_side" && scan.side === "left";
+    case "right": return !is3d && scan.kind === "face_side" && (scan.side ?? "right") === "right";
+  }
+}
+
+/**
+ * The captures a story steps through: the exact same position (front, 45°,
+ * left or right profile — and 3D kept apart from 2D), oldest first, every
+ * capture rather than one per day.
+ */
+export function storyOf(scans: ScanRecord[], current: ScanRecord): {
+  list: ScanRecord[];
+  index: number;
+  prev: ScanRecord | null;
+  next: ScanRecord | null;
+} {
+  const key = (s: ScanRecord) => `${scanSlot(s)}${s.depth ? ":3d" : ""}`;
+  const k = key(current);
+  const list = scans.filter((s) => key(s) === k).sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
+  const index = list.findIndex((s) => s.id === current.id);
+  return {
+    list,
+    index,
+    prev: index > 0 ? list[index - 1]! : null,
+    next: index >= 0 && index < list.length - 1 ? list[index + 1]! : null,
+  };
+}

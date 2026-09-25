@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { SwipeRow } from "@/components/SwipeRow";
-import { bodyKey, cloudKey, cylKey, depthGridKey, latestByKind, meshKey, misfiledAs, needsReanalysis, newestFirst, evennessTrend, type ScanRecord } from "@/lib/aether/scan-store";
+import { bodyKey, cloudKey, cylKey, depthGridKey, latestByKind, meshKey, misfiledAs, needsReanalysis, newestFirst, evennessTrend, matchesFilter, SCAN_FILTERS, type ScanFilter, type ScanRecord } from "@/lib/aether/scan-store";
 import { trueDepthAvailable } from "@/lib/native/face-depth";
 import { bodyScanAvailable, type BodyScanMode } from "@/lib/native/body-depth";
 import { leftRightDiffPct, type Segment } from "@/lib/aether/body3d";
@@ -75,6 +75,7 @@ export function LooksView() {
   const [open, setOpen] = useState<ScanRecord | null>(null);
   const [comparing, setComparing] = useState(false);
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [filter, setFilter] = useState<ScanFilter>("all");
   const [redo, setRedo] = useState<{ done: number; total: number } | null>(null);
   const addScan = useSoma((s) => s.addScan);
   // Results first once there is a full scan to show; the scan list otherwise.
@@ -163,6 +164,7 @@ export function LooksView() {
 
   const today = getLocalDateKey(new Date());
   const rows = useMemo(() => newestFirst(scans), [scans]);
+  const shown = useMemo(() => rows.filter((x) => matchesFilter(x, filter)), [rows, filter]);
   const latest = useMemo(() => latestByKind(scans), [scans]);
   const trend = useMemo(() => evennessTrend(scans), [scans]);
   const front = latest.get("face_front_true");
@@ -526,13 +528,33 @@ export function LooksView() {
             </button>
           )}
         </div>
+        {rows.length > 0 && (
+          <div className="-mx-1 mb-2 flex gap-1.5 overflow-x-auto px-1 pb-1" data-no-swipe-nav>
+            {SCAN_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                aria-pressed={filter === f.id}
+                onClick={() => setFilter(f.id)}
+                className={cn(
+                  "shrink-0 rounded-full border px-3 py-1 text-[0.7rem] font-bold",
+                  filter === f.id ? "border-transparent bg-fg text-bg" : "border-border bg-surface-2 text-muted",
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
         {rows.length === 0 ? (
           <p className="py-2 text-center text-xs text-faint">
             Captures land here, on the calendar, and in your backup.
           </p>
+        ) : shown.length === 0 ? (
+          <p className="py-2 text-center text-xs text-faint">No captures in this position yet.</p>
         ) : (
           <div className="space-y-1.5">
-            {rows.slice(0, 40).map((sc) => (
+            {shown.slice(0, 60).map((sc) => (
               <SwipeRow
                 key={sc.id}
                 id={sc.id}

@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { loadScanImage } from "@/lib/habit-photos";
-import { nextPhotoDate, positionIn, prevPhotoDate } from "@/lib/photo-nav";
-import { evennessOf, type ScanRecord } from "@/lib/aether/scan-store";
+import { evennessOf, storyOf, type ScanRecord } from "@/lib/aether/scan-store";
 import {
   distinctiveness, distinctivenessLabel, harmonySummary, regionPercent, symmetryPercent,
 } from "@/lib/aether/harmony";
@@ -37,51 +36,39 @@ export function FaceFileSheet({
   const face = scan.face;
 
   /**
-   * Stepping stays within one pose.
-   *
-   * A front shot and a profile are not two frames of the same sequence — going
-   * from one to the other and calling it "the next day" would put two
-   * unrelated measurements side by side and invite exactly the comparison the
-   * Compare screen refuses to make.
+   * Stepping stays within one exact position — front, 45°, left or right
+   * profile, 3D apart from 2D — and goes capture by capture, oldest to
+   * newest, like stories. A front shot and a profile are not two frames of
+   * the same sequence.
    */
-  const sameKind = useMemo(
-    () => (siblings ?? []).filter((s) => s.kind === scan.kind),
-    [siblings, scan.kind],
-  );
-  const byDate = useMemo(() => {
-    const m = new Map<string, ScanRecord>();
-    for (const s of sameKind) if (!m.has(s.date)) m.set(s.date, s);
-    return m;
-  }, [sameKind]);
-  const dates = useMemo(() => [...byDate.keys()], [byDate]);
-
-  const prevDate = prevPhotoDate(dates, scan.date);
-  const nextDate = nextPhotoDate(dates, scan.date);
-  const at = positionIn(dates, scan.date);
+  const story = useMemo(() => storyOf(siblings ?? [], scan), [siblings, scan]);
+  const { prev, next } = story;
+  const at = { index: story.index < 0 ? null : story.index, total: story.list.length };
 
   const go = useCallback(
-    (d: string | null) => {
-      const target = d ? byDate.get(d) : null;
+    (target: ScanRecord | null) => {
       if (target && onGo) onGo(target);
     },
-    [byDate, onGo],
+    [onGo],
   );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowLeft") { go(prevDate); e.preventDefault(); }
-      else if (e.key === "ArrowRight") { go(nextDate); e.preventDefault(); }
+      if (e.key === "ArrowLeft") { go(prev); e.preventDefault(); }
+      else if (e.key === "ArrowRight") { go(next); e.preventDefault(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, prevDate, nextDate]);
+  }, [go, prev, next]);
 
   const touch = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
+    // The previous photo stays up until this one has loaded, so stepping
+    // does not flash an empty frame.
     void loadScanImage(scan.id).then((url) => {
-      if (alive) setImage(url);
+      if (alive && url) setImage(url);
     });
     return () => {
       alive = false;
@@ -97,7 +84,7 @@ export function FaceFileSheet({
         <div className="min-w-0">
           <div className="truncate font-display text-sm font-extrabold">Face File</div>
           <div className="text-[0.65rem] font-bold uppercase tracking-wider text-faint">
-            {scan.date} · {scan.kind.replace("face_", "").replace("_", " ")}
+            {scan.date} · {positionLabel(scan)}
           </div>
         </div>
         <button type="button" onClick={onClose} aria-label="Close">
@@ -122,7 +109,7 @@ export function FaceFileSheet({
               const dx = t.clientX - start.x;
               const dy = t.clientY - start.y;
               if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-              go(dx < 0 ? nextDate : prevDate);
+              go(dx < 0 ? next : prev);
             }}
           >
             <img
@@ -133,35 +120,37 @@ export function FaceFileSheet({
             />
             {at.total > 1 && (
               <>
+                {/* Stories: one bar per capture of this position, filled up
+                    to this one. Left third taps back, the rest forward. */}
+                <div className="pointer-events-none absolute inset-x-2 top-2 flex gap-1">
+                  {story.list.map((x, i) => (
+                    <span
+                      key={x.id}
+                      className={cn(
+                        "h-[3px] flex-1 rounded-full",
+                        i <= (at.index ?? -1) ? "bg-white" : "bg-white/35",
+                      )}
+                    />
+                  ))}
+                </div>
                 <button
                   type="button"
-                  aria-label={prevDate ? `Earlier ${scan.kind}, ${prevDate}` : "No earlier capture"}
-                  disabled={!prevDate}
-                  onClick={() => go(prevDate)}
-                  className="absolute inset-y-0 left-0 grid w-1/3 place-items-start px-2 disabled:pointer-events-none"
-                >
-                  <ChevronLeft
-                    className={cn(
-                      "mt-[45%] size-7 rounded-full bg-black/45 p-1 text-white",
-                      !prevDate && "opacity-0",
-                    )}
-                  />
-                </button>
+                  aria-label={prev ? `Earlier capture, ${prev.date}` : "No earlier capture"}
+                  disabled={!prev}
+                  onClick={() => go(prev)}
+                  className="absolute inset-y-0 left-0 w-1/3 disabled:pointer-events-none"
+                />
                 <button
                   type="button"
-                  aria-label={nextDate ? `Later ${scan.kind}, ${nextDate}` : "No later capture"}
-                  disabled={!nextDate}
-                  onClick={() => go(nextDate)}
-                  className="absolute inset-y-0 right-0 grid w-2/3 place-items-end px-2 disabled:pointer-events-none"
-                >
-                  <ChevronRight
-                    className={cn(
-                      "mt-[45%] size-7 rounded-full bg-black/45 p-1 text-white",
-                      !nextDate && "opacity-0",
-                    )}
-                  />
-                </button>
-                <span className="absolute bottom-2 right-2 rounded-full bg-black/55 px-2 py-0.5 text-[0.6rem] font-bold tabular text-white">
+                  aria-label={next ? `Later capture, ${next.date}` : "No later capture"}
+                  disabled={!next}
+                  onClick={() => go(next)}
+                  className="absolute inset-y-0 right-0 w-2/3 disabled:pointer-events-none"
+                />
+                <span className="pointer-events-none absolute bottom-2 left-2 rounded-full bg-black/55 px-2 py-0.5 text-[0.6rem] font-bold tabular text-white">
+                  {scan.date} {scan.capturedAt.slice(11, 16)}
+                </span>
+                <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-black/55 px-2 py-0.5 text-[0.6rem] font-bold tabular text-white">
                   {(at.index ?? 0) + 1}/{at.total}
                 </span>
               </>
@@ -169,10 +158,14 @@ export function FaceFileSheet({
           </div>
         )}
 
+        <StoryNumbers scan={scan} prev={prev} />
+
         {!face ? (
-          <Card>
-            <p className="text-xs text-faint">This capture has no face analysis.</p>
-          </Card>
+          !scan.posture && (
+            <Card>
+              <p className="text-xs text-faint">This capture has no face analysis.</p>
+            </Card>
+          )
         ) : (
           <>
             {scan.harmony && distinctiveness(scan.harmony) && (
@@ -505,5 +498,58 @@ export function FaceFileSheet({
         )}
       </div>
     </div>
+  );
+}
+
+function positionLabel(scan: ScanRecord): string {
+  const base =
+    scan.kind === "face_side"
+      ? scan.side === "left" ? "Side L" : "Side R"
+      : scan.kind === "face_oblique" ? "45°" : scan.kind === "face_front_true" ? "Front" : scan.kind.replace("_", " ");
+  return scan.depth ? `${base} · 3D` : base;
+}
+
+/**
+ * The headline numbers of this capture, and how each moved since the capture
+ * before it in the same position — so stepping through the story shows the
+ * change, not just the picture.
+ */
+function StoryNumbers({ scan, prev }: { scan: ScanRecord; prev: ScanRecord | null }) {
+  const rows: { label: string; now: number; before: number | null; unit: string; digits: number }[] = [];
+  const add = (label: string, get: (s: ScanRecord) => number | null | undefined, unit: string, digits: number) => {
+    const now = get(scan);
+    if (now == null || !Number.isFinite(now)) return;
+    const b = prev ? get(prev) : null;
+    rows.push({ label, now, before: b == null || !Number.isFinite(b) ? null : b, unit, digits });
+  };
+  add("Neck angle", (s) => s.posture?.cvaEst, "°", 1);
+  add("Symmetry", (s) => (s.face ? symmetryPercent(s.face.alpha) : null), "%", 0);
+  add("3D asymmetry", (s) => s.depth?.raw?.rmsMm ?? s.depth?.symmetryRmsMm, " mm", 2);
+  add("Face width", (s) => s.depth?.faceWidthMm, " mm", 1);
+  if (!rows.length) return null;
+  return (
+    <Card>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+        {rows.map((r) => {
+          const d = r.before == null ? null : r.now - r.before;
+          return (
+            <div key={r.label}>
+              <div className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">{r.label}</div>
+              <div className="tabular font-display text-lg font-extrabold">
+                {r.now.toFixed(r.digits)}
+                {r.unit}
+                {d != null && (
+                  <span className="ml-1.5 text-[0.7rem] font-bold text-faint">
+                    {d >= 0 ? "+" : "−"}
+                    {Math.abs(d).toFixed(r.digits)}
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {prev && <p className="mt-2 text-[0.65rem] text-faint">Change since {prev.date}.</p>}
+    </Card>
   );
 }

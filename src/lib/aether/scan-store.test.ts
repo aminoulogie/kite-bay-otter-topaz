@@ -68,3 +68,26 @@ test("real front scans, 3D scans and non-front scans stay where they are", () =>
   assert.equal(misfiledAs({ ...front(faceAt(40, 0.4)), depth: {} as never }), null);
   assert.equal(misfiledAs({ ...front(faceAt(40, 0.4)), kind: "face_oblique" }), null);
 });
+
+test("a story steps through the exact same position only, oldest first", async () => {
+  const { storyOf, matchesFilter } = await import("./scan-store.ts");
+  const mk = (id: string, at: string, kind: string, side?: "left" | "right", depth = false) =>
+    ({ id, date: at.slice(0, 10), capturedAt: at, kind, side, ...(depth ? { depth: {} } : {}) }) as never;
+  const scans = [
+    mk("L1", "2026-09-01T10:00", "face_side", "left"),
+    mk("R1", "2026-09-01T10:01", "face_side", "right"),
+    mk("L2", "2026-09-01T18:00", "face_side", "left"),
+    mk("F1", "2026-09-02T10:00", "face_front_true"),
+    mk("D1", "2026-09-02T11:00", "face_front_true", undefined, true),
+    mk("L3", "2026-09-03T10:00", "face_side", "left"),
+  ];
+  const s = storyOf(scans, scans[2]!);
+  assert.deepEqual(s.list.map((x: { id: string }) => x.id), ["L1", "L2", "L3"], "same day kept, right side left out");
+  assert.equal((s.prev as { id: string } | null)?.id, "L1");
+  assert.equal((s.next as { id: string } | null)?.id, "L3");
+  assert.deepEqual(storyOf(scans, scans[3]!).list.map((x: { id: string }) => x.id), ["F1"], "3D apart from 2D");
+  assert.equal(matchesFilter(scans[4]!, "front"), false);
+  assert.equal(matchesFilter(scans[4]!, "3d"), true);
+  assert.equal(matchesFilter(scans[1]!, "right"), true);
+  assert.equal(matchesFilter(scans[1]!, "left"), false);
+});
