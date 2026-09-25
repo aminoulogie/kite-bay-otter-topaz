@@ -77,6 +77,13 @@ const BASE_EXERCISE_DB = [
   { name: "Dumbbell Lateral Raise", muscle: "Shoulders", subTarget: "Side Delt (Lateral)", targetKeys: ["deltoids", "deltoids_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },
   { name: "Face Pulls", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back", "trapezius_back", "trapezius"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Reverse Pec Deck", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back"], position: "Lengthened & Shortened", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  // Neck: light, slow and high-rep. Start with hand resistance before any plate
+  // or harness, and stop for pain that travels into the arms, numbness or
+  // dizziness. Risk is "Moderate" for load, not for the movement done right.
+  { name: "Lying Neck Flexion", muscle: "Neck", subTarget: "Neck Flexors (Front)", targetKeys: ["neck"], position: "Lengthened & Shortened", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: true },
+  { name: "Lying Neck Extension", muscle: "Neck", subTarget: "Neck Extensors (Back)", targetKeys: ["neck", "trapezius", "trapezius_back"], position: "Lengthened & Shortened", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: true },
+  { name: "Lateral Neck Flexion", muscle: "Neck", subTarget: "Neck Lateral Flexors", targetKeys: ["neck"], position: "Lengthened & Shortened", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: true },
+  { name: "Neck Harness Extension", muscle: "Neck", subTarget: "Neck Extensors (Back)", targetKeys: ["neck", "trapezius", "trapezius_back"], position: "Lengthened & Shortened", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false },
 
   // ARMS
   { name: "Standing Barbell / EZ-Bar Curl", muscle: "Biceps", subTarget: "Overall Biceps", targetKeys: ["biceps"], position: "Mid-Range", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },

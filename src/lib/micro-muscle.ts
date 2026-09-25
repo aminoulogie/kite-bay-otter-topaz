@@ -62,6 +62,9 @@ const SUBTARGET_BY_NAME = new Map<string, { subTarget: string; muscle: string }>
  * one micro-muscle.
  */
 const KEYWORD_SUBTARGETS: { pattern: RegExp; subTarget: string; muscle: string }[] = [
+  { pattern: /\bneck\b.*(ext|back)|(ext|back).*\bneck\b/i, subTarget: "Neck Extensors (Back)", muscle: "Neck" },
+  { pattern: /lateral.*\bneck\b|\bneck\b.*(lateral|side)/i, subTarget: "Neck Lateral Flexors", muscle: "Neck" },
+  { pattern: /\bneck\b/i, subTarget: "Neck Flexors (Front)", muscle: "Neck" },
   { pattern: /incline.*(bench|press)|press.*incline/i, subTarget: "Upper Pec (Clavicular)", muscle: "Chest" },
   { pattern: /decline.*(bench|press)/i, subTarget: "Lower Pec (Costal)", muscle: "Chest" },
   { pattern: /\bdips?\b/i, subTarget: "Lower Pec (Costal)", muscle: "Chest" },
