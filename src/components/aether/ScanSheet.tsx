@@ -15,7 +15,7 @@ import {
 } from "@/lib/aether/mediapipe";
 import { canvasFromDataUrl, measureCanvas, measurePosture } from "@/lib/aether/measure";
 import {
-  cropForView, distanceCue, faceSquare, guide, irisSize, laplacianVariance, mergeSymmetry, rankFrames,
+  coverRect, cropForView, distanceCue, faceSquare, guide, irisSize, laplacianVariance, mergeSymmetry, rankFrames,
   screenCue, smoothSquare, turnedSide, type FaceSquare, type Guidance,
 } from "@/lib/aether/assist";
 import { AssistAudio } from "@/lib/aether/assist-audio";
@@ -61,15 +61,29 @@ interface AssistSettings {
   lock: boolean;
   /** Show the last scan of this pose faintly over the preview, to line up with. */
   ghost: boolean;
+  /** Front ring light: how far the warm frame reaches in, % of the window's width. */
+  glow: number;
+  /** Settings format; see loadSettings. */
+  v?: number;
 }
 
 const SETTINGS_KEY = "soma-scan-assist";
-const DEFAULT_SETTINGS: AssistSettings = { facing: "user", zoom: 2, flash: false, sound: true, voice: true, lock: true, ghost: true };
+const SETTINGS_V = 2;
+const DEFAULT_SETTINGS: AssistSettings = {
+  facing: "user", zoom: 2, flash: false, sound: true, voice: true, lock: true, ghost: false, glow: 12, v: SETTINGS_V,
+};
+const GLOW_MIN = 4;
+const GLOW_MAX = 34;
 
 function loadSettings(): AssistSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    return raw ? { ...DEFAULT_SETTINGS, ...(JSON.parse(raw) as Partial<AssistSettings>) } : DEFAULT_SETTINGS;
+    if (!raw) return DEFAULT_SETTINGS;
+    const saved = JSON.parse(raw) as Partial<AssistSettings>;
+    // Ghost used to default on, and a faint old photo over the live picture
+    // read as a frozen camera. Settings saved before v2 start with it off.
+    if (saved.v !== SETTINGS_V) saved.ghost = false;
+    return { ...DEFAULT_SETTINGS, ...saved, v: SETTINGS_V };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -213,6 +227,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [burstPct, setBurstPct] = useState(0);
   const [hud, setHud] = useState<Quality | null>(null);
   const [square, setSquare] = useState<FaceSquare | null>(null);
+  /** The camera's real frame size, to place the video by hand (see coverRect). */
+  const [videoSize, setVideoSize] = useState<[number, number]>([0, 0]);
+  const [hasTrueDepth, setHasTrueDepth] = useState(false);
   const [status, setStatus] = useState("Open the camera. Front → 45° → profile.");
   const [pose, setPose] = useState<{ yaw: number; roll: number; pitch: number } | null>(null);
   const [autoFire, setAutoFire] = useState(true);
@@ -312,6 +329,18 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   // Hold fills the first half of the ring, the burst the second.
   const ringProgress = busy ? 0.5 + burstPct / 200 : (holding / HOLD_FRAMES) * 0.5;
   const frontGlow = settings.flash && settings.facing === "user" && live;
+
+  // Open the camera with the sheet: the tap on Scan is the gesture that asks
+  // for it. Sound needs a gesture of its own on iOS, so the first touch
+  // anywhere on the sheet unlocks it.
+  useEffect(() => {
+    void startCam();
+    void import("@/lib/native/face-depth").then((m) => m.trueDepthAvailable()).then(setHasTrueDepth);
+    const unlock = () => audioRef.current?.enable();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    return () => window.removeEventListener("pointerdown", unlock);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The camera and the animation frame both have to stop when this closes, or
   // the light stays on and the loop keeps running behind the diary.
@@ -442,6 +471,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     } catch {
       // Autoplay refusal on a muted inline video is rare and not fatal.
     }
+    setVideoSize([videoRef.current.videoWidth, videoRef.current.videoHeight]);
     setLive(true);
     setHwZoom(!!tele || applyTrackZoom(stream, want.zoom));
 
@@ -468,6 +498,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       const video = videoRef.current;
       const small = smallRef.current;
       if (!video || !small || video.readyState < 2) return;
+      setVideoSize((cur) =>
+        cur[0] === video.videoWidth && cur[1] === video.videoHeight ? cur : [video.videoWidth, video.videoHeight],
+      );
       // The same centre crop the preview shows and the capture keeps, so the
       // landmarks, the guides and the saved photo all describe one frame.
       const c = cropForView(video.videoWidth, video.videoHeight, liveRefs.current.zoom);
@@ -733,6 +766,36 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   captureRef.current = capture;
 
   /**
+   * The Front step on the Face ID camera. ARKit needs that camera to itself,
+   * so the preview stops for the scan and comes back after.
+   */
+  async function trueDepthFront() {
+    cancelAnimationFrame(rafRef.current);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setLive(false);
+    setBusy(true);
+    try {
+      const { runTrueDepthScan } = await import("@/lib/aether/truedepth-scan");
+      audio.enable();
+      const record = await runTrueDepthScan(audio);
+      addScan(record);
+      toast.success(
+        record.depth?.raw
+          ? `3D front saved · raw asymmetry ${record.depth.raw.rmsMm.toFixed(2)} mm`
+          : "3D front saved",
+      );
+      if (step === 0) setStep(1);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "3D scan failed.";
+      if (!/cancelled/i.test(msg)) toast.error(msg);
+    } finally {
+      setBusy(false);
+      void startCam();
+    }
+  }
+
+  /**
    * A still from the library: find the face, open the aligner already lined
    * up on it, and measure only once it sits on the guides.
    */
@@ -857,21 +920,17 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         {/* One fixed 3:4 window, whatever shape the camera delivers: the frame
             is centre-cropped to 3:4 for the preview, the analysis and the
             saved photo alike, so what you see is exactly what is measured. */}
-        <div
-          className="relative mx-auto aspect-[3/4] w-full max-w-[calc(64svh*0.75)] overflow-hidden rounded-2xl border border-border bg-black transition-shadow"
-          style={
-            frontGlow
-              ? // A ring light while you frame: the screen round the window lights your face.
-                { boxShadow: `0 0 0 10px ${FLASH_COLOR}, 0 0 36px 16px ${FLASH_COLOR}` }
-              : undefined
-          }
-        >
+        <div className="relative mx-auto aspect-[3/4] w-full max-w-[calc(64svh*0.75)] overflow-hidden rounded-2xl border border-border bg-black">
           {/* Mirrored for the front camera only, and scaled by the digital zoom
               so the preview shows exactly the centre crop that is analysed. */}
           <video
             ref={videoRef}
-            className="absolute inset-0 size-full object-cover"
+            className="absolute max-h-none max-w-none"
             style={{
+              ...(() => {
+                const r = coverRect(videoSize[0], videoSize[1]);
+                return { width: `${r.width}%`, height: `${r.height}%`, left: `${r.left}%`, top: `${r.top}%` };
+              })(),
               transform: `scale(${(settings.facing === "user" ? -1 : 1) * (hwZoom ? 1 : settings.zoom)}, ${hwZoom ? 1 : settings.zoom})`,
             }}
             playsInline
@@ -881,7 +940,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           <canvas ref={smallRef} className="hidden" />
           {!live && (
             <div className="absolute inset-0 grid place-items-center text-xs font-bold text-white/50">
-              Tap Camera to start
+              Opening the camera…
             </div>
           )}
           {ghostUrl && live && (
@@ -892,6 +951,23 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
               aria-hidden
               className="pointer-events-none absolute inset-0 size-full object-cover opacity-30"
               style={{ transform: settings.facing === "user" ? "scaleX(-1)" : undefined }}
+            />
+          )}
+
+          {frontGlow && (
+            // Ring light: a warm frame INSIDE the window, thicker toward the
+            // middle as the slider goes up. The window keeps its place, so
+            // nothing above or below is covered.
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0"
+              style={{
+                padding: `${settings.glow}%`,
+                background: FLASH_COLOR,
+                WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+                WebkitMaskComposite: "xor",
+                mask: "linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0)",
+              }}
             />
           )}
 
@@ -992,6 +1068,35 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
             </div>
           )}
         </div>
+
+        {frontGlow && (
+          <label className="mt-2 flex items-center gap-3 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+            Ring light
+            <input
+              type="range"
+              min={GLOW_MIN}
+              max={GLOW_MAX}
+              value={settings.glow}
+              onChange={(e) => patchSettings({ glow: Number(e.target.value) })}
+              className="flex-1 accent-[#fff1dc]"
+              data-no-swipe-nav
+            />
+          </label>
+        )}
+
+        {hasTrueDepth && kind === "face_front_true" && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void trueDepthFront()}
+            className="mt-2 w-full rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-left text-xs font-bold text-accent disabled:opacity-50"
+          >
+            Scan the front in 3D with the Face ID camera (TrueDepth)
+            <span className="block text-[0.62rem] font-semibold text-faint">
+              Real millimetres and raw depth. This window uses the normal camera.
+            </span>
+          </button>
+        )}
 
         <p className="mt-2 text-xs text-muted">{status}</p>
 

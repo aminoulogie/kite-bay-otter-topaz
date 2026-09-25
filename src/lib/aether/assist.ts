@@ -252,6 +252,28 @@ export function cropForView(width: number, height: number, zoom: number, aspect 
   return { sx: Math.round((width - sw) / 2), sy: Math.round((height - sh) / 2), sw, sh };
 }
 
+/**
+ * Where to put the camera <video> so it covers the window, as percentages of
+ * the window: object-fit: cover done by hand. iOS WebKit does not reliably
+ * apply object-fit to a live camera video, which showed as black bars — and
+ * then the face tracker, measured on the 3:4 crop, drew in the wrong place.
+ * The visible part is the same centred 3:4 region cropForView takes.
+ */
+export function coverRect(
+  videoWidth: number,
+  videoHeight: number,
+  aspect = VIEW_ASPECT,
+): { width: number; height: number; left: number; top: number } {
+  if (!videoWidth || !videoHeight) return { width: 100, height: 100, left: 0, top: 0 };
+  const va = videoWidth / videoHeight;
+  if (va > aspect) {
+    const width = (va / aspect) * 100;
+    return { width, height: 100, left: (100 - width) / 2, top: 0 };
+  }
+  const height = (aspect / va) * 100;
+  return { width: 100, height, left: 0, top: (100 - height) / 2 };
+}
+
 export interface FaceSquare {
   /** Centre, as fractions of the window's width and height. */
   cx: number;
@@ -277,7 +299,7 @@ export function faceSquare(
   }
   if (!Number.isFinite(x0) || x1 <= x0 || y1 <= y0) return null;
   // Heights are fractions of the window's height, which is width / aspect.
-  const side = Math.max(x1 - x0, (y1 - y0) / aspect) * 1.12;
+  const side = Math.max(x1 - x0, (y1 - y0) / aspect) * 1.02;
   const cx = (x0 + x1) / 2;
   return { cx: mirror ? 1 - cx : cx, cy: (y0 + y1) / 2, side };
 }

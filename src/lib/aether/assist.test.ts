@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  beepInterval, cropForView, cropForZoom, faceSquare, guide, screenCue, smoothSquare, laplacianVariance, median, mergeSymmetry, rankFrames, turnedSide,
+  beepInterval, coverRect, cropForView, cropForZoom, faceSquare, guide, screenCue, smoothSquare, laplacianVariance, median, mergeSymmetry, rankFrames, turnedSide,
   type AssistInput,
 } from "./assist.ts";
 
@@ -208,7 +208,7 @@ test("the face square covers the face, square on screen, and mirrors with the pr
   const sq = faceSquare(pts, false)!;
   assert.ok(Math.abs(sq.cx - 0.5) < 1e-9 && Math.abs(sq.cy - 0.45) < 1e-9);
   // 0.3 of the height = 0.4 of the width in a 3:4 window: the taller side wins.
-  assert.ok(Math.abs(sq.side - 0.4 * 1.12) < 1e-9, `${sq.side}`);
+  assert.ok(Math.abs(sq.side - 0.4 * 1.02) < 1e-9, `${sq.side}`);
   assert.ok(Math.abs(faceSquare([{ x: 0.1, y: 0.3 }, { x: 0.3, y: 0.5 }], true)!.cx - 0.8) < 1e-9);
   assert.equal(faceSquare([], false), null);
 });
@@ -227,4 +227,22 @@ test("ring cue: mirror keeps the user's side on screen, the back camera flips it
   assert.equal(screenCue({ ...g, instruction: "chinUp", side: null }, true), "up");
   assert.equal(screenCue({ ...g, instruction: "hold", side: null }, true), null);
   assert.equal(screenCue(null, true), null);
+});
+
+test("the video covers the 3:4 window, centred, showing the same region cropForView keeps", () => {
+  // 16:9 landscape: full height, wider than the window, overhanging both sides equally.
+  const wide = coverRect(1920, 1080);
+  assert.equal(wide.height, 100);
+  assert.ok(Math.abs(wide.width - (1920 / 1080 / 0.75) * 100) < 1e-9);
+  assert.ok(Math.abs(wide.left + (wide.width - 100) / 2) < 1e-9);
+  // The visible share of the frame matches the crop.
+  const c = cropForView(1920, 1080, 1);
+  assert.ok(Math.abs(100 / wide.width - c.sw / 1920) < 1e-3);
+  // Tall 9:16: full width, overhanging top and bottom.
+  const tall = coverRect(1080, 1920);
+  assert.equal(tall.width, 100);
+  assert.ok(tall.height > 100 && tall.top < 0);
+  // Already 3:4: exactly the window.
+  assert.deepEqual(coverRect(1440, 1920), { width: 100, height: 100, left: 0, top: 0 });
+  assert.deepEqual(coverRect(0, 0), { width: 100, height: 100, left: 0, top: 0 });
 });
