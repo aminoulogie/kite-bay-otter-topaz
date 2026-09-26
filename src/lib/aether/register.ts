@@ -449,16 +449,25 @@ export function registerSide(model: PointIndex, frames: RegFrame[], axisZ = -60)
     // ARKit's pose and the forecast both start close; only the very first
     // untracked guess needs the wide search.
     const warm = f.pose !== null || step !== null;
-    // Match on the head and neck only. Side-on at 30 cm the shoulder and
-    // chest can fill most of the frame; they turn with the body but are not
-    // the model, and left in they would drown the head's share of matches.
-    const head = headOnly(f.pts, init, axisZ);
-    if (head.length < 600) {
-      lost++;
-      continue;
+    // Side-on, ARKit is looking at a face it can barely see, and the pose it
+    // reports can be well out — which throws away the frames that matter
+    // most, the holds. So when the preferred start fails, the chain's own
+    // forecast is tried as a second start before the frame is given up on.
+    const starts = init === predicted || !predicted ? [init] : [init, predicted];
+    let r: ReturnType<typeof icp> | null = null;
+    for (const start of starts) {
+      // Match on the head and neck only. Side-on at 30 cm the shoulder and
+      // chest can fill most of the frame; they turn with the body but are not
+      // the model, and left in they would drown the head's share of matches.
+      const head = headOnly(f.pts, start, axisZ);
+      if (head.length < 600) continue;
+      const got = icp(model, head, start, f.stage === "hold" ? 1200 : 600, warm ? WARM : COLD);
+      if (got.inliers >= 0.35 && got.rms <= 4) {
+        r = got;
+        break;
+      }
     }
-    const r = icp(model, head, init, f.stage === "hold" ? 1200 : 600, warm ? WARM : COLD);
-    if (!(r.inliers >= 0.35 && r.rms <= 4)) {
+    if (!r) {
       lost++;
       continue;
     }

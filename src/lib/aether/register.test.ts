@@ -125,3 +125,38 @@ test(name, () => {
     assert.ok(moved < 2, `side-on translation off by ${moved.toFixed(2)} mm`);
   }
 });
+
+test("a hold survives an ARKit pose that is well out, by falling back on the chain", () => {
+  const head = headPoints();
+  const model = new PointIndex(8);
+  for (let i = 0; i < head.length; i += 3) {
+    const t = (Math.atan2(head[i]!, head[i + 2]! + 60) * 180) / Math.PI;
+    if (Math.abs(t) <= 60) model.add(head[i]!, head[i + 1]!, head[i + 2]!);
+  }
+  const at = (deg: number) => pose(deg, 300 * Math.sin((deg * Math.PI) / 180), 0, -60 + 300 * Math.cos((deg * Math.PI) / 180));
+  const frames: { stage: "turn" | "hold"; pts: Float32Array; pose: Mat4 | null }[] = [];
+  const angles = [...Array.from({ length: 19 }, (_, k) => k * 5), 90, 90, 90];
+  angles.forEach((deg, k) => {
+    const truth = at(deg);
+    const hold = k >= angles.length - 3;
+    // Side-on, ARKit still reports a pose, and it can be badly out: it is
+    // fitting a face it can hardly see. Far enough out and the frame's points
+    // land outside the head window and are thrown away before matching even
+    // runs — the scan that came back saying none placed.
+    const reported = hold ? mul(pose(65, 320, 180, 260), truth) : deg <= 40 ? truth : null;
+    frames.push({ stage: hold ? "hold" : "turn", pts: view(head, truth, 0.3, k + 1), pose: reported });
+  });
+  const r = registerSide(model, frames);
+  assert.ok(r.holds.length >= 1, `holds placed (${r.holds.length}), lost ${r.lost}`);
+  // And placed properly, not merely accepted: on the surface, where measuring from.
+  const hold = r.holds[0]!;
+  const truth = at(90);
+  let surf = 0;
+  const count = hold.pts.length / 3;
+  for (let i = 0; i < count; i++) {
+    const [x, y, z] = apply(hold.T, hold.pts[i * 3]!, hold.pts[i * 3 + 1]!, hold.pts[i * 3 + 2]!);
+    const [tx, ty, tz] = apply(truth, hold.pts[i * 3]!, hold.pts[i * 3 + 1]!, hold.pts[i * 3 + 2]!);
+    surf += Math.abs(Math.hypot(x, z + 60) - Math.hypot(tx, tz + 60)) + Math.abs(y - ty);
+  }
+  assert.ok(surf / count < 1.5, `placed surface off by ${(surf / count).toFixed(2)} mm`);
+});
