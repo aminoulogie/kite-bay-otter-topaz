@@ -745,7 +745,7 @@ function sideCore(label: string, st: NonNullable<Full["sides"]>["right"]): strin
         : st.rejectReason === "no overlap"
           ? "didn't overlap the front scan"
           : "fitted too loosely"
-    }. Numbers needing this side are left blank.`;
+    }. ${st.shownOnly ? `${st.shownOnly} of them are drawn on the model, but n` : "N"}umbers needing this side are left blank.`;
   if (st.received && !st.holds)
     return `${label}: none placed — ${st.aligned} of ${st.received} frames matched the model, ${st.lost} lost${st.diag?.outcome ? ` · ${st.diag.outcome}` : ""}`;
   const why = st.diag?.outcome ?? (st.received ? `${st.received} sent, ${st.aligned} placed` : "nothing sent");

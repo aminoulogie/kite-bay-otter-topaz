@@ -100,3 +100,49 @@ test("the nose is meshed whole: steep sides, the drop under the tip, a nostril d
   const full = 2 * 50 * 50;
   assert.ok(m.indices.length / 3 >= full - 4, `${m.indices.length / 3} of ${full} triangles`);
 });
+
+test("tidy closes a hole the shape the camera really drops, and leaves the edge of the scan open", () => {
+  const c = cyl();
+  const map = new Float32Array(W * H).fill(90);
+  // A lash line: four cells wide, six tall — the sort of dropout that was
+  // showing as a black slot beside the eye.
+  for (let j = 12; j < 18; j++) for (let i = 14; i < 18; i++) map[j * W + i] = NaN;
+  // Past column 33 the sweep never reached: open on one side only.
+  for (let j = 0; j < H; j++) for (let i = 33; i < W; i++) map[j * W + i] = NaN;
+  const t = tidy(map, c);
+  for (let j = 12; j < 18; j++)
+    for (let i = 14; i < 18; i++) assert.ok(Number.isFinite(t[j * W + i]!), `lash cell ${i},${j} filled`);
+  assert.ok(Number.isNaN(t[15 * W + 36]!), "the unreached edge stays open");
+});
+
+test("a hole against the edge of the scan is not invented back", () => {
+  const c = cyl();
+  const map = new Float32Array(W * H).fill(90);
+  for (let j = 0; j < 3; j++) for (let i = 0; i < W; i++) map[j * W + i] = NaN; // above the forehead
+  for (let j = 3; j < 6; j++) for (let i = 20; i < 24; i++) map[j * W + i] = NaN; // a notch touching it
+  const t = tidy(map, c);
+  // Nothing encloses the notch from above, so filling it would be inventing
+  // where the head ends, not restoring skin.
+  assert.ok(Number.isNaN(t[4 * W + 21]!), "the outline stays where the data stops");
+});
+
+test("loose shards are dropped, the surface is kept", () => {
+  const c = cyl();
+  const map = new Float32Array(W * H).fill(NaN);
+  // A solid patch of head...
+  for (let j = 0; j < 20; j++) for (let i = 0; i < 20; i++) map[j * W + i] = 90;
+  // ...and a speckle of neck cells far below it, too sparse to be surface.
+  for (let j = 26; j < 30; j++) for (let i = 30; i < 34; i++) map[j * W + i] = 70;
+  const m = buildMesh(map, c, -60, 1, undefined, -1000);
+  const ys = [...m.indices].map((v) => m.positions[v * 3 + 1]!);
+  assert.ok(m.indices.length > 300, `surface kept (${m.indices.length / 3} triangles)`);
+  assert.ok(Math.max(...ys) <= 19 * 1.5 + 1e-6, "no shard from the speckle");
+});
+
+test("a scan that is all speckle still shows its biggest piece", () => {
+  const c = cyl();
+  const map = new Float32Array(W * H).fill(NaN);
+  for (let j = 4; j < 8; j++) for (let i = 4; i < 8; i++) map[j * W + i] = 90;
+  const m = buildMesh(map, c, -60, 1, undefined, -1000);
+  assert.ok(m.indices.length > 0, "not an empty box");
+});

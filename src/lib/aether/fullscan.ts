@@ -356,6 +356,16 @@ export function judgeHold(
  */
 export const POSTURE_LIMITS = { fitMm: 3, inliers: 0.4, overlapMm: 3 };
 
+/**
+ * A hold that misses HOLD_LIMITS is not good enough to measure from, but a
+ * near miss still knows where the neck is. Holds that land inside these wider
+ * limits are SHOWN and never measured: they go to the point cloud only, so
+ * the model has a neck to look at while every number needing that side stays
+ * blank. Half a centimetre out is nothing to a picture of a neck and far too
+ * much for a millimetre of asymmetry, which is the whole reason for the split.
+ */
+export const SHOW_LIMITS = { fitMm: 3, inliers: 0.4, overlapMm: 5 };
+
 /** What the side views saw beyond the head: neck, shoulders, upper back — for showing, as points. */
 export const CLOUD_LIMITS = { yMinMm: -520, yMaxMm: 140, reachMm: 330, voxelMm: 3 };
 
@@ -399,6 +409,8 @@ export interface SideStats {
   postureUsed?: number;
   /** Holds placed but not used, and the most common reason. */
   rejected?: number;
+  /** Rejected holds near enough to draw: in the model's point cloud, in no number. */
+  shownOnly?: number;
   rejectReason?: HoldVerdict;
   /** Median distance of used holds from the front scan where both overlap, mm. */
   overlapMm?: number | null;
@@ -443,6 +455,7 @@ export function extendWithSides(
     const reasons = new Map<HoldVerdict, number>();
     const overlaps: number[] = [];
     const missed: number[] = [];
+    let shown = 0;
     for (const placed of r.holds) {
       const h = refineOnFront(placed, frontModel, axisZ);
       const j = judgeHold(h, front, c, axisZ);
@@ -452,7 +465,14 @@ export function extendWithSides(
         cloudFrames.push(h);
         used++;
         overlaps.push(j.overlapMm!);
-      } else reasons.set(j.verdict, (reasons.get(j.verdict) ?? 0) + 1);
+        continue;
+      }
+      reasons.set(j.verdict, (reasons.get(j.verdict) ?? 0) + 1);
+      // Too far off to measure from, close enough to draw: the cloud only.
+      if (judgeHold(h, front, c, axisZ, SHOW_LIMITS).verdict === "used") {
+        cloudFrames.push(h);
+        shown++;
+      }
     }
     let postureUsed = 0;
     for (const placed of r.posture) {
@@ -471,6 +491,7 @@ export function extendWithSides(
       ...(missed.length ? { rejectedOverlapMm: missed.sort((x, y) => x - y)[missed.length >> 1]! } : {}),
       ...(r.posture.length ? { postureUsed } : {}),
       rejected: r.holds.length - used,
+      ...(shown ? { shownOnly: shown } : {}),
       ...(top ? { rejectReason: top[0] } : {}),
       overlapMm: overlaps.length ? overlaps.sort((x, y) => x - y)[overlaps.length >> 1]! : null,
       fitMm: r.meanRmsMm,

@@ -30,36 +30,84 @@ const BASE: [number, number, number] = [0.72, 0.74, 0.78];
 const MAX_EDGE_MM = 14;
 
 /**
- * For DISPLAY only — the numbers are always read from the raw surface. Small
- * holes (cells missing with about half their 5×5 neighbours present, a few
- * passes deep) are filled with their mean, then every cell is averaged with the neighbours that sit
- * within 3 mm of it, so the model reads as skin rather than gravel without
- * rounding off real edges like the jaw line.
+ * A hole is a dropout when data ENCLOSES it — a finite cell on both sides
+ * along the row AND along the column — and the tighter of those two brackets
+ * is no wider than this. Enclosure is what separates the nostril or lash line
+ * the depth camera lost, which has skin all round it, from the place the
+ * sweep never reached, which is open to the edge of the scan however narrow
+ * it looks in one direction.
+ */
+const FILL_SPAN_MM = 20;
+
+/** A bracket wider than this is not evidence of anything, whichever way it runs. */
+const ENCLOSE_SPAN_MM = 70;
+
+/** A distance in mm as cells of this grid, each way. */
+function cellsFor(c: Cylinder, mm: number): { cols: number; rows: number } {
+  // Columns are an angle, so their width depends on the radius; a head is
+  // about 100 mm from the axis, which is close enough to size a hole by.
+  const colMm = (100 * c.thetaStepDeg * Math.PI) / 180;
+  return { cols: Math.max(1, Math.round(mm / colMm)), rows: Math.max(1, Math.round(mm / c.yStepMm)) };
+}
+
+/**
+ * Missing cells that are enclosed by data get it back, by interpolation
+ * across the hole, with the tighter bracket weighted more heavily — across a
+ * lash line that is the four millimetres of cheek either side of it, not the
+ * forehead and the jaw thirty millimetres up and down.
+ *
+ * Read from the ORIGINAL map, never from what an earlier pass filled in, so
+ * a region the sweep never reached cannot close a cell at a time from its
+ * edges: what was not seen stays a hole rather than becoming made-up surface.
+ */
+function fillHoles(map: Float32Array, c: Cylinder): Float32Array {
+  const W = c.width, H = c.height;
+  const span = cellsFor(c, FILL_SPAN_MM);
+  const reach = cellsFor(c, ENCLOSE_SPAN_MM);
+  const out = map.slice();
+  for (let j = 0; j < H; j++) {
+    for (let i = 0; i < W; i++) {
+      if (Number.isFinite(map[j * W + i]!)) continue;
+      // The nearest data each way, and how many cells off it is.
+      const walk = (di: number, dj: number, limit: number) => {
+        for (let s = 1; s <= limit; s++) {
+          const ii = i + di * s, jj = j + dj * s;
+          if (ii < 0 || ii >= W || jj < 0 || jj >= H) return null;
+          const v = map[jj * W + ii]!;
+          if (Number.isFinite(v)) return { v, s };
+        }
+        return null;
+      };
+      const across = ([di, dj, limit]: readonly [number, number, number]) => {
+        const lo = walk(-di, -dj, limit);
+        const hi = walk(di, dj, limit);
+        if (!lo || !hi) return null;
+        return { v: (lo.v * hi.s + hi.v * lo.s) / (lo.s + hi.s), cells: lo.s + hi.s };
+      };
+      const row = across([1, 0, reach.cols] as const);
+      const col = across([0, 1, reach.rows] as const);
+      // Enclosed both ways, or it is the edge of the scan, not a dropout.
+      if (!row || !col) continue;
+      const rowMm = (row.cells * FILL_SPAN_MM) / span.cols;
+      const colMm = (col.cells * FILL_SPAN_MM) / span.rows;
+      if (Math.min(rowMm, colMm) > FILL_SPAN_MM) continue;
+      const wr = 1 / rowMm, wc = 1 / colMm;
+      out[j * W + i] = (row.v * wr + col.v * wc) / (wr + wc);
+    }
+  }
+  return out;
+}
+
+/**
+ * For DISPLAY only — the numbers are always read from the raw surface. Holes
+ * the depth camera dropped are closed by `fillHoles`, then every cell is
+ * averaged with the neighbours that sit within 3 mm of it, so the model reads
+ * as skin rather than gravel without rounding off real edges like the jaw
+ * line.
  */
 export function tidy(map: Float32Array, c: Cylinder): Float32Array {
   const W = c.width, H = c.height;
-  // A few passes, so a hole a few cells across (a nostril the depth camera
-  // dropped) closes in from its edges. Each pass still needs about half the 5×5
-  // around a cell present, so a real gap — a column of missing cells — stays.
-  let filled = map.slice();
-  for (let pass = 0; pass < 4; pass++) {
-    const src = filled;
-    const next = src.slice();
-    let changed = 0;
-    for (let j = 2; j < H - 2; j++)
-      for (let i = 2; i < W - 2; i++) {
-        if (Number.isFinite(src[j * W + i]!)) continue;
-        let s = 0, n = 0;
-        for (let dj = -2; dj <= 2; dj++)
-          for (let di = -2; di <= 2; di++) {
-            const v = src[(j + dj) * W + i + di]!;
-            if (Number.isFinite(v)) { s += v; n++; }
-          }
-        if (n >= 12) { next[j * W + i] = s / n; changed++; }
-      }
-    filled = next;
-    if (!changed) break;
-  }
+  const filled = fillHoles(map, c);
   const out = filled.slice();
   for (let j = 1; j < H - 1; j++)
     for (let i = 1; i < W - 1; i++) {
@@ -153,7 +201,56 @@ export function buildMesh(
   return {
     positions: Float32Array.from(pos),
     colors: Float32Array.from(col),
-    indices: Uint32Array.from(tri),
+    indices: dropIslands(Uint32Array.from(tri), pos.length / 3),
     change: Float32Array.from(change),
   };
+}
+
+/**
+ * Triangles smaller than this, all joined together, are not surface: they are
+ * the speckle left where the sweep caught a few scattered cells — under the
+ * chin and down the neck, mostly — and they render as a cloud of loose
+ * shards hanging off the model.
+ */
+const MIN_ISLAND_TRIS = 40;
+
+/**
+ * Keep only the connected pieces of the surface worth drawing. Vertices are
+ * joined through the triangles that share them, each piece is counted, and
+ * the specks are dropped; the vertices stay where they are, so a vertex's
+ * index still means the same cell.
+ */
+export function dropIslands(indices: Uint32Array, vertices: number): Uint32Array {
+  if (!indices.length) return indices;
+  const parent = new Int32Array(vertices);
+  for (let i = 0; i < vertices; i++) parent[i] = i;
+  const find = (x: number): number => {
+    let r = x;
+    while (parent[r]! !== r) r = parent[r]!;
+    while (parent[x]! !== r) { const up = parent[x]!; parent[x] = r; x = up; }
+    return r;
+  };
+  const join = (x: number, y: number) => {
+    const a = find(x), b = find(y);
+    if (a !== b) parent[a] = b;
+  };
+  for (let t = 0; t < indices.length; t += 3) {
+    join(indices[t]!, indices[t + 1]!);
+    join(indices[t + 1]!, indices[t + 2]!);
+  }
+  const size = new Map<number, number>();
+  for (let t = 0; t < indices.length; t += 3) {
+    const r = find(indices[t]!);
+    size.set(r, (size.get(r) ?? 0) + 1);
+  }
+  // Nothing big enough means the whole scan is sparse; better a speckled
+  // model than an empty box, so keep the largest piece there is.
+  const biggest = Math.max(...size.values());
+  const floor = Math.min(MIN_ISLAND_TRIS, biggest);
+  const out: number[] = [];
+  for (let t = 0; t < indices.length; t += 3) {
+    if ((size.get(find(indices[t]!)) ?? 0) < floor) continue;
+    out.push(indices[t]!, indices[t + 1]!, indices[t + 2]!);
+  }
+  return Uint32Array.from(out);
 }

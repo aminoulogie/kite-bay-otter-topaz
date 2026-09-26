@@ -93,6 +93,9 @@ try {
   browser = await chromium.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    // The sandbox bakes one Chromium build; a Playwright bump looks for a
+    // newer one it cannot download here, so use the one that is installed.
+    ...(process.env.BROWSER_SMOKE_CHROMIUM ? { executablePath: process.env.BROWSER_SMOKE_CHROMIUM } : {}),
   });
 
   const viewports = {};

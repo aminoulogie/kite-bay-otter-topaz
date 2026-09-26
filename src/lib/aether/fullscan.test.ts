@@ -133,6 +133,29 @@ test("a side hold is used only if it agrees with the front scan where both overl
   assert.equal(judgeHold({ T: identity(), pts: P, rms: 3, inliers: 0.9 }, front, c, -60).verdict, "loose fit");
 });
 
+test("a hold too far off to measure from can still be near enough to draw", async () => {
+  const { judgeHold, SHOW_LIMITS } = await import("./fullscan.ts");
+  const c = cyl();
+  const front = new Float32Array(W * H).fill(NaN);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (Math.abs(-160 + i) <= 65) front[j * W + i] = 90;
+  const pts: number[] = [];
+  for (let y = -60; y <= 40; y += 3) for (let t = 25; t <= 80; t += 1.5) {
+    const tr = (t * Math.PI) / 180;
+    pts.push(90 * Math.sin(tr), y, -60 + 90 * Math.cos(tr));
+  }
+  const P = Float32Array.from(pts);
+  // Three millimetres out: the size of miss that left the neck off the model.
+  const near = identity();
+  near[12] = 3;
+  const h = { T: near, pts: P, rms: 0.8, inliers: 0.9 };
+  assert.equal(judgeHold(h, front, c, -60).verdict, "off the face", "not measured from");
+  assert.equal(judgeHold(h, front, c, -60, SHOW_LIMITS).verdict, "used", "still drawn");
+  // A centimetre out is wrong enough that drawing it would mislead.
+  const far = identity();
+  far[12] = 12;
+  assert.equal(judgeHold({ ...h, T: far }, front, c, -60, SHOW_LIMITS).verdict, "off the face");
+});
+
 test("the nose is kept: readings past 15 cm are allowed in front of the face only", async () => {
   const { maxRadiusMm } = await import("./fullscan.ts");
   assert.equal(maxRadiusMm(0, -20), 200, "nose tip, straight ahead");
