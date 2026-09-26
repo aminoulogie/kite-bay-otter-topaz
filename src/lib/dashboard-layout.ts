@@ -139,6 +139,13 @@ export interface WidgetDef {
 /** Page furniture: bars and buttons that are as tall as they need to be, one row, full width. */
 export const FURNITURE: WidgetSize[] = ["1x4"];
 
+/**
+ * Short cards — a setting, a one-line form, a paragraph — have nothing more
+ * to say at the largest size, so 3x4 was a small card in a big empty box.
+ * They stop at 2x4.
+ */
+export const UP_TO_MEDIUM: WidgetSize[] = ["1x1", "1x2", "2x2", "1x4", "2x4"];
+
 export interface WidgetPlacement {
   id: string;
   size: WidgetSize;
@@ -234,28 +241,28 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "words", label: "Your own words", size: "2x4" },
     { id: "highlights", label: "Highlights", size: "2x4" },
     { id: "week", label: "This week", size: "2x4" },
-    { id: "log", label: "Log a book", size: "2x4" },
+    { id: "log", label: "Log a book", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "recent", label: "Recent books", size: "2x4" },
   ],
   "mind-language": [
     { id: "languages", label: "Languages and drills", size: "2x4" },
     { id: "week", label: "This week", size: "2x4" },
-    { id: "log", label: "Log a drill", size: "2x4" },
+    { id: "log", label: "Log a drill", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "recent", label: "Recent drills", size: "2x4" },
   ],
   "mind-idea": [
     { id: "week", label: "This week", size: "2x4" },
-    { id: "log", label: "Log an idea", size: "2x4" },
+    { id: "log", label: "Log an idea", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "recent", label: "Recent ideas", size: "2x4" },
   ],
   "mind-research": [
     { id: "week", label: "This week", size: "2x4" },
-    { id: "log", label: "Log research", size: "2x4" },
+    { id: "log", label: "Log research", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "recent", label: "Recent research", size: "2x4" },
   ],
   projects: [
     { id: "header", label: "On the go", size: "2x4" },
-    { id: "new", label: "Start something", size: "2x4" },
+    { id: "new", label: "Start something", size: "2x4", sizes: UP_TO_MEDIUM },
     // A bar, not a card: one row, the same as Habits' Today/Matrix/Year.
     { id: "filter", label: "Active / Paused / Done", size: "1x4", sizes: FURNITURE },
     { id: "list", label: "The projects", size: "2x4" },
@@ -292,7 +299,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "header", label: "Consistency", size: "2x4" },
     { id: "tabs", label: "Today / Matrix / Year", size: "1x4", sizes: FURNITURE },
     { id: "list", label: "The habits", size: "2x4" },
-    { id: "new", label: "New habit", size: "2x4" },
+    { id: "new", label: "New habit", size: "2x4", sizes: UP_TO_MEDIUM },
   ],
   // Fuel is four pages behind one tab. The old single page held thirteen cards
   // and you scrolled past the ones you were not using to reach the ones you
@@ -334,10 +341,10 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "scan", label: "Scan button", size: "1x4", sizes: FURNITURE },
     { id: "truedepth", label: "3D scan", size: "2x4" },
     { id: "lidar-body", label: "Body scan", size: "2x4" },
-    { id: "reanalyse", label: "Scans to re-measure", size: "2x4" },
+    { id: "reanalyse", label: "Scans to re-measure", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "gallery", label: "Captures", size: "2x4" },
     { id: "guide", label: "What it measures", size: "2x4" },
-    { id: "note", label: "What the mesh is", size: "1x4" },
+    { id: "note", label: "What the mesh is", size: "1x4", sizes: UP_TO_MEDIUM },
   ],
   // Stats is eight pages behind one tab, like Mind. Only the two that are
   // genuinely card stacks get a layout; the rest delegate to whole other
@@ -365,27 +372,27 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   estimates: [
     { id: "weight", label: "Bodyweight", size: "2x4" },
-    { id: "composition", label: "Muscle vs fat", size: "2x4" },
+    { id: "composition", label: "Muscle vs fat", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "measures", label: "Measurements", size: "2x4" },
     { id: "strength", label: "Strength", size: "2x4" },
-    { id: "note", label: "How these are made", size: "1x4" },
+    { id: "note", label: "How these are made", size: "1x4", sizes: UP_TO_MEDIUM },
   ],
   settings: [
-    { id: "phase", label: "Phase", size: "2x4" },
-    { id: "goal", label: "Training goal", size: "2x4" },
-    { id: "appearance", label: "Appearance", size: "2x4" },
+    { id: "phase", label: "Phase", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "goal", label: "Training goal", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "appearance", label: "Appearance", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "training", label: "Training", size: "2x4" },
-    { id: "nutrition", label: "Nutrition", size: "2x4" },
+    { id: "nutrition", label: "Nutrition", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "routines", label: "Routines", size: "2x4" },
-    { id: "report", label: "Report", size: "2x4" },
-    { id: "data", label: "Backup and restore", size: "2x4" },
-    { id: "vault", label: "Vault sync", size: "2x4" },
-    { id: "csv", label: "Export as CSV", size: "2x4" },
-    { id: "foods", label: "Import foods", size: "2x4" },
+    { id: "report", label: "Report", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "data", label: "Backup and restore", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "vault", label: "Vault sync", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "csv", label: "Export as CSV", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "foods", label: "Import foods", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "programme", label: "Training programme", size: "2x4" },
     { id: "targets", label: "Daily nutrition targets", size: "2x4" },
-    { id: "habit-history", label: "Habit history", size: "2x4" },
-    { id: "about", label: "About", size: "2x4" },
+    { id: "habit-history", label: "Habit history", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "about", label: "About", size: "2x4", sizes: UP_TO_MEDIUM },
   ],
 };
 

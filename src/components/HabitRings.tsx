@@ -2,7 +2,9 @@ import { useMemo } from "react";
 import { ChevronRight } from "lucide-react";
 import { CardTitle } from "@/components/ui/card";
 import { dashFor, ringsFor, tally, type HabitRing } from "@/lib/habit-rings";
-import { hasDetailRoom } from "@/lib/dashboard-layout";
+import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
+import { addDays, parseLocalDateKey, getLocalDateKey } from "@/lib/soma";
+import type { Habit } from "@/lib/types";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { Glance, isGlance } from "@/components/Glance";
 import { useSoma } from "@/lib/store";
@@ -82,6 +84,8 @@ export function HabitRings() {
         ))}
       </div>
 
+      {hasFullRoom(size) && <HabitWeek habits={habits} date={activeDate} />}
+
       {hasDetailRoom(size) && (
         <p className="mt-2 text-[0.62rem] leading-snug text-faint">
           Read-only. Tick them on the Habits tab, where a part-done checklist can show
@@ -149,5 +153,43 @@ function Ring({ ring, labelled }: { ring: HabitRing; labelled: boolean }) {
         </span>
       )}
     </span>
+  );
+}
+
+/** At the largest size: the last seven days of each habit, a dot a day. */
+function HabitWeek({ habits, date }: { habits: Habit[]; date: string }) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(parseLocalDateKey(date), i - 6));
+  return (
+    <div className="mt-3 space-y-1.5 border-t border-border pt-3">
+      <div className="flex items-center gap-2 pl-[40%]">
+        {days.map((d) => (
+          <span key={d.getTime()} className="flex-1 text-center text-[0.55rem] font-bold text-faint">
+            {d.toLocaleDateString(undefined, { weekday: "narrow" })}
+          </span>
+        ))}
+      </div>
+      {habits.map((h) => {
+        const hit = days.filter((d) => h.history?.[getLocalDateKey(d)]).length;
+        return (
+          <div key={h.id} className="flex items-center gap-2">
+            <span className="w-[40%] truncate text-xs font-semibold">
+              {h.name}
+              <span className="ml-1 text-[0.6rem] tabular text-faint">{hit}/7</span>
+            </span>
+            {days.map((d) => {
+              const done = !!h.history?.[getLocalDateKey(d)];
+              return (
+                <span key={d.getTime()} className="flex flex-1 justify-center">
+                  <span
+                    className="size-3.5 rounded-full"
+                    style={{ background: done ? h.color : "var(--color-surface-3)" }}
+                  />
+                </span>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
   );
 }

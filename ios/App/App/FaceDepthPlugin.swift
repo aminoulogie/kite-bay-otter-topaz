@@ -186,6 +186,9 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
     /// A turn to the far side has to pass the front first, so standing on the
     /// side just left is not mistaken for having arrived.
     private var passedFront = false
+    /// Said once, in front of the next step's line, when a step timed out —
+    /// otherwise the scan moved on in silence and it sounded like a skip.
+    private var skipNote: String?
     private static let postureFrames = 12
     let sides: Bool
     private var sideStage: SideStage = .none
@@ -672,6 +675,7 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                 sideDiag[side]?["depthFrames"] = stageDepthFrames
                 if let c = centre { sideDiag[side]?["distance"] = Double(c) }
             }
+            skipNote = "That step did not finish, moving on."
             advanceSide(frame, now: now)
             return
         }
@@ -684,8 +688,8 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         switch sideStage {
         case .turnLeft, .turnRight:
             message = sideStage == .turnLeft
-                ? "Step 2 of 5: turn your whole body left, onto the side mark."
-                : "Step 3 of 5: turn right, round through the front, to the right side mark."
+                ? "Step 2 of 5: turn your whole body a quarter turn to your left, so you are side-on to the phone."
+                : "Step 3 of 5: turn back past the phone and keep going, until you are side-on the other way."
             if frame.capturedDepthData != nil, (sideFrames[side]?.count ?? 0) < turnCap {
                 recordSideFrame(frame, side: side, stage: "turn", step: 8, face: face)
             }
@@ -698,12 +702,12 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
                     holdCount = 0
                     sideDiag[side]?["turnDepthFrames"] = stageDepthFrames
                     stageDepthFrames = 0
-                    message = "Eyes on the sticker. Hold still."
+                    message = "Look straight ahead and hold still."
                     ok = true
                 }
             }
         case .holdLeft, .holdRight:
-            message = "Eyes on the sticker. Hold still."
+            message = "Look straight ahead and hold still."
             ok = still
             if still, frame.capturedDepthData != nil {
                 recordSideFrame(frame, side: side, stage: "hold", step: 5, face: face)
@@ -721,8 +725,8 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
             // Frames while moving chain the tracking out to the posture mark
             // (and round to the other side), the way turn frames do.
             message = sideStage == .stepBack
-                ? "Step 4 of 5: one step back to the posture mark. Stay side-on."
-                : "Step 5 of 5: at the posture mark, turn round to face left side-on."
+                ? "Step 4 of 5: take one step back, to the far mark. Stay side-on."
+                : "Step 5 of 5: turn around on the spot, so your other side faces the phone."
             if frame.capturedDepthData != nil, (sideFrames[side]?.count ?? 0) < turnCap + 80 {
                 recordSideFrame(frame, side: side, stage: "turn", step: 8, face: face)
             }
@@ -758,6 +762,10 @@ final class FaceScanViewController: UIViewController, ARSCNViewDelegate, ARSessi
         let wall = Date().timeIntervalSince1970
         guard wall - lastNotify > 0.12 else { return }
         lastNotify = wall
+        if let note = skipNote {
+            message = "\(note) \(message)"
+            skipNote = nil
+        }
         var info: [String: Any] = ["tracked": tracked, "ok": ok, "message": message,
                                    "collected": holdCount, "target": Self.holdFrames, "phase": sideStage.rawValue]
         if let c = centre { info["distance"] = c }
