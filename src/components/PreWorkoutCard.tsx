@@ -10,6 +10,8 @@ import type { FoodItem } from "@/lib/types";
 import { toast } from "sonner";
 import { tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * Fuelling the session that is coming.
@@ -73,6 +75,27 @@ export function PreWorkoutCard() {
           ? "text-warn"
           : "text-faint";
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    const word = { empty: "Nothing yet", light: "Too light", good: "Good to go", heavy: "Too heavy" }[check.verdict];
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Pre-workout",
+          short: "Pre-lift",
+          color: check.verdict === "good" ? "#30d158" : check.verdict === "heavy" ? "#ff9f0a" : "#ffd60a",
+          value: check.verdict === "empty" ? null : `${check.carbsG}g`,
+          unit: "carbs",
+          progress: check.verdict === "empty" ? null : check.carbsPct / 100,
+          sub: check.verdict === "empty" ? `aim ${target.carbsG}g carbs · ${target.proteinG}g protein` : `${word} · ${check.proteinG}g protein`,
+          lines: portions.slice(0, 3).map((p) => ({ text: p.food.name, value: `${Math.round(p.grams)}g` })),
+          empty: `Aim for ${target.carbsG}g carbs before you train`,
+          emptyShort: `${target.carbsG}g`,
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <CardTitle>Pre-workout</CardTitle>

@@ -5,7 +5,8 @@ import {
   strengthEstimates, type TrendEstimate,
 } from "@/lib/estimates";
 import { useTrainingLog } from "@/lib/use-training-log";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
+import type { GlanceSpec } from "@/components/Glance";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -55,7 +56,8 @@ export function EstimatesView() {
 
   return (
     <WidgetGrid tab="estimates">
-      <Card key="weight">
+      <Sized key="weight" glance={() => estGlance("Bodyweight", "Weight", weight, "#64d2ff")}>
+      <Card>
         <CardTitle>Bodyweight</CardTitle>
         <EstimateBlock est={weight} />
         {intake && (
@@ -99,17 +101,25 @@ export function EstimatesView() {
           </div>
         )}
       </Card>
+      </Sized>
 
-      <Card key="composition">
+      <Sized key="composition" glance={{ label: "Muscle vs fat", short: "Comp.", lines: [{ text: "Not estimated — needs body composition" }] }}>
+      <Card>
         <CardTitle>Muscle vs fat</CardTitle>
         {/* Stated rather than estimated. Splitting a weight change needs body
             composition, which nothing here measures — a number would be a guess
             dressed as a measurement. */}
         <p className="text-xs leading-snug text-muted">{leanMassNote()}</p>
       </Card>
+      </Sized>
 
       {measures.length > 0 && (
-        <Card key="measures">
+        <Sized key="measures" glance={() => ({
+            label: "Measurements",
+            short: "Tape",
+            lines: measures.map((m) => ({ text: m.label, value: `${m.current} ${m.unit}` })),
+          })}>
+        <Card>
           <CardTitle>Measurements</CardTitle>
           <div className="space-y-3">
             {measures.map((m) => (
@@ -117,9 +127,21 @@ export function EstimatesView() {
             ))}
           </div>
         </Card>
+        </Sized>
       )}
 
-      <Card key="strength">
+      <Sized key="strength" glance={() => ({
+          label: "Strength",
+          short: "Strength",
+          color: "#c8ff2e",
+          lines: strength.map((e) => ({
+            text: e.label,
+            value: `${e.current} ${e.ratePerMonth >= 0 ? "+" : ""}${e.ratePerMonth}/mo`,
+          })),
+          empty: "Not enough sessions on one lift",
+          emptyShort: "No data",
+        })}>
+      <Card>
         <CardTitle>Strength</CardTitle>
         {strength.length === 0 ? (
           <p className="text-xs text-muted">
@@ -133,12 +155,15 @@ export function EstimatesView() {
           </div>
         )}
       </Card>
+      </Sized>
 
-      <p key="note" className="px-1 text-[0.6rem] leading-snug text-faint">
+      <Sized key="note" glance={{ label: "How these are made", short: "Note", lines: [{ text: "Projections slow as they go out" }, { text: "From your own trend only" }] }}>
+      <p className="px-1 text-[0.6rem] leading-snug text-faint">
         Projections slow down the further out they go, because gains do. A straight line
         from a good month would have you benching numbers nobody reaches — these are what
         your own trend supports, not what it would extrapolate to.
       </p>
+      </Sized>
     </WidgetGrid>
   );
 }
@@ -216,4 +241,21 @@ function EstimateBlock({ est, compact }: { est: TrendEstimate; compact?: boolean
       </p>
     </div>
   );
+}
+
+/** A projection as a glance: now, the rate, and where it heads. */
+function estGlance(label: string, short: string, est: TrendEstimate, color: string): GlanceSpec {
+  if (est.confidence === "none") {
+    return { label, short, empty: confidenceNote(est.confidence, est.sampleDays), emptyShort: "No data" };
+  }
+  return {
+    label,
+    short,
+    color,
+    value: String(est.current),
+    unit: est.unit,
+    sub: `${est.ratePerMonth >= 0 ? "+" : ""}${est.ratePerMonth} ${est.unit}/month · ${est.confidence}`,
+    chart: { values: [est.current, ...est.projections.map((p) => p.value)] },
+    lines: est.projections.map((p) => ({ text: `in ${p.horizon} days`, value: `${p.value} ${est.unit}` })),
+  };
 }

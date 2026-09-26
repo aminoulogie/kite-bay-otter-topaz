@@ -4,6 +4,8 @@ import { dueNow, mesoReview } from "@/lib/meso-review";
 import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * The block review, shown at the one moment it changes anything.
@@ -44,8 +46,25 @@ export function MesoReviewCard() {
     });
   }, [history, nutrition, settings.scheduleOverrides, settings.trainingGoal, program]);
 
+  const size = useWidgetSize();
   if (!review) return null;
 
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: `Block ${review.block.index} review`,
+          short: "Block",
+          color: "#c8ff2e",
+          value: String(review.sessions),
+          unit: "sessions",
+          sub: `weeks ${review.block.startWeek}–${review.block.endWeek} · ${review.sessionsPerWeek}/week`,
+          lines: review.verdicts.map((v) => ({ text: v })),
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <CardTitle>

@@ -15,6 +15,8 @@ import { useSoma } from "@/lib/store";
 import { useSideStoreRevision } from "@/lib/use-side-stores";
 import { cn } from "@/lib/utils";
 import type { FoodItem } from "@/lib/types";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * A day of eating, chosen from a list and put on the plan in one tap.
@@ -205,6 +207,24 @@ export function MealPrograms() {
     return library.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 6);
   }, [library, query]);
 
+  const size = useWidgetSize();
+  if (isGlance(size) && !editing) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Day programmes",
+          short: "Days",
+          icon: Copy,
+          value: programs.length ? String(programs.length) : null,
+          unit: programs.length === 1 ? "programme" : "programmes",
+          lines: programs.map((p) => ({ text: p.name, value: `${Math.round(programTotals(p, library).totals.cals)}` })),
+          empty: "A whole day of food, dropped onto any date",
+          emptyShort: "None",
+        }}
+      />
+    );
+  }
   if (editing) {
     const totals = programTotals(editing, library);
     const add = (food: FoodItem) => {

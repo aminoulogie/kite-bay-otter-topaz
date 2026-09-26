@@ -6,6 +6,8 @@ import { rateExerciseInstance, ratingLabel, ratingTone } from "@/lib/stimulus";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { HistorySession } from "@/lib/types";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * Every exercise, scored from the sets you actually rated on it.
@@ -78,6 +80,25 @@ export function ExerciseRatings() {
     return rows.filter((r) => r.name.toLowerCase().includes(q));
   }, [rows, query]);
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    const top = [...rows].sort((a, b) => b.score - a.score);
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "How hard each lift was",
+          short: "Effort",
+          color: "#ff9f0a",
+          value: rows.length ? String(rows.length) : null,
+          unit: "rated",
+          lines: top.map((r) => ({ text: r.name, value: String(Math.round(r.score)) })),
+          empty: "Rate a set while you train",
+          emptyShort: "None",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <CardTitle>

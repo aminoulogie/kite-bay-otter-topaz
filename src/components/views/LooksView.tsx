@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeftRight, Camera, ChevronRight, ScanFace } from "lucide-react";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -291,7 +291,20 @@ export function LooksView() {
     <>
     {pages}
     <WidgetGrid tab="looks">
-      <Card key="latest">
+      <Sized key="latest" glance={{
+          label: "Latest front",
+          short: "Symmetry",
+          color: "#64d2ff",
+          value: front?.face ? String(symmetryPercent(front.face.alpha)) : null,
+          unit: "%",
+          sub: front?.face
+            ? `${agoLabel(front.date, today)}${change != null ? ` · ${change >= 0 ? "+" : ""}${change.toFixed(1)} since first` : ""}`
+            : null,
+          chart: { values: trend.map((t) => symmetryPercent(1 - t.evenness / 100)) },
+          empty: "No front capture yet",
+          emptyShort: "Scan",
+        }}>
+      <Card>
         <CardTitle>Latest front</CardTitle>
         {front?.face ? (
           <>
@@ -329,6 +342,7 @@ export function LooksView() {
           aimed. None of them is a score, and no drill changes adult bone.
         </p>
       </Card>
+      </Sized>
 
       <Button key="scan" variant="primary" className="w-full" onClick={() => setScanning(true)}>
         <Camera className="size-4" /> Scan · front, 45°, profile
@@ -341,7 +355,26 @@ export function LooksView() {
           key here the whole expression is simply absent and the grid skips
           the cell. */}
       {(hasTrueDepth || latestDepth || latestSweep) && (
-        <Card key="truedepth">
+        <Sized key="truedepth" glance={() => {
+            const rms = latestDepth?.raw?.rmsMm ?? latestDepth?.symmetryRmsMm ?? null;
+            return {
+              label: "3D scan · TrueDepth",
+              short: "3D",
+              color: "#64d2ff",
+              value: rms != null ? rms.toFixed(2) : null,
+              unit: "mm",
+              sub: rms != null ? "asymmetry, measured" : null,
+              lines: latestDepth
+                ? [
+                    { text: "Face width", value: mm(latestDepth.faceWidthMm, 0) },
+                    { text: "Eye distance", value: mm(latestDepth.ipdMm, 1) },
+                  ]
+                : [],
+              empty: hasTrueDepth ? "Tap to scan in 3D" : "Needs the Face ID camera",
+              emptyShort: "Scan",
+            };
+          }}>
+        <Card>
           <CardTitle>3D scan · TrueDepth</CardTitle>
           {latestSweep?.sweep && <SweepMetrics d={latestSweep} prev={prevSweep} />}
           {latestDepth ? (
@@ -406,10 +439,12 @@ export function LooksView() {
             </p>
           )}
         </Card>
+        </Sized>
       )}
 
       {(bodyScan.supported || latestBody.front || latestBody.side) && (
-        <Card key="lidar-body">
+        <Sized key="lidar-body" glance={{ label: "Body scan · LiDAR", short: "Body", empty: bodyScan.supported ? "Tap to scan front or side" : "Needs the installed iPhone app", emptyShort: "Scan" }}>
+        <Card>
           <CardTitle>Body scan · LiDAR</CardTitle>
           {latestBody.front || latestBody.side ? (
             <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
@@ -461,10 +496,12 @@ export function LooksView() {
               : ""}
           </p>
         </Card>
+        </Sized>
       )}
 
       {stale.length > 0 && (
-        <Card key="reanalyse">
+        <Sized key="reanalyse" glance={{ label: "Scans to re-measure", short: "Re-measure", value: String(stale.length), unit: "scans", empty: "" }}>
+        <Card>
           <CardTitle>{refiled ? "Scans to re-measure" : "Measured before the angle fix"}</CardTitle>
           <p className="mb-3 text-xs leading-relaxed text-muted">
             {refiled
@@ -475,10 +512,19 @@ export function LooksView() {
             {redo ? `Re-measuring ${redo.done}/${redo.total}…` : `Re-analyse ${stale.length}`}
           </Button>
         </Card>
+        </Sized>
       )}
 
       {latest.size > 0 && (
-        <div key="gallery" className="grid grid-cols-4 gap-2">
+        <Sized key="gallery" glance={() => ({
+          label: "Captures",
+          short: "Slots",
+          lines: SLOTS.map(({ slot, label }) => {
+            const sc = latest.get(slot);
+            return { text: label, value: sc?.face ? `${symmetryPercent(sc.face.alpha)}%` : sc ? "photo" : "—" };
+          }),
+        })}>
+        <div className="grid grid-cols-4 gap-2">
           {SLOTS.map(({ slot: k, label }) => {
             const sc = latest.get(k);
             return (
@@ -509,9 +555,19 @@ export function LooksView() {
             );
           })}
         </div>
+        </Sized>
       )}
 
-      <Card key="guide">
+      <Sized key="guide" glance={() => ({
+          label: "Captures",
+          short: "Scans",
+          value: rows.length ? String(rows.length) : null,
+          unit: rows.length === 1 ? "capture" : "captures",
+          lines: rows.map((sc) => ({ text: scanLabel(sc), value: sc.date.slice(5) })),
+          empty: "Nothing captured",
+          emptyShort: "None",
+        })}>
+      <Card>
         <div className="mb-2 flex items-center justify-between gap-2">
           <CardTitle className="mb-0">
             {rows.length ? `${rows.length} captures` : "Nothing captured"}
@@ -597,11 +653,21 @@ export function LooksView() {
           </div>
         )}
       </Card>
+      </Sized>
 
-      <p key="note" className="px-1 text-center text-[0.7rem] leading-relaxed text-faint">
+      <Sized
+        key="note"
+        glance={{
+          label: "What the mesh is",
+          short: "Note",
+          lines: [{ text: "Monocular depth, not TrueDepth" }, { text: "Ratios are 2D, pose-dependent" }],
+        }}
+      >
+      <p className="px-1 text-center text-[0.7rem] leading-relaxed text-faint">
         The mesh is MediaPipe&apos;s monocular depth, not Face ID or TrueDepth. Ratios are 2D
         heuristics on the pose you took, not skeletal cephalometrics.
       </p>
+      </Sized>
 
       {scanning && (
         <Suspense fallback={<LoadingSheet label="Loading the vision model…" />}>
