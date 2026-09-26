@@ -50,13 +50,15 @@ function frontCylinder(): Cylinder {
 }
 
 /** One phone depth frame of the surface from `camToFace`, encoded as the plugin sends it. */
-function frame(camToFace: Mat4, stage: "turn" | "hold", tracked: boolean): RawSideFrame {
+function frame(camToFace: Mat4, stage: "turn" | "hold", tracked: boolean, swellMm = 0): RawSideFrame {
   const toCam = invert(camToFace);
   const [cx, , cz] = apply(camToFace, 0, 0, 0);
   const out: number[] = [];
   for (let y = -320; y <= 70; y += 2.5)
     for (let t = -160; t <= 160; t += 1.5) {
-      const r = radius(t, y);
+      // A distortion no rigid move can absorb (a uniform swell would just be
+      // refined away): the surface bulges one way and hollows the other.
+      const r = radius(t, y) + swellMm * Math.sin((2 * t * Math.PI) / 180);
       const tr = (t * Math.PI) / 180;
       const x = r * Math.sin(tr), z = AXIS + r * Math.cos(tr);
       if (x * (cx - x) + (z - AXIS) * (cz - z) <= 0) continue;
@@ -75,13 +77,13 @@ function frame(camToFace: Mat4, stage: "turn" | "hold", tracked: boolean): RawSi
   return f;
 }
 
-function sideFrames(sign: 1 | -1): RawSideFrame[] {
+function sideFrames(sign: 1 | -1, swellMm = 0): RawSideFrame[] {
   const out: RawSideFrame[] = [];
   const angles = [...Array.from({ length: 19 }, (_, k) => k * 5), 90, 90, ...Array<number>(6).fill(90)];
   angles.forEach((deg, k) => {
     const d = sign * deg;
     const T = mul(rotY(0, 0, 0, 0), rotY(d, 300 * Math.sin((d * Math.PI) / 180), -40, AXIS + 300 * Math.cos((d * Math.PI) / 180)));
-    out.push(frame(T, k >= 21 ? "hold" : "turn", deg <= 40));
+    out.push(frame(T, k >= 21 ? "hold" : "turn", deg <= 40, k >= 21 ? swellMm : 0));
   });
   return out;
 }
@@ -117,4 +119,23 @@ test("a step back side-on adds the neck, shoulders and upper back as a cloud", (
   let low = 0;
   for (let i = 1; i < cloud.length; i += 3) if (cloud[i]! < -250) low++;
   assert.ok(low > 200, `points below the neck (shoulders): ${low}`);
+});
+
+test("holds that miss the measuring limit still give the model a neck to show", () => {
+  const front = frontCylinder();
+  // Holds sitting about 3 mm off the front scan: the real scan that came back
+  // saying "5 holds sat 2.9 mm off the front scan (limit 1.5)" and left the
+  // model with no neck at all.
+  const { cyl, stats, cloud } = extendWithSides(front, AXIS, { right: sideFrames(-1, 9), left: sideFrames(1, 9) });
+  assert.equal(stats.right.holds, 0, "not measured from");
+  assert.ok((stats.right.shownOnly ?? 0) >= 1, `shown only: ${JSON.stringify(stats.right)}`);
+
+  // Nothing they carry reaches a number...
+  const s = summariseCylinder(cyl, 30, 60, 1, { axisZ: AXIS, gravityFace: [0, -1, 0], sides: stats });
+  assert.equal(s.full?.neckWidthMm ?? null, null, "a neck width would be made up");
+
+  // ...but the neck is there to look at.
+  let neck = 0;
+  for (let i = 1; i < cloud.length; i += 3) if (cloud[i]! < -90 && cloud[i]! > -200) neck++;
+  assert.ok(neck > 500, `neck points in the model: ${neck}`);
 });
