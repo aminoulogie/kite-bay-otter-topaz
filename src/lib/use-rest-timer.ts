@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { buzz, chime, notifyNow } from "./rest-alarm.ts";
 import { hasElapsed, secondsLeft, tickMs } from "./rest-timer.ts";
+import { cancelAlert, scheduleAlert } from "./live-activity.ts";
 
 /**
  * Drives the rest countdown and fires the alarm exactly once per timer.
@@ -28,6 +29,18 @@ export function useRestTimer(endsAt: number | null, onDone?: () => void) {
   useEffect(() => {
     // A new timer is a new alarm, even if it happens to share a deadline.
     if (endsAt !== fired.current) fired.current = null;
+  }, [endsAt]);
+
+  // The lock-screen half, in the native build: a notification scheduled for
+  // the deadline, which arrives with the app suspended. rest-alarm.ts always
+  // described this; SomaFocusPlugin is what finally provides it. Not cancelled
+  // on unmount — leaving the Train tab mid-rest should not silence the rest.
+  useEffect(() => {
+    if (endsAt && endsAt > Date.now()) {
+      void scheduleAlert({ id: "soma-rest", at: endsAt, title: "Rest over", body: "Next set." });
+    } else {
+      void cancelAlert("soma-rest");
+    }
   }, [endsAt]);
 
   useEffect(() => {

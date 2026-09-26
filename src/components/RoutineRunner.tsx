@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Pause, Play, SkipForward, X } from "lucide-react";
+import { Check, ChevronDown, Coffee, Pause, Play, SkipForward, Square } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { tapLight, tapSuccess } from "@/lib/haptics";
+import { focusDateOf, isFocusId } from "@/lib/focus";
+import { chime } from "@/lib/rest-alarm";
 import {
   clock, completeStep, driftSeconds, duration, isFinished, paceOf, pauseRun, resumeRun,
   skipStep, spans, stepLeftSeconds, stepsOf, windowLeftSeconds, type Routine, type RunState,
@@ -23,15 +25,24 @@ import { cn } from "@/lib/utils";
  * the whole window; the colour is the drift. Nothing animates for decoration:
  * the ring moves because time is passing, and it turns amber and then red
  * because you are running out of it.
+ *
+ * The same screen runs a saved routine and today's focus queue — the queue is
+ * handed in as a routine (lib/focus.ts), so there is one runner, one set of
+ * rules about what finishing a step ticks, and one place to get them wrong.
+ * It can fold down to a pill (SessionHost) without stopping: the run is a set
+ * of timestamps in the store, not this component's state.
  */
 export function RoutineRunner({
-  routine, onClose,
+  routine, onMinimise,
 }: {
   routine: Routine;
-  onClose: () => void;
+  onMinimise: () => void;
 }) {
   const run = useSoma((s) => s.dayRoutineRun);
   const setRun = useSoma((s) => s.setDayRoutineRun);
+  const endRun = useSoma((s) => s.endDayRoutineRun);
+  const insertBreak = useSoma((s) => s.insertFocusBreak);
+  const pomodoro = useSoma((s) => s.focusPrefs.pomodoro);
   const toggleHabit = useSoma((s) => s.toggleHabit);
   const toggleTodo = useSoma((s) => s.toggleTodo);
   const habits = useSoma((s) => s.habits);
@@ -65,6 +76,11 @@ export function RoutineRunner({
   /** Red when the step has overrun, amber in its last fifth, else the colour. */
   const tone = stepLeft < 0 ? "var(--color-danger)" : stepLeft <= stepTotal * 0.2 ? "var(--color-warn)" : routine.color;
 
+  const isFocus = isFocusId(routine.id);
+  // A focus run ticks habits on the day it was queued for, which is the day
+  // on screen when it started — not whatever day the app has since rolled to.
+  const tickDate = focusDateOf(routine.id) ?? activeDate;
+
   const finishStep = () => {
     if (!cur) return;
     tapSuccess();
@@ -72,17 +88,26 @@ export function RoutineRunner({
     // abandoned halfway still leaves an honest record of what was done.
     if (cur.step.source === "habit" && cur.step.refId) {
       const h = habits.find((x) => x.id === cur.step.refId);
-      if (h && !h.history[activeDate]) toggleHabit(h.id);
+      if (h && !h.history[tickDate]) toggleHabit(h.id, tickDate);
     }
     if (cur.step.source === "todo" && cur.step.refId) {
       const t = todos.find((x) => x.id === cur.step.refId);
       if (t && !t.done) toggleTodo(t.id);
     }
+    // Pomodoro: a short break straight after a work step, before the next
+    // one. Inserted into the queue rather than run as a separate timer, so it
+    // shows up in "next", on the lock screen, and in the log like any step.
+    if (isFocus && pomodoro && !cur.step.isBreak) insertBreak(run.index);
     const next = completeStep(routine, run, Date.now());
     setRun(next);
     if (isFinished(routine, next)) {
+      void chime();
       toast.success(`${routine.name} done in ${duration((Date.now() - run.startedAt) / 1000)}`);
     }
+  };
+
+  const end = () => {
+    endRun();
   };
 
   return (
@@ -94,17 +119,28 @@ export function RoutineRunner({
             {done ? "finished" : `step ${run.index + 1} of ${steps.length}`}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setRun(null);
-            onClose();
-          }}
-          aria-label="Stop the routine"
-          className="grid size-10 shrink-0 place-items-center rounded-full border border-border bg-surface-2"
-        >
-          <X className="size-5 text-muted" />
-        </button>
+        <div className="flex shrink-0 gap-2">
+          {/* Folded, not stopped: the clock keeps running, the lock screen
+              keeps counting, and the pill brings this back. */}
+          <button
+            type="button"
+            onClick={onMinimise}
+            aria-label="Minimise, keep running"
+            className="grid size-11 place-items-center rounded-full border border-border bg-surface-2"
+          >
+            <ChevronDown className="size-5 text-muted" />
+          </button>
+          {!done && (
+            <button
+              type="button"
+              onClick={end}
+              aria-label={`End ${routine.name}`}
+              className="flex h-11 items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3.5 text-xs font-bold text-muted"
+            >
+              <Square className="size-3.5" fill="currentColor" /> End
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 px-5">
@@ -112,6 +148,11 @@ export function RoutineRunner({
           <Finished routine={routine} run={run} />
         ) : (
           <>
+            {cur?.step.isBreak && (
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-faint">
+                <Coffee className="size-4" /> break
+              </div>
+            )}
             <StepRing
               label={cur?.step.label ?? ""}
               left={stepLeft}
@@ -152,7 +193,8 @@ export function RoutineRunner({
         {!done && (
           <div className="mt-3 flex gap-2">
             <Button
-              className="flex-1"
+              size="lg"
+              className="min-w-0 flex-1 px-2"
               onClick={() => {
                 tapLight();
                 setRun(run.pausedAt ? resumeRun(run) : pauseRun(run));
@@ -162,7 +204,8 @@ export function RoutineRunner({
               {run.pausedAt ? "Resume" : "Pause"}
             </Button>
             <Button
-              className="flex-1"
+              size="lg"
+              className="min-w-0 flex-1 px-2"
               onClick={() => {
                 tapLight();
                 setRun(skipStep(routine, run, Date.now()));
@@ -170,21 +213,16 @@ export function RoutineRunner({
             >
               <SkipForward className="size-4" /> Skip
             </Button>
-            <Button variant="primary" className="flex-[1.4]" onClick={finishStep}>
-              <Check className="size-4" /> Done
+            <Button size="lg" variant="primary" className="min-w-0 flex-[1.4] px-2" onClick={finishStep}>
+              {/* "Next" is finish-and-advance: it ticks the habit or to-do.
+                  Skip is the one that leaves it untouched. */}
+              <Check className="size-4 shrink-0" /> {run.index + 1 < steps.length ? "Next" : "Done"}
             </Button>
           </div>
         )}
 
         {done && (
-          <Button
-            variant="primary"
-            className="mt-3 w-full"
-            onClick={() => {
-              setRun(null);
-              onClose();
-            }}
-          >
+          <Button variant="primary" className="mt-3 w-full" onClick={end}>
             Close
           </Button>
         )}
@@ -257,7 +295,7 @@ function StepRing({
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
         <div
-          className={cn("font-display text-4xl font-extrabold tabular leading-none", paused && "opacity-40")}
+          className={cn("font-display text-5xl font-extrabold tabular leading-none", paused && "opacity-40")}
           style={{ color: tone }}
         >
           {clock(left)}

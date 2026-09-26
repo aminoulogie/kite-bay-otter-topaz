@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Lock, Plus, RotateCcw, Unlock, X } from "lucide-react";
+import { Lock, Play, Plus, RotateCcw, Unlock, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,11 @@ import { DayRing } from "@/components/DayRing";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { ScreenTimeCard } from "@/components/ScreenTimeCard";
 import { RoutineCard } from "@/components/RoutineCard";
+import { FocusCard } from "@/components/FocusCard";
+import { FocusBudget } from "@/components/FocusBudget";
+import { FocusSheet } from "@/components/FocusSheet";
+import { blockRef } from "@/lib/focus";
+import { MAX_STEP_SECONDS } from "@/lib/routine";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import {
@@ -44,6 +49,7 @@ export function TimeView() {
   const [editing, setEditing] = useState<TimeBlock | null>(null);
   const [adding, setAdding] = useState(false);
   const [swiped, setSwiped] = useState<string | null>(null);
+  const [focusBlock, setFocusBlock] = useState<TimeBlock | null>(null);
 
   const plan = useMemo(() => normalise(blocks), [blocks]);
   const list = useMemo(() => arcs(plan.blocks), [plan.blocks]);
@@ -116,6 +122,12 @@ export function TimeView() {
           question about time — do five things fit in twenty minutes — and
           Habits answers a question about consistency. */}
       <RoutineCard key="routines" />
+
+      {/* Today's one-shot list: to-dos, habits and free blocks, run back to
+          back. Reads the plan (Now, pull flexible blocks) and never writes it. */}
+      <FocusCard key="focus" blocks={plan.blocks} />
+
+      <FocusBudget key="budget" flexHours={freeLeft} />
 
       <ScreenTimeCard key="screen" flexibleHours={freeLeft} />
 
@@ -229,6 +241,23 @@ export function TimeView() {
             write(removeBlock(plan.blocks, editing.id));
             setEditing(null);
           }}
+          onFocus={() => {
+            setFocusBlock(plan.blocks.find((b) => b.id === editing.id) ?? editing);
+            setEditing(null);
+          }}
+        />
+      )}
+
+      {/* Linked, not rewritten: the block's label and hours seed a focus
+          step; the ring is left exactly as it was. */}
+      {focusBlock && (
+        <FocusSheet
+          label={focusBlock.label}
+          source="free"
+          refId={blockRef(focusBlock.id)}
+          habitSeconds={undefined}
+          maxSeconds={Math.min(MAX_STEP_SECONDS, Math.round(focusBlock.hours * 3600))}
+          onClose={() => setFocusBlock(null)}
         />
       )}
 
@@ -282,6 +311,7 @@ function Sheet({
 
 function BlockSheet({
   block, maxHours, startHour, anchored, onStart, onClose, onChange, onHours, onSplit, onDelete,
+  onFocus,
 }: {
   block: TimeBlock;
   maxHours: number;
@@ -295,6 +325,8 @@ function BlockSheet({
   onHours: (hours: number) => void;
   onSplit: (label: string, hours: number) => void;
   onDelete: () => void;
+  /** Run this block as a focus step. Offered for flexible blocks only. */
+  onFocus: () => void;
 }) {
   const [splitName, setSplitName] = useState("");
   const [splitHours, setSplitHours] = useState(1);
@@ -312,6 +344,12 @@ function BlockSheet({
           className="h-11"
         />
       </label>
+
+      {!block.fixed && block.hours > 0 && (
+        <Button variant="primary" className="mb-3 w-full" onClick={onFocus}>
+          <Play className="size-4" fill="currentColor" /> Run as focus
+        </Button>
+      )}
 
       {/* The day used to begin at 00:00 and nothing could move it, so every
           clock time under every row was wrong for anyone who does not fall

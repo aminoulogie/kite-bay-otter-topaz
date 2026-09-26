@@ -32,7 +32,7 @@ function shapeOf(habit: Habit): Shape {
  * to that question and no way to choose between them.
  */
 export function HabitSetupSheet({
-  habit, onClose, onSaveSteps, onSaveRamp, onSaveSeconds,
+  habit, onClose, onSaveSteps, onSaveRamp, onSaveSeconds, onSaveTarget,
 }: {
   habit: Habit;
   onClose: () => void;
@@ -42,6 +42,8 @@ export function HabitSetupSheet({
       nothing to validate, so holding it until Save would only be a way to
       lose it. */
   onSaveSeconds: (seconds: number | null) => void;
+  /** Minutes of focus a day, counted from focus runs. Written immediately. */
+  onSaveTarget?: (minutes: number | null) => void;
 }) {
   const [shape, setShape] = useState<Shape>(() => shapeOf(habit));
   const [draft, setDraft] = useState<HabitStep[]>(() =>
@@ -132,6 +134,37 @@ export function HabitSetupSheet({
             ))}
           </div>
         </div>
+
+        {/* A target, unlike the line above: how much time you want to give
+            it, not how long it takes. Only focus runs count toward it, so the
+            number is measured rather than claimed. */}
+        {onSaveTarget && (
+          <div className="mb-3">
+            <div className="mb-1.5 flex items-baseline justify-between">
+              <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+                Daily focus target
+              </span>
+              <span className="text-[0.62rem] text-faint">counted from focus runs</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[10, 15, 20, 30, 45, 60, 90].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => onSaveTarget(habit.targetMinutes === m ? null : m)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-[0.7rem] font-bold",
+                    habit.targetMinutes === m
+                      ? "border-accent bg-accent text-accent-ink"
+                      : "border-border bg-surface-2 text-muted",
+                  )}
+                >
+                  {m}m
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-1">
           {(["simple", "checklist", "ramp"] as Shape[]).map((s) => (

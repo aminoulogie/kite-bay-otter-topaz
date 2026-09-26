@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { ArrowRight, Check, Moon } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
+import { FocusNext } from "@/components/FocusNext";
 import { CoachBrief } from "@/components/CoachBrief";
 import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
 import { ProjectsCard } from "@/components/ProjectsCard";
@@ -206,6 +207,7 @@ export function DashboardView() {
       <HabitRings key="habits" />
 
       <div key="todos"><TodoCard /></div>
+      <FocusNext key="focus" />
       <div key="projects"><ProjectsCard /></div>
       <div key="gap"><LogTheGap /></div>
       <Card key="correlate">

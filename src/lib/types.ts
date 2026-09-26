@@ -293,6 +293,13 @@ export interface Habit {
    */
   seconds?: number;
   /**
+   * Minutes of focused time a day this habit is aiming for — reading for
+   * thirty minutes, practising for twenty. Optional, and separate from
+   * `seconds`: that one is "how long it usually takes", this one is "how long
+   * I want to give it". Only focus runs count toward it (lib/focus.ts).
+   */
+  targetMinutes?: number;
+  /**
    * date -> what was actually done that day.
    *
    * ZERO IS A VALUE, and on a quit habit it is the best one there is. A date

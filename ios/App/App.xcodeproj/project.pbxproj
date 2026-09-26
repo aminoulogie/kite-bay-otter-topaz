@@ -15,6 +15,9 @@
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
+		5F0C0A0100000000000000B1 /* FocusActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C0A0100000000000000A1 /* FocusActivityAttributes.swift */; };
+		5F0C0A0100000000000000B2 /* SomaFocusPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C0A0100000000000000A2 /* SomaFocusPlugin.swift */; };
+		5F0C0A0100000000000000B3 /* SomaBridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F0C0A0100000000000000A3 /* SomaBridgeViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +33,9 @@
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
+		5F0C0A0100000000000000A1 /* FocusActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusActivityAttributes.swift; sourceTree = "<group>"; };
+		5F0C0A0100000000000000A2 /* SomaFocusPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SomaFocusPlugin.swift; sourceTree = "<group>"; };
+		5F0C0A0100000000000000A3 /* SomaBridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SomaBridgeViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +81,9 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				5F0C0A0100000000000000A3 /* SomaBridgeViewController.swift */,
+				5F0C0A0100000000000000A2 /* SomaFocusPlugin.swift */,
+				5F0C0A0100000000000000A1 /* FocusActivityAttributes.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -210,6 +219,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				5F0C0A0100000000000000B3 /* SomaBridgeViewController.swift in Sources */,
+				5F0C0A0100000000000000B2 /* SomaFocusPlugin.swift in Sources */,
+				5F0C0A0100000000000000B1 /* FocusActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

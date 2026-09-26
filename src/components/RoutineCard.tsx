@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
-import { RoutineRunner } from "@/components/RoutineRunner";
 import {
   MIN_STEP_SECONDS, ROUTINE_COLORS, clock, duration, isOverCommitted, plannedSeconds,
   slackSeconds, spans, stepsOf, type Routine, type StepSource,
@@ -30,17 +29,24 @@ import { cn } from "@/lib/utils";
  */
 export function RoutineCard() {
   const routines = useSoma((s) => s.dayRoutines);
-  const run = useSoma((s) => s.dayRoutineRun);
   const addRoutine = useSoma((s) => s.addDayRoutine);
   const removeRoutine = useSoma((s) => s.removeDayRoutine);
   const restoreRoutine = useSoma((s) => s.restoreDayRoutine);
-  const begin = useSoma((s) => s.beginDayRoutine);
+  const beginRoutine = useSoma((s) => s.beginDayRoutine);
+  const endRun = useSoma((s) => s.endDayRoutineRun);
+  const hasRun = useSoma((s) => !!s.dayRoutineRun);
+  const setMinimised = useSoma((s) => s.setFocusMinimised);
+  // Starting one run ends (and logs) whatever else was running first, the
+  // same rule the focus queue follows.
+  const begin = (id: string) => {
+    if (hasRun) endRun();
+    beginRoutine(id);
+    setMinimised(false);
+  };
 
   const [name, setName] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [swiped, setSwiped] = useState<string | null>(null);
-
-  const running = routines.find((r) => r.id === run?.routineId);
 
   const nextColor = () =>
     ROUTINE_COLORS.find((c) => !routines.some((r) => r.color === c)) ??
@@ -118,7 +124,7 @@ export function RoutineCard() {
       </div>
 
       {open && <RoutineSheet id={open} onClose={() => setOpen(null)} />}
-      {running && run && <RoutineRunner routine={running} onClose={() => undefined} />}
+      {/* The runner itself is mounted once, app-wide, by SessionHost. */}
     </Card>
   );
 }

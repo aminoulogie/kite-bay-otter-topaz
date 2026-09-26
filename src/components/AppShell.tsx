@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, BrainCircuit, CalendarDays, Check, Clock, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
+import { SessionHost } from "@/components/SessionHost";
 import { getLocalDateKey } from "@/lib/soma";
 import { NUTRITION_KEEP_FROM } from "@/lib/seed";
 import { requestPersistence } from "@/lib/storage-health";
@@ -211,6 +212,9 @@ export function AppShell() {
       // refuses to touch a finished one — so in the other order yesterday's
       // saved session survived the boot and became today's Train screen.
       normalizeLive();
+      // A routine or focus run survives the app being killed; one from a
+      // morning that is over does not.
+      useSoma.getState().reviveDayRoutineRun();
       // Programmes load after the store rehydrates, so an untouched session
       // restored from a previous launch can still be carrying the split it was
       // created under. Re-derive once they are in — this only replaces a
@@ -536,6 +540,7 @@ export function AppShell() {
         </div>
       </nav>
       </div>
+      <SessionHost />
       <Toaster position="top-center" theme={settings.theme === "light" ? "light" : "dark"} />
     </div>
   );

@@ -15,8 +15,9 @@
  *
  * A Live Activity — the countdown that sits on the lock screen and in the
  * Dynamic Island and updates itself — is a WidgetKit extension written in
- * Swift. It cannot be reached from a web view at all, by any of these routes.
- * It is a real thing to build, but it is a native target, not a change here.
+ * Swift, and cannot be drawn from a web view. The native build now has one for
+ * focus and routine runs: see lib/live-activity.ts, which is also where the
+ * scheduled lock-screen notification (the NATIVE route above) lives.
  */
 
 /** Whether a real scheduled notification is possible on this device. */

@@ -155,6 +155,8 @@ test("the export carries every section the store persists", () => {
       "state about the install rather than the user's data: it records that the demo log has been replaced, and importJson sets it on any restore anyway",
     readingSince:
       "the moment a reading timer was started on THIS device. Restoring it elsewhere would resume a timer nobody is running and bank minutes nobody read",
+    dayRoutineRun:
+      "the routine or focus step on the clock on THIS device right now, persisted only so a locked or killed app can resume it. Restoring it on another phone would start a countdown nobody is running — the same reason as readingSince",
     readingBook:
       "which book THIS phone had open when it was put down. The page you reached is in the book itself and is backed up with it; this is only the memory of a session that was interrupted, and restoring it would open a fresh phone into a book nobody was reading on it",
   };

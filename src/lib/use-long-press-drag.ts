@@ -49,6 +49,13 @@ export function useLongPressDrag(
   count: number,
   onReorder: (from: number, to: number) => void,
   onPickUp?: () => void,
+  /**
+   * The data attribute rows carry, without "data-". Rows are hit-tested by a
+   * document-wide query, so a list inside a page that is itself arrangeable
+   * (every WidgetGrid cell carries data-drag-index) needs its own name, or
+   * the pointer finds the widget before it finds the row.
+   */
+  attr = "drag-index",
 ): LongPressDrag {
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
@@ -71,15 +78,15 @@ export function useLongPressDrag(
 
   /** Which row the pointer is over, found by hit-testing rather than tracked. */
   const rowAt = useCallback((x: number, y: number): number | null => {
-    for (const el of document.querySelectorAll<HTMLElement>("[data-drag-index]")) {
+    for (const el of document.querySelectorAll<HTMLElement>(`[data-${attr}]`)) {
       const r = el.getBoundingClientRect();
       if (y >= r.top && y <= r.bottom && x >= r.left && x <= r.right) {
-        const i = Number(el.dataset.dragIndex);
+        const i = Number(el.getAttribute(`data-${attr}`));
         return Number.isFinite(i) ? i : null;
       }
     }
     return null;
-  }, []);
+  }, [attr]);
 
   useEffect(() => {
     const move = (e: PointerEvent) => {

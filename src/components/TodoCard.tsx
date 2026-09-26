@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { History, Plus, X } from "lucide-react";
+import { History, Plus, Timer, X } from "lucide-react";
 import { toast } from "sonner";
 import { RowEditSheet } from "@/components/RowEditSheet";
+import { FocusSheet } from "@/components/FocusSheet";
 import { textOf } from "@/lib/row-edit";
 import { byDue, dueLabel, overdueCount, toneFor, type DueTone } from "@/lib/due";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -70,6 +71,8 @@ export function TodoCard() {
   const [text, setText] = useState("");
   const [swiped, setSwiped] = useState<string | null>(null);
   const [editing, setEditing] = useState<TodoItem | null>(null);
+  // "Set duration & run": the to-do handed to the focus queue.
+  const [focusing, setFocusing] = useState<TodoItem | null>(null);
   const [history, setHistory] = useState(false);
 
   const today = getLocalDateKey(new Date());
@@ -188,10 +191,24 @@ export function TodoCard() {
                 });
               }}
             >
-              <TodoRow item={t} today={today} onToggle={() => toggleTodo(t.id)} />
+              <TodoRow
+                item={t}
+                today={today}
+                onToggle={() => toggleTodo(t.id)}
+                onFocus={() => setFocusing(t)}
+              />
             </SwipeRow>
           ))}
         </div>
+      )}
+
+      {focusing && (
+        <FocusSheet
+          label={focusing.text}
+          source="todo"
+          refId={focusing.id}
+          onClose={() => setFocusing(null)}
+        />
       )}
 
       {active.length === 0 && (
@@ -229,17 +246,20 @@ export function TodoCard() {
 
 /** The square, the text, the due badge — the same row wherever it is drawn. */
 function TodoRow({
-  item, today, onToggle,
+  item, today, onToggle, onFocus,
 }: {
   item: TodoItem;
   today: string;
   onToggle: () => void;
+  /** Present on live rows: give it a duration and run it. */
+  onFocus?: () => void;
 }) {
   return (
+    <div className="flex w-full items-stretch gap-1">
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center gap-2 rounded-xl border border-border bg-surface-2 px-2.5 py-2 text-left"
+      className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-border bg-surface-2 px-2.5 py-2 text-left"
     >
       {/* A square, and it stays a square when ticked. A checkbox that
           becomes a circle on tap reads as a different control. Bigger than
@@ -284,6 +304,17 @@ function TodoRow({
         </span>
       )}
     </button>
+    {onFocus && !item.done && (
+      <button
+        type="button"
+        onClick={onFocus}
+        aria-label={`Set a duration and run ${item.text}`}
+        className="grid w-11 shrink-0 place-items-center rounded-xl border border-border bg-surface-2 text-faint active:scale-95"
+      >
+        <Timer className="size-4" />
+      </button>
+    )}
+    </div>
   );
 }
 

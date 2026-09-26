@@ -41,6 +41,12 @@ export interface RoutineStep {
   source: StepSource;
   /** The habit or to-do id, when the step stands for one. */
   refId?: string;
+  /**
+   * A rest the focus queue inserted between two work steps (Pomodoro mode).
+   * Always `source: "free"`, so finishing it can never tick anything; the flag
+   * only exists so the queue does not offer a break after a break.
+   */
+  isBreak?: boolean;
 }
 
 export interface Routine {
@@ -139,6 +145,13 @@ export interface RunState {
   pausedAt?: number;
   /** Total ms spent paused, so a pause does not count as being behind. */
   pausedMs: number;
+  /**
+   * step id -> seconds actually spent on it, written as each step is finished
+   * or skipped. Optional because runs saved before it existed have none, and
+   * nothing about running a routine depends on it — it is the record the
+   * focus log and the habit time targets read afterwards.
+   */
+  spent?: Record<string, number>;
 }
 
 export function startRun(routine: Routine, now = Date.now()): RunState {
@@ -245,7 +258,15 @@ export function completeStep(
     index: run.index + 1,
     stepStartedAt: now,
     done: run.done.includes(cur.id) ? run.done : [...run.done, cur.id],
+    spent: recordSpent(run, cur.id, now),
   };
+}
+
+/** The spent map with the current step's time added, pauses removed. */
+function recordSpent(run: RunState, stepId: string, now: number): Record<string, number> {
+  const prior = run.spent ?? {};
+  const secs = Math.round(stepElapsedMs(run, now) / 1000);
+  return { ...prior, [stepId]: (prior[stepId] ?? 0) + secs };
 }
 
 /**
@@ -256,8 +277,9 @@ export function completeStep(
  */
 export function skipStep(routine: Routine, run: RunState, now = Date.now()): RunState {
   const list = stepsOf(routine);
-  if (!list[run.index]) return run;
-  return { ...run, index: run.index + 1, stepStartedAt: now };
+  const cur = list[run.index];
+  if (!cur) return run;
+  return { ...run, index: run.index + 1, stepStartedAt: now, spent: recordSpent(run, cur.id, now) };
 }
 
 export function pauseRun(run: RunState, now = Date.now()): RunState {
@@ -312,6 +334,7 @@ export function cleanRoutine(raw: unknown): Routine | null {
           seconds: clampStep(s.seconds),
           source: s.source === "habit" || s.source === "todo" ? s.source : ("free" as StepSource),
           refId: typeof s.refId === "string" ? s.refId : undefined,
+          ...(s.isBreak === true ? { isBreak: true } : {}),
         }))
     : [];
   return {

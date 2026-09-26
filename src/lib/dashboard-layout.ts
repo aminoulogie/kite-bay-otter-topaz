@@ -182,6 +182,9 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   // lives on one screen only.
   { id: "habits", label: "Habits", size: "2x4" },
   { id: "todos", label: "To-do", size: "2x4" },
+  // Today's focus list, first three. Beside the to-dos because it is the same
+  // question with a clock attached: what next, and for how long.
+  { id: "focus", label: "Next up (Focus)", size: "2x4" },
   // Next steps, not progress bars. Sits beside the to-do list because the two
   // answer the same question at different scales — what could I pick up now.
   { id: "projects", label: "Projects", size: "2x4" },
@@ -272,6 +275,8 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "header", label: "The day", size: "2x4" },
     { id: "routines", label: "Routines", size: "2x4" },
     { id: "ring", label: "The ring", size: "2x4" },
+    { id: "focus", label: "Focus", size: "2x4" },
+    { id: "budget", label: "Planned vs spent", size: "2x4" },
     { id: "screen", label: "Screen time", size: "2x4" },
     { id: "blocks", label: "The day, in order", size: "2x4" },
   ],

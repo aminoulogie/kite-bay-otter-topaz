@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, Camera, Check, ListChecks, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import { CalendarDays, Camera, Check, ListChecks, Timer, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
+import { FocusSheet } from "@/components/FocusSheet";
+import { habitFocusSeconds, targetProgress } from "@/lib/focus";
 import { MonthMatrix, MonthStrip, YearlyOverview } from "@/components/HabitHeatmap";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -192,6 +194,9 @@ function TodayPanel() {
   const logHabitAmount = useSoma((s) => s.logHabitAmount);
   const removeHabit = useSoma((s) => s.removeHabit);
   const setHabitSeconds = useSoma((s) => s.setHabitSeconds);
+  const setHabitTarget = useSoma((s) => s.setHabitTarget);
+  const focusSpent = useSoma((s) => s.focusSpent);
+  const [focusFor, setFocusFor] = useState<Habit | null>(null);
   const restoreHabit = useSoma((s) => s.restoreHabit);
   const activeDate = useSoma((s) => s.activeDate);
   const today = parseLocalDateKey(activeDate);
@@ -344,7 +349,24 @@ function TodayPanel() {
                   <span className="text-[0.7rem] text-faint">
                     {weekDone}/{h.goalDaysPerWeek} this week
                   </span>
+                  {/* Give it time now: a duration and the runner, from here. */}
+                  {!done && (
+                    <button
+                      type="button"
+                      onClick={() => setFocusFor(h)}
+                      className="flex min-h-7 items-center gap-1 rounded-full border border-border bg-surface-2 px-2 text-[0.65rem] font-bold text-muted"
+                      aria-label={`Focus on ${h.name}`}
+                    >
+                      <Timer className="size-3" /> Focus
+                    </button>
+                  )}
                 </div>
+                {h.targetMinutes ? (
+                  <TargetBar
+                    spent={habitFocusSeconds(focusSpent, activeDate, h.id)}
+                    minutes={h.targetMinutes}
+                  />
+                ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 <button
@@ -475,6 +497,20 @@ function TodayPanel() {
         );
       })}
 
+      {focusFor && (
+        <FocusSheet
+          label={focusFor.name}
+          source="habit"
+          refId={focusFor.id}
+          habitSeconds={
+            focusFor.targetMinutes
+              ? Math.max(60, focusFor.targetMinutes * 60 - habitFocusSeconds(focusSpent, activeDate, focusFor.id))
+              : focusFor.seconds
+          }
+          onClose={() => setFocusFor(null)}
+        />
+      )}
+
       {setupFor && (
         <HabitSetupSheet
           habit={habits.find((h) => h.id === setupFor.id) ?? setupFor}
@@ -482,6 +518,7 @@ function TodayPanel() {
           onSaveSteps={(next: HabitStep[]) => setHabitSteps(setupFor.id, next)}
           onSaveRamp={(next: HabitRamp | null) => setHabitRamp(setupFor.id, next)}
           onSaveSeconds={(next) => setHabitSeconds(setupFor.id, next)}
+          onSaveTarget={(next) => setHabitTarget(setupFor.id, next)}
         />
       )}
 
@@ -588,6 +625,21 @@ function RampRow({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Focus minutes toward a habit's daily target. Measured, never pressed. */
+function TargetBar({ spent, minutes }: { spent: number; minutes: number }) {
+  const p = targetProgress(spent, minutes);
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3">
+        <div className="h-full rounded-full bg-accent" style={{ width: `${p * 100}%` }} />
+      </div>
+      <span className="shrink-0 text-[0.62rem] font-bold tabular text-faint">
+        {Math.floor(spent / 60)}/{minutes} min
+      </span>
     </div>
   );
 }

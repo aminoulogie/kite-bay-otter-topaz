@@ -96,6 +96,13 @@ import {
 } from "./routine";
 import { defaultPlan, normalise, type TimeBlock } from "./day-plan";
 import {
+  FOCUS_COLOR, addSpent, addToQueue, appendLog, cleanFocusPrefs, defaultFocusPrefs,
+  focusDateOf, focusIdFor, insertBreakAfter, isFocusId, itemsFromPlan, makeItem, moveInQueue,
+  patchQueueSeconds, pruneFinished, queueAsRoutine, rememberSeconds, removeFromQueue,
+  reviveRun, routineForRun, spentByRef, summarise, type FocusPrefs, type FocusSession,
+  type NewItem,
+} from "./focus";
+import {
   addStep, cleanProject, moveStep, newProjectId, removeStep, setStep, stepsOf, type Project,
 } from "./projects";
 import { cleanTrade, newTradeId, type Trade, type TradeDraft } from "./trading";
@@ -270,9 +277,11 @@ export interface SomaStore {
   /**
    * Timed runs of several things back to back. See lib/routine.ts.
    *
-   * `routineRun` is deliberately NOT persisted: a run is a thing happening
-   * now, and restoring one from three days ago would report you as nineteen
-   * minutes behind on a morning that is over.
+   * The run IS persisted now, because it has to survive the process being
+   * killed while the phone is locked — the lock screen is still counting, and
+   * reopening the app to a blank Time tab would lose the step you were on.
+   * What the old comment feared is still prevented: `reviveDayRoutineRun`
+   * drops a run from a morning that is over (lib/focus.ts, STALE_RUN_MS).
    */
   dayRoutines: Routine[];
   dayRoutineRun: RunState | null;
@@ -286,6 +295,41 @@ export interface SomaStore {
   moveDayRoutineStep: (id: string, stepId: string, to: number) => void;
   beginDayRoutine: (id: string) => void;
   setDayRoutineRun: (run: RunState | null) => void;
+  /**
+   * End whatever is running — a routine or the focus queue — and keep the
+   * record: a line in the session log, the seconds spent per habit/to-do, and
+   * (for the queue) the finished items taken off today's list.
+   */
+  endDayRoutineRun: () => void;
+  /** Throw away a run restored from a morning that is over. Run on boot. */
+  reviveDayRoutineRun: () => void;
+  /**
+   * The focus queue: today's one-shot run, built from to-dos, habits and free
+   * blocks. date -> ordered steps. Run by the same runner as a routine; see
+   * lib/focus.ts for why it is a routine in all but storage.
+   */
+  focusQueues: Record<string, RoutineStep[]>;
+  focusPrefs: FocusPrefs;
+  /** A small log of finished runs, newest last. For Insights. */
+  focusLog: FocusSession[];
+  /** date -> "habit:<id>" | "todo:<id>" | "free" | "break" -> seconds spent. */
+  focusSpent: Record<string, Record<string, number>>;
+  /** The runner folded down to a pill. Not persisted: a relaunch shows it. */
+  focusMinimised: boolean;
+  addFocusItem: (item: NewItem) => void;
+  removeFocusItem: (id: string) => void;
+  patchFocusSeconds: (id: string, seconds: number) => void;
+  moveFocusItem: (id: string, to: number) => void;
+  clearFocusQueue: () => void;
+  /** Flexible blocks from the day plan, as queue items. Returns how many. */
+  pullFocusFromPlan: (blocks: TimeBlock[]) => number;
+  /** Queue it next (or first) and start, for "Set duration & run". */
+  runFocusItemNow: (item: NewItem) => void;
+  beginFocus: () => void;
+  /** Pomodoro: put a break after step `index` of the running queue. */
+  insertFocusBreak: (index: number) => void;
+  setFocusPrefs: (patch: Partial<Omit<FocusPrefs, "lastSeconds">>) => void;
+  setFocusMinimised: (on: boolean) => void;
   /** Things with a finish line. See lib/projects.ts. */
   projects: Project[];
   /** The trading journal. See lib/trading.ts for the rules it enforces. */
@@ -371,6 +415,8 @@ export interface SomaStore {
   addHabit: (h: Omit<Habit, "id" | "history">) => void;
   /** Roughly how long the habit takes, for building routines out of habits. */
   setHabitSeconds: (id: string, seconds: number | null) => void;
+  /** Minutes of focus a day the habit is aiming for. Null removes the target. */
+  setHabitTarget: (id: string, minutes: number | null) => void;
   removeHabit: (id: string) => void;
   /**
    * Put a deleted habit back where it was, history and all.
@@ -486,6 +532,17 @@ function newId(): string {
  * Every field is repaired rather than trusted: a backup is a file the user can
  * edit, and one malformed step should cost that step, not the whole board.
  */
+/** date -> steps, each queue cleaned the way a routine's steps are. */
+function asFocusQueues(raw: unknown): Record<string, RoutineStep[]> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, RoutineStep[]> = {};
+  for (const [date, steps] of Object.entries(raw as Record<string, unknown>)) {
+    const r = cleanRoutine({ id: "q", steps });
+    if (r) out[date] = r.steps;
+  }
+  return out;
+}
+
 function asRoutines(raw: unknown): Routine[] {
   if (!Array.isArray(raw)) return [];
   return raw.map(cleanRoutine).filter((r): r is Routine => r !== null);
@@ -579,6 +636,11 @@ export const useSoma = create<SomaStore>()(
       trades: [],
       dayRoutines: [],
       dayRoutineRun: null,
+      focusQueues: {},
+      focusPrefs: defaultFocusPrefs(),
+      focusLog: [],
+      focusSpent: {},
+      focusMinimised: false,
       dayPlans: {},
       screenTime: {},
       layouts: {},
@@ -1298,6 +1360,168 @@ export const useSoma = create<SomaStore>()(
         set({ dayRoutineRun: startRun(r) });
       },
       setDayRoutineRun: (run) => set({ dayRoutineRun: run }),
+      endDayRoutineRun: () => {
+        const s = get();
+        const run = s.dayRoutineRun;
+        if (!run) return;
+        const routine = routineForRun(run, s.dayRoutines, s.focusQueues);
+        if (!routine) {
+          set({ dayRoutineRun: null, focusMinimised: false });
+          return;
+        }
+        const now = Date.now();
+        const date = focusDateOf(run.routineId) ?? s.activeDate;
+        const next: Partial<SomaStore> = {
+          dayRoutineRun: null,
+          focusMinimised: false,
+          focusLog: appendLog(s.focusLog, summarise(routine, run, date, now)),
+          focusSpent: {
+            ...s.focusSpent,
+            [date]: addSpent(s.focusSpent[date], spentByRef(routine, run, now)),
+          },
+        };
+        if (isFocusId(run.routineId)) {
+          next.focusQueues = {
+            ...s.focusQueues,
+            [date]: pruneFinished(s.focusQueues[date] ?? [], run.done),
+          };
+        }
+        set(next);
+      },
+      reviveDayRoutineRun: () => {
+        const cur = get().dayRoutineRun;
+        if (!cur) return;
+        const run = reviveRun(cur);
+        const s = get();
+        // A run whose list no longer exists has nothing to measure against.
+        if (!run || !routineForRun(run, s.dayRoutines, s.focusQueues)) {
+          set({ dayRoutineRun: null });
+          return;
+        }
+        set({ dayRoutineRun: run });
+      },
+      addFocusItem: (item) => {
+        const s = get();
+        const date = s.activeDate;
+        set({
+          focusQueues: { ...s.focusQueues, [date]: addToQueue(s.focusQueues[date] ?? [], makeItem(item)) },
+          focusPrefs: {
+            ...s.focusPrefs,
+            lastSeconds: rememberSeconds(s.focusPrefs.lastSeconds, item.source, item.refId, item.seconds),
+          },
+        });
+      },
+      removeFocusItem: (id) => {
+        const s = get();
+        const date = s.activeDate;
+        const q = s.focusQueues[date] ?? [];
+        const run = s.dayRoutineRun;
+        // The step on the clock, or one already behind it, belongs to the run.
+        if (run && run.routineId === focusIdFor(date) && q.findIndex((x) => x.id === id) <= run.index) {
+          return;
+        }
+        set({ focusQueues: { ...s.focusQueues, [date]: removeFromQueue(q, id) } });
+      },
+      patchFocusSeconds: (id, seconds) => {
+        const s = get();
+        const date = s.activeDate;
+        const q = s.focusQueues[date] ?? [];
+        const item = q.find((x) => x.id === id);
+        set({
+          focusQueues: { ...s.focusQueues, [date]: patchQueueSeconds(q, id, seconds) },
+          focusPrefs: item
+            ? {
+                ...s.focusPrefs,
+                lastSeconds: rememberSeconds(s.focusPrefs.lastSeconds, item.source, item.refId, seconds),
+              }
+            : s.focusPrefs,
+        });
+      },
+      moveFocusItem: (id, to) => {
+        const s = get();
+        const date = s.activeDate;
+        const run = s.dayRoutineRun;
+        const floor = run && run.routineId === focusIdFor(date) ? run.index + 1 : 0;
+        set({
+          focusQueues: {
+            ...s.focusQueues,
+            [date]: moveInQueue(s.focusQueues[date] ?? [], id, to, floor),
+          },
+        });
+      },
+      clearFocusQueue: () => {
+        const s = get();
+        const date = s.activeDate;
+        if (s.dayRoutineRun?.routineId === focusIdFor(date)) return;
+        set({ focusQueues: { ...s.focusQueues, [date]: [] } });
+      },
+      pullFocusFromPlan: (blocks) => {
+        const s = get();
+        const date = s.activeDate;
+        const q = s.focusQueues[date] ?? [];
+        const added = itemsFromPlan(blocks, q);
+        if (added.length) set({ focusQueues: { ...s.focusQueues, [date]: [...q, ...added] } });
+        return added.length;
+      },
+      runFocusItemNow: (item) => {
+        const s = get();
+        const date = s.activeDate;
+        const q = s.focusQueues[date] ?? [];
+        const run = s.dayRoutineRun;
+        const runningHere = run?.routineId === focusIdFor(date);
+        const lastSeconds = rememberSeconds(
+          s.focusPrefs.lastSeconds, item.source, item.refId, item.seconds,
+        );
+        // Already queued: move it rather than adding a second copy.
+        const existing = item.refId ? q.find((x) => x.refId === item.refId && !x.isBreak) : undefined;
+        const made = existing ? { ...existing, seconds: clampStep(item.seconds) } : makeItem(item);
+        const rest = q.filter((x) => x.id !== made.id);
+        if (runningHere && run) {
+          // Straight after the step on the clock: "next", not "instead".
+          if (existing && q.indexOf(existing) <= run.index) return;
+          const at = Math.min(rest.length, run.index + 1);
+          set({
+            focusQueues: { ...s.focusQueues, [date]: [...rest.slice(0, at), made, ...rest.slice(at)] },
+            focusPrefs: { ...s.focusPrefs, lastSeconds },
+            focusMinimised: false,
+          });
+          return;
+        }
+        if (run) get().endDayRoutineRun();
+        const queue = [made, ...rest];
+        set({
+          focusQueues: { ...get().focusQueues, [date]: queue },
+          focusPrefs: { ...get().focusPrefs, lastSeconds },
+          dayRoutineRun: startRun(queueAsRoutine(date, queue, FOCUS_COLOR)),
+          focusMinimised: false,
+        });
+      },
+      beginFocus: () => {
+        const s = get();
+        const date = s.activeDate;
+        const q = s.focusQueues[date] ?? [];
+        if (!q.length) return;
+        if (s.dayRoutineRun?.routineId === focusIdFor(date)) {
+          set({ focusMinimised: false });
+          return;
+        }
+        if (s.dayRoutineRun) get().endDayRoutineRun();
+        set({ dayRoutineRun: startRun(queueAsRoutine(date, q)), focusMinimised: false });
+      },
+      insertFocusBreak: (index) => {
+        const s = get();
+        const date = focusDateOf(s.dayRoutineRun?.routineId);
+        if (!date) return;
+        set({
+          focusQueues: {
+            ...s.focusQueues,
+            [date]: insertBreakAfter(s.focusQueues[date] ?? [], index, s.focusPrefs.breakSeconds),
+          },
+        });
+      },
+      setFocusPrefs: (patch) =>
+        set({ focusPrefs: cleanFocusPrefs({ ...get().focusPrefs, ...patch }) }),
+      setFocusMinimised: (on) => set({ focusMinimised: on }),
       addProject: (name, color) => {
         const id = newProjectId();
         set((s) => ({
@@ -1702,6 +1926,20 @@ export const useSoma = create<SomaStore>()(
           ],
         });
       },
+      setHabitTarget: (id, minutes) =>
+        set({
+          habits: get().habits.map((h) =>
+            h.id === id
+              ? {
+                  ...h,
+                  targetMinutes:
+                    minutes == null || !(Number(minutes) > 0)
+                      ? undefined
+                      : Math.min(24 * 60, Math.round(Number(minutes))),
+                }
+              : h,
+          ),
+        }),
       setHabitSeconds: (id, seconds) =>
         set({
           habits: get().habits.map((h) =>
@@ -2427,6 +2665,10 @@ export const useSoma = create<SomaStore>()(
             projects: get().projects,
             trades: get().trades,
             dayRoutines: get().dayRoutines,
+            focusQueues: get().focusQueues,
+            focusPrefs: get().focusPrefs,
+            focusLog: get().focusLog,
+            focusSpent: get().focusSpent,
             dayPlans: get().dayPlans,
             screenTime: get().screenTime,
             layouts: get().layouts,
@@ -2480,6 +2722,10 @@ export const useSoma = create<SomaStore>()(
               projects: asProjects(data.projects),
               trades: asTrades(data.trades),
               dayRoutines: asRoutines(data.dayRoutines),
+              focusQueues: asFocusQueues(data.focusQueues),
+              focusPrefs: cleanFocusPrefs(data.focusPrefs),
+              focusLog: Array.isArray(data.focusLog) ? data.focusLog : [],
+              focusSpent: data.focusSpent && typeof data.focusSpent === "object" ? data.focusSpent : {},
               dayPlans: data.dayPlans || {},
               screenTime: data.screenTime || {},
               layouts: asLayouts(data.layouts),
@@ -2581,6 +2827,13 @@ export const useSoma = create<SomaStore>()(
             projects: mergeById(asProjects(data.projects), cur.projects),
             trades: mergeById(asTrades(data.trades), cur.trades),
             dayRoutines: mergeById(asRoutines(data.dayRoutines), cur.dayRoutines),
+            // Queues and spent time are per day: incoming days fill gaps, a day
+            // on this phone is the newer edit. The log merges by id.
+            focusQueues: { ...asFocusQueues(data.focusQueues), ...cur.focusQueues },
+            focusSpent: { ...(data.focusSpent && typeof data.focusSpent === "object" ? data.focusSpent : {}), ...cur.focusSpent },
+            focusLog: mergeById(Array.isArray(data.focusLog) ? data.focusLog : [], cur.focusLog)
+              .sort((a, b) => (a.endedAt || 0) - (b.endedAt || 0))
+              .slice(-150),
             // Incoming days fill gaps; a plan on the device is the newer edit.
             dayPlans: { ...(data.dayPlans || {}), ...cur.dayPlans },
             screenTime: { ...(data.screenTime || {}), ...cur.screenTime },
@@ -2686,6 +2939,11 @@ export const useSoma = create<SomaStore>()(
         projects: s.projects,
         trades: s.trades,
         dayRoutines: s.dayRoutines,
+        dayRoutineRun: s.dayRoutineRun,
+        focusQueues: s.focusQueues,
+        focusPrefs: s.focusPrefs,
+        focusLog: s.focusLog,
+        focusSpent: s.focusSpent,
         dayPlans: s.dayPlans,
         screenTime: s.screenTime,
         layouts: s.layouts,
