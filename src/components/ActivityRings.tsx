@@ -1,12 +1,12 @@
 import { useMemo } from "react";
 import { ChevronRight } from "lucide-react";
 import { CardTitle } from "@/components/ui/card";
-import { columnsFor, rowsFor } from "@/lib/dashboard-layout";
+import { rowsFor } from "@/lib/dashboard-layout";
+import { Glance, isGlance } from "@/components/Glance";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { sessionBurn } from "@/lib/training-burn";
 import { totalWaterMl } from "@/lib/hydration";
 import { useSoma } from "@/lib/store";
-import { cn } from "@/lib/utils";
 
 /**
  * The day, as four rings.
@@ -73,93 +73,100 @@ export function ActivityRings() {
     burnt: { value: sessionBurn(history[date], weight || undefined).gross, goal: BURN_TARGET },
   };
 
-  const full = columnsFor(size) >= 4;
-  // The rings scale to the box they were given: a 2x2 tile is 11rem tall and
-  // a 132px ring plus a title does not fit in it, which is exactly the crop
-  // being reported. Full width keeps the large dial; a 2-row tile drops to a
-  // medium one; a 1-row tile is just the rings with no title at all.
-  const diameter = full ? 132 : rowsFor(size) >= 2 ? 96 : 56;
-  const showTitle = full || rowsFor(size) >= 2;
+  const rings = (px: number) => (
+    <svg viewBox={`0 0 ${BOX} ${BOX}`} className="shrink-0 -rotate-90" style={{ width: px, height: px }} aria-hidden>
+      {RINGS.map((ring, i) => {
+        const g = GEOMETRY[i]!;
+        const { value, goal } = values[ring.id];
+        const filled = goal > 0 ? Math.max(0, Math.min(1, value / goal)) : 0;
+        const circumference = 2 * Math.PI * g.r;
+        return (
+          <g key={ring.id}>
+            {/* The track in the ring's own colour, dimmed, as on the watch:
+                an empty day is four faint coloured rings, not a dark target. */}
+            <circle cx={CENTRE} cy={CENTRE} r={g.r} fill="none" stroke={ring.colour} strokeOpacity={0.2} strokeWidth={g.w} />
+            {filled > 0 && (
+              <circle
+                cx={CENTRE}
+                cy={CENTRE}
+                r={g.r}
+                fill="none"
+                stroke={ring.colour}
+                strokeWidth={g.w}
+                strokeLinecap="round"
+                strokeDasharray={`${circumference * filled} ${circumference * 1.6}`}
+                style={{ transition: "stroke-dasharray 320ms cubic-bezier(.2,.8,.2,1)" }}
+              />
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+  const aria =
+    RINGS.map((r) => `${r.label} ${Math.round(values[r.id].value)} of ${Math.round(values[r.id].goal)}`).join(", ") +
+    ". Opens Fuel.";
 
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Today",
+          visual: rings,
+          stats: RINGS.map((r) => ({
+            label: r.label,
+            color: r.colour,
+            value: String(Math.round(values[r.id].value)),
+            of: `/${Math.round(values[r.id].goal)}`,
+          })),
+          onOpen: () => setTab("nutrition"),
+          aria,
+        }}
+      />
+    );
+  }
+
+  const big = rowsFor(size) >= 3;
   return (
     <button
       type="button"
       onClick={() => setTab("nutrition")}
       className="glass-card block h-full w-full rounded-2xl border border-border bg-surface p-4 text-left active:bg-surface-2"
-      aria-label={RINGS.map((r) => `${r.label} ${Math.round(values[r.id].value)} of ${Math.round(values[r.id].goal)}`).join(", ") + ". Opens Fuel."}
+      aria-label={aria}
     >
-      {showTitle && (
-        <CardTitle>
-          <span className="flex items-center gap-1">
-            Today
-            <ChevronRight className="size-3.5 text-faint" aria-hidden />
-          </span>
-        </CardTitle>
-      )}
+      <CardTitle>
+        <span className="flex items-center gap-1">
+          Today
+          <ChevronRight className="size-3.5 text-faint" aria-hidden />
+        </span>
+      </CardTitle>
 
-      <div className={cn("flex items-center gap-4", !full && "justify-center")}>
-        <svg
-          viewBox={`0 0 ${BOX} ${BOX}`}
-          className="shrink-0 -rotate-90"
-          style={{ width: diameter, height: diameter }}
-          aria-hidden
-        >
-          {RINGS.map((ring, i) => {
-            const g = GEOMETRY[i]!;
+      <div className="flex items-center gap-5">
+        {rings(big ? 168 : 132)}
+        <div className="min-w-0 flex-1 space-y-1.5">
+          {RINGS.map((ring) => {
             const { value, goal } = values[ring.id];
-            const filled = goal > 0 ? Math.max(0, Math.min(1, value / goal)) : 0;
-            const circumference = 2 * Math.PI * g.r;
             return (
-              <g key={ring.id}>
-                {/* The track, so an empty ring is still an empty ring rather
-                    than nothing at all. */}
-                <circle
-                  cx={CENTRE}
-                  cy={CENTRE}
-                  r={g.r}
-                  fill="none"
-                  stroke="var(--color-surface-3)"
-                  strokeWidth={g.w}
-                />
-                {filled > 0 && (
-                  <circle
-                    cx={CENTRE}
-                    cy={CENTRE}
-                    r={g.r}
-                    fill="none"
-                    stroke={ring.colour}
-                    strokeWidth={g.w}
-                    strokeLinecap="round"
-                    strokeDasharray={`${circumference * filled} ${circumference * 1.6}`}
-                    style={{ transition: "stroke-dasharray 320ms cubic-bezier(.2,.8,.2,1)" }}
-                  />
+              <div key={ring.id} className="min-w-0">
+                <div className="truncate text-[0.62rem] font-bold uppercase tracking-wide text-faint">{ring.label}</div>
+                <div className="truncate text-[0.85rem] font-extrabold tabular" style={{ color: ring.colour }}>
+                  {Math.round(value)}
+                  <span className="text-faint">/{Math.round(goal)}</span>{" "}
+                  <span className="text-[0.6rem] font-bold">{ring.unit}</span>
+                </div>
+                {big && (
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full" style={{ background: `${ring.colour}33` }}>
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${goal > 0 ? Math.min(100, (value / goal) * 100) : 0}%`, background: ring.colour }}
+                    />
+                  </div>
                 )}
-              </g>
+              </div>
             );
           })}
-        </svg>
-
-        {/* The legend only fits beside the rings at full width. A 2x2 tile is
-            half a phone: rings only, centred, and the box stops cropping. */}
-        {full && (
-          <div className="min-w-0 flex-1 space-y-1">
-            {RINGS.map((ring) => {
-              const { value, goal } = values[ring.id];
-              return (
-                <div key={ring.id} className="min-w-0">
-                  <div className="truncate text-[0.62rem] font-bold uppercase tracking-wide text-faint">
-                    {ring.label}
-                  </div>
-                  <div className="truncate text-[0.8rem] font-extrabold tabular" style={{ color: ring.colour }}>
-                    {Math.round(value)}
-                    <span className="text-faint">/{Math.round(goal)}</span>{" "}
-                    <span className="text-[0.6rem] font-bold">{ring.unit}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        </div>
       </div>
     </button>
   );

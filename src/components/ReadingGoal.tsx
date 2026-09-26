@@ -11,6 +11,8 @@ import { finishedIn, onlyBooks } from "@/lib/shelf";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * The box is cut to the arc rather than left square.
@@ -104,6 +106,24 @@ export function ReadingGoal() {
     return () => document.removeEventListener("visibilitychange", onHide);
   }, [readingSince, stopReading]);
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: running ? "Reading now" : "Reading today",
+          short: "Reading",
+          icon: running ? Pause : Play,
+          value: clockOf(minutes),
+          unit: `/ ${goal}m`,
+          progress: frac,
+          done: frac >= 1,
+          sub: `${run}-day streak · ${finished}/${booksGoal} books this year`,
+        }}
+      />
+    );
+  }
   return (
     <Card className="overflow-hidden">
       <div className="relative mx-auto w-full max-w-[280px]">

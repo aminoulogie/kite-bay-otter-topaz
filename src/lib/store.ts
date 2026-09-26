@@ -445,7 +445,14 @@ export interface SomaStore {
   scans: ScanRecord[];
   addScan: (scan: ScanRecord) => void;
   removeScan: (id: string) => void;
+  /** Merge a re-measurement into a stored scan, keeping its id, date and kind. */
+  updateScan: (id: string, patch: Partial<Omit<ScanRecord, "id" | "date" | "kind">>) => void;
   restoreScan: (index: number, scan: ScanRecord) => void;
+  /**
+   * Move a scan to the pose it was really taken at. Its measurements were
+   * taken as the wrong pose, so it is marked for re-analysis.
+   */
+  refileScan: (id: string, kind: ScanRecord["kind"], side?: "left" | "right") => void;
   /** Money and mind, both dated logs, both persisted with everything else. */
   ledger: LedgerEntry[];
   mind: MindEntry[];
@@ -2358,6 +2365,14 @@ export const useSoma = create<SomaStore>()(
       },
       addScan: (scan) => set({ scans: [...get().scans, scan] }),
       removeScan: (id) => set({ scans: get().scans.filter((x) => x.id !== id) }),
+      updateScan: (id, patch) =>
+        set({ scans: get().scans.map((x) => (x.id === id ? { ...x, ...patch } : x)) }),
+      refileScan: (id, kind, side) =>
+        set({
+          scans: get().scans.map((x) =>
+            x.id === id ? { ...x, kind, side, analyzer: "refiled" } : x,
+          ),
+        }),
       restoreScan: (index, scan) => {
         const next = [...get().scans];
         next.splice(Math.max(0, Math.min(index, next.length)), 0, scan);
@@ -2699,6 +2714,12 @@ export const useSoma = create<SomaStore>()(
     },
   ),
 );
+
+// Development only: a handle on the live store for the widget screenshot
+// harness, which cannot import the module the app itself is running.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __soma?: typeof useSoma }).__soma = useSoma;
+}
 
 /**
  * Rebuild a saved session's totals from its exercises.

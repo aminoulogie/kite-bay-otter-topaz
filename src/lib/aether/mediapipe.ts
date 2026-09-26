@@ -192,14 +192,5 @@ export function smileFromBlendshapes(
   }, 0);
 }
 
-/** Column-major 4x4 facial transformation matrix → approximate Euler degrees. */
-export function eulerFromMatrix4(m?: number[]): { yawDeg: number; pitchDeg: number; rollDeg: number } | null {
-  if (!m || m.length < 16) return null;
-  const r00 = m[0], r10 = m[1], r20 = m[2];
-  const r21 = m[6], r22 = m[10];
-  const yawDeg = (Math.atan2(r10, r00) * 180) / Math.PI;
-  const pitchDeg = (Math.atan2(-r20, Math.hypot(r00, r10)) * 180) / Math.PI;
-  const rollDeg = (Math.atan2(r21, r22) * 180) / Math.PI;
-  if (![yawDeg, pitchDeg, rollDeg].every(Number.isFinite)) return null;
-  return { yawDeg, pitchDeg, rollDeg };
-}
+/** Head angles from the transformation matrix — see pose-angles.ts. */
+export { eulerFromMatrix4 } from "./pose-angles.ts";

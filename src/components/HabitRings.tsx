@@ -4,6 +4,7 @@ import { CardTitle } from "@/components/ui/card";
 import { dashFor, ringsFor, tally, type HabitRing } from "@/lib/habit-rings";
 import { hasDetailRoom } from "@/lib/dashboard-layout";
 import { useWidgetSize } from "@/components/WidgetGrid";
+import { Glance, isGlance } from "@/components/Glance";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,24 @@ export function HabitRings() {
   const count = tally(rings);
 
   if (!habits.length) return null;
+
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Habits",
+          color: "#c8ff2e",
+          value: `${count.done}/${count.total}`,
+          sub: count.done === count.total ? "all done" : `${count.total - count.done} to go`,
+          progress: count.total ? count.done / count.total : null,
+          done: count.total > 0 && count.done === count.total,
+          lines: rings.map((r) => ({ text: r.name, done: r.fill >= 1 })),
+          onOpen: () => setTab("habits"),
+        }}
+      />
+    );
+  }
 
   return (
     // A button wearing the card's clothes rather than a card with a button in
@@ -93,7 +112,8 @@ function Ring({ ring, labelled }: { ring: HabitRing; labelled: boolean }) {
             cy={BOX / 2}
             r={R}
             fill="none"
-            stroke="var(--color-surface-3)"
+            stroke={ring.color}
+            strokeOpacity={0.22}
             strokeWidth={STROKE}
           />
           {/* Drawn only when there is something to draw: a zero-length dash

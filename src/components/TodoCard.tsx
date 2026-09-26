@@ -15,6 +15,8 @@ import {
 import { useSoma } from "@/lib/store";
 import type { TodoItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * Two lists rather than one, and a place the old items go.
@@ -83,6 +85,25 @@ export function TodoCard() {
     () => historyOf(todos, scope, today).length > 0,
     [todos, scope, today],
   );
+
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    const left = active.length - done;
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: late > 0 ? `To do · ${late} late` : "To do",
+          lines: ordered.map((t) => ({ text: t.text, done: t.done })),
+          sub: active.length ? `${done}/${active.length} done` : null,
+          done: active.length > 0 && left === 0,
+          empty: "Nothing on for today",
+          emptyShort: "All clear",
+          aria: `To do: ${left} left of ${active.length}`,
+        }}
+      />
+    );
+  }
 
   return (
     <Card>

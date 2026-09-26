@@ -79,3 +79,60 @@ function pickNearerEar(lEar: Pt, rSh: Pt | undefined, rEar: Pt, lSh: Pt | undefi
   if (!rSh || !lSh) return lEar;
   return Math.abs(rEar.x - 0.5) > Math.abs(lEar.x - 0.5) ? rEar : lEar;
 }
+
+/** A pose landmark as MediaPipe returns it: normalised x/y plus visibility. */
+export interface PoseLandmark {
+  x: number;
+  y: number;
+  z?: number;
+  visibility?: number;
+}
+
+/**
+ * Posture from a side PHOTOGRAPH, or null when the photo cannot support it.
+ *
+ * Two things the raw landmarks get wrong, and this corrects:
+ *
+ * 1. They are normalised separately on each axis — x by the image width, y by
+ *    its height. On a 3:4 portrait photo a line that is really 45° reads as
+ *    about 53°, so every angle comes out bent by the photo's shape. x is
+ *    rescaled by width/height first, which puts both axes back in the same
+ *    unit before anything is measured.
+ *
+ * 2. The pose model always returns 33 points, guessing the ones it cannot
+ *    see. A face-framed profile often crops the shoulders, and a guessed
+ *    shoulder produces a confident, meaningless neck angle. So an ear and a
+ *    shoulder must both actually be visible, or nothing is claimed.
+ */
+export function postureFromSideFrame(
+  landmarks: PoseLandmark[] | undefined,
+  width: number,
+  height: number,
+  minVisibility = 0.5,
+): PostureAnalysis | null {
+  if (!landmarks?.length || !(width > 0) || !(height > 0)) return null;
+  const seen = (p: PoseLandmark | undefined) => !!p && (p.visibility ?? 1) >= minVisibility;
+
+  const lEar = landmarks[POSE.leftEar];
+  const rEar = landmarks[POSE.rightEar];
+  const lSh = landmarks[POSE.leftShoulder];
+  const rSh = landmarks[POSE.rightShoulder];
+  if (!(seen(lEar) || seen(rEar)) || !(seen(lSh) || seen(rSh))) return null;
+
+  const aspect = width / height;
+  const pts: Pt[] = landmarks.map((p) => ({ x: p.x * aspect, y: p.y, z: p.z }));
+
+  // In profile the near ear is the one the model can actually see; picking by
+  // distance from the image centre (the old fallback) assumes the head is centred.
+  const earIdx =
+    seen(lEar) && seen(rEar)
+      ? (lEar!.visibility ?? 1) >= (rEar!.visibility ?? 1) ? POSE.leftEar : POSE.rightEar
+      : seen(lEar) ? POSE.leftEar : POSE.rightEar;
+
+  // Drop a shoulder the model only guessed, so the midpoint is not dragged
+  // toward an invented point behind the body.
+  if (!seen(lSh)) delete pts[POSE.leftShoulder];
+  if (!seen(rSh)) delete pts[POSE.rightShoulder];
+
+  return analyzePostureSide(pts, pts[earIdx]);
+}

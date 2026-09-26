@@ -48,6 +48,7 @@ function resolveKeys(text: string, raw: string[]): string[] {
 const NOT_USER_DATA: Record<string, string> = {
   "soma-last-backup": "when this phone last backed up — restoring it would tell a fresh phone it was already safe",
   "grok-auth.bearer-token": "a session token, and sessionStorage besides — it dies with the tab by design",
+  "soma-scan-assist": "scan camera/zoom/flash choices for THIS phone's lenses — a restored 3x on a phone without a telephoto would be wrong",
 };
 
 /** Written by the zustand persist middleware, and the thing exportJson dumps. */

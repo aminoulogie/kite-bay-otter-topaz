@@ -3,7 +3,7 @@ import { test } from "node:test";
 import {
   DASHBOARD_WIDGETS as WIDGETS, SIZES, SIZE_SPECS, WIDGETS_BY_TAB, asSize, columnsFor,
   cycleSize, defaultLayout, hasDetailRoom, hasFullRoom, isArrangeable, isTile, widgetsFor,
-  hidden, isDefault, move, nextSize, reconcile, resize, rowsFor, setHidden, specFor,
+  allowedSizes, hidden, isDefault, move, nextSize, reconcile, resize, rowsFor, setHidden, specFor,
   toggleHidden, visible, widgetDef, DYNAMIC_SIZE, ONE_ROW_SINCE_V2, SPACER_SIZE, addSpacer,
   isDynamic, isSpacer, migrateToOneRow, nextSpacerId, removeWidget,
   type WidgetPlacement, type WidgetSize,
@@ -51,18 +51,23 @@ test("a widget takes any of the three sizes", () => {
   }
 });
 
-test("every widget on every page can be set to every size", () => {
-  // The old registry locked prose cards to full width. That was the app
-  // deciding which of the user's cards mattered enough to stay big, which is
-  // not its call — a card that looks bad small is one tap from being medium.
+test("every widget takes each size it offers, and only those", () => {
+  // Content widgets take all six and say less when small (Glance.tsx); bars
+  // and buttons offer only the one row where they still work.
   for (const [tab, list] of Object.entries(WIDGETS_BY_TAB)) {
     for (const w of list) {
+      const allowed = allowedSizes(tab, w.id);
+      assert.ok(allowed.includes(w.size), `${tab}/${w.id} ships at a size it offers`);
       for (const size of SIZES) {
         const l = resize(defaultLayout(tab), w.id, size, tab);
-        assert.equal(l.find((p) => p.id === w.id)?.size, size, `${tab}/${w.id} → ${size}`);
+        const got = l.find((p) => p.id === w.id)?.size;
+        if (allowed.includes(size)) assert.equal(got, size, `${tab}/${w.id} → ${size}`);
+        else assert.equal(got, w.size, `${tab}/${w.id} refuses ${size}`);
       }
     }
   }
+  assert.equal(allowedSizes("dashboard", "rings").length, 6);
+  assert.deepEqual(allowedSizes("habits", "tabs"), ["1x4"]);
 });
 
 test("the size cycles along the ladder and round again", () => {
@@ -453,4 +458,13 @@ test("a panel that appears later lands beside its neighbours, not at the bottom"
   const ids = withPanel.map((p) => p.id);
   assert.equal(ids[ids.indexOf("chips") + 1], "splits", "straight after the chips");
   assert.ok(ids.indexOf("splits") < ids.indexOf("1. Squat"), "and above the exercises");
+});
+
+test("a card filed under a sibling page is not added to this one", () => {
+  // Fuel renders all its cards into whichever page is open; only the
+  // registry's own for that page may appear.
+  const l = reconcile(undefined, "nutrition-dash", ["target", "diary", "water", "Bench Press"]);
+  const ids = l.map((p) => p.id);
+  assert.ok(!ids.includes("diary") && !ids.includes("water"), ids.join(","));
+  assert.ok(ids.includes("Bench Press"), "a truly invented card still is");
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
+import { Droplet, NotebookPen, Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { PortionSheet } from "@/components/PortionSheet";
@@ -18,7 +18,7 @@ import { Progress } from "@/components/ui/progress";
 import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
 import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { WeeklyFuel } from "@/components/WeeklyFuel";
 import { WeightPanel } from "@/components/views/BodyView";
@@ -280,7 +280,24 @@ export function NutritionView() {
       <TopTabs tabs={FUEL_TABS} value={sub} onChange={setSub} className="mb-3" />
 
     <WidgetGrid tab={`nutrition-${sub}`}>
-      <Card key="target" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
+      <Sized key="target" glance={{
+          label: "Calories",
+          short: "Calories",
+          color: "#ff9f0a",
+          value: totals.cals > 0 ? String(Math.round(totals.cals)) : null,
+          unit: "kcal",
+          sub: `of ${goalCals}${plannedTotals.cals > 0 ? ` · +${Math.round(plannedTotals.cals)} planned` : ""}`,
+          progress: goalCals > 0 ? totals.cals / goalCals : null,
+          stats: [
+            { label: "Protein", value: `${Math.round(totals.p)}`, of: `/${goals.protein}g` },
+            { label: "Carbs", value: `${Math.round(totals.c)}`, of: `/${goals.carbs}g` },
+            { label: "Fat", value: `${Math.round(totals.f)}`, of: `/${goals.fat}g` },
+            { label: "Fiber", value: `${Math.round(totals.fiber)}g` },
+          ],
+          empty: "Nothing eaten logged",
+          emptyShort: `0 / ${goalCals}`,
+        }}>
+      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <div className="flex items-start justify-between">
           <div>
             <Badge tone="accent">Diary · {activeDate}</Badge>
@@ -385,10 +402,23 @@ export function NutritionView() {
           </>
         )}
       </Card>
+      </Sized>
 
       <SuggestFromPantry key="suggest" meal={meal} target={planTarget} />
 
-      <PlanCard key="plan" 
+      <Sized
+        key="plan"
+        glance={() => ({
+          label: planTarget === activeDate ? "Today's plan" : `Plan · ${planTarget.slice(5)}`,
+          short: "Plan",
+          value: planned.length ? String(Math.round(plannedTotals.cals)) : null,
+          unit: "kcal planned",
+          lines: planned.map((it) => ({ text: it.name, value: `${Math.round(it.cals)}` })),
+          empty: "Nothing planned",
+          emptyShort: "Empty",
+        })}
+      >
+      <PlanCard 
         planned={planned}
         totals={totals}
         goals={goals}
@@ -398,6 +428,7 @@ export function NutritionView() {
           toast.success("The whole plan counted");
         }}
       />
+      </Sized>
 
       <div key="actions" className="grid grid-cols-3 gap-2">
         <Macro label="Protein" used={totals.p} goal={goals.protein} unit="g" />
@@ -405,7 +436,18 @@ export function NutritionView() {
         <Macro label="Fat" used={totals.f} goal={goals.fat} unit="g" />
       </div>
 
-      <Card key="water">
+      <Sized key="water" glance={{
+          label: "Water",
+          icon: Droplet,
+          color: "#19e3e3",
+          value: water > 0 ? (water / 1000).toFixed(1) : null,
+          unit: "L",
+          sub: `of ${((goals.water || 3500) / 1000).toFixed(1)} L`,
+          progress: water / (goals.water || 3500),
+          done: water >= (goals.water || 3500),
+          empty: "No water logged",
+        }}>
+      <Card>
         <CardTitle>
           <span>Water</span>
           <span className="tabular text-sm font-bold text-accent-text">
@@ -447,10 +489,26 @@ export function NutritionView() {
           </Button>
         </div>
       </Card>
+      </Sized>
 
       <PlatePhoto key="plate" date={activeDate} />
 
-      <HungerCard key="hunger" 
+      <Sized
+        key="hunger"
+        glance={() => {
+          const today = hungerOn(hunger, activeDate);
+          const last = today[today.length - 1];
+          return {
+            label: "Hunger",
+            value: last ? HUNGER_LABEL[last.level] : null,
+            sub: today.length ? `${today.length} logged today` : null,
+            lines: [...today].reverse().map((h) => ({ text: HUNGER_LABEL[h.level], value: h.at.slice(11, 16) })),
+            empty: "Not logged today",
+            emptyShort: "None",
+          };
+        }}
+      >
+      <HungerCard 
         entries={hungerOn(hunger, activeDate)}
         phase={settings.phase ?? "maintain"}
         onLog={(level) => {
@@ -467,8 +525,17 @@ export function NutritionView() {
           });
         }}
       />
+      </Sized>
 
-      <Card key="add">
+      <Sized key="add" glance={() => ({
+          label: "Add food",
+          short: "Add",
+          icon: Plus,
+          lines: recents.map((r) => ({ text: r.item.name, value: `${Math.round(r.item.cals)}` })),
+          empty: "Search or scan a food",
+          emptyShort: "Add",
+        })}>
+      <Card>
         <CardTitle>Add food</CardTitle>
         <div className="mb-2 flex gap-1 overflow-x-auto">
           {MEALS.map((m) => (
@@ -688,6 +755,7 @@ export function NutritionView() {
           )}
         </details>
       </Card>
+      </Sized>
 
       <MealBuilder key="meal" meal={meal} />
 
@@ -700,7 +768,24 @@ export function NutritionView() {
 
       {/* The diary and its hint move as one: a "swipe left to delete" note
           parked three cards above the rows it describes explains nothing. */}
-      <div key="diary" className="space-y-3">
+      <Sized key="diary" glance={() => ({
+          label: "Meal by meal",
+          short: "Diary",
+          icon: NotebookPen,
+          value: items.length ? String(items.length) : null,
+          unit: items.length === 1 ? "food" : "foods",
+          sub: MEALS.map((m) => {
+            const kc = items.filter((it) => (it.meal || "Snacks") === m).reduce((a, it) => a + it.cals, 0);
+            return kc > 0 ? `${m} ${Math.round(kc)}` : "";
+          }).filter(Boolean).join(" · "),
+          lines: MEALS.flatMap((m) => {
+            const kc = items.filter((it) => (it.meal || "Snacks") === m).reduce((a, it) => a + it.cals, 0);
+            return kc > 0 ? [{ text: m, value: `${Math.round(kc)} kcal` }] : [];
+          }),
+          empty: "Nothing eaten logged",
+          emptyShort: "Empty",
+        })}>
+      <div className="space-y-3">
       {/* The gesture is invisible without this. */}
       {items.length > 0 && (
         <p className="px-1 text-[0.62rem] leading-snug text-faint">
@@ -826,6 +911,7 @@ export function NutritionView() {
         Goals: {goals.cals} kcal · P {goals.protein} · C {goals.carbs} · F {goals.fat}. Units {settings.unit}.
       </p>
       </div>
+      </Sized>
 
       {quickAdd && (
         <QuickAddSheet

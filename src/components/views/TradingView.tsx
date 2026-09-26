@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
-import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
 import { hasDetailRoom } from "@/lib/dashboard-layout";
 import { tapSuccess, tapWarn } from "@/lib/haptics";
 import { getLocalDateKey } from "@/lib/soma";
@@ -55,14 +55,133 @@ export function TradingView() {
 
   return (
     <WidgetGrid tab="money-trade">
-      <AccountCard key="account" equity={equity} lossesToday={lossesToday} open={!!open} />
-      <PreTradeCard key="check" equity={equity} trades={trades} today={today} />
-      <OpenTradeCard key="open" trade={open} />
-      <SystemsCard key="systems" ranked={ranked} best={best} />
-      <StatsCard key="stats" stats={stats} />
-      <WeeklyCard key="weekly" trades={trades} today={today} />
-      <LogCard key="log" trades={trades} />
-      <RulesCard key="rules" />
+      <Sized
+        key="account"
+        glance={{
+          label: "The account",
+          short: "Account",
+          value: equity ? `$${equity.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 })}` : null,
+          sub: `${lossesToday}/${DAILY_LOSS_LIMIT} losses today${open ? " · trade open" : ""}`,
+          progress: lossesToday / DAILY_LOSS_LIMIT,
+          color: lossesToday >= DAILY_LOSS_LIMIT ? "var(--color-danger)" : undefined,
+          empty: "Set your account size",
+          emptyShort: "Not set",
+        }}
+      >
+        <AccountCard equity={equity} lossesToday={lossesToday} open={!!open} />
+      </Sized>
+      <Sized
+        key="check"
+        glance={{
+          label: "Before you click",
+          short: "Check",
+          icon: Check,
+          empty: lossesToday >= DAILY_LOSS_LIMIT ? "Two losses today — done" : open ? "A trade is already open" : "Tap to check a setup",
+          emptyShort: lossesToday >= DAILY_LOSS_LIMIT ? "Stop" : "Check",
+        }}
+      >
+        <PreTradeCard equity={equity} trades={trades} today={today} />
+      </Sized>
+      <Sized
+        key="open"
+        glance={() => ({
+          label: "The open trade",
+          short: "Open",
+          value: open ? `${open.direction === "buy" ? "Buy" : "Sell"}` : null,
+          sub: open ? `${instrumentName(open.instrument)} · ${open.lots} lots · ${systemName(open.system)}` : null,
+          lines: open
+            ? [
+                { text: "Entry", value: formatPrice(open.instrument, open.entry) },
+                { text: "Stop", value: formatPrice(open.instrument, open.stop) },
+                { text: "Target", value: formatPrice(open.instrument, open.target) },
+              ]
+            : [],
+          empty: "No trade open",
+          emptyShort: "None",
+        })}
+      >
+        <OpenTradeCard trade={open} />
+      </Sized>
+      <Sized
+        key="systems"
+        glance={() => ({
+          label: "Which system is working",
+          short: "Systems",
+          value: best ? best.name : null,
+          sub: best ? `${best.stats.avgR.toFixed(2)}R average over ${best.decided}` : null,
+          lines: ranked.map((r) => ({ text: r.name, value: r.verdict === "too-early" ? `${r.decided}/${MIN_SAMPLE}` : `${r.stats.avgR.toFixed(2)}R` })),
+          empty: "Too early to say",
+        })}
+      >
+        <SystemsCard ranked={ranked} best={best} />
+      </Sized>
+      <Sized
+        key="stats"
+        glance={{
+          label: "The numbers",
+          short: "Net",
+          value: stats.trades ? money(stats.net) : null,
+          valueClass: stats.net < 0 ? "text-danger" : "text-accent-text",
+          sub: stats.trades ? `${Math.round(stats.winRate * 100)}% won · ${stats.totalR.toFixed(1)}R over ${stats.trades}` : null,
+          stats: stats.trades
+            ? [
+                { label: "Win rate", value: `${Math.round(stats.winRate * 100)}%` },
+                { label: "Avg R", value: stats.avgR.toFixed(2) },
+                { label: "Total R", value: stats.totalR.toFixed(1) },
+                { label: "Trades", value: String(stats.trades) },
+              ]
+            : undefined,
+          empty: "No trades yet",
+          emptyShort: "None",
+        }}
+      >
+        <StatsCard stats={stats} />
+      </Sized>
+      <Sized
+        key="weekly"
+        glance={() => {
+          const w = currentWeekStats(trades, today);
+          return {
+            label: "This week",
+            short: "Week",
+            value: w.trades ? money(w.net) : null,
+            valueClass: w.net < 0 ? "text-danger" : "text-accent-text",
+            sub: w.trades ? `${w.wins}W ${w.losses}L · ${w.totalR.toFixed(1)}R` : null,
+            empty: "No trades this week",
+            emptyShort: "None",
+          };
+        }}
+      >
+        <WeeklyCard trades={trades} today={today} />
+      </Sized>
+      <Sized
+        key="log"
+        glance={() => ({
+          label: "The log",
+          short: "Log",
+          value: String(trades.length),
+          unit: trades.length === 1 ? "trade" : "trades",
+          lines: [...trades]
+            .sort((a, b) => b.openedAt - a.openedAt)
+            .map((t) => ({
+              text: `${t.date.slice(5)} ${t.direction === "buy" ? "Buy" : "Sell"} ${instrumentName(t.instrument)}`,
+              value: t.exit == null ? "open" : `${rMultiple(t) >= 0 ? "+" : ""}${rMultiple(t).toFixed(1)}R`,
+            })),
+          empty: "Nothing logged",
+        })}
+      >
+        <LogCard trades={trades} />
+      </Sized>
+      <Sized
+        key="rules"
+        glance={{
+          label: "The rules",
+          short: "Rules",
+          lines: SYSTEMS.map((s) => ({ text: s.name })),
+        }}
+      >
+        <RulesCard />
+      </Sized>
     </WidgetGrid>
   );
 }

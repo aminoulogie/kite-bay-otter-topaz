@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { ChevronRight } from "lucide-react";
 import { CardTitle } from "@/components/ui/card";
-import { hasDetailRoom } from "@/lib/dashboard-layout";
+import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
+import { Glance, isGlance } from "@/components/Glance";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { getLocalDateKey } from "@/lib/soma";
 import { daysLeft, isStale, nextStep, sortProjects, summarise } from "@/lib/projects";
@@ -42,13 +43,36 @@ export function ProjectsCard() {
     () =>
       sortProjects(projects, today)
         .filter((p) => p.status === "active" && nextStep(p))
-        .slice(0, SHOWN),
-    [projects, today],
+        .slice(0, hasFullRoom(size) ? SHOWN * 2 : isGlance(size) ? 4 : SHOWN),
+    [projects, today, size],
   );
 
   // Nothing with a finish line is not a state worth a card on the page you see
   // first. The tab is still in the dock for anyone who wants to start one.
   if (!projects.some((p) => p.status === "active")) return null;
+
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Projects",
+          value: String(board.stepsLeft),
+          unit: board.stepsLeft === 1 ? "step left" : "steps left",
+          sub: `${board.active} on the go`,
+          lines: next.map((p) => {
+            const left = daysLeft(p, today);
+            return {
+              text: nextStep(p)!.label,
+              color: p.color,
+              value: left === null ? undefined : left < 0 ? `${-left}d over` : left === 0 ? "today" : `${left}d`,
+            };
+          }),
+          onOpen: () => setTab("projects"),
+        }}
+      />
+    );
+  }
 
   return (
     <button

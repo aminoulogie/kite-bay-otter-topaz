@@ -8,6 +8,8 @@ import { LANGUAGES, LEVELS } from "@/lib/lang/words";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * The languages you are learning, and one word a day in each.
@@ -37,6 +39,27 @@ export function LanguageStudy() {
 
   const missing = LANGUAGES.filter((m) => !langs.some((l) => l.code === m.code));
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    const first = draws.find((d) => d.word) ?? null;
+    const flag = (code: string) => LANGUAGES.find((m) => m.code === code)?.flag ?? "";
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: first ? `Today's word ${flag(first.code)}` : "Languages",
+          short: "Word",
+          value: first?.word?.w ?? null,
+          sub: first?.word ? first.word.en : null,
+          lines: draws
+            .filter((d) => d !== first)
+            .map((d) => ({ text: `${flag(d.code)} ${d.word ? `${d.word.w} — ${d.word.en}` : "done for today"}`, done: !d.word })),
+          empty: langs.length ? "All of today's words learned" : "Add a language for a word a day",
+          emptyShort: langs.length ? "Done today" : "Add one",
+        }}
+      />
+    );
+  }
   return (
     <>
       <Card key="languages">

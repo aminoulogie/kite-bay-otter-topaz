@@ -145,3 +145,11 @@ test("nothing comparable means no pair, not a wrong one", () => {
     null,
   );
 });
+
+test("a left and a right profile are not comparable", () => {
+  const mk = (id: string, side: "left" | "right") =>
+    ({ id, date: "2026-09-20", capturedAt: "2026-09-20T10:00:00Z", kind: "face_side", side }) as const;
+  const c = comparability(mk("a", "left"), mk("b", "right"));
+  assert.equal(c.ok, false);
+  assert.match(c.reasons.join(" "), /Opposite sides/);
+});

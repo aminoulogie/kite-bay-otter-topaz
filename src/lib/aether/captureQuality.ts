@@ -39,12 +39,14 @@ export const SESSION: {
   yawAbs: [number, number];
   rollMax: number;
   pitchMax: number;
+  /** For profile steps: which way the user turns (their own left/right). */
+  side?: "left" | "right";
 }[] = [
   {
     kind: "face_front_true",
     title: "1 · Front",
     short: "Front",
-    coach: "Look into the lens. Eyes on the marks. Jaw unclenched.",
+    coach: "Look into the lens. Face in the square. Jaw unclenched.",
     yawAbs: [0, 8],
     rollMax: 2.5,
     pitchMax: 8,
@@ -60,20 +62,28 @@ export const SESSION: {
   },
   {
     kind: "face_side",
-    title: "3 · Profile",
-    short: "Side",
-    // Was "keep turning until only one eye and the ear show", which is a full
-    // 90° — and 90° is exactly where the landmark model stops being able to
-    // see a face at all. A shot you cannot take is worth less than a slightly
-    // less side-on one you can, so the target stops short of the cliff.
-    // The landmark model is trained on frontal faces and simply proposes no
-    // face at a hard yaw — so the coaching has to aim at the last angle it can
-    // still read, not at the anatomically ideal one. Past this the photo is
-    // still kept; the measurements are not.
-    coach: "Turn until the far eyebrow just disappears — no further, or it stops reading.",
-    yawAbs: [52, 90],
+    title: "3 · Profile right",
+    short: "Side R",
+    side: "right",
+    // A true side-on profile. The face-landmark model goes blind past ~65°,
+    // so these steps are coached by the body-pose model instead (nose and
+    // both ears in 3D — see poseHeadTurn), which keeps seeing the head at 90°.
+    coach: "Turn your whole head to the right until your nose points at the wall — a true side profile.",
+    yawAbs: [80, 100],
     rollMax: 8,
     pitchMax: 14,
+  },
+  {
+    // The same shot, turned the other way. Both sides exist because faces are
+    // not symmetric and the question is often "is one side different".
+    kind: "face_side",
+    title: "4 · Profile left",
+    short: "Side L",
+    coach: "Now the other side. Turn left until your nose points at the wall.",
+    yawAbs: [80, 100],
+    rollMax: 8,
+    pitchMax: 14,
+    side: "left",
   },
 ];
 
@@ -123,7 +133,7 @@ export function framingFromLandmarks(pts: Pt[]): FramingReport {
   const centerX = li && ri ? (li.x + ri.x) / 2 : 0.5;
   if (faceHeightFrac < 0.28) notes.push("Move closer — face should fill about half the frame.");
   else if (faceHeightFrac > 0.72) notes.push("Step back — chin and hairline are clipped.");
-  if (eyesY < 0.22) notes.push("Drop the camera. Eyes should sit on the upper marks.");
+  if (eyesY < 0.22) notes.push("Drop the camera a little. Eyes should sit in the upper part of the frame.");
   else if (eyesY > 0.52) notes.push("Raise the camera to eye height.");
   if (Math.abs(centerX - 0.5) > 0.14) notes.push("Slide the phone so the face sits on the midline.");
   return { faceHeightFrac, eyesY, centerX, notes };
@@ -158,7 +168,10 @@ export function scoreCapture(opts: {
   const rollScore = Math.max(0, 1 - rollAbs / (step.rollMax * 2.2));
   if (rollAbs > step.rollMax) reasons.push(`Level the phone / head. Roll ${rollAbs.toFixed(1)}°.`);
   const pitchScore = Math.max(0, 1 - pitchAbs / (step.pitchMax * 2.2));
-  if (pitchAbs > step.pitchMax) reasons.push(opts.pitchDeg > 0 ? "Chin down a little." : "Chin up a little.");
+  // Positive pitch is chin DOWN (both the matrix and the landmark proxy agree
+  // on that sign — see pose-angles.ts), so the correction is the opposite way.
+  // This line used to tell a lowered chin to drop further.
+  if (pitchAbs > step.pitchMax) reasons.push(opts.pitchDeg > 0 ? "Chin up a little." : "Chin down a little.");
   /**
    * Yaw GATES alignment; roll and pitch only trim it.
    *

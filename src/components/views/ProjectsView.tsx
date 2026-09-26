@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { SwipeRow } from "@/components/SwipeRow";
 import { TopTabs } from "@/components/TopTabs";
-import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { Glance, isGlance } from "@/components/Glance";
 import { getLocalDateKey } from "@/lib/soma";
 import {
   PROJECT_COLORS, daysLeft, daysSinceMove, doneCount, isComplete, isStale, nextStep,
@@ -84,7 +85,8 @@ export function ProjectsView() {
     <WidgetGrid tab="projects">
       <BoardHeader key="header" board={board} projects={projects} />
 
-      <Card key="new">
+      <Sized key="new" glance={{ label: "Start something", short: "New", icon: Plus, empty: "Tap to start a project", emptyShort: "New" }}>
+      <Card>
         <CardTitle>Start something</CardTitle>
         <div className="flex gap-1.5">
           <Input
@@ -103,10 +105,25 @@ export function ProjectsView() {
           belongs in Habits, where the streak means something.
         </p>
       </Card>
+      </Sized>
 
       <TopTabs key="filter" tabs={LENSES} value={lens} onChange={setLens} />
 
-      <div key="list" className="space-y-2">
+      <Sized
+        key="list"
+        glance={() => ({
+          label: `${lens[0]!.toUpperCase()}${lens.slice(1)} projects`,
+          short: "Projects",
+          value: String(shown.length),
+          lines: shown.map((p) => ({
+            text: p.name,
+            color: p.color,
+            value: p.steps.length ? `${p.steps.filter((st) => st.done).length}/${p.steps.length}` : undefined,
+          })),
+          empty: "Nothing here",
+        })}
+      >
+      <div className="space-y-2">
         {shown.length === 0 ? (
           <Card>
             <p className="text-xs text-faint">
@@ -140,6 +157,7 @@ export function ProjectsView() {
           ))
         )}
       </div>
+      </Sized>
 
       {open && <ProjectSheet id={open} onClose={() => setOpen(null)} />}
     </WidgetGrid>
@@ -163,6 +181,25 @@ function BoardHeader({
     () => projects.filter((p) => isStale(p)).slice(0, 3),
     [projects],
   );
+
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "On the go",
+          value: String(board.active),
+          unit: board.active === 1 ? "project" : "projects",
+          sub: [`${board.stepsLeft} steps left`, board.overdue ? `${board.overdue} overdue` : "", board.stale ? `${board.stale} drifting` : ""]
+            .filter(Boolean)
+            .join(" · "),
+          lines: projects
+            .filter((p) => p.status === "active")
+            .map((p) => ({ text: p.name, color: p.color, value: isStale(p) ? "drifting" : undefined })),
+        }}
+      />
+    );
+  }
 
   return (
     <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_14%,transparent),transparent_55%),var(--color-surface)]">

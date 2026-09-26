@@ -97,4 +97,10 @@ export const POSE = {
   rightHip: 24,
 } as const;
 
-export const ANALYZER_VERSION = "aether-face-1.2.0";
+/**
+ * Bumped whenever a measurement changes meaning, so older scans can be found
+ * and re-measured. 1.3.0: head yaw/pitch/roll were read off the wrong axes
+ * (see pose-angles.ts), which let turned heads through the front gate; profile
+ * shots gained a neck angle from the pose model.
+ */
+export const ANALYZER_VERSION = "aether-face-1.3.0";

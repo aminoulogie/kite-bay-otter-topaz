@@ -6,7 +6,9 @@ import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import { Bookshelf } from "@/components/Bookshelf";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { Glance, isGlance } from "@/components/Glance";
+import { hasFullRoom } from "@/lib/dashboard-layout";
 import { TopTabs } from "@/components/TopTabs";
 import { LanguageStudy } from "@/components/LanguageStudy";
 import { ReadingGoal } from "@/components/ReadingGoal";
@@ -140,7 +142,11 @@ export function MindView() {
         {kind === "book" && <Highlights key="highlights" />}
         {kind === "language" && <LanguageStudy key="languages" />}
 
-      <Card key="week">
+      <Sized
+        key="week"
+        glance={{ label: "This week", short: "Week", value: String(week), unit: "of 7 days", progress: week / 7, sub: "with something logged" }}
+      >
+      <Card>
         <CardTitle>This week</CardTitle>
         <div className="flex items-end gap-3">
           <div className="font-display text-5xl font-extrabold tabular">{week}</div>
@@ -149,11 +155,24 @@ export function MindView() {
             <div className="text-[0.65rem] text-faint">with something logged</div>
           </div>
         </div>
+        <WeekDots mind={mind} />
       </Card>
+      </Sized>
 
       {/* The picker that used to sit here is the top bar now: the sub-tab you
           are on IS the kind you are logging, and asking twice was asking twice. */}
-      <Card key="log">
+      <Sized
+        key="log"
+        glance={{
+          label: meta.id === "book" ? "Log a book" : `Log ${meta.label.toLowerCase()}`,
+          short: "Log",
+          icon: Plus,
+          empty: "Tap to log one",
+          emptyShort: "Add",
+          lines: [],
+        }}
+      >
+      <Card>
         <CardTitle>{meta.id === "book" ? "Log a book" : `Log ${meta.label.toLowerCase()}`}</CardTitle>
         <Input
           className="mb-2"
@@ -181,8 +200,20 @@ export function MindView() {
           <Plus className="size-4" /> Log it
         </Button>
       </Card>
+      </Sized>
 
-      <Card key="recent">
+      <Sized
+        key="recent"
+        glance={() => ({
+          label: `Recent ${meta.label.toLowerCase()}`,
+          short: "Recent",
+          icon: meta.icon,
+          lines: rows.map((r) => ({ text: r.title, value: r.date.slice(5) })),
+          empty: `Nothing under ${meta.label.toLowerCase()} yet`,
+          emptyShort: "None yet",
+        })}
+      >
+      <Card>
         <CardTitle>{rows.length ? `Last ${rows.length}` : "Nothing yet"}</CardTitle>
         {rows.length === 0 ? (
           <p className="py-3 text-center text-xs text-faint">
@@ -221,6 +252,7 @@ export function MindView() {
           </div>
         )}
       </Card>
+      </Sized>
 
       {editing && (
         <RowEditSheet
@@ -273,7 +305,23 @@ function ReviewQueue() {
   const [revealed, setRevealed] = useState(false);
 
   const item = queue[0];
+  const size = useWidgetSize();
   if (!item && !upcoming) return null;
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Review",
+          value: queue.length ? String(queue.length) : null,
+          unit: "due",
+          lines: queue.map((q) => ({ text: q.entry.title })),
+          empty: upcoming ? `Next ${dueLabel(upcoming)}: ${upcoming.entry.title}` : "Nothing due",
+          emptyShort: "None due",
+        }}
+      />
+    );
+  }
 
   return (
     <Card>
@@ -328,5 +376,29 @@ function ReviewQueue() {
         </>
       )}
     </Card>
+  );
+}
+
+/** At the largest size: the last seven days, a dot each, filled where anything was logged. */
+function WeekDots({ mind }: { mind: MindEntry[] }) {
+  const size = useWidgetSize();
+  if (!hasFullRoom(size)) return null;
+  const days = new Set(mind.map((m) => m.date));
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    return { key: getLocalDateKey(d), day: d.toLocaleDateString(undefined, { weekday: "narrow" }) };
+  });
+  return (
+    <div className="mt-4 flex justify-between gap-1">
+      {week.map((w) => (
+        <div key={w.key} className="flex flex-1 flex-col items-center gap-1">
+          <span
+            className={days.has(w.key) ? "size-6 rounded-full bg-accent" : "size-6 rounded-full border border-border bg-surface-2"}
+          />
+          <span className="text-[0.55rem] font-bold text-faint">{w.day}</span>
+        </div>
+      ))}
+    </div>
   );
 }
