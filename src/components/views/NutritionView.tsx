@@ -18,7 +18,8 @@ import { Progress } from "@/components/ui/progress";
 import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
 import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
-import { Sized, WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { Glance, isGlance } from "@/components/Glance";
 import { TopTabs } from "@/components/TopTabs";
 import { WeeklyFuel } from "@/components/WeeklyFuel";
 import { WeightPanel } from "@/components/views/BodyView";
@@ -1311,6 +1312,7 @@ function SuggestFromPantry({ meal, target }: { meal: string; target: string }) {
   const activeDate = useSoma((s) => s.activeDate);
   const planFood = useSoma((s) => s.planFood);
   const [days, setDays] = useState(1);
+  const size = useWidgetSize();
 
   const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
   const day = nutrition[activeDate];
@@ -1340,6 +1342,25 @@ function SuggestFromPantry({ meal, target }: { meal: string; target: string }) {
 
   const planned = day?.planned ?? [];
   const already = planned.length > 0;
+
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "From the cupboard",
+          short: "Cupboard",
+          color: "#30d158",
+          value: suggestion.items.length ? String(suggestion.items.length) : null,
+          unit: suggestion.items.length === 1 ? "food fits" : "foods fit",
+          sub: suggestion.note,
+          lines: suggestion.items.map((it) => ({ text: it.name, value: `${Math.round(it.cals)}` })),
+          empty: suggestion.note || "Nothing in the cupboard fits",
+          emptyShort: "Nothing",
+        }}
+      />
+    );
+  }
 
   return (
     <Card>

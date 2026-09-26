@@ -332,6 +332,9 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   looks: [
     { id: "latest", label: "Latest front", size: "2x4" },
     { id: "scan", label: "Scan button", size: "1x4", sizes: FURNITURE },
+    { id: "truedepth", label: "3D scan", size: "2x4" },
+    { id: "lidar-body", label: "Body scan", size: "2x4" },
+    { id: "reanalyse", label: "Scans to re-measure", size: "2x4" },
     { id: "gallery", label: "Captures", size: "2x4" },
     { id: "guide", label: "What it measures", size: "2x4" },
     { id: "note", label: "What the mesh is", size: "1x4" },
@@ -376,6 +379,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "routines", label: "Routines", size: "2x4" },
     { id: "report", label: "Report", size: "2x4" },
     { id: "data", label: "Backup and restore", size: "2x4" },
+    { id: "vault", label: "Vault sync", size: "2x4" },
     { id: "csv", label: "Export as CSV", size: "2x4" },
     { id: "foods", label: "Import foods", size: "2x4" },
     { id: "programme", label: "Training programme", size: "2x4" },

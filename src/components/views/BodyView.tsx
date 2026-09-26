@@ -20,10 +20,12 @@ import {
 } from "@/lib/supplements";
 import { useDayDraft } from "@/lib/use-day-draft";
 import { useSideStoreRevision } from "@/lib/use-side-stores";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 const SITES = [
   { key: "neck", label: "Neck" },
@@ -49,6 +51,17 @@ export function BodyView() {
     { id: "measure", label: "Tape", icon: Ruler },
     { id: "supplements", label: "Supps", icon: Pill },
   ];
+  const nutrition = useSoma((s) => s.nutrition);
+  const nights = useMemo(
+    () =>
+      Object.entries(nutrition)
+        .filter(([, n]) => n?.sleep?.hours != null)
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([date, n]) => ({ date, hours: n!.sleep!.hours!, quality: n!.sleep!.quality })),
+    [nutrition],
+  );
+  const debt = currentDebt(nights);
+  const lastNight = nights[nights.length - 1];
   return (
     <WidgetGrid tab="body">
       {/* Was its own bar, with its own height and its own idea of a selected
@@ -56,11 +69,26 @@ export function BodyView() {
           drift apart again. */}
       <TopTabs key="tabs" tabs={tabs} value={tab} onChange={setTab} />
 
-      <div key="panel" className="space-y-3">
+      <Sized
+        key="panel"
+        glance={{
+          label: "Sleep",
+          icon: Moon,
+          color: "#bf5af2",
+          value: lastNight ? lastNight.hours.toFixed(1) : null,
+          unit: "h",
+          sub: lastNight ? `${debtLabel(debt)} · ${debt.toFixed(1)}h debt` : null,
+          chart: { values: nights.slice(-14).map((n) => n.hours), target: 8 },
+          empty: "Tap to log last night",
+          emptyShort: "Log",
+        }}
+      >
+      <div className="space-y-3">
         {tab === "sleep" && <SleepPanel />}
         {tab === "measure" && <MeasurePanel />}
         {tab === "supplements" && <SupplementsPanel />}
       </div>
+      </Sized>
     </WidgetGrid>
   );
 }
@@ -90,6 +118,26 @@ export function WeightPanel() {
   const delta = last && prev ? last.w - prev.w : null;
   const protein = SomaIntelligenceEngine.proteinTargetFor(Number(val) || last?.w || 0, settings.proteinPerKg);
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    const recent = series.slice(-30);
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Body weight",
+          short: "Weight",
+          color: "#64d2ff",
+          value: last ? last.w.toFixed(1) : null,
+          unit: "kg",
+          sub: delta === null ? (last ? `on ${last.date}` : null) : `${delta > 0 ? "+" : ""}${delta.toFixed(1)} kg since ${prev!.date.slice(5)}`,
+          chart: { values: recent.map((s) => s.w) },
+          empty: "Tap to log today's weight",
+          emptyShort: "Log",
+        }}
+      />
+    );
+  }
   return (
     <>
       <Card>

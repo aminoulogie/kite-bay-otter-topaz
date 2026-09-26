@@ -3,6 +3,8 @@ import { Camera, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardTitle } from "@/components/ui/card";
 import { captureImage, deletePhoto, getPhoto, savePhoto } from "@/lib/habit-photos";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /** One id for every plate photo; the date is the other half of the key. */
 const PLATE_ID = "plate";
@@ -60,6 +62,32 @@ export function PlatePhoto({ date }: { date: string }) {
     }
   };
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Plate",
+          icon: Camera,
+          visual: url
+            ? (px: number) => (
+                <img
+                  src={url}
+                  alt={`Plate on ${date}`}
+                  className="rounded-xl object-cover"
+                  style={{ width: size === "2x2" ? "100%" : px, height: px }}
+                />
+              )
+            : undefined,
+          empty: busy ? "Saving…" : "Tap to photograph today's plate",
+          emptyShort: "Snap",
+          // No photo yet: the tile IS the shutter, like a camera widget.
+          onOpen: url ? undefined : () => void shoot(),
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <div className="mb-2 flex items-center justify-between gap-2">

@@ -7,6 +7,8 @@ import { ZoomableChart, useChartZoom } from "@/components/ZoomableChart";
 import { useSoma } from "@/lib/store";
 import type { NutritionDay } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * What was actually eaten against what was aimed for.
@@ -112,6 +114,25 @@ export function NutritionGraphs() {
 
   const zoom = useChartZoom(fullX, fullY);
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: `${spec.label} · ${RANGES.find((r) => r.id === rangeId)!.label}`,
+          short: spec.label,
+          color: "#c8ff2e",
+          value: average ? String(average) : null,
+          unit: `${spec.unit} avg`,
+          sub: target ? `${hitRate}% of days on target ${target}${spec.unit}` : null,
+          chart: { values: data.map((d) => d.value), target },
+          empty: "Nothing logged in this range",
+          emptyShort: "No data",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <CardTitle>Intake vs target</CardTitle>

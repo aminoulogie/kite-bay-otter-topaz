@@ -13,6 +13,8 @@ import { composeLibrary } from "@/lib/foods";
 import { useSideStoreRevision } from "@/lib/use-side-stores";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * Meals assembled from ingredients.
@@ -56,6 +58,24 @@ export function MealBuilder({ meal }: { meal: string }) {
     return library.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 6);
   }, [library, query]);
 
+  const size = useWidgetSize();
+  if (isGlance(size) && !editing) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "My meals",
+          short: "Meals",
+          icon: UtensilsCrossed,
+          value: recipes.length ? String(recipes.length) : null,
+          unit: recipes.length === 1 ? "meal" : "meals",
+          lines: recipes.map((r) => ({ text: r.name, value: `${Math.round(perServing(r, library).cals)}` })),
+          empty: "Build a meal once, log it in one tap",
+          emptyShort: "None",
+        }}
+      />
+    );
+  }
   if (editing) {
     const { totals, missing } = recipeTotals(editing, library);
     const each = perServing(editing, library);

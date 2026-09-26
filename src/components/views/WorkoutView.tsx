@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { playChime, burstConfetti } from "@/lib/audio";
 import { computeBiologicalReadiness } from "@/lib/recovery";
 import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
@@ -367,7 +367,20 @@ export function WorkoutView() {
     // enforced by accident. Order is still the workout's own until someone
     // deliberately drags a card, which is the part that mattered.
     <WidgetGrid tab="workout" innerRef={rootRef}>
-      <Card key="header" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_18%,transparent),transparent_55%),var(--color-surface)]">
+      <Sized key="header" glance={() => ({
+          label: proj.phaseBadge,
+          short: "Session",
+          icon: Timer,
+          color: "#bf5af2",
+          value: live.split,
+          sub: `${proj.phase} · ${proj.repScheme}`,
+          lines: live.exercises.map((ex) => {
+            const sets = ex.sets ?? [];
+            const done = sets.filter((st) => st.done).length;
+            return { text: ex.name, value: `${done}/${sets.length}`, done: sets.length > 0 && done === sets.length };
+          }),
+        })}>
+      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_18%,transparent),transparent_55%),var(--color-surface)]">
         <div className="flex items-start justify-between gap-3">
           {/* min-w-0 lets a long split name wrap instead of forcing the row
               wider than the card and squeezing the badge beside it. */}
@@ -408,6 +421,7 @@ export function WorkoutView() {
           <Badge tone={proj.isDeload ? "warn" : "muted"}>{proj.phaseBadge}</Badge>
         </div>
       </Card>
+      </Sized>
 
       <div key="date" className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
@@ -446,7 +460,19 @@ export function WorkoutView() {
           buttons are wider than the screen, and a row that cannot wrap pushes
           the whole PAGE wider than the viewport — which is what made every
           other card on the tab look clipped at the right edge. */}
-      <Card key="session" className="flex flex-wrap items-center justify-between gap-3">
+      <Sized key="session" glance={{
+          label: "Rest",
+          icon: Timer,
+          color: "#30d158",
+          value: restLeft > 0 ? (restLeft >= 60 ? formatRest(restLeft) : `${restLeft}s`) : null,
+          progress: restLeft > 0 ? restPct : 0,
+          sub: restLeft > 0 ? "resting" : "tap for 90s",
+          empty: "Tap to rest 90s",
+          emptyShort: "90s",
+          // Idle, the tile starts a rest; running, it opens the controls.
+          onOpen: restLeft > 0 ? undefined : () => startRest(90),
+        }}>
+      <Card className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="relative size-14 shrink-0">
             <svg viewBox="0 0 54 54" className="size-14 -rotate-90">
@@ -484,6 +510,7 @@ export function WorkoutView() {
           </Button>
         </div>
       </Card>
+      </Sized>
 
       <div key="chips" className="flex flex-wrap gap-2">
         <Button className="flex-1" onClick={() => setShowSplits((v) => !v)}>

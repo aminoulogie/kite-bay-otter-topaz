@@ -7,6 +7,7 @@ import { useSoma } from "@/lib/store";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
 
 /**
  * The week, in the one place the week belongs.
@@ -57,6 +58,24 @@ export function WeeklyFuel() {
   );
   const bars = useMemo(() => barHeights(rows, (t) => t.cals), [rows]);
 
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "The last seven days",
+          short: "7 days",
+          color: "#ff9f0a",
+          value: week.loggedDays ? String(week.avg.cals) : null,
+          unit: "kcal avg",
+          sub: week.loggedDays ? `${week.onTarget}/${week.loggedDays} days on target · protein ${week.proteinHit}/${week.loggedDays}` : null,
+          chart: { values: rows.map((r) => (r.logged ? r.totals.cals : null)), target: goals.cals },
+          empty: "Nothing logged this week",
+          emptyShort: "No data",
+        }}
+      />
+    );
+  }
   if (!week.loggedDays) {
     return (
       <Card>

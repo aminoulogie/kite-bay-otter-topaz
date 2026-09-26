@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { BodyHeatmap } from "@/components/BodyHeatmap";
 import { BodyView } from "@/components/views/BodyView";
 import { EstimatesView } from "@/components/views/EstimatesView";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { DatabaseView } from "@/components/views/DatabaseView";
 import { ExerciseRatings } from "@/components/ExerciseRatings";
@@ -103,7 +103,21 @@ function OverviewPanel() {
 
       <MesoReviewCard key="meso" />
 
-      <Card key="consistency" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
+      <Sized key="consistency" glance={{
+          label: "Training consistency",
+          short: "Streak",
+          color: "#c8ff2e",
+          value: String(c.currentStreak),
+          unit: c.currentStreak === 1 ? "week" : "weeks",
+          sub: `${c.thisWeek}/${c.target} this week · ${c.adherence}% adherence`,
+          stats: [
+            { label: "Streak", value: `${c.currentStreak}w` },
+            { label: "Best", value: `${c.bestStreak}w` },
+            { label: "This week", value: `${c.thisWeek}/${c.target}` },
+            { label: "Adherence", value: `${c.adherence}%` },
+          ],
+        }}>
+      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <Badge tone="accent">Training consistency</Badge>
         <div className="mt-2 grid grid-cols-3 gap-2">
           <Big n={`${c.currentStreak}`} l="Week streak" />
@@ -129,8 +143,20 @@ function OverviewPanel() {
           {c.thisWeek}/{c.target} sessions this week · {c.totalSessions} logged total
         </p>
       </Card>
+      </Sized>
 
-      <Card key="volume">
+      <Sized key="volume" glance={() => ({
+          label: "Weekly volume",
+          short: "Volume",
+          lines: (shown.length ? shown : rows.slice(0, 8)).map(
+            (r: { label: string; sets: number; tier: string }) => ({
+              text: r.label,
+              value: `${r.sets} sets${r.tier === "over" ? " ↑" : r.tier === "under" ? " ↓" : ""}`,
+            }),
+          ),
+          empty: "No sets this week",
+        })}>
+      <Card>
         <CardTitle>Weekly volume vs landmarks</CardTitle>
         <p className="-mt-1 mb-3 text-[0.68rem] leading-snug text-faint">
           {goalMode(settings.trainingGoal).label} · {goalMode(settings.trainingGoal).blurb}
@@ -160,8 +186,17 @@ function OverviewPanel() {
           )}
         </div>
       </Card>
+      </Sized>
 
-      <Card key="axial">
+      <Sized key="axial" glance={{
+          label: "Axial load · 14d",
+          short: "Axial",
+          color: axialRatio > 40 ? "var(--color-danger)" : "#c8ff2e",
+          value: `${axialRatio}%`,
+          progress: Math.min(1, axialRatio / 50),
+          sub: `Push ${Math.round((push / ppl) * 100)}% · Pull ${Math.round((pull / ppl) * 100)}% · Legs ${Math.round((leg / ppl) * 100)}%`,
+        }}>
+      <Card>
         <CardTitle>CNS / axial load · 14d</CardTitle>
         <div className="mb-2 flex justify-between text-sm font-bold">
           <span>Spinal stress ratio</span>
@@ -179,6 +214,7 @@ function OverviewPanel() {
           <span className="text-warn">Legs {Math.round((leg / ppl) * 100)}%</span>
         </div>
       </Card>
+      </Sized>
 
       {/* Last on the overview: it is a place to go looking, not a headline. */}
       <ExerciseRatings key="ratings" />
@@ -195,7 +231,18 @@ function StrengthPanel() {
 
   return (
     <WidgetGrid tab="insights-strength">
-      <Card key="estimates">
+      <Sized key="estimates" glance={() => ({
+          label: pick ? `e1RM · ${pick}` : "Estimated 1RM",
+          short: "e1RM",
+          color: "#c8ff2e",
+          value: series.length ? String(series[series.length - 1].est1RM) : null,
+          unit: series.length ? series[series.length - 1].metric : undefined,
+          sub: series.length ? `${pick} · ${series.length} sessions` : null,
+          chart: { values: series.map((pt: { est1RM: number }) => pt.est1RM) },
+          empty: "Log working sets to chart a lift",
+          emptyShort: "No data",
+        })}>
+      <Card>
         <CardTitle>Estimated 1RM</CardTitle>
         {names.length === 0 ? (
           <p className="text-sm text-muted">Log working sets to chart a lift.</p>
@@ -232,7 +279,19 @@ function StrengthPanel() {
           </>
         )}
       </Card>
-      <Card key="prs">
+      </Sized>
+      <Sized key="prs" glance={() => ({
+          label: "Recent PRs",
+          short: "PRs",
+          value: prs.length ? String(prs.length) : null,
+          lines: prs.map((pt: { date: string; est1RM: number; weight: number; reps: number }) => ({
+            text: `${pt.weight} × ${pt.reps}`,
+            value: pt.date.slice(5),
+          })),
+          empty: "No PRs on this lift yet",
+          emptyShort: "None",
+        })}>
+      <Card>
         <CardTitle>Recent PRs</CardTitle>
         {prs.length === 0 && <p className="text-sm text-muted">No PRs on this lift yet.</p>}
         {prs.map((p: { date: string; est1RM: number; weight: number; reps: number }) => (
@@ -244,6 +303,7 @@ function StrengthPanel() {
           </div>
         ))}
       </Card>
+      </Sized>
     </WidgetGrid>
   );
 }
@@ -266,10 +326,29 @@ function HeatmapPanel() {
 
   return (
     <WidgetGrid tab="insights-heatmap">
-      <Card key="intro">
+      <Sized
+        key="intro"
+        glance={() => {
+          const ready = Object.values(map).filter((r) => r.recovery >= 90).length;
+          const all = Object.values(map).length;
+          const worst = Object.values(map).sort((a, b) => a.recovery - b.recovery).slice(0, 4);
+          return {
+            label: "Muscle recovery",
+            short: "Recovery",
+            color: "#30d158",
+            value: all ? `${ready}/${all}` : null,
+            unit: "ready",
+            progress: all ? ready / all : null,
+            lines: worst.map((r) => ({ text: r.label, value: `${r.recovery}%` })),
+            empty: "Train to see recovery",
+          };
+        }}
+      >
+      <Card>
         <CardTitle>Muscle recovery</CardTitle>
         <BodyHeatmap readiness={recoveryByKey} />
       </Card>
+      </Sized>
 
       <div key="range" className="flex gap-1 rounded-full border border-border bg-surface p-1">
         {(["front", "back"] as const).map((v) => (
@@ -286,7 +365,15 @@ function HeatmapPanel() {
           </button>
         ))}
       </div>
-      <Card key="grid">
+      <Sized key="grid" glance={() => ({
+          label: `Readiness · ${view}`,
+          short: "Ready",
+          lines: list
+            .map((m) => ({ m, rec: map[m.key]?.recovery ?? 100 }))
+            .sort((a, b) => a.rec - b.rec)
+            .map(({ m, rec }) => ({ text: m.label, value: `${rec}%`, color: heatColor(rec) })),
+        })}>
+      <Card>
         <CardTitle>Readiness</CardTitle>
         <div className="grid grid-cols-2 gap-2">
           {list.map((m) => {
@@ -316,6 +403,7 @@ function HeatmapPanel() {
           })}
         </div>
       </Card>
+      </Sized>
       {active && (
         <Card>
           <div className="flex items-start justify-between">

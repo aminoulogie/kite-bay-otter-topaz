@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * Micronutrients for the day, against their targets.
@@ -87,6 +89,27 @@ export function MineralsCard() {
     return out;
   }, [day]);
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    const known = rows.filter((r) => r.known && r.goal > 0);
+    const met = known.filter((r) => r.pct >= 100).length;
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Vitamins & minerals",
+          short: "Micros",
+          color: "#64d2ff",
+          value: known.length ? `${met}/${known.length}` : null,
+          sub: known.length ? "at or above target today" : null,
+          progress: known.length ? met / known.length : null,
+          lines: [...known].sort((a, b) => a.pct - b.pct).map((r) => ({ text: r.label, value: `${Math.round(r.pct)}%`, done: r.pct >= 100 })),
+          empty: "No food today reported vitamins or minerals",
+          emptyShort: "No data",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <CardTitle>Vitamins &amp; minerals</CardTitle>

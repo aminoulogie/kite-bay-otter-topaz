@@ -27,7 +27,7 @@ import {
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import { useBackupDownload } from "@/lib/use-backup";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
@@ -205,7 +205,8 @@ export function SettingsView() {
     // any other page. The sheets and the version footer carry no key and stay
     // put — they are not cards.
     <WidgetGrid tab="settings">
-      <Card key="exercises">
+      <Sized key="exercises" glance={{ label: "Exercises", short: "Exercises", empty: "Open the exercise library", emptyShort: "Open" }}>
+      <Card>
         <CardTitle>Exercises</CardTitle>
         <p className="mb-2 text-[0.7rem] leading-snug text-faint">
           Every exercise the app knows — tier them S/A, pick their muscles and give them a
@@ -215,8 +216,10 @@ export function SettingsView() {
           Open exercises
         </Button>
       </Card>
+      </Sized>
 
-      <Card key="phase">
+      <Sized key="phase" glance={{ label: "Phase", value: ({ bulk: "Bulk", maintain: "Maintain", cut: "Cut" } as const)[settings.phase ?? "maintain"], sub: "which way you are eating" }}>
+      <Card>
         <CardTitle>Phase</CardTitle>
         <p className="mb-2 text-[0.7rem] leading-snug text-faint">
           Which way you are eating. It decides one thing: whether logging hunger costs you
@@ -245,8 +248,10 @@ export function SettingsView() {
           ))}
         </div>
       </Card>
+      </Sized>
 
-      <Card key="goal">
+      <Sized key="goal" glance={{ label: "Training goal", short: "Goal", value: goalMode(settings.trainingGoal).label, sub: goalMode(settings.trainingGoal).blurb }}>
+      <Card>
         <CardTitle>Training goal</CardTitle>
         <p className="mb-2 text-[0.7rem] leading-snug text-faint">
           What the weekly volume landmarks are judged against. It does not move the
@@ -274,8 +279,10 @@ export function SettingsView() {
           {goalMode(settings.trainingGoal).blurb}
         </p>
       </Card>
+      </Sized>
 
-      <Card key="appearance">
+      <Sized key="appearance" glance={{ label: "Appearance", short: "Theme", value: String(settings.theme ?? "system").replace(/^./, (c) => c.toUpperCase()) }}>
+      <Card>
         <CardTitle>Appearance</CardTitle>
         <div className="mb-2 text-xs font-bold text-muted">Theme</div>
         <div className="mb-4 grid grid-cols-3 gap-2">
@@ -321,8 +328,10 @@ export function SettingsView() {
           <span className="text-xs text-muted">Or pick any colour</span>
         </div>
       </Card>
+      </Sized>
 
-      <Card key="training">
+      <Sized key="training" glance={{ label: "Training", short: "Units", value: settings.unit ?? "kg", sub: "weight unit" }}>
+      <Card>
         <CardTitle>Training</CardTitle>
         <Field label="Unit">
           <select
@@ -368,8 +377,10 @@ export function SettingsView() {
           <Toggle on={settings.confetti} onChange={(v) => patchSettings({ confetti: v })} />
         </div>
       </Card>
+      </Sized>
 
-      <Card key="nutrition">
+      <Sized key="nutrition" glance={{ label: "Nutrition", short: "Protein", value: settings.proteinPerKg ? String(settings.proteinPerKg) : null, unit: "g/kg", sub: settings.autoProteinTarget ? "protein follows bodyweight" : "fixed protein target", empty: "Default protein" }}>
+      <Card>
         <CardTitle>Nutrition</CardTitle>
         <div className="flex items-center justify-between gap-3">
           <span className="min-w-0 text-sm font-semibold">Auto protein from bodyweight</span>
@@ -391,8 +402,10 @@ export function SettingsView() {
           />
         </Field>
       </Card>
+      </Sized>
 
-      <Card key="routines">
+      <Sized key="routines" glance={() => ({ label: "Routines", lines: Object.keys(routines).map((name) => ({ text: name, value: `${routines[name]?.length || 0}` })), empty: "No routines", emptyShort: "None" })}>
+      <Card>
         <CardTitle>
           <span>Routines</span>
           <Button
@@ -551,8 +564,10 @@ export function SettingsView() {
           </div>
         )}
       </Card>
+      </Sized>
 
-      <Card key="report">
+      <Sized key="report" glance={{ label: "Report", empty: "Tap to build a report", emptyShort: "Open" }}>
+      <Card>
         <div className="mb-2 flex items-center justify-between gap-2">
           <CardTitle className="mb-0">Report</CardTitle>
           <button
@@ -569,8 +584,10 @@ export function SettingsView() {
           unless you send it.
         </p>
       </Card>
+      </Sized>
 
-      <Card key="data">
+      <Sized key="data" glance={{ label: "Backup and restore", short: "Backup", empty: "Back up or restore everything", emptyShort: "Open" }}>
+      <Card>
         <CardTitle>Data</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Everything lives on this device only, so a backup is the only copy if this phone
@@ -674,8 +691,10 @@ export function SettingsView() {
           </Button>
         </div>
       </Card>
+      </Sized>
 
-      <Card key="vault">
+      <Sized key="vault" glance={{ label: "Vault sync", short: "Vault", empty: "Sync SOMA with a folder", emptyShort: "Open" }}>
+      <Card>
         <CardTitle>Vault sync</CardTitle>
         {supportsVaultFolder() ? (
           <>
@@ -743,10 +762,14 @@ export function SettingsView() {
           </p>
         )}
       </Card>
+      </Sized>
 
-      <FoodImportCard key="foods" />
+      <Sized key="foods" glance={{ label: "Import foods", short: "Foods", empty: "Bring in a food list", emptyShort: "Import" }}>
+        <FoodImportCard />
+      </Sized>
 
-      <Card key="csv">
+      <Sized key="csv" glance={{ label: "Export as CSV", short: "CSV", empty: "Export your logs as spreadsheets", emptyShort: "Export" }}>
+      <Card>
         <CardTitle>Export as CSV</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Three plain spreadsheets — every set, every food, and a day-by-day summary.
@@ -779,8 +802,10 @@ export function SettingsView() {
           Export CSV
         </Button>
       </Card>
+      </Sized>
 
-      <Card key="programme">
+      <Sized key="programme" glance={{ label: "Training programme", short: "Programme", value: activeProgram.name, sub: activeProgram.kind === "week" ? "fixed weekdays" : `${activeProgram.days.length}-day cycle` }}>
+      <Card>
         <CardTitle>Training programme</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Currently on <b className="text-fg">{activeProgram.name}</b> —{" "}
@@ -829,8 +854,24 @@ export function SettingsView() {
           Change programme, or move a day
         </Button>
       </Card>
+      </Sized>
 
-      <Card key="targets">
+      <Sized key="targets" glance={() => {
+          const g = { ...DEFAULT_GOALS, ...(settings.customGoals ?? {}) };
+          return {
+            label: "Daily nutrition targets",
+            short: "Targets",
+            value: String(g.cals),
+            unit: "kcal",
+            stats: [
+              { label: "Protein", value: `${g.protein}g` },
+              { label: "Carbs", value: `${g.carbs}g` },
+              { label: "Fat", value: `${g.fat}g` },
+              { label: "Water", value: `${(g.water / 1000).toFixed(1)}L` },
+            ],
+          };
+        }}>
+      <Card>
         <CardTitle>Daily nutrition targets</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Leave a field blank to keep following the default — protein blank also keeps
@@ -872,8 +913,10 @@ export function SettingsView() {
           Re-apply to open days
         </Button>
       </Card>
+      </Sized>
 
-      <Card key="habit-history">
+      <Sized key="habit-history" glance={{ label: "Habit history", short: "History", empty: "Past habits and their records", emptyShort: "Open" }}>
+      <Card>
         <CardTitle>Habit history</CardTitle>
         <p className="mb-3 text-xs text-muted">
           Early builds seeded 48 days of invented habit history. Now that the grid lights
@@ -894,8 +937,10 @@ export function SettingsView() {
           Clear all habit days
         </Button>
       </Card>
+      </Sized>
 
-      <Card key="about">
+      <Sized key="about" glance={{ label: "About", value: __APP_VERSION__, sub: "SOMA" }}>
+      <Card>
         <CardTitle>About</CardTitle>
         <div className="flex items-center justify-between text-xs">
           <span className="text-muted">Version</span>
@@ -908,6 +953,7 @@ export function SettingsView() {
           <span className="font-bold">on this device only</span>
         </div>
       </Card>
+      </Sized>
 
       {reportOpen && <ReportSheet onClose={() => setReportOpen(false)} />}
 
