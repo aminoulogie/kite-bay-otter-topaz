@@ -18,7 +18,8 @@ import {
 } from "@/lib/storage-health";
 import { ProgramBuilder } from "@/components/ProgramBuilder";
 import {
-  getStoredVaultFolder, pickVaultFolder, forgetVaultFolder, readVaultFile, supportsVaultFolder, writeVaultFile,
+  getStoredVaultFolder, pickVaultFolder, forgetVaultFolder, readVaultFile, readVaultPhotos,
+  stripPhotosForVault, supportsVaultFolder, writeVaultFile, writeVaultPhotos,
 } from "@/lib/vault-sync";
 import { allCsv } from "@/lib/csv-export";
 import {
@@ -166,15 +167,25 @@ export function SettingsView() {
           toast.error(`Vault file is damaged: ${result.reason}`);
         } else {
           importJson(JSON.stringify(result.backup.data), "merge");
+          // Photos live as real files under <vault>/photos now, not embedded
+          // as base64 in the JSON — that is the whole point of a vault over a
+          // backup file. These two calls still run: an older vault file (or
+          // this device's own first sync, before it ever wrote photos out as
+          // files) can still carry them embedded, and restorePhotos on an
+          // empty array is a no-op.
+          await readVaultPhotos(handle);
           await restorePhotos(result.backup.photos);
           await restoreScanImages(result.backup.scanImages);
           await restoreExercisePhotos(result.backup.exercisePhotos);
         }
       }
       const backup = await buildBackup(JSON.parse(useSoma.getState().exportJson()));
-      await writeVaultFile(handle, JSON.stringify(backup));
+      const { written, keptScanImages } = await writeVaultPhotos(handle, backup);
+      await writeVaultFile(handle, JSON.stringify(stripPhotosForVault(backup, keptScanImages)));
       setVaultLastSync(new Date());
-      if (!opts.silent) toast.success("Synced with vault");
+      if (!opts.silent) {
+        toast.success(`Synced with vault${written ? ` · ${written} photo${written === 1 ? "" : "s"}` : ""}`);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Vault sync failed.");
     } finally {
@@ -701,7 +712,9 @@ export function SettingsView() {
             <p className="mb-3 text-xs text-muted">
               Point this at a folder synced by iCloud Drive (or Dropbox, or anything else),
               and open the same folder from SOMA on your other devices. Not instant — it
-              syncs whenever a device is opened, same as the files themselves sync.
+              syncs whenever a device is opened, same as the files themselves sync. Photos
+              save into it as ordinary .jpg files, not buried in the sync file's text, so
+              they open from Files or Explorer directly and the file itself stays small.
             </p>
             {vaultHandle ? (
               <div className="space-y-2">

@@ -19,12 +19,12 @@
  *     anchor download does nothing at all.
  */
 
-import { checksum } from "./checksum";
+import { checksum } from "./checksum.ts";
 import {
   allExercisePhotos, allPhotos, allScanImages, putExercisePhotoRecord, putPhotoRecord,
   saveScanImage, type HabitPhoto,
-} from "./habit-photos";
-import { sideStoreCounts, type SideStores } from "./side-stores";
+} from "./habit-photos.ts";
+import { sideStoreCounts, type SideStores } from "./side-stores.ts";
 
 export const BACKUP_FORMAT = "soma-backup";
 /**
@@ -40,7 +40,7 @@ export const BACKUP_FORMAT = "soma-backup";
  */
 export const BACKUP_VERSION = 3;
 
-export { checksum } from "./checksum";
+export { checksum } from "./checksum.ts";
 
 
 export interface BackupPhoto {
@@ -170,10 +170,22 @@ export function parseBackup(raw: string): ParseResult {
   if (typeof b.checksum === "string") {
     const actual = checksum(
       JSON.stringify(
-        // Older files were summed over two fields, not three. Including an
-        // absent scanImages would change the hash and reject every v2 backup.
-        b.scanImages ? { data: b.data, photos: b.photos, scanImages: b.scanImages }
-                     : { data: b.data, photos: b.photos },
+        // buildBackup sums over exactly the fields it writes onto the file,
+        // and that has grown from two to three to four as photos, then scans,
+        // then exercise photos joined the backup — each addition its own
+        // BACKUP_VERSION bump. Summing over a fixed shape here means every
+        // backup taken since exercisePhotos was added (2109996) failed this
+        // check the moment it was restored: buildBackup had already started
+        // summing four fields, and this recomputed only three, so a perfectly
+        // intact file was rejected as "damaged" every time. Matching the
+        // shape to whichever fields the file actually carries is what keeps
+        // this in sync with buildBackup as it grows, rather than needing a
+        // matching edit here that is easy to forget the next time it does.
+        b.exercisePhotos
+          ? { data: b.data, photos: b.photos, scanImages: b.scanImages, exercisePhotos: b.exercisePhotos }
+          : b.scanImages
+            ? { data: b.data, photos: b.photos, scanImages: b.scanImages }
+            : { data: b.data, photos: b.photos },
       ),
     );
     if (actual !== b.checksum) {
