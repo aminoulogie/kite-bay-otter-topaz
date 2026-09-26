@@ -122,7 +122,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
   const headline = (sizes: [number, number, number], emptyText = empty) =>
     hasValue ? (
       <div
-        className={cn("flex min-w-0 items-baseline gap-1 font-display font-extrabold leading-none tabular", spec.valueClass)}
+        className={cn("flex min-w-0 items-baseline gap-1 font-extrabold leading-none tabular", spec.valueClass)}
         style={{ fontSize: fit(value!, sizes) }}
       >
         <span className="min-w-0 truncate">{value}</span>
@@ -169,12 +169,13 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
               strokeWidth={w}
               strokeLinecap="round"
               strokeDasharray={`${c * f} ${c}`}
+              className="soma-ring-grow"
             />
           )}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
           <span
-            className={cn("font-display font-extrabold tabular", !hasValue && "text-faint", spec.valueClass)}
+            className={cn("font-extrabold tabular", !hasValue && "text-faint", spec.valueClass)}
             style={{ fontSize: `${Math.min(px * 0.3, (px * 0.62) / Math.max(2.2, text.length * 0.62))}px` }}
           >
             {text}
@@ -279,7 +280,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
         {hasValue ? (
           headline([1.45, 1.2, 0.95])
         ) : listed.length && listed.some((l) => l.done != null) ? (
-          <div className="flex items-baseline gap-1 font-display font-extrabold leading-none tabular">
+          <div className="flex items-baseline gap-1 font-extrabold leading-none tabular">
             <span className="text-[1.45rem]">{stillOpen}</span>
             <span className="text-[0.62rem] font-bold text-faint">left</span>
           </div>
@@ -323,11 +324,11 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
   } else if (size === "2x2") {
     body = (
       <div className="flex h-full min-w-0 flex-col gap-2">
-        {head}
+        {visual ? <div className="flex justify-center [&>div]:justify-center">{head}</div> : head}
         {visual ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-between gap-2">
-            {visual(78)}
-            <div className="w-full">{statGrid(2, false)}</div>
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5">
+            {visual(stats ? 92 : 112)}
+            {stats && <div className="w-full text-center">{statGrid(2, false)}</div>}
           </div>
         ) : charted ? (
           <>
@@ -377,7 +378,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
             <div className="flex min-w-0 max-w-[45%] shrink-0 flex-col justify-center gap-1.5">
               {head}
               {gaugeable ? (
-                sub && <div className="truncate text-[0.85rem] font-bold tabular">{sub}</div>
+                sub && <div className="line-clamp-2 text-[0.85rem] font-bold leading-snug tabular">{sub}</div>
               ) : hasValue || !listed.length ? (
                 headline([1.6, 1.5, 1.25])
               ) : null}

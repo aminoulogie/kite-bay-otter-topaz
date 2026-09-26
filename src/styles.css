@@ -970,3 +970,16 @@ select,
 .soma-epub [style*="background"] {
   background: transparent !important;
 }
+
+/* A progress ring fills from empty when it appears — opening the app on a
+   good day shows the day filling up. Animates to whatever dash the element
+   was drawn with, so any ring can wear it. */
+@keyframes soma-ring-grow {
+  from { stroke-dasharray: 0 100000; }
+}
+.soma-ring-grow {
+  animation: soma-ring-grow 1.1s cubic-bezier(0.22, 0.9, 0.25, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .soma-ring-grow { animation: none; }
+}

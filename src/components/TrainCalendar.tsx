@@ -13,7 +13,7 @@ import {
 import { SomaIntelligenceEngine } from "@/lib/soma";
 import { useSideStoreRevision } from "@/lib/use-side-stores";
 import {
-  DOMAINS, DOMAIN_DOT, DOMAIN_LABEL, buildDayMarks, domainsOn, summariseDay,
+  DOMAIN_DOT, DOMAIN_LABEL, buildDayMarks, domainsOn, summariseDay,
   type DayMarksInput,
 } from "@/lib/day-marks";
 import { useSwipeToClose } from "@/lib/use-edge-swipe";
@@ -21,27 +21,13 @@ import { useActiveProgram, useSoma } from "@/lib/store";
 import type { HistorySession, NutritionDay } from "@/lib/types";
 import { useSheet } from "@/lib/use-sheet";
 import { cn } from "@/lib/utils";
+import { RingSet } from "@/components/RingSet";
+import { RING_DEFS, latestWeight, ringValues, share } from "@/lib/rings";
 
 /** The habit progress photos are filed under — the same one Habits → Train uses. */
 const TRAIN_HABIT_ID = "gym-movement";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
-
-/**
- * "Legs B (Posterior Chain & Glute Bias)" will not fit in a calendar cell, so
- * it is reduced to the word that identifies the day.
- */
-function shortSplit(split: string): string {
-  const s = split.toLowerCase();
-  if (s.includes("rest")) return "REST";
-  if (s.includes("push")) return "PUSH";
-  if (s.includes("pull")) return "PULL";
-  if (s.includes("leg")) return "LEGS";
-  if (s.includes("upper")) return "UPPER";
-  if (s.includes("lower")) return "LOWER";
-  if (s.includes("full")) return "FULL";
-  return split.split(/[\s(]/)[0]!.slice(0, 5).toUpperCase();
-}
 
 function monthMatrix(year: number, month: number): (string | null)[] {
   const first = new Date(year, month, 1);
@@ -70,6 +56,8 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   const hunger = useSoma((s) => s.hunger);
   const settings = useSoma((s) => s.settings);
   const program = useActiveProgram();
+  const weight = useMemo(() => latestWeight(nutrition), [nutrition]);
+  const ringsOn = (d: string) => ringValues(nutrition[d], history[d], weight, settings.customGoals ?? {});
 
   const today = isoDate(new Date());
   const [cursor, setCursor] = useState(() => {
@@ -112,21 +100,10 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
     return m;
   }, [history]);
 
-  const trainHabit = habits.find((h) => h.id === TRAIN_HABIT_ID);
   const cells = useMemo(() => monthMatrix(cursor.y, cursor.m), [cursor]);
 
-  /**
-   * What happened on every day, across all five domains.
-   *
-   * Built once for the whole grid rather than per cell: the ledger and the
-   * mind log are flat arrays, and asking them 42 times a render would walk
-   * every entry 42 times.
-   */
+  /** Everything the day card under the grid reads for the picked day. */
   const marksInput = { history, nutrition, ledger, mind, habits };
-  const dayMarks = useMemo(
-    () => buildDayMarks({ history, nutrition, ledger, mind, habits }),
-    [history, nutrition, ledger, mind, habits],
-  );
 
   /**
    * Each day's completion score, for the number shown in its square.
@@ -279,30 +256,16 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-1">
+        {/* Keyed on opening and on the month, so the rings fill every time
+            the calendar is opened or turned, not once at app start while it
+            waits off-screen. */}
+        <div key={`${open}-${JSON.stringify(cursor)}`} className="grid grid-cols-7 gap-1">
           {cells.map((date, i) => {
             if (!date) return <div key={i} />;
-            const session = sessionsByDate.get(date);
-            const trained = !!session || !!trainHabit?.history?.[date];
             const future = date > today;
             const covered = isCovered(periods, date);
             const isEnd = status.period?.end === date;
             const score = scores.get(date);
-            // What was trained, or what is scheduled for a day still to come —
-            // a grid of bare numbers says nothing about the week ahead.
-            // Every day is labelled, not only trained and future ones: a past
-            // day with no session still had a split scheduled, and leaving it
-            // blank hides whether it was a rest day or a missed one.
-            const label = session
-              ? shortSplit(session.split)
-              : shortSplit(
-                  SomaIntelligenceEngine.getProgramProjectedDay(
-                    new Date(date + "T12:00:00"),
-                    settings.scheduleOverrides,
-                    program,
-                  ).split,
-                );
-
             return (
               <button
                 key={date}
@@ -310,7 +273,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
                 onClick={() => setSelected(date)}
                 aria-pressed={date === selected}
                 className={cn(
-                  "relative flex aspect-square flex-col items-center justify-center rounded-xl border text-[0.75rem] font-bold transition-colors",
+                  "relative flex flex-col items-center justify-center rounded-xl border py-1.5 text-[0.7rem] font-bold transition-colors",
                   // Selection and "today" are different things and need to stay
                   // distinguishable: today keeps its outline, the day you are
                   // reading is filled. Without the fill, tapping around the
@@ -325,53 +288,23 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
                   future && date !== selected ? "text-faint" : "text-fg",
                 )}
               >
-                <span className="leading-none">{Number(date.slice(8, 10))}</span>
-                {/* One dot per domain that has something on this day. A cell
-                    is forty pixels wide: it can carry "there is something
-                    here" for five things and not how much, which is what the
-                    card below is for. A past day with nothing at all keeps the
-                    old dashed outline, so empty and unrecorded stay distinct
-                    from a day still to come. */}
-                <span className="mt-0.5 flex h-1 items-center gap-[2px]">
-                  {domainsOn(dayMarks, date).map((d) => (
-                    <span key={d} className={cn("size-1 rounded-full", DOMAIN_DOT[d])} />
-                  ))}
-                  {domainsOn(dayMarks, date).length === 0 && !future && (
-                    <span className="size-1 rounded-full border border-dashed border-faint/50" />
-                  )}
+                {/* The day as its rings, as the Fitness app's month does. What was
+                    trained, the score and the rest are on the card under the
+                    grid for whichever day is picked. */}
+                <span className={cn("leading-none", date === today && "text-[#ff2d7a]")}>
+                  {Number(date.slice(8, 10))}
                 </span>
-                {score != null && (
-                  <span
-                    className={cn(
-                      "absolute right-1 top-1 text-[0.5rem] font-extrabold tabular-nums",
-                      score >= 80
-                        ? "text-emerald-400"
-                        : score >= 55
-                          ? "text-warn"
-                          : "text-orange-400/80",
-                    )}
-                  >
-                    {score}
-                  </span>
-                )}
-                {label && !isEnd && (
-                  <span
-                    className={cn(
-                      "mt-0.5 max-w-full truncate rounded px-1 text-[0.45rem] font-extrabold uppercase tracking-wide",
-                      trained
-                        ? "bg-emerald-500/20 text-emerald-300"
-                        : label === "REST"
-                          ? "bg-surface-3 text-faint"
-                          : "bg-surface-3 text-muted",
-                    )}
-                  >
-                    {label}
-                  </span>
-                )}
-                {isEnd && (
-                  <span className="mt-0.5 rounded bg-amber-500/20 px-1 text-[0.45rem] font-extrabold text-amber-400">
-                    EXPIRY
-                  </span>
+                <span className={cn("mt-1", future && "opacity-30")}>
+                  <RingSet
+                    rings={RING_DEFS.map((r) => ({ f: share(ringsOn(date)[r.id]), from: r.from, to: r.to }))}
+                    px={38}
+                    shadow={false}
+                    delay={i * 12}
+                  />
+                </span>
+                {isEnd && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-amber-400" aria-label="Membership ends" />}
+                {score != null && !isEnd && (
+                  <span className="sr-only">score {score}</span>
                 )}
               </button>
             );
@@ -381,16 +314,14 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[0.65rem] text-muted">
-          {/* One entry per domain, from the same table the grid draws from, so
-              the legend cannot describe a colour the cells no longer use. */}
-          {DOMAINS.map((d) => (
-            <span key={d} className="flex items-center gap-1.5">
-              <span className={cn("size-1.5 rounded-full", DOMAIN_DOT[d])} />
-              {DOMAIN_LABEL[d].toLowerCase()}
+          {RING_DEFS.map((r) => (
+            <span key={r.id} className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full" style={{ background: r.from }} />
+              {r.label.toLowerCase()}
             </span>
           ))}
           <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full border border-dashed border-faint/50" /> nothing logged
+            <span className="size-1.5 rounded-full bg-amber-400" /> membership ends
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded bg-surface-2" /> membership active
