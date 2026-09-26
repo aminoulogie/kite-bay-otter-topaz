@@ -2715,6 +2715,12 @@ export const useSoma = create<SomaStore>()(
   ),
 );
 
+// Development only: a handle on the live store for the widget screenshot
+// harness, which cannot import the module the app itself is running.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __soma?: typeof useSoma }).__soma = useSoma;
+}
+
 /**
  * Rebuild a saved session's totals from its exercises.
  *

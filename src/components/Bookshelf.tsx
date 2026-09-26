@@ -17,12 +17,14 @@ import { pickBookFiles, readBookFile } from "@/lib/book-import";
 import { captureImage, savePhoto } from "@/lib/habit-photos";
 import { searchBooks, upgradeCoverUrl, type BookMatch } from "@/lib/lookup";
 import {
-  counts, coverKey, finishedIn, onlyBooks, percentOf, shelfLabel, sortShelf,
+  counts, coverKey, finishedIn, onlyBooks, percentOf, shelfLabel, sortShelf, statusOf,
 } from "@/lib/shelf";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { MindEntry } from "@/lib/types";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * What you are reading, as a shelf you sweep a thumb along.
@@ -273,6 +275,27 @@ export function Bookshelf() {
     toast.success(files.length === 1 ? "On the shelf" : `${files.length} books on the shelf`);
   };
 
+  const size = useWidgetSize();
+  // The reader draws over everything from inside this card, so a book being
+  // read keeps the full card mounted whatever size it is.
+  if (isGlance(size) && !reading) {
+    const current = books.filter((b) => statusOf(b) === "reading");
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Reading shelf",
+          short: "Shelf",
+          icon: BookOpen,
+          value: String(tally.reading),
+          unit: "reading",
+          sub: `${tally.unread} to read · ${thisYear} finished this year`,
+          lines: (current.length ? current : books).map((b) => ({ text: b.title, value: shelfLabel(b) })),
+          empty: "No books yet",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between gap-2">

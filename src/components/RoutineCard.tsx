@@ -14,6 +14,8 @@ import { getLocalDateKey } from "@/lib/soma";
 import { activeOf } from "@/lib/todos";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * Routines: several things done back to back, against one clock.
@@ -54,6 +56,27 @@ export function RoutineCard() {
     setOpen(id);
   };
 
+  const size = useWidgetSize();
+  // A running routine draws its runner from inside this card, so it stays whole.
+  if (isGlance(size) && !running) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Routines",
+          icon: Timer,
+          value: routines.length ? String(routines.length) : null,
+          lines: routines.map((r) => ({
+            text: r.name,
+            color: r.color,
+            value: `${Math.round(r.windowSeconds / 60)}m · ${r.steps.length} steps`,
+          })),
+          empty: "No routines yet",
+          emptyShort: "None",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <CardTitle>

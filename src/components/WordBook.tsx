@@ -12,6 +12,8 @@ import { languageLabel } from "@/lib/translate";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { MindEntry } from "@/lib/types";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * Words you have just learned, with what they mean.
@@ -102,6 +104,24 @@ export function WordBook() {
     toast.success(`${w} saved — it comes back in two days`);
   };
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Your words",
+          short: "Words",
+          icon: Languages,
+          value: String(words.length),
+          unit: words.length === 1 ? "word" : "words",
+          sub: waiting ? `${waiting} without a meaning` : null,
+          lines: words.map((w) => ({ text: w.title, value: w.takeaway ? undefined : "no meaning" })),
+          empty: "No words saved",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <CardTitle>

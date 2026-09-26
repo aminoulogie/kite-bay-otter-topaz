@@ -124,7 +124,20 @@ export interface WidgetDef {
    * either can be set to anything — with the result the picker's shape shows.
    */
   size: WidgetSize;
+  /**
+   * The sizes it can be set to; absent means all six.
+   *
+   * Like the home screen, not every widget comes in every size. A tab bar in a
+   * 90px square, or a live set-by-set exercise card shrunk to one number, is
+   * not a smaller version of the thing — it is the thing broken. Those offer
+   * only the sizes where they still work; everything else takes all six and
+   * says less as it gets smaller (see components/Glance.tsx).
+   */
+  sizes?: WidgetSize[];
 }
+
+/** Page furniture: bars and buttons that are as tall as they need to be, one row, full width. */
+export const FURNITURE: WidgetSize[] = ["1x4"];
 
 export interface WidgetPlacement {
   id: string;
@@ -244,7 +257,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "header", label: "On the go", size: "2x4" },
     { id: "new", label: "Start something", size: "2x4" },
     // A bar, not a card: one row, the same as Habits' Today/Matrix/Year.
-    { id: "filter", label: "Active / Paused / Done", size: "1x4" },
+    { id: "filter", label: "Active / Paused / Done", size: "1x4", sizes: FURNITURE },
     { id: "list", label: "The projects", size: "2x4" },
   ],
   // Money is two pages behind one tab: what you spend, and what you trade.
@@ -277,7 +290,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   habits: [
     { id: "header", label: "Consistency", size: "2x4" },
-    { id: "tabs", label: "Today / Matrix / Year", size: "1x4" },
+    { id: "tabs", label: "Today / Matrix / Year", size: "1x4", sizes: FURNITURE },
     { id: "list", label: "The habits", size: "2x4" },
     { id: "new", label: "New habit", size: "2x4" },
   ],
@@ -289,7 +302,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "target", label: "Today's totals", size: "2x4" },
     { id: "suggest", label: "Suggest from pantry", size: "2x4" },
     { id: "plan", label: "Plan ahead", size: "2x4" },
-    { id: "actions", label: "Scan / Search / Burn", size: "1x4" },
+    { id: "actions", label: "Scan / Search / Burn", size: "1x4", sizes: FURNITURE },
     { id: "plate", label: "Plate photo", size: "2x4" },
     { id: "hunger", label: "Hunger", size: "2x4" },
     { id: "add", label: "Add food", size: "2x4" },
@@ -311,14 +324,14 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   workout: [
     { id: "header", label: "Session header", size: "2x4" },
-    { id: "date", label: "The date", size: "1x4" },
-    { id: "quick", label: "Undo / Save", size: "1x4" },
+    { id: "date", label: "The date", size: "1x4", sizes: FURNITURE },
+    { id: "quick", label: "Undo / Save", size: "1x4", sizes: FURNITURE },
     { id: "session", label: "Rest timer", size: "2x4" },
-    { id: "chips", label: "Add exercise", size: "1x4" },
+    { id: "chips", label: "Add exercise", size: "1x4", sizes: FURNITURE },
   ],
   looks: [
     { id: "latest", label: "Latest front", size: "2x4" },
-    { id: "scan", label: "Scan button", size: "1x4" },
+    { id: "scan", label: "Scan button", size: "1x4", sizes: FURNITURE },
     { id: "gallery", label: "Captures", size: "2x4" },
     { id: "guide", label: "What it measures", size: "2x4" },
     { id: "note", label: "What the mesh is", size: "1x4" },
@@ -340,11 +353,11 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   "insights-heatmap": [
     { id: "intro", label: "What the map shows", size: "2x4" },
-    { id: "range", label: "Front / back", size: "1x4" },
+    { id: "range", label: "Front / back", size: "1x4", sizes: FURNITURE },
     { id: "grid", label: "The map", size: "2x4" },
   ],
   body: [
-    { id: "tabs", label: "Sleep / Measure / Supplements", size: "1x4" },
+    { id: "tabs", label: "Sleep / Measure / Supplements", size: "1x4", sizes: FURNITURE },
     { id: "panel", label: "The panel", size: "2x4" },
   ],
   estimates: [
@@ -430,6 +443,14 @@ export function nextSpacerId(layout: WidgetPlacement[]): string {
  */
 export const DYNAMIC_SIZE: WidgetSize = "1x4";
 
+/** Filed in the registry under a sibling page of the same tab ("nutrition-log" for "nutrition-dash"). */
+function registeredElsewhere(tab: string, id: string): boolean {
+  const root = tab.split("-")[0]!;
+  return Object.entries(WIDGETS_BY_TAB).some(
+    ([t, list]) => t !== tab && (t === root || t.startsWith(`${root}-`)) && list.some((w) => w.id === id),
+  );
+}
+
 export function isDynamic(tab: string, id: string): boolean {
   return !isSpacer(id) && widgetDef(tab, id) === undefined;
 }
@@ -485,19 +506,41 @@ export function defaultLayout(tab = "dashboard"): WidgetPlacement[] {
 }
 
 /**
- * Every widget takes every size.
+ * A stored size, kept if the widget offers it, else its default.
  *
- * There used to be a `resizable: false` on anything that was mostly prose,
- * which is a real concern — a paragraph in a quarter of a phone is unreadable.
- * But it was the app deciding, for the user, which of THEIR cards were
- * important enough to keep full width, and the answer to "this one looks bad
- * small" is to size it back up, not to have the button refuse. The grid clips
- * an over-stuffed small widget behind a fade rather than letting it break the
- * row, so the worst case is a card that reads as a preview of itself.
+ * Every content widget takes every size and says less when small (see
+ * components/Glance.tsx) — the fade that used to crop an over-stuffed card
+ * is gone. Only furniture and working cards are limited, see `sizes`.
  */
 function cleanSize(tab: string, id: string, value: unknown): WidgetSize {
   if (isSpacer(id)) return asSize(value) ?? SPACER_SIZE;
-  return asSize(value) ?? widgetDef(tab, id)?.size ?? "2x4";
+  const allowed = allowedSizes(tab, id);
+  const want = asSize(value);
+  if (want && allowed.includes(want)) return want;
+  const def = widgetDef(tab, id)?.size ?? (isDynamic(tab, id) ? DYNAMIC_SIZE : "2x4");
+  return allowed.includes(def) ? def : allowed[0]!;
+}
+
+/**
+ * The sizes a widget offers. Gaps take all six; a widget the page invented
+ * (an exercise in today's session) is a working surface and stays full width
+ * at its own height.
+ */
+export function allowedSizes(tab: string, id: string): WidgetSize[] {
+  if (isSpacer(id)) return SIZES;
+  const def = widgetDef(tab, id);
+  if (!def) return FURNITURE;
+  return def.sizes?.length ? def.sizes : SIZES;
+}
+
+/**
+ * Takes its own height at one row rather than a fixed strip: furniture, and
+ * the invented working cards. Everything else at 1x4 is a glance strip.
+ */
+export function isNatural(tab: string, id: string): boolean {
+  if (isSpacer(id)) return false;
+  const a = allowedSizes(tab, id);
+  return a.length === 1 && a[0] === "1x4";
 }
 
 /**
@@ -578,6 +621,11 @@ export function reconcile(
       continue;
     }
     if (known.has(id) || seen.has(id)) continue;
+    // A card the registry files under ANOTHER page is that page's, not an
+    // invention of this one. Fuel renders all its cards into whichever of its
+    // four pages is open and lets the registry choose; treating the rest as
+    // invented put every Fuel card at the foot of every Fuel page.
+    if (registeredElsewhere(tab, id)) continue;
     seen.add(id);
     out.splice(at, 0, { id, size: DYNAMIC_SIZE, hidden: false });
     at += 1;

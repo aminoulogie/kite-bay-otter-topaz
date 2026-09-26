@@ -10,6 +10,8 @@ import {
 import { MARK_COLOURS, markChip, removeMark } from "@/lib/marks";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /** How many to draw before the list needs opening out. */
 const SHOWN = 12;
@@ -81,6 +83,23 @@ export function Highlights() {
     }
   };
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Highlights",
+          value: every.length ? String(every.length) : null,
+          unit: every.length === 1 ? "highlight" : "highlights",
+          sub: every.length ? `in ${groupByBook(every).length} books` : null,
+          lines: byRecent(every).map((h) => ({ text: `“${h.text}”`, color: h.colour })),
+          empty: "Hold a word while reading to mark it",
+          emptyShort: "None yet",
+        }}
+      />
+    );
+  }
   if (every.length === 0) {
     return (
       <Card>

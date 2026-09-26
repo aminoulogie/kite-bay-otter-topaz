@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { ArrowRight, Target } from "lucide-react";
 import { Card, CardTitle } from "@/components/ui/card";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 import { applyGoal } from "@/lib/goal-mode";
 import { coachBrief, type BriefHorizon } from "@/lib/coach-brief";
 import { currentDebt } from "@/lib/sleep-debt";
@@ -75,6 +77,26 @@ export function CoachBrief({ horizon }: { horizon: BriefHorizon }) {
       isDeload: !!proj.isDeload,
     });
   }, [history, nutrition, habits, hunger, settings, program, horizon]);
+
+  const size = useWidgetSize();
+  const title = horizon === "week" ? "This week, in order" : "Do these three";
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: title,
+          short: "Brief",
+          emptyShort: "On track",
+          icon: Target,
+          color: "#ffd60a",
+          lines: brief.actions.map((a) => ({ text: a.text })),
+          empty: "Nothing off track",
+          aria: `${title}: ${brief.actions.map((a) => a.text).join("; ") || "nothing off track"}`,
+        }}
+      />
+    );
+  }
 
   return (
     <Card>

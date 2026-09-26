@@ -14,7 +14,7 @@ import { RowEditSheet } from "@/components/RowEditSheet";
 import { numOf, textOf } from "@/lib/row-edit";
 import { TopTabs } from "@/components/TopTabs";
 import { TradingView } from "@/components/views/TradingView";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { LedgerEntry } from "@/lib/types";
@@ -126,10 +126,33 @@ function SpendingView() {
   };
 
   const money = (n: number) => `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`;
+  // Glances have a few characters, not a ledger line: 12,480 → "12.5K".
+  const compactMoney = (n: number) =>
+    n.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 });
 
   return (
     <WidgetGrid tab="money">
-      <Card key="summary">
+      <Sized key="summary" glance={() => ({
+          label: new Date(`${month}-01T12:00:00`).toLocaleDateString(undefined, { month: "long" }),
+          short: "Spent",
+          value: compactMoney(t.spend),
+          unit: currency,
+          valueClass: budget && budget.used > 1 ? "text-danger" : undefined,
+          progress: budget ? budget.used : null,
+          color: budget ? (budget.used > 1 ? "var(--color-danger)" : budget.aheadOfPace ? "var(--color-warn)" : undefined) : undefined,
+          sub: budget
+            ? budget.left < 0
+              ? `${compactMoney(Math.abs(budget.left))} over budget`
+              : `${compactMoney(budget.left)} left of ${compactMoney(budget.budget)}`
+            : `in ${compactMoney(t.income)} · net ${compactMoney(t.net)}`,
+          stats: [
+            { label: "Spent", value: compactMoney(t.spend) },
+            { label: "In", value: compactMoney(t.income) },
+            { label: "Net", value: compactMoney(t.net), color: t.net < 0 ? "var(--color-danger)" : "var(--color-accent-text)" },
+            ...(budget ? [{ label: "Left", value: compactMoney(budget.left) }] : []),
+          ],
+        })}>
+      <Card>
         <div className="mb-3 flex items-center justify-between">
           <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>
             <ChevronLeft className="size-5 text-muted" />
@@ -209,12 +232,14 @@ function SpendingView() {
           </p>
         )}
       </Card>
+      </Sized>
 
       <GroceryCard key="grocery" money={money} />
 
       <PantryCard />
 
-      <Card key="add">
+      <Sized key="add" glance={{ label: "Add an entry", short: "Add", icon: Plus, empty: "Tap to log a spend or income", emptyShort: "Add" }}>
+      <Card>
         <CardTitle>Log</CardTitle>
         <div className="mb-2 flex gap-1.5">
           {(["spend", "income"] as const).map((k) => (
@@ -267,6 +292,7 @@ function SpendingView() {
           onChange={(ev) => setNote(ev.target.value)}
         />
       </Card>
+      </Sized>
 
       {t.byCategory.length > 0 && (
         <Card>
@@ -313,7 +339,18 @@ function SpendingView() {
         />
       )}
 
-      <Card key="entries">
+      <Sized key="entries" glance={() => ({
+          label: "Entries",
+          value: String(rows.length),
+          unit: "this month",
+          lines: rows.map((r) => ({
+            text: r.kind === "income" ? `Income${r.note ? ` · ${r.note}` : ""}` : `${r.category}${r.note ? ` · ${r.note}` : ""}`,
+            value: `${r.kind === "income" ? "+" : "−"}${compactMoney(Math.abs(r.amount))}`,
+          })),
+          empty: "Nothing logged this month",
+          emptyShort: "None yet",
+        })}>
+      <Card>
         <CardTitle>{rows.length} entries</CardTitle>
         {rows.length === 0 ? (
           <p className="py-3 text-center text-xs text-faint">Nothing logged this month.</p>
@@ -351,8 +388,18 @@ function SpendingView() {
           </div>
         )}
       </Card>
+      </Sized>
 
-      <Card key="categories">
+      <Sized key="categories" glance={() => ({
+          label: "Budget",
+          value: settings.monthlyBudget ? compactMoney(settings.monthlyBudget) : null,
+          unit: currency,
+          sub: `${categories.length} categories`,
+          lines: categories.map((c) => ({ text: c })),
+          empty: "No monthly budget set",
+          emptyShort: "Not set",
+        })}>
+      <Card>
         <CardTitle>Budget</CardTitle>
         <p className="mb-2 text-[0.7rem] leading-snug text-faint">
           A monthly ceiling to measure against. Leave it empty and this tab reports what
@@ -434,6 +481,7 @@ function SpendingView() {
           </div>
         </div>
       </Card>
+      </Sized>
 
       <p className="px-1 text-center text-[0.7rem] text-faint">
         Swipe an entry left to delete it.

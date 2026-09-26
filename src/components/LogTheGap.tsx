@@ -7,6 +7,8 @@ import { recentFoods } from "@/lib/food-recents";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * The gaps in today, fixed here rather than four tabs away.
@@ -60,7 +62,32 @@ export function LogTheGap() {
 
   const anything =
     needSleep || needFood || needCreatine || openHabits.length > 0 || (needSession && !!yesterday);
+  const size = useWidgetSize();
   if (!anything) return null;
+
+  if (isGlance(size)) {
+    const gaps = [
+      needSleep && "Sleep",
+      needFood && "Food",
+      needCreatine && "Creatine",
+      ...openHabits.map((h) => h.name),
+      needSession && yesterday && `Repeat ${yesterday.session.split}`,
+    ].filter((x): x is string => !!x);
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Log the gap",
+          short: "Gaps",
+          icon: Check,
+          value: String(gaps.length),
+          unit: "to log",
+          sub: gaps.slice(0, 3).join(" · "),
+          lines: gaps.map((g) => ({ text: g, done: false })),
+        }}
+      />
+    );
+  }
 
   return (
     <Card>
@@ -198,12 +225,14 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2 last:mb-0">
-      <span className="flex min-w-0 items-center gap-2">
+    <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-surface-2 px-3 py-2 last:mb-0">
+      {/* The label keeps its width and the controls wrap under it: squeezed
+          side by side, "4 habits left" became "4 habi…". */}
+      <span className="flex shrink-0 items-center gap-2">
         <Icon className="size-4 shrink-0 text-faint" />
-        <span className="truncate text-sm font-bold">{label}</span>
+        <span className="text-sm font-bold">{label}</span>
       </span>
-      {children}
+      <div className="ml-auto">{children}</div>
     </div>
   );
 }

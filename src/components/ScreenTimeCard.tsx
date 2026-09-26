@@ -9,6 +9,8 @@ import {
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { ScreenApp } from "@/lib/types";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 const SPAN = 7;
 
@@ -36,6 +38,27 @@ export function ScreenTimeCard({ flexibleHours }: { flexibleHours: number }) {
   const line = verdict(today, flexibleHours);
   const biggest = topApp(today);
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Screen time",
+          short: "Screen",
+          icon: Smartphone,
+          value: today ? formatMinutes(today.total) : null,
+          sub: line ?? (biggest ? `most on ${biggest.name}` : null),
+          lines: (today?.apps ?? [])
+            .filter((a) => a.min > 0)
+            .sort((a, b) => b.min - a.min)
+            .map((a) => ({ text: a.name, value: formatMinutes(a.min) })),
+          empty: "Not logged today",
+          emptyShort: "Log",
+        }}
+      />
+    );
+  }
   return (
     <Card className="space-y-3">
       <div className="flex items-start justify-between gap-2">
