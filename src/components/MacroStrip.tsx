@@ -12,9 +12,11 @@ import { cn } from "@/lib/utils";
  * a filled shape at this size competes with the number beside it, and the
  * number is the thing being read.
  */
+// Calories and protein wear their rings' colours, so the tile and the ring
+// for the same number never disagree.
 export const MACRO_COLOR = {
-  cals: "#f59e0b",
-  p: "#a3e635",
+  cals: "#fa114f",
+  p: "#7dff00",
   f: "#ef4444",
   c: "#3b82f6",
 } as const;

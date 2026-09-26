@@ -284,7 +284,7 @@ export function NutritionView() {
       <Sized key="target" glance={{
           label: "Calories",
           short: "Calories",
-          color: "#ff9f0a",
+          color: "#fa114f",
           value: totals.cals > 0 ? String(Math.round(totals.cals)) : null,
           unit: "kcal",
           sub: `of ${goalCals}${plannedTotals.cals > 0 ? ` · +${Math.round(plannedTotals.cals)} planned` : ""}`,
