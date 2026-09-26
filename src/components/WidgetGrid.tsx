@@ -48,13 +48,24 @@ export function useWidgetSize(): WidgetSize {
  * Two columns could not express a quarter, so a widget was half a row or the
  * whole of it and nothing else. Four is the home screen's own grid and the
  * smallest number that makes 1x1, 1x2 and 1x4 all mean something different.
- * The desktop doubles it so the same stored size stays roughly half the width
- * it is on a phone, rather than one card stretched across a monitor.
+ *
+ * The desktop is TWELVE, and the spans do not scale with it. That is the whole
+ * point. The old mapping doubled the grid and doubled every span with it, so a
+ * full-width card was 4-of-4 on a phone and 8-of-8 on a desktop — the same
+ * fraction, which made a 1440px window an 1176px-wide phone with four enormous
+ * cards on it. Twelve columns with unscaled spans gives each card a SMALLER
+ * share of a BIGGER page: a quarter-tile becomes a sixth, a half-card becomes a
+ * quarter, and a full-width card becomes a half, so two of them sit side by
+ * side the way a dashboard is supposed to read.
+ *
+ * Every size still ends up wider in pixels than it is on a phone, which is what
+ * makes this safe: no card is being asked to draw itself in less room than it
+ * already handles.
  */
 const COL: Record<1 | 2 | 4, string> = {
   1: "col-span-1 lg:col-span-2",
-  2: "col-span-2 lg:col-span-4",
-  4: "col-span-4 lg:col-span-8",
+  2: "col-span-2 lg:col-span-3",
+  4: "col-span-4 lg:col-span-6",
 };
 
 /**
@@ -70,9 +81,16 @@ const ROW: Record<1 | 2 | 3, { tile: string; wide: string }> = {
   // bar sitting in an 84px hole — and it is why the ladder now only ever goes
   // up. A floor here made 1x4 taller than 2x4 for every piece of furniture on
   // the page, which is a picker that lies about its own shapes.
-  1: { tile: "h-[5.25rem]", wide: "" },
-  2: { tile: "h-[11rem]", wide: "min-h-[11rem]" },
-  3: { tile: "h-[17rem]", wide: "min-h-[17rem]" },
+  //
+  // Shorter on a desktop. The heights above are a phone's: a card two columns
+  // wide there is ~190px across, so anything it has to say wraps onto three
+  // lines and needs the room. The same card is a quarter of a wide window now
+  // and says it in one, so the phone's floor is left as empty space under the
+  // content — which is what made four tiles of two numbers each fill a third
+  // of a 900px screen.
+  1: { tile: "h-[5.25rem] lg:h-[4.5rem]", wide: "" },
+  2: { tile: "h-[11rem] lg:h-[8.5rem]", wide: "min-h-[11rem] lg:min-h-[8.5rem]" },
+  3: { tile: "h-[17rem] lg:h-[13.5rem]", wide: "min-h-[17rem] lg:min-h-[13.5rem]" },
 };
 
 function boxFor(size: WidgetSize): string {
@@ -217,9 +235,9 @@ export function WidgetGrid({
         </div>
       )}
 
-      {/* Two columns on a phone, four on a desktop — and the SAME stored span
-          means "half" and "full" on the phone but "quarter" and "half" on the
-          desktop. A wide screen should hold two cards side by side, not one
+      {/* Four columns on a phone, twelve on a desktop — and the SAME stored
+          span means "half" and "full" on the phone but "quarter" and "half" on
+          the desktop. A wide screen should hold two cards side by side, not one
           card stretched to two thousand pixels, and this gets that without the
           layout being stored twice. */}
       <div
@@ -228,7 +246,7 @@ export function WidgetGrid({
           // are one row of a grid and belong close together; two cards stacked
           // are two separate things and were reading as one block — which is
           // what the exercise list looked like once it joined the grid.
-          "soma-grid grid grid-cols-4 items-start gap-x-2 gap-y-3 lg:grid-cols-8 lg:gap-x-3 lg:gap-y-4",
+          "soma-grid grid grid-cols-4 items-start gap-x-2 gap-y-3 lg:grid-cols-12 lg:gap-x-4 lg:gap-y-4",
           editing && "select-none",
         )}
         data-editing={editing ? "true" : "false"}

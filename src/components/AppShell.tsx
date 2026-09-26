@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, BrainCircuit, CalendarDays, Check, Clock, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
+import { Activity, BrainCircuit, CalendarDays, Check, Clock, CornerDownLeft, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Search, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
@@ -51,6 +51,128 @@ const TAB_META: Record<TabId, { label: string; icon: typeof Dumbbell }> = {
 };
 
 const TABS = TAB_ORDER.map((id) => ({ id, ...TAB_META[id] }));
+
+/**
+ * Where the rail puts a heading, and what it says.
+ *
+ * Keyed by tab id and applied WHILE WALKING TAB_ORDER rather than by listing
+ * the tabs again under headings. A second copy of the list is the thing
+ * lib/tab-order.ts exists to prevent: the dock draws TAB_ORDER and a sideways
+ * swipe moves along it, so a rail with its own order would send you to a
+ * different tab than the one sitting next to it. These are labels dropped into
+ * the one order, and a tab added to TAB_ORDER simply joins the section above
+ * it without anything here needing to know.
+ *
+ * The sections come from the order's own shape, described in tab-order.ts:
+ * Home sits in the middle, what is to its right is the body, and what is to
+ * its left is everything else being tracked.
+ */
+/**
+ * Jump to a tab by typing, on a desktop.
+ *
+ * A search field is the first thing on a dashboard of this shape, and the
+ * temptation is to draw one that searches nothing. This one moves you: it
+ * filters TAB_ORDER as you type and Enter opens the top match, which is the
+ * job a keyboard actually wants on a wide screen where the rail is a mouse
+ * trip away. ⌘K / Ctrl-K focuses it, Escape gives the page back.
+ *
+ * It does not pretend to search your logs. Saying "Jump to" rather than
+ * "Search" is the difference between a control that is honest about its scope
+ * and one that quietly fails the first time someone looks for a meal in it.
+ */
+function TabJump({ tab, setTab }: { tab: TabId; setTab: (id: TabId) => void }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLInputElement>(null);
+
+  const hits = q.trim()
+    ? TABS.filter((t) => t.label.toLowerCase().includes(q.trim().toLowerCase()))
+    : [];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        box.current?.focus();
+        box.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const go = (id: TabId) => {
+    setTab(id);
+    setQ("");
+    setOpen(false);
+    box.current?.blur();
+  };
+
+  return (
+    <div className="relative ml-2 hidden min-w-0 flex-1 lg:block">
+      <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
+      <input
+        ref={box}
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        // A click inside the list must land before the blur closes it, so the
+        // close is deferred by a frame rather than fired on blur directly.
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && hits[0]) go(hits[0].id);
+          if (e.key === "Escape") {
+            setQ("");
+            box.current?.blur();
+          }
+        }}
+        placeholder="Jump to a tab…"
+        aria-label="Jump to a tab"
+        className="h-9 w-full max-w-md rounded-xl border border-border bg-surface-2 pl-9 pr-16 text-sm text-fg placeholder:text-faint focus:border-border-strong focus:outline-none"
+      />
+      <kbd className="pointer-events-none absolute left-[calc(min(100%,28rem)-3.25rem)] top-1/2 -translate-y-1/2 rounded-md border border-border px-1.5 py-0.5 text-[0.6rem] font-bold text-faint">
+        ⌘K
+      </kbd>
+
+      {open && hits.length > 0 && (
+        <div className="absolute left-0 top-11 z-50 w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface shadow-[0_16px_40px_rgba(0,0,0,0.5)]">
+          {hits.slice(0, 6).map((t, i) => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => go(t.id)}
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm font-bold",
+                  t.id === tab ? "text-accent-text" : "text-fg",
+                  "hover:bg-surface-2",
+                )}
+              >
+                <Icon className="size-4 shrink-0 text-muted" />
+                {t.label}
+                {i === 0 && (
+                  <CornerDownLeft className="ml-auto size-3.5 shrink-0 text-faint" />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const RAIL_SECTIONS: Partial<Record<TabId, string>> = {
+  mind: "Tracking",
+  dashboard: "Overview",
+  workout: "Body",
+  settings: "App",
+};
 
 export function AppShell() {
   // Installed once for the whole app: the keyboard is a property of the
@@ -291,29 +413,42 @@ export function AppShell() {
             Smart Coach
           </div>
         </div>
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          const active = tab === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition-colors",
-                active
-                  ? "bg-accent text-accent-ink"
-                  : "text-muted hover:bg-surface-2 hover:text-fg",
-              )}
-            >
-              <Icon className="size-4 shrink-0" strokeWidth={active ? 2.4 : 2} />
-              {t.label}
-            </button>
-          );
-        })}
+        {/* One pass over TAB_ORDER, dropping a heading in wherever
+            RAIL_SECTIONS names one. "App" is pushed to the bottom edge with
+            mt-auto so Setup sits on the floor of the rail rather than trailing
+            the list — it is the one item you are not moving between. */}
+        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {TABS.map((t) => {
+            const Icon = t.icon;
+            const active = tab === t.id;
+            const section = RAIL_SECTIONS[t.id];
+            return (
+              <div key={t.id} className={cn(section === "App" && "mt-auto pt-2")}>
+                {section && (
+                  <div className="px-3 pb-1 pt-3 text-[0.58rem] font-bold uppercase tracking-[0.16em] text-faint">
+                    {section}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setTab(t.id)}
+                  className={cn(
+                    "flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-bold transition-colors",
+                    active
+                      ? "bg-accent text-accent-ink"
+                      : "text-muted hover:bg-surface-2 hover:text-fg",
+                  )}
+                >
+                  <Icon className="size-4 shrink-0" strokeWidth={active ? 2.4 : 2} />
+                  {t.label}
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </nav>
 
-      <div className="soma-desk relative min-w-0 flex-1 lg:mx-auto lg:pb-10">
+      <div className="soma-desk relative min-w-0 flex-1 lg:mx-auto lg:max-w-[1680px] lg:pb-10">
       {/* The native webview fills the screen including the area behind the
           status bar, so without the safe-area inset the clock, wifi and battery
           sit on top of the header. Harmless in a browser, where the inset is 0. */}
@@ -355,6 +490,7 @@ export function AppShell() {
               SOMA
             </div>
           </div>
+          <TabJump tab={tab} setTab={setTab} />
         </div>
         {/* Was a static "Local" badge, which said something the user already
             knew and did nothing. The calendar is the thing worth reaching from
