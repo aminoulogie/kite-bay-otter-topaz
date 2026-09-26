@@ -24,10 +24,11 @@ export interface RingDef {
 
 /** Outer to inner. */
 export const RING_DEFS: RingDef[] = [
-  { id: "cals", label: "Calories", unit: "CAL", from: "#ff2d7a", to: "#ff5ea8" },
-  { id: "protein", label: "Protein", unit: "G", from: "#b6ff00", to: "#e3ff5c" },
-  { id: "water", label: "Water", unit: "ML", from: "#00d4e8", to: "#5cf2ff" },
-  { id: "burnt", label: "Burned", unit: "CAL", from: "#ff8a00", to: "#ffc14d" },
+  // Vivid, as the watch draws them: a deep start running to a bright end.
+  { id: "cals", label: "Calories", unit: "CAL", from: "#fa114f", to: "#ff4fa0" },
+  { id: "protein", label: "Protein", unit: "G", from: "#7dff00", to: "#d8ff2e" },
+  { id: "water", label: "Water", unit: "ML", from: "#00d8ff", to: "#3dffe8" },
+  { id: "burnt", label: "Burned", unit: "CAL", from: "#ff6a00", to: "#ffc000" },
 ];
 
 /** What a day of training is meant to cost, when nothing else says. */

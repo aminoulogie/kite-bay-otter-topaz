@@ -440,7 +440,7 @@ export function NutritionView() {
       <Sized key="water" glance={{
           label: "Water",
           icon: Droplet,
-          color: "#19e3e3",
+          color: "#00d8ff",
           value: water > 0 ? (water / 1000).toFixed(1) : null,
           unit: "L",
           sub: `of ${((goals.water || 3500) / 1000).toFixed(1)} L`,

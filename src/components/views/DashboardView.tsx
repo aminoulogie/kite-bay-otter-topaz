@@ -240,7 +240,7 @@ export function DashboardView() {
                  value={macros.c} target={goals?.carbs} onClick={() => setTab("nutrition")} />
       <MacroTile key="fat" macro="f" week={weekOf("f")} top={topOf("f")} label="Fat" unit="g"
                  value={macros.f} target={goals?.fat} onClick={() => setTab("nutrition")} />
-      <Tile key="water" icon={Droplet} color="#19e3e3" label="Water" value={water ? (water / 1000).toFixed(1) : null} unit="L"
+      <Tile key="water" icon={Droplet} color="#00d8ff" label="Water" value={water ? (water / 1000).toFixed(1) : null} unit="L"
             sub={`of ${(waterGoal / 1000).toFixed(1)} L`} progress={water / waterGoal} empty="No water logged"
             week={waterWeek} goal={waterGoal / 1000}
             onClick={() => setTab("nutrition")} />

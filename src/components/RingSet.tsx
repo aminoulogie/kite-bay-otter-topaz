@@ -61,7 +61,7 @@ export function RingSet({
   px,
   animate = true,
   delay = 0,
-  arrows = px >= 110,
+  arrows = px >= 50,
   shadow = px >= 48,
   className,
 }: {
@@ -117,7 +117,7 @@ export function RingSet({
         return (
           <g key={i}>
             {/* The track: the ring's own colour, faint. */}
-            <circle cx={c0} cy={c0} r={radius} fill="none" stroke={r.from} strokeOpacity={0.2} strokeWidth={w} />
+            <circle cx={c0} cy={c0} r={radius} fill="none" stroke={r.from} strokeOpacity={0.24} strokeWidth={w} />
             {lap >= 1 && <circle cx={c0} cy={c0} r={radius} fill="none" stroke={grad} strokeWidth={w} />}
             {f > 0 && (rest > 0.0005 || lap === 0) && (
               <circle
@@ -136,7 +136,7 @@ export function RingSet({
             {shadow && f > 0.04 && (
               <circle cx={ex} cy={ey} r={w / 2} fill={r.to} filter={`url(#${id}s)`} />
             )}
-            {arrows && <Arrow i={i} x={c0} y={c0 - radius} size={w * 0.62} />}
+            {arrows && <Arrow i={i} x={c0} y={c0 - radius} size={w * 0.7} />}
           </g>
         );
       })}
