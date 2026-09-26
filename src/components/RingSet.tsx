@@ -136,10 +136,16 @@ export function RingSet({
             {shadow && f > 0.04 && (
               <circle cx={ex} cy={ey} r={w / 2} fill={r.to} filter={`url(#${id}s)`} />
             )}
-            {arrows && <Arrow i={i} x={c0} y={c0 - radius} size={w * 0.7} />}
           </g>
         );
       })}
+      {/* Arrows last, over every ring and every cap: a ring just past its
+          goal ends right beside its own arrow and used to cover it. */}
+      {arrows &&
+        rings.map((_, i) => {
+          const radius = c0 - w / 2 - i * (w + gap);
+          return radius > w / 2 ? <Arrow key={i} i={i} x={c0} y={c0 - radius} size={w * 0.7} /> : null;
+        })}
     </svg>
   );
 }
@@ -158,10 +164,13 @@ function Arrow({ i, x, y, size }: { i: number; x: number; y: number; size: numbe
   if (i === 0)
     return <path d={`M${x - s} ${y} H${x + s} M${x + s * 0.3} ${y - s * 0.7} L${x + s} ${y} L${x + s * 0.3} ${y + s * 0.7}`} {...common} />;
   if (i === 1)
+    // Two chevrons with clear air between them and a short tail: packed
+    // tighter, the strokes ran into each other at small sizes.
     return (
       <path
-        d={`M${x - s} ${y} H${x + s * 0.2} M${x - s * 0.3} ${y - s * 0.7} L${x + s * 0.4} ${y} L${x - s * 0.3} ${y + s * 0.7} M${x + s * 0.2} ${y - s * 0.7} L${x + s} ${y} L${x + s * 0.2} ${y + s * 0.7}`}
+        d={`M${x - s * 1.05} ${y} H${x - s * 0.1} M${x - s * 0.55} ${y - s * 0.62} L${x + s * 0.05} ${y} L${x - s * 0.55} ${y + s * 0.62} M${x + s * 0.3} ${y - s * 0.62} L${x + s * 0.9} ${y} L${x + s * 0.3} ${y + s * 0.62}`}
         {...common}
+        strokeWidth={Math.max(1, size * 0.13)}
       />
     );
   if (i === 2)

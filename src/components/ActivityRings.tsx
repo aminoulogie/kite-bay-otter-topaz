@@ -117,9 +117,9 @@ export function ActivityRings() {
           {date === today ? "Today" : parseLocalDateKey(date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
           <ChevronRight className="size-3.5 text-faint" aria-hidden />
         </div>
-        <div className="flex items-center gap-5">
+        <div className={cn("flex items-center", big ? "gap-8 pr-2" : "gap-6")}>
           <RingSet key={date} rings={specs(values)} px={big ? 176 : 140} delay={120} />
-          <div className="min-w-0 flex-1 space-y-2">
+          <div className={cn("min-w-0 flex-1 space-y-2", big && "pl-3")}>
             {RING_DEFS.map((ring) => {
               const { value, goal } = values[ring.id];
               return (
