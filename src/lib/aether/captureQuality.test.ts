@@ -59,15 +59,6 @@ test("the 45 degree step is reachable, which it was not before", () => {
   assert.ok(reachable, "no turn produces a yaw inside the 45° window");
 });
 
-test("the profile step is reachable too", () => {
-  const step = SESSION.find((s) => s.kind === "face_side")!;
-  const reachable = [0.75, 0.8, 0.85, 0.9, 0.95, 1].some((t) => {
-    const y = Math.abs(proxyPose(faceAt(t)).yawDeg);
-    return y >= step.yawAbs[0] && y <= step.yawAbs[1];
-  });
-  assert.ok(reachable, "no turn produces a yaw inside the profile window");
-});
-
 test("the lighting box never collapses to a sliver at profile", () => {
   // It used to be built from the two tragus points, which nearly coincide when
   // the head is turned — so lighting was read from a few pixels by the ear.
@@ -130,7 +121,7 @@ test("a good profile frame goes green at profile yaw, not at front yaw", () => {
       framing: { faceHeightFrac: 0.46, eyesY: 0.38, centerX: 0.42, notes: [] },
       smile: 0.1, hasFace: true,
     });
-  assert.equal(at(80).ready, true, "80° is a profile");
+  assert.equal(at(88).ready, true, "88° is a profile");
   assert.equal(at(5).ready, false, "facing the lens is not a profile");
 });
 
@@ -167,16 +158,17 @@ test("no face zeroes every gate at once", () => {
   assert.equal(q.ready, false);
 });
 
-test("the profile target stops short of where the model goes blind", () => {
-  // A full 90° is exactly where the landmark model stops finding a face, so
-  // asking for it is asking for a shot that cannot be taken.
-  const side = SESSION.find((s) => s.kind === "face_side")!;
-  assert.ok(side.yawAbs[1] <= 90, "never demands past a full profile");
-  assert.ok(side.yawAbs[0] <= 55, "and starts within reach of the detector");
+test("the profile target is a true side-on 90°", () => {
+  // Coached by the body-pose model, which still sees the head at 90°, so the
+  // band sits around a real profile rather than where the face model gives up.
+  for (const side of SESSION.filter((s) => s.kind === "face_side")) {
+    assert.ok(side.yawAbs[0] >= 80 && side.yawAbs[0] < 90, `from ${side.yawAbs[0]}`);
+    assert.ok(side.yawAbs[1] > 90 && side.yawAbs[1] <= 100, `to ${side.yawAbs[1]}`);
+  }
 });
 
-test("a comfortable near-profile is ready", () => {
-  const q = at("face_side", 60);
+test("a square-on profile is ready", () => {
+  const q = at("face_side", 88);
   assert.ok(q.alignment >= 0.7, `alignment ${q.alignment}`);
   assert.equal(q.ready, true);
 });
@@ -223,10 +215,22 @@ test("a level head cannot rescue the wrong angle", () => {
   assert.ok(barelyTurned.alignment < 0.7, `alignment ${barelyTurned.alignment}`);
 
   // And roll still costs you something once the angle IS right.
-  const level = at("face_side", 65);
+  const level = at("face_side", 90);
   const tilted = scoreCapture({
-    kind: "face_side", yawDeg: 65, rollDeg: 12, pitchDeg: 0,
+    kind: "face_side", yawDeg: 90, rollDeg: 12, pitchDeg: 0,
     lighting: GOOD_LIGHT, framing: GOOD_FRAME, smile: 0, hasFace: true,
   });
   assert.ok(tilted.alignment < level.alignment);
+});
+
+test("a lowered chin is told to come UP, and a raised one to come down", () => {
+  const base = {
+    kind: "face_front_true" as const, yawDeg: 0, rollDeg: 0,
+    lighting: { grade: "good" as const, mean: 140, contrast: 30, leftRightDelta: 8, highlightPct: 0.01, shadowPct: 0.01, notes: [] },
+    framing: { faceHeightFrac: 0.46, eyesY: 0.38, centerX: 0.5, notes: [] },
+    smile: 0.1, hasFace: true,
+  };
+  // Positive pitch = chin down (pose-angles.ts).
+  assert.ok(scoreCapture({ ...base, pitchDeg: 20 }).reasons.includes("Chin up a little."));
+  assert.ok(scoreCapture({ ...base, pitchDeg: -20 }).reasons.includes("Chin down a little."));
 });

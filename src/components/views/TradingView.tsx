@@ -5,16 +5,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
-import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
 import { hasDetailRoom } from "@/lib/dashboard-layout";
 import { tapSuccess, tapWarn } from "@/lib/haptics";
 import { getLocalDateKey } from "@/lib/soma";
 import {
-  CHECKS, DAILY_LOSS_LIMIT, LOT_STEPS, MIN_SAMPLE, RISK_TARGET, SYSTEMS,
+  DAILY_LOSS_LIMIT, LOT_STEPS, MIN_SAMPLE, RISK_TARGET, SYSTEMS,
+  checksFor, currentWeekStats, keepChecks, systemDef, weeklyStats,
   bestSystem, gate, lossesOn, lotTable, openTrade, outcome, profit, rMultiple, report,
   rewardRatio, riskMoney, riskPercent, stopPips, suggestLots, summarise, systemName,
   type Direction, type SystemId, type Trade, type TradeDraft, type Verdict,
 } from "@/lib/trading";
+import {
+  DEFAULT_INSTRUMENT, GROUPS, cleanPointValues, formatPrice, inGroup, instrumentName,
+  instrumentOf, perPoint, setPerPoint, unitLabel,
+} from "@/lib/instruments";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -50,13 +55,133 @@ export function TradingView() {
 
   return (
     <WidgetGrid tab="money-trade">
-      <AccountCard key="account" equity={equity} lossesToday={lossesToday} open={!!open} />
-      <PreTradeCard key="check" equity={equity} trades={trades} today={today} />
-      <OpenTradeCard key="open" trade={open} />
-      <SystemsCard key="systems" ranked={ranked} best={best} />
-      <StatsCard key="stats" stats={stats} />
-      <LogCard key="log" trades={trades} />
-      <RulesCard key="rules" />
+      <Sized
+        key="account"
+        glance={{
+          label: "The account",
+          short: "Account",
+          value: equity ? `$${equity.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 })}` : null,
+          sub: `${lossesToday}/${DAILY_LOSS_LIMIT} losses today${open ? " · trade open" : ""}`,
+          progress: lossesToday / DAILY_LOSS_LIMIT,
+          color: lossesToday >= DAILY_LOSS_LIMIT ? "var(--color-danger)" : undefined,
+          empty: "Set your account size",
+          emptyShort: "Not set",
+        }}
+      >
+        <AccountCard equity={equity} lossesToday={lossesToday} open={!!open} />
+      </Sized>
+      <Sized
+        key="check"
+        glance={{
+          label: "Before you click",
+          short: "Check",
+          icon: Check,
+          empty: lossesToday >= DAILY_LOSS_LIMIT ? "Two losses today — done" : open ? "A trade is already open" : "Tap to check a setup",
+          emptyShort: lossesToday >= DAILY_LOSS_LIMIT ? "Stop" : "Check",
+        }}
+      >
+        <PreTradeCard equity={equity} trades={trades} today={today} />
+      </Sized>
+      <Sized
+        key="open"
+        glance={() => ({
+          label: "The open trade",
+          short: "Open",
+          value: open ? `${open.direction === "buy" ? "Buy" : "Sell"}` : null,
+          sub: open ? `${instrumentName(open.instrument)} · ${open.lots} lots · ${systemName(open.system)}` : null,
+          lines: open
+            ? [
+                { text: "Entry", value: formatPrice(open.instrument, open.entry) },
+                { text: "Stop", value: formatPrice(open.instrument, open.stop) },
+                { text: "Target", value: formatPrice(open.instrument, open.target) },
+              ]
+            : [],
+          empty: "No trade open",
+          emptyShort: "None",
+        })}
+      >
+        <OpenTradeCard trade={open} />
+      </Sized>
+      <Sized
+        key="systems"
+        glance={() => ({
+          label: "Which system is working",
+          short: "Systems",
+          value: best ? best.name : null,
+          sub: best ? `${best.stats.avgR.toFixed(2)}R average over ${best.decided}` : null,
+          lines: ranked.map((r) => ({ text: r.name, value: r.verdict === "too-early" ? `${r.decided}/${MIN_SAMPLE}` : `${r.stats.avgR.toFixed(2)}R` })),
+          empty: "Too early to say",
+        })}
+      >
+        <SystemsCard ranked={ranked} best={best} />
+      </Sized>
+      <Sized
+        key="stats"
+        glance={{
+          label: "The numbers",
+          short: "Net",
+          value: stats.trades ? money(stats.net) : null,
+          valueClass: stats.net < 0 ? "text-danger" : "text-accent-text",
+          sub: stats.trades ? `${Math.round(stats.winRate * 100)}% won · ${stats.totalR.toFixed(1)}R over ${stats.trades}` : null,
+          stats: stats.trades
+            ? [
+                { label: "Win rate", value: `${Math.round(stats.winRate * 100)}%` },
+                { label: "Avg R", value: stats.avgR.toFixed(2) },
+                { label: "Total R", value: stats.totalR.toFixed(1) },
+                { label: "Trades", value: String(stats.trades) },
+              ]
+            : undefined,
+          empty: "No trades yet",
+          emptyShort: "None",
+        }}
+      >
+        <StatsCard stats={stats} />
+      </Sized>
+      <Sized
+        key="weekly"
+        glance={() => {
+          const w = currentWeekStats(trades, today);
+          return {
+            label: "This week",
+            short: "Week",
+            value: w.trades ? money(w.net) : null,
+            valueClass: w.net < 0 ? "text-danger" : "text-accent-text",
+            sub: w.trades ? `${w.wins}W ${w.losses}L · ${w.totalR.toFixed(1)}R` : null,
+            empty: "No trades this week",
+            emptyShort: "None",
+          };
+        }}
+      >
+        <WeeklyCard trades={trades} today={today} />
+      </Sized>
+      <Sized
+        key="log"
+        glance={() => ({
+          label: "The log",
+          short: "Log",
+          value: String(trades.length),
+          unit: trades.length === 1 ? "trade" : "trades",
+          lines: [...trades]
+            .sort((a, b) => b.openedAt - a.openedAt)
+            .map((t) => ({
+              text: `${t.date.slice(5)} ${t.direction === "buy" ? "Buy" : "Sell"} ${instrumentName(t.instrument)}`,
+              value: t.exit == null ? "open" : `${rMultiple(t) >= 0 ? "+" : ""}${rMultiple(t).toFixed(1)}R`,
+            })),
+          empty: "Nothing logged",
+        })}
+      >
+        <LogCard trades={trades} />
+      </Sized>
+      <Sized
+        key="rules"
+        glance={{
+          label: "The rules",
+          short: "Rules",
+          lines: SYSTEMS.map((s) => ({ text: s.name })),
+        }}
+      >
+        <RulesCard />
+      </Sized>
     </WidgetGrid>
   );
 }
@@ -68,7 +193,9 @@ const num = (s: string) => {
   return Number.isFinite(v) ? v : NaN;
 };
 const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
-const price = (n: number) => n.toFixed(5);
+/** A price written the way its own market writes it — five places for a
+ *  currency pair, two for gold, one for an index. */
+const price = (n: number, instrument?: string) => formatPrice(instrument, n);
 
 /* ------------------------------------------------------------- account -- */
 
@@ -134,8 +261,11 @@ function AccountCard({
           the truth after the account has grown or shrunk. */}
       {equity > 0 && hasDetailRoom(size) && (
         <div className="mt-3">
+          {/* Stated as a forex table rather than left to be assumed. The same
+              1% buys a hundred times as many points of gold, and a row that
+              said "pips" while you were trading metal would be a trap. */}
           <div className="mb-1 grid grid-cols-3 text-[0.55rem] font-bold uppercase tracking-wider text-faint">
-            <span>Lot</span>
+            <span>Lot · FX</span>
             <span className="text-right">Max stop at 1%</span>
             <span className="text-right">at 2%</span>
           </div>
@@ -169,9 +299,105 @@ function AccountCard({
 
 /* ----------------------------------------------------------- pre-trade -- */
 
+/**
+ * What was traded, and what a point of it is worth.
+ *
+ * At the top of the card rather than buried with the size, because it governs
+ * every number below it: the stop is counted in this market's units, the risk
+ * is priced at this market's value, and the lot that fits is the lot that fits
+ * HERE. Picking the system first and the market fourth would mean reading
+ * three numbers that were about something else.
+ *
+ * The value is on show and not hidden in a table. Forex and the metals are
+ * contract arithmetic — a standard lot is a hundred thousand units, gold is a
+ * hundred ounces — and cannot be wrong. The indices and crypto are a broker
+ * convention, and a risk calculation you cannot check against your own account
+ * is a risk calculation that should not be trusted. So it can be replaced, and
+ * a replacement that matches the shipped figure is simply forgotten.
+ */
+function InstrumentPicker({
+  value, perPointNow, onPick, onValue,
+}: {
+  value: string;
+  perPointNow: number;
+  onPick: (id: string) => void;
+  onValue: (n: number) => void;
+}) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const inst = instrumentOf(value);
+  const shipped = inst.perLot;
+
+  const save = () => {
+    const n = Number(String(editing).replace(",", "."));
+    if (!Number.isFinite(n) || n <= 0) {
+      toast.error("Enter what one point is worth at 1.00 lot.");
+      return;
+    }
+    onValue(n);
+    setEditing(null);
+    toast.success(n === shipped ? "Back to the standard value" : `${instrumentName(value)} set to ${money(n)} a point`);
+  };
+
+  return (
+    <div className="mb-2">
+      {/* One row per market, scrolling sideways. A grid of thirteen would be
+          the tallest thing on the card and the least often changed. */}
+      {GROUPS.map((group) => (
+        <div key={group} className="mb-1 flex items-center gap-1.5">
+          <span className="w-12 shrink-0 text-[0.55rem] font-bold uppercase tracking-wider text-faint">
+            {group}
+          </span>
+          <div className="-mx-1 flex min-w-0 flex-1 gap-1.5 overflow-x-auto px-1 pb-0.5">
+            {inGroup(group).map((i) => (
+              <button
+                key={i.id}
+                type="button"
+                onClick={() => onPick(i.id)}
+                className={cn(
+                  "h-8 shrink-0 rounded-full border px-2.5 text-[0.68rem] font-bold",
+                  value === i.id
+                    ? "border-accent bg-accent text-accent-ink"
+                    : "border-border bg-surface-2 text-muted",
+                )}
+              >
+                {i.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {editing === null ? (
+        <button
+          type="button"
+          onClick={() => setEditing(String(perPointNow))}
+          className="mt-0.5 text-[0.62rem] leading-snug text-faint underline decoration-dotted underline-offset-2"
+        >
+          {money(perPointNow)} per {inst.unit} at 1.00 lot
+          {perPointNow !== shipped ? " · yours" : ""} — tap if your broker differs
+        </button>
+      ) : (
+        <div className="mt-1 flex items-center gap-1.5">
+          <Input
+            autoFocus
+            inputMode="decimal"
+            value={editing}
+            onChange={(e) => setEditing(e.target.value)}
+            aria-label={`Dollars per ${inst.unit} at one lot`}
+            className="h-9 flex-1 tabular"
+          />
+          <Button size="sm" onClick={save}>Set</Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const BLANK: TradeDraft = {
   system: "ema-pullback",
   direction: "buy",
+  instrument: DEFAULT_INSTRUMENT,
   reason: "",
   lots: 0.01,
   entry: NaN,
@@ -188,6 +414,9 @@ function PreTradeCard({
   today: string;
 }) {
   const addTrade = useSoma((s) => s.addTrade);
+  const storedValues = useSoma((s) => s.settings.pointValues);
+  const patchSettings = useSoma((s) => s.patchSettings);
+  const pointValues = useMemo(() => cleanPointValues(storedValues), [storedValues]);
   const [d, setD] = useState<TradeDraft>(BLANK);
   const [entry, setEntry] = useState("");
   const [stop, setStop] = useState("");
@@ -196,16 +425,30 @@ function PreTradeCard({
   // The three prices are held as the strings that were typed and parsed here,
   // so a half-typed "1.1" is a number in progress rather than a value the gate
   // has to have an opinion about yet.
+  /**
+   * What a point of this market is worth, settled at the moment of drafting.
+   *
+   * Stored on the trade rather than looked up later, for the same reason the
+   * account balance is: correcting the table next month must not rewrite the
+   * risk on a trade that was sized under the old figure.
+   */
+  const inst = instrumentOf(d.instrument);
+  const value = perPoint(d.instrument, pointValues);
+
   const draft: TradeDraft = useMemo(
-    () => ({ ...d, entry: num(entry), stop: num(stop), target: num(target) }),
-    [d, entry, stop, target],
+    () => ({ ...d, perPoint: value, entry: num(entry), stop: num(stop), target: num(target) }),
+    [d, value, entry, stop, target],
   );
 
   const g = useMemo(() => gate(draft, { equity, trades, today }), [draft, equity, trades, today]);
   const risk = riskMoney(draft);
   const rr = rewardRatio(draft);
   const stopped = stopPips(draft);
-  const suggested = stopped > 0 ? suggestLots(stopped, equity) : null;
+  const suggested = stopped > 0 ? suggestLots(stopped, equity, undefined, value) : null;
+
+  /** What this system asks for, and where its own rules stop. */
+  const list = checksFor(d.system);
+  const entryCount = systemDef(d.system)?.entry.length ?? 0;
 
   const toggle = (id: string) =>
     setD((p) => ({
@@ -232,12 +475,35 @@ function PreTradeCard({
     <Card>
       <CardTitle>Before you click</CardTitle>
 
+      {/* What was traded, first, because everything under it is counted in
+          this market's units and priced at this market's value. */}
+      <InstrumentPicker
+        value={d.instrument ?? DEFAULT_INSTRUMENT}
+        perPointNow={value}
+        onPick={(id) => setD((p) => ({ ...p, instrument: id }))}
+        onValue={(n) =>
+          patchSettings({
+            pointValues: setPerPoint(pointValues, d.instrument ?? DEFAULT_INSTRUMENT, n),
+          })
+        }
+      />
+
       <div className="mb-2 grid grid-cols-2 gap-1.5">
         {SYSTEMS.map((s) => (
           <button
             key={s.id}
             type="button"
-            onClick={() => setD((p) => ({ ...p, system: s.id as SystemId }))}
+            onClick={() =>
+              setD((p) => ({
+                ...p,
+                system: s.id as SystemId,
+                // The conditions below are this system's own, so the ticks
+                // that belonged to the last one go with it. Carrying them
+                // over would mean arriving at a new setup with three of its
+                // rules already confirmed by a setup you have just rejected.
+                checks: keepChecks(s.id as SystemId, p.checks),
+              }))
+            }
             className={cn(
               "rounded-xl border px-2 py-2 text-left text-[0.7rem] font-bold leading-tight",
               d.system === s.id ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface-2",
@@ -279,7 +545,7 @@ function PreTradeCard({
                 inputMode="decimal"
                 value={value}
                 onChange={(e) => set(e.target.value)}
-                placeholder="1.17000"
+                placeholder={inst.sample}
                 aria-label={label}
                 className="h-11 tabular"
               />
@@ -312,7 +578,7 @@ function PreTradeCard({
       {/* The numbers, live, before anything is committed. */}
       {stopped > 0 && (
         <div className="mb-2 grid grid-cols-3 gap-1.5 text-center">
-          <Readout label="Stop" value={`${stopped.toFixed(1)}p`} />
+          <Readout label="Stop" value={unitLabel(d.instrument, stopped)} />
           <Readout
             label="Risk"
             value={equity > 0 ? `${(riskPercent(draft, equity) * 100).toFixed(1)}%` : money(risk)}
@@ -345,15 +611,31 @@ function PreTradeCard({
         />
       </label>
 
+      {/* The system's own entry conditions, then the ones true of any trade.
+          These change with the system above — that is the point of them. */}
+      <div className="mb-1 flex items-baseline justify-between px-0.5">
+        <span className="text-[0.6rem] font-bold uppercase tracking-wide text-faint">
+          {systemName(d.system)} — entry
+        </span>
+        <span className="text-[0.6rem] tabular text-faint">
+          {d.checks.length}/{list.length}
+        </span>
+      </div>
       <div className="mb-2 space-y-1">
-        {CHECKS.map((c) => {
+        {list.map((c, i) => {
           const on = d.checks.includes(c.id);
           return (
             <button
               key={c.id}
               type="button"
               onClick={() => toggle(c.id)}
-              className="flex w-full items-start gap-2.5 rounded-xl border border-border bg-surface-2 px-3 py-2 text-left"
+              className={cn(
+                "flex w-full items-start gap-2.5 rounded-xl border bg-surface-2 px-3 py-2 text-left",
+                on ? "border-accent/40" : "border-border",
+                // A hairline break where this system's rules end and the
+                // housekeeping begins, so the two are never read as one list.
+                i === entryCount && "mt-2.5",
+              )}
             >
               <span
                 className={cn(
@@ -486,12 +768,13 @@ function OpenTradeCard({ trade }: { trade: Trade | undefined }) {
           </span>
         </div>
         <div className="mt-1.5 grid grid-cols-3 gap-1 text-[0.65rem] tabular text-faint">
-          <span>in {price(trade.entry)}</span>
-          <span>stop {price(trade.stop)}</span>
-          <span>target {price(trade.target)}</span>
+          <span>in {price(trade.entry, trade.instrument)}</span>
+          <span>stop {price(trade.stop, trade.instrument)}</span>
+          <span>target {price(trade.target, trade.instrument)}</span>
         </div>
         <div className="mt-1 text-[0.65rem] tabular text-faint">
-          {trade.lots.toFixed(2)} lots · risking {money(riskMoney(trade))} ·{" "}
+          {instrumentName(trade.instrument)} · {trade.lots.toFixed(2)} lots · risking{" "}
+          {money(riskMoney(trade))} ·{" "}
           {rewardRatio(trade).toFixed(2)}R
         </div>
         {trade.reason && (
@@ -680,6 +963,106 @@ function Line({ label, value, tone }: { label: string; value: string; tone?: "wa
   );
 }
 
+/* --------------------------------------------------------------- weekly -- */
+
+/** "This week" for the current Monday, else "Week of 7 Sep". */
+function weekLabel(mondayKey: string, todayKey: string): string {
+  if (mondayKey === mondayOfKey(todayKey)) return "This week";
+  const d = new Date(`${mondayKey}T12:00:00`);
+  return `Week of ${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
+}
+
+/** Same rule `weeklyStats` groups by — recomputed here because this file
+ *  draws the label and trading.ts does the money, and the two do not share
+ *  a date helper any more than the rest of the app's Monday-based weeks do. */
+function mondayOfKey(dateKey: string): string {
+  const d = new Date(`${dateKey}T12:00:00`);
+  const dow = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dow);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * How the week has gone, and the weeks before it.
+ *
+ * "The numbers" above is all-time on purpose — a system needs dozens of
+ * trades before its average R means anything, and resetting that every
+ * Monday would erase the one figure that actually says whether it works.
+ * But all-time also cannot answer "how did THIS week go", and a Monday
+ * morning wants that answer more than it wants a lifetime average.
+ *
+ * Grouped by when a trade CLOSED, not when it was opened — a week's money is
+ * what actually left or arrived during it, and a trade only does that on the
+ * day it closes.
+ */
+function WeeklyCard({ trades, today }: { trades: Trade[]; today: string }) {
+  const size = useWidgetSize();
+  const weeks = useMemo(() => weeklyStats(trades), [trades]);
+  const current = useMemo(() => currentWeekStats(trades, today), [trades, today]);
+  // The five weeks before this one, oldest first — so the row of bars below
+  // reads left to right the way a week itself does.
+  const past = weeks.filter((w) => w.week !== current.week).slice(0, 5).reverse();
+  const scale = Math.max(1, ...[...past, current].map((w) => Math.abs(w.net)));
+
+  return (
+    <Card>
+      <CardTitle>This week</CardTitle>
+
+      {current.trades === 0 ? (
+        <p className="text-xs leading-snug text-faint">
+          Nothing closed this week yet. It will show here the moment a trade does.
+        </p>
+      ) : (
+        <div className="grid grid-cols-3 gap-1.5 text-center">
+          <Readout
+            label="Net"
+            value={money(current.net)}
+            tone={current.net > 0 ? "good" : current.net < 0 ? "bad" : undefined}
+          />
+          <Readout
+            label="Result"
+            value={`${current.totalR >= 0 ? "+" : ""}${current.totalR.toFixed(1)}R`}
+            tone={current.totalR > 0 ? "good" : current.totalR < 0 ? "bad" : undefined}
+          />
+          <Readout label="Trades" value={`${current.wins}W ${current.losses}L`} />
+        </div>
+      )}
+
+      {/* The weeks before it, as a short strip of bars rather than another
+          table — the shape of a run of weeks is the thing a table hides and
+          a glance at five bars gives back immediately. */}
+      {hasDetailRoom(size) && past.length > 0 && (
+        <div className="mt-3 border-t border-border pt-2">
+          <div className="mb-1.5 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+            Weeks before this one
+          </div>
+          <div className="flex items-end justify-between gap-1.5" style={{ height: 56 }}>
+            {past.map((w) => (
+              <div key={w.week} className="flex flex-1 flex-col items-center gap-1">
+                <div
+                  className="flex w-full flex-1 items-end justify-center"
+                  title={`${weekLabel(w.week, today)}: ${money(w.net)}`}
+                >
+                  <div
+                    className={cn(
+                      "w-full rounded-t-sm",
+                      w.net > 0 ? "bg-accent/70" : w.net < 0 ? "bg-danger/70" : "bg-border",
+                    )}
+                    style={{ height: `${Math.max(4, (Math.abs(w.net) / scale) * 44)}px` }}
+                  />
+                </div>
+                <span className="text-[0.55rem] font-bold tabular text-faint">
+                  {money(w.net)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ------------------------------------------------------------------ log -- */
 
 function LogCard({ trades }: { trades: Trade[] }) {
@@ -735,9 +1118,12 @@ function LogCard({ trades }: { trades: Trade[] }) {
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-x-2 text-[0.6rem] tabular text-faint">
                     <span>{t.date}</span>
+                    {/* What it was, next to the size, because "0.03 lots" is
+                        a different amount of money in every market. */}
+                    <span className="font-bold">{instrumentName(t.instrument)}</span>
                     <span className="uppercase">{t.direction}</span>
                     <span>{t.lots.toFixed(2)} lots</span>
-                    <span>{stopPips(t).toFixed(1)}p stop</span>
+                    <span>{unitLabel(t.instrument, stopPips(t))} stop</span>
                     {t.closedEarly && <span className="font-bold text-warn">closed by hand</span>}
                   </div>
                   {open && (
@@ -746,11 +1132,12 @@ function LogCard({ trades }: { trades: Trade[] }) {
                         <p className="text-[0.68rem] italic leading-snug text-muted">“{t.reason}”</p>
                       )}
                       <p className="mt-1 text-[0.6rem] tabular text-faint">
-                        in {price(t.entry)} · stop {price(t.stop)} · target {price(t.target)}
-                        {typeof t.exit === "number" && ` · out ${price(t.exit)}`}
+                        in {price(t.entry, t.instrument)} · stop {price(t.stop, t.instrument)} ·
+                        {" "}target {price(t.target, t.instrument)}
+                        {typeof t.exit === "number" && ` · out ${price(t.exit, t.instrument)}`}
                       </p>
                       <p className="mt-0.5 text-[0.6rem] text-faint">
-                        Confirmed {t.checks.length} of {CHECKS.length} ·{" "}
+                        Confirmed {t.checks.length} of {checksFor(t.system).length} ·{" "}
                         {t.equityAtEntry > 0
                           ? `${(riskPercent(t, t.equityAtEntry) * 100).toFixed(1)}% risked`
                           : "risk unknown"}

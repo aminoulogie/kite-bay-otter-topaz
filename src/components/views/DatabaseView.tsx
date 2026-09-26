@@ -194,7 +194,7 @@ export function DatabaseView() {
             editLabel="Open"
             onDelete={() => dropExercise(ex)}
           >
-          <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+          <div className="glass-card overflow-hidden rounded-2xl border border-border bg-surface">
             <button
               type="button"
               onClick={() => setOpenExercise(open ? null : ex.name)}

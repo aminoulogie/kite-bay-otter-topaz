@@ -4,12 +4,15 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import {
   ARC_START, ARC_SWEEP, DEFAULT_BOOKS_PER_YEAR, DEFAULT_GOAL_MIN, arcD, bestStreak, bookGrid,
-  clockOf, elapsedMinutes, fractionOf, streak, todayMinutes, weekMet, weekOf,
+  clockOf, clockHMS, elapsedMinutes, elapsedSeconds, fractionOf, streak, todayMinutes, todaySeconds,
+  weekMet, weekOf,
 } from "@/lib/reading-goal";
 import { finishedIn, onlyBooks } from "@/lib/shelf";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * The box is cut to the arc rather than left square.
@@ -35,11 +38,12 @@ const QUICK = [5, 15, 30];
  * is the thing that actually decides whether a book gets finished, and a run of
  * days you can see is most of what makes you open it tomorrow.
  *
- * SOMA is not the reader, so the minutes cannot be taken automatically. They
- * come from a timer or from a tap, and the timer is stored as a START TIME
- * rather than a tally: reading is the one activity during which you put the
- * phone down, so a counter that only advances while the app is foregrounded
- * would undercount exactly the sessions worth counting.
+ * A book opened in SOMA fills this in by itself. The timer and the quick taps
+ * are for paper, which is most of what anybody reads — and the timer is stored
+ * as a START TIME rather than a tally, because reading is the one activity
+ * during which you put the phone down, and a counter that only advances while
+ * the app is foregrounded would undercount exactly the sessions worth
+ * counting.
  */
 export function ReadingGoal() {
   const reading = useSoma((s) => s.reading);
@@ -64,7 +68,12 @@ export function ReadingGoal() {
   }, [readingSince]);
 
   const minutes = todayMinutes(reading, today, readingSince);
-  const frac = fractionOf(minutes, goal);
+  const secondsToday = todaySeconds(reading, today, readingSince);
+  // The arc is drawn from SECONDS against the goal in minutes, so it creeps
+  // forward every second instead of stepping a whole minute at a time — which
+  // is what makes "30 minutes and the ring is full" visibly true while you
+  // watch it.
+  const frac = fractionOf(secondsToday / 60, goal);
   const run = streak(reading, goal, today);
   const best = bestStreak(reading, goal);
   const week = useMemo(() => weekOf(reading, goal, today), [reading, goal, today]);
@@ -79,6 +88,42 @@ export function ReadingGoal() {
   const running = readingSince !== null;
   const held = elapsedMinutes(readingSince);
 
+  /**
+   * A timer that only runs while you are looking at it.
+   *
+   * Press play, put the phone in a pocket, and the old timer kept counting
+   * until you came back — hours of "reading" nobody did. Backgrounding now
+   * banks the session, which is the same rule the reader itself follows: time
+   * counts while the book is open and the app is in front of you, and not
+   * otherwise.
+   */
+  useEffect(() => {
+    if (!readingSince) return;
+    const onHide = () => {
+      if (document.visibilityState === "hidden") stopReading();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, [readingSince, stopReading]);
+
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: running ? "Reading now" : "Reading today",
+          short: "Reading",
+          icon: running ? Pause : Play,
+          value: clockOf(minutes),
+          unit: `/ ${goal}m`,
+          progress: frac,
+          done: frac >= 1,
+          sub: `${run}-day streak · ${finished}/${booksGoal} books this year`,
+        }}
+      />
+    );
+  }
   return (
     <Card className="overflow-hidden">
       <div className="relative mx-auto w-full max-w-[280px]">
@@ -105,8 +150,12 @@ export function ReadingGoal() {
           <div className="text-[0.62rem] font-bold uppercase tracking-[0.14em] text-faint">
             Today&apos;s reading
           </div>
-          <div className="font-display text-5xl font-extrabold tabular leading-none">
-            {clockOf(minutes)}
+          {/* Hours, minutes, seconds — the second hand is what says the timer
+              is alive. Eight characters is wider than five, so the type is a
+              step down and tracked in: at the old size the digits ran into the
+              band on both sides. */}
+          <div className="mt-0.5 font-display text-[2.1rem] font-extrabold tabular leading-none tracking-tight">
+            {clockHMS(secondsToday)}
           </div>
           <button
             type="button"
@@ -138,7 +187,7 @@ export function ReadingGoal() {
         )}
       >
         {running ? <Pause className="size-4" /> : <Play className="size-4" />}
-        {running ? `Reading — ${held} min` : "Start reading"}
+        {running ? `Reading — ${clockHMS(secondsToday)}` : "Start reading"}
       </button>
 
       <div className="mt-2 flex justify-center gap-1.5">
@@ -158,6 +207,13 @@ export function ReadingGoal() {
           </button>
         ))}
       </div>
+
+      {/* Said once, here, because a number that fills itself in without
+          explanation reads as a bug — and somebody who does not know it is
+          running will start the timer as well and count the evening twice. */}
+      <p className="mt-1.5 text-center text-[0.65rem] leading-snug text-faint">
+        Books opened in SOMA count themselves. The timer is for paper.
+      </p>
 
       {/* The week, Monday first. A strip that slides every midnight cannot show
           "this week", and this week is what a weekly run is measured against. */}

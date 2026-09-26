@@ -18,7 +18,7 @@ export const MUSCLE_KEYS = [
   "chest", "deltoids", "deltoids_back", "biceps", "triceps", "triceps_back",
   "upper_back", "trapezius", "trapezius_back", "lower_back", "abs", "obliques",
   "quadriceps", "hamstring", "gluteal", "adductors", "adductors_back",
-  "calves", "calves_back", "forearm", "forearm_back",
+  "calves", "calves_back", "forearm", "forearm_back", "neck",
 ] as const;
 
 /**
@@ -26,6 +26,9 @@ export const MUSCLE_KEYS = [
  * hamstring movement is filed as quads.
  */
 const RULES: { match: RegExp; keys: string[]; muscle: string; subTarget: string }[] = [
+  // First: "neck curl" and "neck extension" would otherwise be read as a
+  // biceps curl or a triceps extension.
+  { match: /\bneck\b/, keys: ["neck"], muscle: "Neck", subTarget: "Neck" },
   { match: /calf|calve|soleus|gastroc/, keys: ["calves", "calves_back"], muscle: "Legs", subTarget: "Calves" },
   { match: /leg curl|ham(string)?|nordic|good ?morning/, keys: ["hamstring"], muscle: "Legs", subTarget: "Hamstrings" },
   { match: /hip thrust|glute|kickback/, keys: ["gluteal"], muscle: "Legs", subTarget: "Glutes" },

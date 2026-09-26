@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./glass.css";
 
 @theme {
   --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
@@ -349,6 +350,18 @@ html.soma-dragging * {
 }
 
 /*
+ * The reader answers a selection with its own bar, and iOS's native
+ * copy/define bubble parks itself over exactly that bar. Suppressing the
+ * callout leaves the selection alone — long-press still forms the range and
+ * still fires selectionchange, which is what opens the app's own menu — and
+ * removes the native menu that covered the app's buttons.
+ */
+.soma-epub,
+.soma-epub * {
+  -webkit-touch-callout: none;
+}
+
+/*
  * Belt and braces on the scroll.
  *
  * The touchmove listener in the drag hooks is what actually stops WebKit
@@ -360,6 +373,52 @@ html.soma-dragging * {
 html.soma-dragging body {
   touch-action: none;
   overscroll-behavior: contain;
+}
+
+/*
+ * Pin the chrome in place on iOS.
+ *
+ * Safari shows and hides its URL bar when the page overscrolls, and every
+ * show/hide moves what `position: fixed` means for a frame — the dock and the
+ * sticky header visibly hop. Refusing overscroll chaining at the root stops
+ * the browser from ever starting that dance, so the bottom bar stays pinned
+ * to the bottom and the header stays put. The app's own scrollers set
+ * overscroll-behavior themselves where they want a bounce of their own.
+ */
+html {
+  overscroll-behavior-y: none;
+}
+
+/* ---------------------------------------------------------------------------
+   The chrome must not move, and on iOS it moved.
+
+   In the app's own webview (and in a home-screen web app) the DOCUMENT is
+   what scrolls, so reaching either end rubber-bands the whole page: the dock
+   lifts off the bottom edge and the header drops away from the top by exactly
+   the bounce, then snaps back. Nothing in the app is wrong - the page is
+   simply moving, and `fixed` means "fixed to the page".
+
+   So on iOS the document stops scrolling entirely and the app's own column
+   becomes the scroller. The header stays sticky inside it, the dock is fixed
+   to a viewport that can no longer move, and the bounce happens inside the
+   list where it belongs.
+
+   Scoped to iOS by the touch-callout probe: on a desktop browser the document
+   keeps scrolling exactly as it did, so nothing about the wide layout changes.
+--------------------------------------------------------------------------- */
+@supports (-webkit-touch-callout: none) {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .soma-page {
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /*
@@ -556,24 +615,10 @@ select,
 --------------------------------------------------------------------------- */
 .soma-widget-tile {
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 68%, transparent 100%);
-  /* Type comes down a step so a heading written for a full row still reads as
-     a heading in a quarter of the screen rather than wrapping to four lines. */
-  font-size: 0.92em;
 }
 
 .soma-widget-tile > * {
   height: 100%;
-}
-
-/* At 1x1 there is room for a number and nothing else, so the padding that
-   makes a card breathe at full width is most of the box. */
-.soma-widget-tile:where(.soma-tile-1) {
-  font-size: 0.82em;
-}
-.soma-widget-tile:where(.soma-tile-1) > * {
-  padding: 0.5rem;
 }
 
 /* ---------------------------------------------------------------------------
@@ -672,9 +717,16 @@ select,
   text-rendering: optimizeLegibility;
   -webkit-hyphens: auto;
   hyphens: auto;
-  /* A tap on the page turns it; a press-and-hold still selects, which is how
-     a word gets into the word book. Without this, iOS offers to select a
-     whole paragraph on every tap near text. */
+  /* The book does its own selecting, and this is why.
+     iOS puts its own edit menu over ANY native selection — Copy, Look Up,
+     Translate — and no page can suppress or move it. A reader that shows its
+     own bar over a selected word therefore shows two bars, one on top of the
+     other, and the one underneath is the one with Highlight in it. So the
+     text is not selectable at all: a press-and-hold picks the word under the
+     finger, the book draws it, and the only menu is the book's.
+     See lib/pick-word.ts. */
+  -webkit-user-select: none;
+  user-select: none;
   -webkit-touch-callout: none;
 }
 

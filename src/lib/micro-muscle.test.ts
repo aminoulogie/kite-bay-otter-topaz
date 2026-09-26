@@ -75,3 +75,12 @@ test("too few sessions is reported as unusable rather than plotted", () => {
   ]);
   assert.equal(m!.usable, false, "two points is not a trend");
 });
+
+test("neck exercises land in neck micro-muscles, split by direction", () => {
+  assert.equal(subTargetOf("Lying Neck Flexion")?.subTarget, "Neck Flexors (Front)");
+  assert.equal(subTargetOf("Lying Neck Extension")?.subTarget, "Neck Extensors (Back)");
+  assert.equal(subTargetOf("Lateral Neck Flexion")?.subTarget, "Neck Lateral Flexors");
+  // Custom names fall back to the keywords.
+  assert.equal(subTargetOf("plate neck extension")?.muscle, "Neck");
+  assert.equal(subTargetOf("neck curl")?.subTarget, "Neck Flexors (Front)");
+});

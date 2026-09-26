@@ -9,6 +9,7 @@ import { PlateLoading } from "@/components/PlateLoading";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { ExerciseIcon } from "@/components/ExerciseIcon";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { playChime, burstConfetti } from "@/lib/audio";
@@ -18,7 +19,7 @@ import { WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
 import { isGenuineFailure } from "@/lib/set-quality";
-import { failureFromQuality, readinessWithSleepDebt } from "@/lib/autoregulate";
+import { failureFromQuality, readinessWithSleepDebt, rpeFromQuality, rpeLabel } from "@/lib/autoregulate";
 import { applyGoal } from "@/lib/goal-mode";
 import { currentDebt } from "@/lib/sleep-debt";
 import { rateExerciseInstance, rateSession, rateSet, ratingTone } from "@/lib/stimulus";
@@ -63,6 +64,9 @@ export function WorkoutView() {
   const removeSet = useSoma((s) => s.removeSet);
   const removeExercise = useSoma((s) => s.removeExercise);
   const cycleSetType = useSoma((s) => s.cycleSetType);
+  const insertFeederRamp = useSoma((s) => s.insertFeederRamp);
+  const quickRateFeeder = useSoma((s) => s.quickRateFeeder);
+  const cycleGrip = useSoma((s) => s.cycleGrip);
   const cycleSuperset = useSoma((s) => s.cycleSuperset);
   const swapExercise = useSoma((s) => s.swapExercise);
   const undo = useSoma((s) => s.undo);
@@ -158,7 +162,7 @@ export function WorkoutView() {
   let failSum = 0;
   for (const ex of live.exercises) {
     for (const s of ex.sets) {
-      if (s.done && s.type !== "warmup") {
+      if (s.done && s.type === "normal") {
         totalSets++;
         totalVol += SomaIntelligenceEngine.calculateWorkVolume(Number(s.weight) || 0, Number(s.reps) || 0, ex.isBW);
         failSum += s.failure || 3;
@@ -248,7 +252,10 @@ export function WorkoutView() {
             </div>
             {past.exercises.map((ex, i) => (
               <Card key={`${ex.name}-${i}`}>
-                <div className="mb-2 font-bold">{ex.name}</div>
+                <div className="mb-2 flex items-center gap-2 font-bold">
+                  <ExerciseIcon name={ex.name} size={26} />
+                  {ex.name}
+                </div>
                 {ex.sets.map((st, j) => (
                   <div
                     key={j}
@@ -316,7 +323,10 @@ export function WorkoutView() {
         </div>
         {f.exercises.map((ex) => (
           <Card key={ex.name}>
-            <div className="mb-2 font-bold">{ex.name}</div>
+            <div className="mb-2 flex items-center gap-2 font-bold">
+              <ExerciseIcon name={ex.name} size={26} />
+              {ex.name}
+            </div>
             {ex.sets.map((s, i) => (
               <div key={i} className="flex justify-between border-b border-border py-1.5 text-sm last:border-0">
                 <span className="text-muted">
@@ -550,7 +560,10 @@ export function WorkoutView() {
                 }}
                 className="flex w-full flex-col items-start border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-2"
               >
-                <span className="text-sm font-bold">{ex.name}</span>
+                <span className="flex items-center gap-2 text-sm font-bold">
+                  <ExerciseIcon name={ex.name} size={22} />
+                  {ex.name}
+                </span>
                 <span className="text-xs text-muted">
                   {ex.subTarget} · {ex.tier}
                 </span>
@@ -778,11 +791,12 @@ export function WorkoutView() {
               </div>
             )}
 
-            <div className="grid grid-cols-[32px_1fr_1fr_1.25fr_30px_32px_24px] items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
+            <div className="grid grid-cols-[30px_1fr_1fr_1.25fr_34px_30px_32px_24px] items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
               <span className="text-center">Set</span>
               <span className="text-center">{settings.unit}</span>
               <span className="text-center">Reps</span>
               <span className="text-center">RPE</span>
+              <span className="text-center">Grip</span>
               {/* The score the four RPE answers add up to. It was collected and
                   never shown, so the sheet felt like a form with no output. */}
               <span className="text-center">Pts</span>
@@ -790,13 +804,18 @@ export function WorkoutView() {
               <span />
             </div>
             {ex.sets.map((s, sIdx) => {
-              const workingNo = ex.sets.slice(0, sIdx + 1).filter((x) => x.type !== "warmup" && x.type !== "dropset").length;
-              const label = s.type === "warmup" ? "W" : s.type === "dropset" ? "D" : String(workingNo);
+              const workingNo = ex.sets.slice(0, sIdx + 1).filter((x) => x.type === "normal").length;
+              const label =
+                s.type === "warmup" ? "W" :
+                s.type === "dropset" ? "D" :
+                s.type === "feeder" ? "F" :
+                s.type === "stretch" ? "S" :
+                String(workingNo);
               return (
                 <div
                   key={sIdx}
                   className={cn(
-                    "grid grid-cols-[32px_1fr_1fr_1.25fr_30px_32px_24px] items-center gap-1 rounded-xl p-1",
+                    "grid grid-cols-[30px_1fr_1fr_1.25fr_34px_30px_32px_24px] items-center gap-1 rounded-xl p-1",
                     // A completed set acknowledges itself for half a second,
                     // so the tap has a visible consequence beyond a checkbox.
                     s.done && "soma-flash",
@@ -827,29 +846,58 @@ export function WorkoutView() {
                     value={s.reps}
                     onCommit={(v) => updateSet(exIdx, sIdx, { reps: v })}
                   />
-                  {/* Replaces the old 1-5 dropdown. That scale could not tell a
-                      chest failure from a triceps failure on the same press, so
-                      the detail is captured in a sheet instead of a select. */}
+                  {s.type === "feeder" && s.rpe == null ? (
+                    /* A feeder is one tap, not a survey: the ramp only wants to
+                       know whether it felt easy, right, or heavy. */
+                    <span className="flex h-9 items-center gap-0.5">
+                      {([["Easy", 5], ["Good", 7], ["Heavy", 9]] as const).map(([word, rpe]) => (
+                        <button
+                          key={word}
+                          type="button"
+                          onClick={() => quickRateFeeder(exIdx, sIdx, rpe)}
+                          className="h-full flex-1 rounded-lg border border-border bg-surface-2 px-0.5 text-[0.55rem] font-bold text-faint active:bg-surface-3"
+                        >
+                          {word}
+                        </button>
+                      ))}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label={`Rate set ${sIdx + 1}`}
+                      onClick={() => setRating({ exIdx, sIdx })}
+                      className={cn(
+                        "h-9 rounded-xl border px-1 text-[0.65rem] font-bold leading-tight transition-colors",
+                        isGenuineFailure(s)
+                          ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                          : s.limiter
+                            ? "border-accent/40 bg-accent/10 text-accent-text"
+                            : "border-border bg-surface-2 text-faint",
+                      )}
+                    >
+                      {s.rpe != null
+                        ? rpeLabel(s.rpe)
+                        : s.closeness
+                          ? rpeLabel(rpeFromQuality({ closeness: s.closeness, limiter: s.limiter }))
+                          : "rate"}
+                    </button>
+                  )}
+                  {/* Grip: width and orientation, cycled with one tap. A cable
+                      angle is a grip in three dimensions, so it rides the same
+                      field. */}
                   <button
                     type="button"
-                    aria-label={`Rate set ${sIdx + 1}`}
-                    onClick={() => setRating({ exIdx, sIdx })}
+                    aria-label={`Set ${sIdx + 1} grip`}
+                    onClick={() => cycleGrip(exIdx, sIdx)}
+                    title={s.grip ? `${s.grip.width} · ${s.grip.orientation}` : "Tap to set grip"}
                     className={cn(
-                      "h-9 rounded-xl border px-1 text-[0.65rem] font-bold leading-tight transition-colors",
-                      isGenuineFailure(s)
-                        ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
-                        : s.limiter
-                          ? "border-accent/40 bg-accent/10 text-accent-text"
-                          : "border-border bg-surface-2 text-faint",
+                      "h-9 rounded-lg border px-0.5 text-[0.55rem] font-bold leading-none",
+                      s.grip ? "border-accent/40 bg-accent/10 text-accent-text" : "border-border bg-surface-2 text-faint",
                     )}
                   >
-                    {isGenuineFailure(s)
-                      ? "FAIL"
-                      : s.limiter === "synergist"
-                        ? "synrg"
-                        : s.limiter
-                          ? (s.closeness === "nothing" || s.closeness === "forced" ? "hard" : "easy")
-                          : "rate"}
+                    {s.grip
+                      ? `${s.grip.width[0]!.toUpperCase()}·${s.grip.orientation.slice(0, 3)}`
+                      : "—"}
                   </button>
                   {/* What the answers worked out to, 0-100. Weighted towards
                       how close the set got to failure — see lib/stimulus.ts. */}
@@ -899,6 +947,20 @@ export function WorkoutView() {
                 Drop set
               </Button>
             </div>
+            {/* Feeder ramp: three sets at 50/70/87.5% of the first loaded
+                working set, inserted above it. Only offered once there is a
+                weight to ramp up to. */}
+            <Button
+              className="mt-2 w-full"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const idx = ex.sets.findIndex((x) => x.type === "normal" && Number(x.weight) > 0);
+                if (idx >= 0) insertFeederRamp(exIdx, idx);
+              }}
+            >
+              Auto-fill feeder ramp (50/70/87.5%)
+            </Button>
 
             {/* Pump belongs to the exercise, not the set: it builds across all
                 of them and can only be judged once the weight is down. Shown

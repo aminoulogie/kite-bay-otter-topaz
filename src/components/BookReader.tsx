@@ -15,7 +15,7 @@ import {
 } from "@/lib/marks";
 import { WordMenu, type Pick } from "@/components/WordMenu";
 import {
-  ContentsSheet, MarksSheet, PageRail, SearchSheet, TopPills,
+  ContentsSheet, MarksSheet, PageScrubber, SearchSheet, TopPills,
 } from "@/components/BookChrome";
 import { LANGUAGES, defaultLanguage, isLanguage } from "@/lib/translate";
 import {
@@ -33,8 +33,10 @@ import {
 } from "@/lib/reader-prefs";
 import { getLocalDateKey } from "@/lib/soma";
 import { useScrollLock } from "@/lib/use-sheet";
+import { useReadingClock } from "@/lib/use-reading-clock";
 import { useSoma } from "@/lib/store";
 import { capture, cleanSelection, isSelectable } from "@/lib/word-capture";
+import { caretAt, spanUnion, wordBounds } from "@/lib/pick-word";
 import { cn } from "@/lib/utils";
 import type { MindEntry } from "@/lib/types";
 
@@ -54,9 +56,16 @@ import type { MindEntry } from "@/lib/types";
  * whether you read the book here or on paper.
  */
 export function BookReader({
-  book, onClose, onChange,
+  book, startAt, onClose, onChange,
 }: {
   book: MindEntry;
+  /**
+   * Open here instead of where you left off — a highlight asking to be
+   * visited. Read once, on the first render: this component is keyed on it,
+   * so a different passage arrives as a different reader rather than as a
+   * prop that changes under a book already open.
+   */
+  startAt?: { chapter: number; offset: number };
   onClose: () => void;
   onChange: (patch: Partial<MindEntry>) => void;
 }) {
@@ -76,15 +85,31 @@ export function BookReader({
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  /**
+   * The book counts its own minutes towards the reading goal.
+   *
+   * A book that is open on the screen knows when it was being read. Nothing
+   * accrues while the file is still being opened or after it has failed to
+   * open — staring at a spinner is not reading — and the total is said out
+   * loud on the way back to the shelf, because a number that only ever
+   * changes while you are looking away is a number nobody trusts.
+   */
+  const sawReading = useReadingClock(!loading && !error, (min) =>
+    toast.success(`${min} min read`),
+  );
   const [chrome, setChrome] = useState(true);
   const [showPrefs, setShowPrefs] = useState(false);
+  /** True while a finger is scrubbing the page pill — the paper dims behind it. */
+  const [scrubbing, setScrubbing] = useState(false);
   const storedLang = useSoma((s) => s.settings.translateTo);
   const readerLang = isLanguage(storedLang)
     ? storedLang
     : defaultLanguage(typeof navigator === "undefined" ? undefined : navigator.language);
 
   // Where we are, one-based, in pages for a PDF and chapters for an EPUB.
-  const [at, setAt] = useState(Math.max(1, book.page ?? 1));
+  // Where the book opens: the passage asked for, or where you left off.
+  const [at, setAt] = useState(Math.max(1, startAt ? startAt.chapter + 1 : (book.page ?? 1)));
   const [total, setTotal] = useState(book.pages ?? 0);
   /** Page within the current chapter, and the text the rail draws small. */
   const [spread, setSpread] = useState<{
@@ -127,9 +152,9 @@ export function BookReader({
     setSeek({ ...next, nonce: nonce.current });
   }, []);
   /** Characters into the chapter — see lib/anchor.ts for why not a page. */
-  const [offset, setOffset] = useState(book.readOffset);
+  const [offset, setOffset] = useState(startAt ? startAt.offset : book.readOffset);
   /** Which line was lit, for anyone reading line by line. */
-  const [line, setLine] = useState(book.readLine);
+  const [line, setLine] = useState(startAt ? undefined : book.readLine);
 
   // Written back on a debounce rather than per turn: one page turn is one
   // localStorage write of the entire diary, and a thumb held on the forward
@@ -157,25 +182,94 @@ export function BookReader({
     saveRef.current = { at, total, offset, line };
   });
 
+  /**
+   * Write the place down now, wherever we are.
+   *
+   * One function rather than three copies, because there are three moments
+   * that have to do exactly this and the only bug worse than forgetting one is
+   * having them disagree.
+   */
+  const keepPlace = useCallback(() => {
+    // Ask where we actually are before writing it down. The `offset` in state
+    // arrives about a third of a second after the turn, on a timer — so at the
+    // moment the app is being put away it is still describing the page BEFORE
+    // the one on screen, and writing it would be the whole bug.
+    const here = pager.current?.place() ?? null;
+    if (here !== null && here !== saveRef.current.offset) {
+      saveRef.current = { ...saveRef.current, offset: here };
+      setOffset(here);
+    }
+    const now = saveRef.current;
+    if (
+      saved.current.at === now.at && saved.current.total === now.total &&
+      saved.current.offset === now.offset && saved.current.line === now.line
+    ) {
+      return;
+    }
+    saved.current = now;
+    latestChange.current({
+      page: now.at,
+      pages: now.total || undefined,
+      readOffset: now.offset,
+      readLine: now.line,
+    });
+  }, []);
+
   useEffect(() => {
-    const now = { at, total, offset, line };
     if (
       saved.current.at === at && saved.current.total === total &&
       saved.current.offset === offset && saved.current.line === line
     ) {
       return;
     }
-    const t = setTimeout(() => {
-      saved.current = now;
-      latestChange.current({
-        page: at,
-        pages: total || undefined,
-        readOffset: offset,
-        readLine: line,
-      });
-    }, 700);
+    const t = setTimeout(keepPlace, 700);
     return () => clearTimeout(t);
-  }, [at, total, offset, line]);
+  }, [at, total, offset, line, keepPlace]);
+
+  /**
+   * And immediately when the app goes away, which is the one that was missing.
+   *
+   * The debounce above is a browser assumption: that a timer set now will run
+   * in 700ms. On iOS it will not. Locking the phone or swiping to another app
+   * SUSPENDS the web view's timers, and iOS then discards the view whenever it
+   * likes without ever running them — so the turn you made in the last
+   * second-and-a-bit before putting the phone down was never written, and
+   * nothing unmounted to write it either, because being killed in the
+   * background is not a close.
+   *
+   * That is one page. It sounds like nothing. It is the page you were on:
+   * reading up to a point and then locking the screen is not an edge case,
+   * it is how reading on a phone ENDS, every time. And since the app started
+   * reopening the book you left open, it is also the page it reopens on.
+   *
+   * `visibilitychange` fires while there is still a live JavaScript context to
+   * act on, which is the whole point of using it rather than trusting the
+   * timer. The reading clock has done this since it was written; the place in
+   * the book was left on a promise iOS does not keep.
+   */
+  useEffect(() => {
+    const away = () => {
+      if (document.visibilityState === "hidden") keepPlace();
+    };
+    document.addEventListener("visibilitychange", away);
+    window.addEventListener("pagehide", keepPlace);
+    return () => {
+      document.removeEventListener("visibilitychange", away);
+      window.removeEventListener("pagehide", keepPlace);
+    };
+  }, [keepPlace]);
+
+  /**
+   * A page that changed is somebody reading, whatever moved it.
+   *
+   * The clock already watches for a pointer, which covers a swipe and a tap on
+   * the arrows. This covers the rest — a keyboard turn, a jump from the
+   * contents or a search result — and costs nothing when the page has not
+   * moved, because a repeated sign of life only pushes the idle wall along.
+   */
+  useEffect(() => {
+    sawReading();
+  }, [at, spread.page, sawReading]);
 
   /**
    * And once more on the way out.
@@ -184,23 +278,7 @@ export function BookReader({
    * 700ms of the last page turn and that turn was never written down. The
    * unmount is the last chance to say where you stopped.
    */
-  useEffect(() => {
-    return () => {
-      const now = saveRef.current;
-      if (
-        saved.current.at === now.at && saved.current.offset === now.offset &&
-        saved.current.line === now.line
-      ) {
-        return;
-      }
-      latestChange.current({
-        page: now.at,
-        pages: now.total || undefined,
-        readOffset: now.offset,
-        readLine: now.line,
-      });
-    };
-  }, []);
+  useEffect(() => keepPlace, [keepPlace]);
 
   /**
    * The renderer's own back and forward.
@@ -257,6 +335,11 @@ export function BookReader({
       aria-label={`Reading ${book.title}`}
       style={{ background: theme.bg, color: theme.fg }}
     >
+      {/* The paper dims while the scrubber is being dragged, the way the
+          native reader does — the pill floats over it, the page stays put. */}
+      {scrubbing && (
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-[65] bg-black/30" />
+      )}
       {error ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
           <p className="text-sm leading-snug opacity-80">{error}</p>
@@ -304,21 +387,23 @@ export function BookReader({
         onKept={() => setPanel("kept")}
       />
 
+      {/* One line of type, one bar of controls, and nothing else.
+          The scrubber used to sit in a band of its own above all this, which
+          made the foot of the page four rows deep and the thumbnails far
+          bigger than anything you would thumb through. It belongs IN the row
+          it steers: between the two arrows, the same height as them, so the
+          whole of the bottom is one bar. Where it used to be — a line of its
+          own — now carries the counter, which is the thing you actually read.
+      */}
       <Bar edge="bottom" theme={theme} show={chrome}>
-        {/* Thumb through the chapter. Only for an EPUB: a PDF's pages are
-            already pictures and scrubbing them means rendering every one. */}
-        {epub && chrome && spread.box.w > 0 && (
-          <PageRail
-            theme={theme}
-            prefs={prefs}
-            html={spread.html}
-            label={spread.label}
-            box={spread.box}
-            pages={spread.pages}
-            page={spread.page}
-            onPick={(n) => pager.current?.to(n)}
-          />
-        )}
+        <div
+          className="tabular mb-2 text-center text-[0.68rem] font-bold"
+          style={{ color: theme.faint }}
+        >
+          {epub
+            ? `Chapter ${at} of ${total || "?"} · ${spread.page + 1}/${spread.pages}`
+            : `Page ${at} of ${total || "?"}`}
+        </div>
         <div
           className="mb-2 h-[3px] w-full overflow-hidden rounded-full"
           style={{ background: `${theme.fg}22` }}
@@ -328,15 +413,27 @@ export function BookReader({
             style={{ width: `${Math.round(progress * 100)}%`, background: `${theme.fg}99` }}
           />
         </div>
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
           <RoundButton theme={theme} label="Back" onClick={back}>
             <ChevronLeft className="size-5" />
           </RoundButton>
-          <span className="tabular text-[0.68rem] font-bold" style={{ color: theme.faint }}>
-            {epub
-              ? `Chapter ${at} of ${total || "?"} · ${spread.page + 1}/${spread.pages}`
-              : `Page ${at} of ${total || "?"}`}
-          </span>
+          {/* Only for an EPUB: a PDF's pages are already pictures, and
+              scrubbing them means rendering every one. */}
+          {epub && chrome && spread.box.w > 0 ? (
+            <PageScrubber
+              theme={theme}
+              prefs={prefs}
+              html={spread.html}
+              label={spread.label}
+              box={spread.box}
+              pages={spread.pages}
+              page={spread.page}
+              onPick={(n) => pager.current?.to(n)}
+              onScrub={setScrubbing}
+            />
+          ) : (
+            <div className="flex-1" />
+          )}
           <RoundButton theme={theme} label="Forward" onClick={forward}>
             <ChevronRight className="size-5" />
           </RoundButton>
@@ -396,6 +493,15 @@ interface Pager {
   forward: () => void;
   /** Jump to a page of the chapter on screen. The rail's whole purpose. */
   to: (page: number) => void;
+  /**
+   * Where you are RIGHT NOW, measured on the spot, or null if it cannot say.
+   *
+   * The renderer normally reports this on a timer that waits for the turn to
+   * settle. That is fine while the app is running and useless when it is
+   * being put away, because the timer will not run again — so this asks for
+   * the same measurement without waiting for anything.
+   */
+  place: () => number | null;
 }
 
 /**
@@ -519,9 +625,23 @@ function xOf(range: Range, stripLeft: number): number | null {
 /**
  * The character offset of the first text on a page.
  *
- * What gets written down when you stop reading. Taken from the FIRST run that
- * the browser put on this page or later, because that is the first thing your
- * eye lands on when the page comes up.
+ * What gets written down when you stop reading, and the exact inverse of
+ * `pageOfOffset` — which is the whole point, because one of them saves your
+ * place and the other one finds it again, and if they disagree by so much as a
+ * character the book reopens somewhere you were not.
+ *
+ * They DID disagree. This asked which page each text run STARTS on, and a
+ * paragraph does not start where the page does: the top of a page is usually
+ * the middle of a paragraph that began on the page before. So the first run
+ * whose start is on this page is the NEXT paragraph, one or two pages further
+ * on — and the offset written down was a place you had not read yet. Measured
+ * on a real chapter: the anchor saved for page 13 sat on page 12.
+ *
+ * `pageOfOffset` already carries the note explaining this, and the fix that
+ * goes with it: measure one CHARACTER at a time. So this does the same, in the
+ * other direction — the first character the browser put on this page or later.
+ * A binary search inside the run that spans the break, because a chapter has
+ * tens of thousands of characters and only one of them is the answer.
  */
 function offsetOfPage(host: HTMLElement, stripLeft: number, page: number, w: number): number {
   const runs = textRuns(host);
@@ -529,10 +649,33 @@ function offsetOfPage(host: HTMLElement, stripLeft: number, page: number, w: num
   let acc = 0;
   for (const run of runs) {
     const len = run.length;
-    if (len > 0) {
-      range.selectNodeContents(run);
-      const x = xOf(range, stripLeft);
-      if (x !== null && pageForX(x, w, PAGE_GAP) >= page) return acc;
+    if (len === 0) continue;
+    // Cheap rejection: the run's box spans every column it touches, so if its
+    // RIGHT edge has not reached this page, no character in it has.
+    range.selectNodeContents(run);
+    const box = range.getBoundingClientRect();
+    const reaches =
+      (box.width || box.height) && pageForX(box.right - stripLeft, w, PAGE_GAP) >= page;
+    if (reaches) {
+      let lo = 0;
+      let hi = len - 1;
+      let found = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        range.setStart(run, mid);
+        range.setEnd(run, mid + 1);
+        const x = xOf(range, stripLeft);
+        // A character with no box is a space at a column break. Stepping past
+        // it can only land on the first character with ink, which is the one
+        // the eye actually starts at.
+        if (x !== null && pageForX(x, w, PAGE_GAP) >= page) {
+          found = mid;
+          hi = mid - 1;
+        } else {
+          lo = mid + 1;
+        }
+      }
+      if (found >= 0) return acc + found;
     }
     acc += len;
   }
@@ -649,7 +792,9 @@ function EpubPages({
   const addHighlight = useCallback(
     (span: { start: number; end: number; colour: string; text: string }) => {
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-      onMarks(addMark(marks, { id, chapter, ...span }));
+      // Dated, so the list of highlights outside the book can answer "what
+      // have I been marking lately" and not only "what is in this book".
+      onMarks(addMark(marks, { id, chapter, at: Date.now(), ...span }));
     },
     [marks, chapter, onMarks],
   );
@@ -770,12 +915,25 @@ function EpubPages({
 
   // The page box. Measured rather than assumed, because it is the viewport
   // minus the margins and minus whatever the safe area is on this phone.
+  //
+  // While the keyboard is up (`soma-kb`, published by useKeyboardInset) the
+  // browser reports a shrunken viewport, and measuring it would repaginate the
+  // book under the reader's own search sheet — the page would jump with every
+  // keystroke. The height is frozen at its last keyboard-free value until the
+  // keys are gone, and the next real resize re-measures.
+  const fullH = useRef(0);
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
     const measure = () => {
       const r = el.getBoundingClientRect();
-      setBox({ w: Math.round(r.width), h: Math.round(r.height) });
+      const kbUp =
+        typeof document !== "undefined" && document.documentElement.classList.contains("soma-kb");
+      if (!kbUp && r.height > 0) fullH.current = r.height;
+      setBox({
+        w: Math.round(r.width),
+        h: Math.round(kbUp && fullH.current > 0 ? fullH.current : r.height),
+      });
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -1304,8 +1462,16 @@ function EpubPages({
       back: () => go(-1),
       forward: () => go(1),
       to: (n) => setPage(clampPage(n, pages)),
+      // Safe to run mid-turn: every run's position is taken relative to the
+      // strip's own left edge, so the slide cancels out and what comes back
+      // is the page you are landing on rather than the one going past.
+      place: () => {
+        const el = column.current;
+        if (!el || !box.w || !pages) return null;
+        return offsetOfPage(el, el.getBoundingClientRect().left, page, box.w);
+      },
     };
-  }, [pager, go, pages]);
+  }, [pager, go, pages, page, box.w]);
 
   return (
     <ReadingSurface
@@ -1723,8 +1889,16 @@ function ReadingSurface({
   const atBookEnd = page === pages - 1 && atEnd;
 
   const drag = useRef<
-    { x: number; y: number; turning: boolean; at: number; lastX: number; vx: number } | null
+    {
+      x: number; y: number; turning: boolean; at: number; lastX: number; vx: number;
+      held: boolean; picking: boolean;
+    } | null
   >(null);
+  /** The press-and-hold timer, cancelled by movement or by letting go. */
+  const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (hold.current) clearTimeout(hold.current);
+  }, []);
   const [lines, setLines] = useState<Rect[]>([]);
   const [line, setLine] = useState(0);
   /** Set when a page is entered backwards, so it opens on its last line. */
@@ -1750,16 +1924,42 @@ function ReadingSurface({
   /** A translation fetched before the word was kept, so keeping it carries it. */
   const gotTranslation = useRef<{ text: string; to: string } | null>(null);
 
-  useEffect(() => {
-    const offer = () => {
-      const sel = document.getSelection();
+  /** The span the finger has picked out, in characters into the chapter. */
+  const [held, setHeld] = useState<{ start: number; end: number } | null>(null);
+  const holdFrom = useRef<{ start: number; end: number } | null>(null);
+
+  /**
+   * The word under a point on the page, as characters into the chapter.
+   *
+   * Goes through the caret rather than through a selection, because the whole
+   * purpose of this is never to make a selection — see lib/pick-word.ts for
+   * why iOS leaves no other way to own the menu over a word.
+   */
+  const wordUnder = useCallback(
+    (clientX: number, clientY: number) => {
+      const host = columnRef.current;
+      if (!host) return null;
+      const caret = caretAt(clientX, clientY);
+      if (!caret || caret.node.nodeType !== Node.TEXT_NODE) return null;
+      if (!host.contains(caret.node)) return null;
+      const text = caret.node.textContent ?? "";
+      const within = wordBounds(text, caret.offset);
+      if (!within) return null;
+      const base = charOffset(host, caret.node, 0);
+      return { start: base + within.start, end: base + within.end };
+    },
+    [columnRef],
+  );
+
+  /** Put the menu over whatever is currently held. */
+  const offerHeld = useCallback(
+    (span: { start: number; end: number }) => {
       const host = columnRef.current;
       const port = viewportRef.current;
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !host || !port) return;
-      const range = sel.getRangeAt(0);
-      if (!host.contains(range.commonAncestorContainer)) return;
-
-      const raw = sel.toString();
+      if (!host || !port) return;
+      const range = rangeOf(host, span.start, span.end);
+      if (!range) return;
+      const raw = range.toString();
       if (!isSelectable(raw)) return;
       const block =
         range.startContainer.parentElement?.closest("p, li, blockquote, h1, h2, h3, div")
@@ -1769,13 +1969,8 @@ function ReadingSurface({
       // A sentence is not a word and is exactly what you highlight.
       const got = capture(raw, block);
       const text = cleanSelection(raw);
-
       const r = range.getBoundingClientRect();
       const view = port.getBoundingClientRect();
-      const a = charOffset(host, range.startContainer, range.startOffset);
-      const b = charOffset(host, range.endContainer, range.endOffset);
-      const start = Math.min(a, b);
-      const end = Math.max(a, b);
       gotTranslation.current = null;
       setKept(
         !!got &&
@@ -1791,34 +1986,124 @@ function ReadingSurface({
         example: got?.example,
         word: !!got,
         at: { x: r.left - view.left, y: r.top - view.top, w: r.width, h: r.height },
-        start,
-        end,
-        mark: markAt(marks, chapter, start),
+        start: span.start,
+        end: span.end,
+        mark: markAt(marks, chapter, span.start),
       });
-    };
+    },
+    [columnRef, viewportRef, marks, chapter],
+  );
 
-    // `selectionchange` fires on every pixel the handle moves. Offering on
-    // each of them would put the menu under the handle you are still dragging,
-    // so it waits for the selection to stop moving.
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const onChange = () => {
-      if (timer) clearTimeout(timer);
-      const sel = document.getSelection();
-      if (!sel || sel.isCollapsed) {
-        setPick(null);
-        return;
-      }
-      timer = setTimeout(offer, 320);
-    };
-    document.addEventListener("selectionchange", onChange);
-    return () => {
-      if (timer) clearTimeout(timer);
-      document.removeEventListener("selectionchange", onChange);
-    };
-  }, [columnRef, viewportRef, marks, chapter]);
+  /**
+   * Press and hold to pick a word; keep holding and drag to take in more.
+   *
+   * The press is what starts it, not a tap — a tap turns the page, and the two
+   * must never be the same gesture. Holding still for a third of a second is
+   * the signal, which is the same one iOS uses for its own selection and
+   * therefore the one a thumb already knows.
+   */
+  const onHold = useCallback(
+    (clientX: number, clientY: number) => {
+      const w = wordUnder(clientX, clientY);
+      if (!w) return false;
+      holdFrom.current = w;
+      setHeld(w);
+      offerHeld(w);
+      return true;
+    },
+    [wordUnder, offerHeld],
+  );
+
+  /**
+   * The picked word, drawn.
+   *
+   * The browser is not selecting anything, so nothing is highlighted unless
+   * the book highlights it. One stroke per line, in the paper's own mark
+   * colour, positioned against the viewport exactly as the line-focus overlay
+   * is — and recomputed whenever the span changes, which while a finger is
+   * dragging is every few words.
+   */
+  const [holdRects, setHoldRects] = useState<Row[]>([]);
+  /** Where the two ends of the held span are, for the grab handles. */
+  const [holdEnds, setHoldEnds] = useState<{ a: Row; b: Row } | null>(null);
+  useEffect(() => {
+    const host = columnRef.current;
+    const port = viewportRef.current;
+    if (!held || !host || !port) {
+      setHoldRects([]);
+      setHoldEnds(null);
+      return;
+    }
+    const range = rangeOf(host, held.start, held.end);
+    if (!range) {
+      setHoldRects([]);
+      setHoldEnds(null);
+      return;
+    }
+    const view = port.getBoundingClientRect();
+    const raw = Array.from(range.getClientRects())
+      .filter((r) => r.width > 0.5 && r.height > 0.5)
+      .map((r) => ({ x: r.left - view.left, y: r.top - view.top, w: r.width, h: r.height }));
+    setHoldRects(rowsOf(raw, 1.5));
+    // The ends come from the RAW rectangles rather than the merged rows: a
+    // handle belongs at the first and last character, and merging has already
+    // thrown away which of several boxes on a line came first.
+    const first = raw[0];
+    const last = raw[raw.length - 1];
+    setHoldEnds(first && last ? { a: first, b: last } : null);
+  }, [held, columnRef, viewportRef, page]);
+
+  /**
+   * The two handles, and what dragging one does.
+   *
+   * iOS gives a native selection two grab handles and takes the menu away in
+   * exchange; this reader has neither, so it draws its own. Dragging an end
+   * moves it to the WORD under the finger rather than the character, because
+   * a handle on a phone covers about four letters and character precision
+   * with a thumb is a promise no one can keep.
+   */
+  const dragEnd = useRef<"a" | "b" | null>(null);
+  const grabHandle = (which: "a" | "b") => (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    dragEnd.current = which;
+  };
+  const moveHandle = (e: React.PointerEvent) => {
+    if (!dragEnd.current || !held) return;
+    e.stopPropagation();
+    const w = wordUnder(e.clientX, e.clientY);
+    if (!w) return;
+    const next =
+      dragEnd.current === "a"
+        ? { start: Math.min(w.start, held.end - 1), end: held.end }
+        : { start: held.start, end: Math.max(w.end, held.start + 1) };
+    if (next.start === held.start && next.end === held.end) return;
+    setHeld(next);
+    offerHeld(next);
+  };
+  const dropHandle = (e: React.PointerEvent) => {
+    if (!dragEnd.current) return;
+    e.stopPropagation();
+    dragEnd.current = null;
+  };
+
+  const onHoldMove = useCallback(
+    (clientX: number, clientY: number) => {
+      const from = holdFrom.current;
+      if (!from) return;
+      const w = wordUnder(clientX, clientY);
+      if (!w) return;
+      const span = spanUnion(from, w);
+      setHeld((cur) => (cur && cur.start === span.start && cur.end === span.end ? cur : span));
+      offerHeld(span);
+    },
+    [wordUnder, offerHeld],
+  );
 
   const done = useCallback(() => {
-    document.getSelection()?.removeAllRanges();
+    holdFrom.current = null;
+    setHeld(null);
     setPick(null);
   }, []);
 
@@ -1998,9 +2283,38 @@ function ReadingSurface({
   );
 
   const onPointerDown = (e: React.PointerEvent) => {
+    // Press and hold to pick a word. A third of a second is the same signal
+    // iOS uses for its own selection, so it is the one a thumb already knows
+    // — and it is long enough that a tap to turn the page never trips it.
+    if (hold.current) clearTimeout(hold.current);
+    const hx = e.clientX;
+    const hy = e.clientY;
+    hold.current = setTimeout(() => {
+      hold.current = null;
+      const d = drag.current;
+      // Only if the finger actually stayed still. A swipe that happens to
+      // last a third of a second is a swipe.
+      if (!d || d.turning || d.held) return;
+      if (Math.abs(d.lastX - d.x) > 8) return;
+      if (onHold(hx, hy)) {
+        d.held = true;
+        d.picking = true;
+      }
+    }, 320);
     drag.current = {
       x: e.clientX, y: e.clientY, turning: false,
-      at: e.timeStamp, lastX: e.clientX, vx: 0,
+      at: e.timeStamp, lastX: e.clientX, vx: 0, picking: false,
+      // Was there already something selected when this gesture began?
+      //
+      // If there was, the gesture belongs to the SELECTION — on a phone that
+      // is a finger on one of the two handles, dragging it to take in another
+      // word. It is not a page turn and must not be treated as one, and this
+      // is the bug that made the whole selection menu unusable on a phone:
+      // the turn threshold is fourteen pixels, a handle moves further than
+      // that immediately, and the first thing a turn does is clear the
+      // selection. So the menu appeared and vanished, over and over, and
+      // nothing in it could be pressed.
+      held: !(document.getSelection()?.isCollapsed ?? true),
     };
   };
 
@@ -2032,6 +2346,18 @@ function ReadingSurface({
       d.at = e.timeStamp;
       d.lastX = e.clientX;
     }
+    // Once a word is held, the finger is choosing words, not turning pages.
+    if (d.picking) {
+      onHoldMove(e.clientX, e.clientY);
+      return;
+    }
+    // A gesture that began on a selection stays with the selection.
+    if (d.held) return;
+    // Moved far enough to be a swipe: it is not a press any more.
+    if (hold.current && Math.hypot(dx, dy) > 8) {
+      clearTimeout(hold.current);
+      hold.current = null;
+    }
     if (!d.turning && isTurning(dx, dy, box.w || 1, paged)) d.turning = true;
     if (!d.turning) return;
     document.getSelection()?.removeAllRanges();
@@ -2050,12 +2376,16 @@ function ReadingSurface({
   };
 
   const onPointerCancel = () => {
+    if (hold.current) clearTimeout(hold.current);
+    hold.current = null;
     // iOS taking the gesture over for its own selection handles.
     drag.current = null;
     onDrag?.(null);
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
+    if (hold.current) clearTimeout(hold.current);
+    hold.current = null;
     const from = drag.current;
     drag.current = null;
     // Stale speed is worse than none: a finger held still for a moment before
@@ -2063,11 +2393,24 @@ function ReadingSurface({
     const still = from && e.timeStamp - from.at > 90;
     const folded = onDrag?.(null, still ? 0 : (from?.vx ?? 0));
     if (!from) return;
+    // Letting go of a selection handle is not a tap on the page: it must not
+    // turn a page, show the bars, or move the lit line.
+    if (from.held) return;
     // A fold is already on its way somewhere; a second opinion about the same
     // gesture would turn two pages. `folded` is the fold answering for itself
     // on this event; `folding` is the same fact a render later, and is kept
     // for the gesture that started before this one finished.
     if (folded || folding) return;
+
+    // With a word held, the next tap anywhere on the page puts the menu away
+    // and does nothing else — it does not also turn the page or raise the
+    // bars. This is the job the backdrop used to do before it was removed for
+    // swallowing the handles; doing it here instead means the page underneath
+    // is never covered by anything, which is what let the handles work.
+    if (pick) {
+      done();
+      return;
+    }
 
     const dx = e.clientX - from.x;
     const dy = e.clientY - from.y;
@@ -2218,6 +2561,83 @@ function ReadingSurface({
           </>
         )}
 
+        {/* The word you are holding. Not a selection — the book's own mark,
+            because the browser has been told this text is not selectable and
+            therefore draws nothing at all. */}
+        {holdRects.map((r, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className="pointer-events-none absolute block rounded-[3px]"
+            style={{
+              left: r.x, top: r.y, width: r.w, height: r.h,
+              // The mark colour, laid down twice. It is mixed to sit UNDER
+              // text as a highlighter, and a selection has to be plainly
+              // visible rather than tasteful — two coats of the page's own
+              // ink is a stronger tint without introducing a colour the book
+              // does not already use. (Two gradient layers, because CSS will
+              // composite those and will not composite two flat colours.)
+              background: `linear-gradient(${theme.mark}, ${theme.mark}), linear-gradient(${theme.mark}, ${theme.mark})`,
+            }}
+          />
+        ))}
+
+        {/* The grab handles. Drawn, because there is no selection for the
+            browser to draw them on — a bar at each end with a knob outside
+            the line, which is the shape a thumb already knows. */}
+        {holdEnds && (
+          <>
+            {(["a", "b"] as const).map((which) => {
+              const r = which === "a" ? holdEnds.a : holdEnds.b;
+              const x = which === "a" ? r.x : r.x + r.w;
+              return (
+                <span
+                  key={which}
+                  role="slider"
+                  tabIndex={-1}
+                  aria-label={which === "a" ? "Start of the selection" : "End of the selection"}
+                  aria-valuenow={which === "a" ? (held?.start ?? 0) : (held?.end ?? 0)}
+                  onPointerDown={grabHandle(which)}
+                  onPointerMove={moveHandle}
+                  onPointerUp={dropHandle}
+                  onPointerCancel={dropHandle}
+                  className="absolute z-[62] touch-none"
+                  // A generous target around a thin mark: the bar is two
+                  // pixels and the thing you can put a thumb on is twenty-two.
+                  style={{
+                    left: x - 11,
+                    top: r.y - (which === "a" ? 13 : 2),
+                    width: 22,
+                    height: r.h + 15,
+                  }}
+                >
+                  <span
+                    className="absolute rounded-full"
+                    style={{
+                      left: 10,
+                      top: which === "a" ? 11 : 0,
+                      width: 2,
+                      height: r.h + 4,
+                      background: theme.fg,
+                    }}
+                  />
+                  <span
+                    className="absolute size-[11px] rounded-full"
+                    style={{
+                      left: 5.5,
+                      top: which === "a" ? 2 : r.h + 4,
+                      background: theme.fg,
+                      boxShadow: theme.dark
+                        ? "0 1px 3px rgba(0,0,0,0.7)"
+                        : "0 1px 3px rgba(0,0,0,0.35)",
+                    }}
+                  />
+                </span>
+              );
+            })}
+          </>
+        )}
+
         {pick && (
           <WordMenu
             pick={pick}
@@ -2225,7 +2645,6 @@ function ReadingSurface({
             box={box}
             translateTo={translateTo}
             saved={kept}
-            onClose={done}
             onCopy={copyPick}
             onMark={(colour) => {
               onMark({ start: pick.start, end: pick.end, colour, text: pick.text });
@@ -2333,6 +2752,9 @@ function PdfPages({
       back: () => onPage(Math.max(1, page - 1)),
       forward: () => onPage(count ? Math.min(count, page + 1) : page + 1),
       to: (n) => onPage(Math.max(1, count ? Math.min(count, n + 1) : n + 1)),
+      // A PDF page is a page. There is no offset inside it to measure and
+      // nothing that lags, so there is nothing to ask for.
+      place: () => null,
     };
   }, [pager, page, count, onPage]);
 

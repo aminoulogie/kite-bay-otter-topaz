@@ -12,6 +12,8 @@ import { numOf, textOf } from "@/lib/row-edit";
 import type { GroceryLine, PantryItem } from "@/lib/pantry";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * The shopping, and what it is about to cost.
@@ -50,6 +52,29 @@ export function GroceryCard({ money }: { money: (n: number) => string }) {
     (i) => !grocery.some((l) => l.name.trim().toLowerCase() === i.name.trim().toLowerCase()),
   );
 
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    const left = grocery.filter((l) => !l.got);
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Shopping list",
+          short: "Shopping",
+          icon: ShoppingCart,
+          value: left.length ? String(left.length) : null,
+          unit: "to buy",
+          sub: cost.total > 0 ? `${money(cost.total)} pending` : null,
+          lines: [
+            ...(unlisted.length ? [{ text: `${unlisted.length} running out` }] : []),
+            ...grocery.map((l) => ({ text: l.name, done: !!l.got })),
+          ],
+          empty: unlisted.length ? `${unlisted.length} running out — tap to add` : "Nothing on the list",
+          emptyShort: "All stocked",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <div className="mb-2 flex items-center justify-between gap-2">

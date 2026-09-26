@@ -52,8 +52,14 @@ jobs:
             V="0.0.${GITHUB_RUN_NUMBER}"
           fi
           case "$V" in
-            *[!0-9.]*|""|.*|*.) echo "FATAL: version '$V' is not digits and dots."; exit 1 ;;
+            ""|.*|*.) echo "FATAL: version '$V' is malformed."; exit 1 ;;
           esac
+          # Digits and dots, plus an optional -beta.N suffix so a beta can be
+          # released alongside the main line (e.g. 1.40.0-beta.2) without
+          # pretending to be a stable version.
+          if ! printf '%s' "$V" | grep -Eq '^[0-9]+(\.[0-9]+)*(-beta\.[0-9]+)?$'; then
+            echo "FATAL: version '$V' must be digits and dots, optionally -beta.N."; exit 1
+          fi
           echo "marketing=$V" >> "$GITHUB_OUTPUT"
           echo "build=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Building SOMA $V (build $GITHUB_RUN_NUMBER)"

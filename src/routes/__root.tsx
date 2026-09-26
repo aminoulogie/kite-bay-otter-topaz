@@ -9,7 +9,10 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      // interactive-widget=resizes-content: the layout viewport follows the
+      // keyboard instead of the keys drawing over fixed chrome — without it
+      // the dock and header jump when a field takes focus on Android.
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" },
       { title: APP_NAME },
       { name: "theme-color", content: "#0b0c10" },
       {
@@ -23,8 +26,11 @@ export const Route = createRootRoute({
       // in dev and in the native webview, both of which serve from the root.
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
       { rel: "stylesheet", href: appCss },
-      { rel: "manifest", href: "/__grok/manifest.webmanifest" },
-      { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
+      // The app's own manifest and icon, not the platform's. The home screen is
+      // where this app actually lives on a phone, and the mark sitting there
+      // should be the app's own.
+      { rel: "manifest", href: "/app.webmanifest" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {

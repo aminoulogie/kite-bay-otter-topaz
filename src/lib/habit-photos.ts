@@ -15,18 +15,23 @@ import { pickFiles } from "./file-picker.ts";
 
 const DB_NAME = "soma-habit-photos";
 /**
- * v2 adds the scan store, v3 the book files. Object stores in the SAME
- * database rather than databases of their own, deliberately: the backup
- * coverage test asserts the app opens exactly one IndexedDB, because a second
- * one is a second thing to remember at backup time and that is precisely how
- * four localStorage keys went missing from every backup for months.
+ * v2 adds the scan store, v3 the book files, v4 the exercise photos, v5 the
+ * vault folder handle. Object stores in the SAME database rather than
+ * databases of their own, deliberately: the backup coverage test asserts the
+ * app opens exactly one IndexedDB, because a second one is a second thing to
+ * remember at backup time and that is precisely how four localStorage keys
+ * went missing from every backup for months.
  */
-const DB_VERSION = 3;
+const DB_VERSION = 5;
 const STORE = "photos";
 /** Face and posture captures, as data URLs keyed by scan id. */
 const SCAN_STORE = "scans";
 /** Imported PDFs and EPUBs, as Blobs keyed by book id. See lib/book-files.ts. */
 export const BOOK_STORE = "books";
+/** User-picked exercise pictures, one Blob per exercise photo id. */
+export const EXERCISE_STORE = "exercise-photos";
+/** The chosen vault-sync folder handle. See lib/vault-sync.ts. */
+export const VAULT_STORE = "vault";
 
 const THUMB_PX = 320;
 const DISPLAY_PX = 1080;
@@ -73,6 +78,13 @@ function open(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(BOOK_STORE)) {
         db.createObjectStore(BOOK_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(EXERCISE_STORE)) {
+        db.createObjectStore(EXERCISE_STORE, { keyPath: "key" });
+      }
+      if (!db.objectStoreNames.contains(VAULT_STORE)) {
+        // Keyed externally, one row: there is only ever one chosen folder.
+        db.createObjectStore(VAULT_STORE);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -181,16 +193,70 @@ export async function allPhotoDates(): Promise<Set<string>> {
   return new Set(rows.map((r) => r.date));
 }
 
+// ------------------------------------------------------------ exercise pics --
+
+function exTx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return open().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const t = db.transaction(EXERCISE_STORE, mode);
+        const req = run(t.objectStore(EXERCISE_STORE));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
+      }),
+  );
+}
+
 /**
- * Opens the camera on a phone and the file picker on a desktop.
+ * The stored picture for an exercise photo id, or null.
  *
- * `capture` asks for the rear camera directly; browsers that ignore it fall
- * back to the normal picker, which is the desired behaviour rather than an
- * error. The awkward parts of waiting for the answer live in file-picker.ts —
- * they are the same on a photo from iCloud as on a book from Files.
+ * The row is `{ key, blob, ts }` — reading it back and handing the ROW to
+ * `URL.createObjectURL` is what made every saved exercise photo silently
+ * not render, so the blob is unwrapped here and nowhere else.
  */
-export async function captureImage(): Promise<File | null> {
-  const files = await pickFiles({ accept: "image/*", capture: "environment" });
+export async function exercisePhotoBlob(key: string): Promise<Blob | null> {
+  const row = await exTx<{ key: string; blob?: Blob } | undefined>("readonly", (s) => s.get(key));
+  const blob = row?.blob;
+  return blob instanceof Blob ? blob : null;
+}
+
+/** Every exercise picture — the backup needs the blobs themselves. */
+export function allExercisePhotos(): Promise<{ key: string; blob: Blob; ts: number }[]> {
+  return exTx<{ key: string; blob: Blob; ts: number }[]>("readonly", (s) => s.getAll());
+}
+
+/** Writes an exercise-photo record straight back, used when restoring a backup. */
+export async function putExercisePhotoRecord(row: { key: string; blob: Blob; ts: number }): Promise<void> {
+  await exTx("readwrite", (s) => s.put(row));
+}
+
+/** Stores an exercise picture, fitted to the display budget. */
+export async function saveExercisePhotoBlob(key: string, file: Blob): Promise<void> {
+  const display = await derive(file, DISPLAY_PX, 0.82);
+  await exTx("readwrite", (s) => s.put({ key, blob: display, ts: Date.now() }));
+}
+
+/** Removes an exercise picture. */
+export function deleteExercisePhoto(key: string): Promise<void> {
+  return exTx("readwrite", (s) => s.delete(key));
+}
+
+/**
+ * Picking a picture: the camera, or the photo library.
+ *
+ * `capture` asks for the rear camera directly, which is right when the user
+ * said "camera" and wrong every other time — with it, iOS never offers the
+ * photo library at all. Passing "any" leaves the attribute off, so the system
+ * sheet offers Photo Library, Take Photo and Browse, which is the only way to
+ * reach a picture that was taken before this screen existed. The awkward
+ * parts of waiting for the answer live in file-picker.ts — they are the same
+ * on a photo from iCloud as on a book from Files.
+ */
+export async function captureImage(source: "camera" | "library" | "any" = "any"): Promise<File | null> {
+  const files = await pickFiles({
+    accept: "image/*",
+    ...(source === "camera" ? { capture: "environment" as const } : {}),
+  });
   return files[0] ?? null;
 }
 
@@ -264,4 +330,40 @@ export async function allScanImages(): Promise<{ id: string; dataUrl: string }[]
     };
     t.onerror = () => reject(t.error ?? new Error("Could not read scan images"));
   });
+}
+
+// --------------------------------------------------------------- vault handle --
+
+const VAULT_KEY = "folder";
+
+function vaultTx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  return open().then(
+    (db) =>
+      new Promise<T>((resolve, reject) => {
+        const t = db.transaction(VAULT_STORE, mode);
+        const req = run(t.objectStore(VAULT_STORE));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error ?? new Error("IndexedDB request failed"));
+      }),
+  );
+}
+
+/**
+ * The chosen vault-sync folder, a `FileSystemDirectoryHandle`.
+ *
+ * IndexedDB is the only place a handle CAN live — it is not JSON-serialisable
+ * and not tied to any particular day or record, so it gets its own tiny store
+ * rather than a field on some other row.
+ */
+export async function getVaultHandle(): Promise<FileSystemDirectoryHandle | null> {
+  const row = await vaultTx<FileSystemDirectoryHandle | undefined>("readonly", (s) => s.get(VAULT_KEY));
+  return row ?? null;
+}
+
+export async function setVaultHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+  await vaultTx("readwrite", (s) => s.put(handle, VAULT_KEY));
+}
+
+export async function clearVaultHandle(): Promise<void> {
+  await vaultTx("readwrite", (s) => s.delete(VAULT_KEY));
 }

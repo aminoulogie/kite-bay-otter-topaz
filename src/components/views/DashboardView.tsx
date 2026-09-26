@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { ArrowRight, Check, Moon } from "lucide-react";
+import { Check, Droplet, Dumbbell, Sparkles } from "lucide-react";
+import { Glance, isGlance } from "@/components/Glance";
 import { Card, CardTitle } from "@/components/ui/card";
 import { CoachBrief } from "@/components/CoachBrief";
 import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
@@ -7,6 +8,7 @@ import { ProjectsCard } from "@/components/ProjectsCard";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
 import { HabitRings } from "@/components/HabitRings";
+import { ActivityRings } from "@/components/ActivityRings";
 import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
 import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
 import { bodyweightOn, buildDayInputs, previousSameSplit } from "@/lib/day-inputs";
@@ -47,6 +49,25 @@ function ScoreCard({
 }) {
   const size = useWidgetSize();
   const shown = lines.filter((l) => l.earned != null);
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Today's score",
+          short: "Score",
+          emptyShort: "No data",
+          value: shown.length ? String(Math.round(score)) : null,
+          valueClass: ratingTone(score),
+          sub: shown.length ? `out of 100 · ${shown.length} counted` : null,
+          progress: shown.length ? score / 100 : null,
+          color: score >= 75 ? "#30d158" : score >= 50 ? "#ffd60a" : "#ff9f0a",
+          lines: shown.map((l) => ({ text: l.label, value: `${Math.round(l.earned ?? 0)}/${l.possible}` })),
+          empty: "Nothing tracked yet",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <CardTitle>Today</CardTitle>
@@ -175,6 +196,28 @@ export function DashboardView() {
   const goals = day?.goals;
   const water = totalWaterMl(day);
   const session = history[date];
+  const waterGoal = goals?.water || 3500;
+  // The last seven days, oldest first, for the bars the big sizes draw.
+  const days7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(`${date}T12:00:00`);
+    d.setDate(d.getDate() - (6 - i));
+    return { key: getLocalDateKey(d), day: d.toLocaleDateString(undefined, { weekday: "narrow" }) };
+  });
+  const weekOf = (field: "cals" | "p" | "c" | "f") =>
+    days7.map(({ key, day }) => ({
+      day,
+      value: (nutrition[key]?.items ?? []).reduce((a, i) => a + (Number(i[field]) || 0), 0),
+    }));
+  const topOf = (field: "cals" | "p" | "c" | "f") =>
+    eaten
+      .map((i) => ({ name: i.name, amount: Number(i[field]) || 0 }))
+      .filter((x) => x.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+  const waterWeek = days7.map(({ key, day }) => ({ day, value: totalWaterMl(nutrition[key]) / 1000 }));
+  const lifts: string[] = (session?.exercises ?? (session ? [] : live.exercises))
+    .map((e: { name?: string }) => e?.name ?? "")
+    .filter(Boolean);
 
   // Each widget carries the id the layout arranges as its KEY. The page is
   // then just its widgets, in whatever order the user put them.
@@ -184,29 +227,45 @@ export function DashboardView() {
           the box it was given, and a bare wrapper would stretch instead of the
           card, leaving the card floating in a taller empty cell. */}
       <CoachBrief key="brief" horizon="today" />
+      <ActivityRings key="rings" />
       <ScoreCard key="score" score={score} lines={lines} />
 
       {/* The ticked ones are done — that is the whole point of a tile, and it
           is why only CONFIRMED food counts towards them. */}
-      <MacroTile key="cals" macro="cals" label="Calories" unit="kcal"
+      <MacroTile key="cals" macro="cals" week={weekOf("cals")} top={topOf("cals")} label="Calories" unit="kcal"
                  value={macros.cals} target={goals?.cals} onClick={() => setTab("nutrition")} />
-      <MacroTile key="protein" macro="p" label="Protein" unit="g"
+      <MacroTile key="protein" macro="p" week={weekOf("p")} top={topOf("p")} label="Protein" unit="g"
                  value={macros.p} target={goals?.protein} onClick={() => setTab("nutrition")} />
-      <MacroTile key="carbs" macro="c" label="Carbs" unit="g"
+      <MacroTile key="carbs" macro="c" week={weekOf("c")} top={topOf("c")} label="Carbs" unit="g"
                  value={macros.c} target={goals?.carbs} onClick={() => setTab("nutrition")} />
-      <MacroTile key="fat" macro="f" label="Fat" unit="g"
+      <MacroTile key="fat" macro="f" week={weekOf("f")} top={topOf("f")} label="Fat" unit="g"
                  value={macros.f} target={goals?.fat} onClick={() => setTab("nutrition")} />
-      <Tile key="water" icon={Moon} label="Water" value={water ? (water / 1000).toFixed(1) : "—"} unit="L"
+      <Tile key="water" icon={Droplet} color="#19e3e3" label="Water" value={water ? (water / 1000).toFixed(1) : null} unit="L"
+            sub={`of ${(waterGoal / 1000).toFixed(1)} L`} progress={water / waterGoal} empty="No water logged"
+            week={waterWeek} goal={waterGoal / 1000}
             onClick={() => setTab("nutrition")} />
-      <Tile key="session" icon={ArrowRight} label="Session"
-            value={session ? String(session.exercises?.length ?? 0) : live.exercises.length ? String(live.exercises.length) : "—"}
-            unit="lifts" onClick={() => setTab("workout")} />
+      <Tile key="session" icon={Dumbbell} color="#bf5af2" label="Session"
+            value={lifts.length ? String(lifts.length) : null}
+            unit={lifts.length === 1 ? "lift" : "lifts"}
+            sub={session ? "done today" : lifts.length ? "in progress" : null}
+            lines={lifts.map((n) => ({ text: n }))}
+            empty="No session yet"
+            onClick={() => setTab("workout")} />
       <HabitRings key="habits" />
 
-      <div key="todos"><TodoCard /></div>
-      <div key="projects"><ProjectsCard /></div>
-      <div key="gap"><LogTheGap /></div>
-      <Card key="correlate">
+      <TodoCard key="todos" />
+      <ProjectsCard key="projects" />
+      <LogTheGap key="gap" />
+      <Correlate
+        key="correlate"
+        text={finding.found?.text ?? null}
+        empty={
+          finding.short > 0
+            ? `Needs about ${finding.short} more days logged`
+            : "Nothing has moved together yet"
+        }
+      >
+      <Card>
         <CardTitle>Across everything</CardTitle>
         {finding.found ? (
           <>
@@ -225,34 +284,65 @@ export function DashboardView() {
           </p>
         )}
       </Card>
+      </Correlate>
     </WidgetGrid>
   );
 }
 
 
 function Tile({
-  icon: Icon, label, value, unit, onClick,
+  icon: Icon, label, value, unit, onClick, sub, progress, lines, empty, week, goal, color,
 }: {
-  icon: typeof Moon;
+  color?: string;
+  week?: { day: string; value: number }[];
+  goal?: number;
+  icon: typeof Droplet;
   label: string;
-  value: string;
+  value: string | null;
   unit: string;
   onClick: () => void;
+  sub?: string | null;
+  progress?: number | null;
+  lines?: { text: string }[];
+  empty: string;
 }) {
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{ label, icon: Icon, color, value, unit, sub, progress, lines, empty, onOpen: onClick }}
+      />
+    );
+  }
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-2xl border border-border bg-surface p-3 text-left"
+      className="glass-card flex h-full w-full flex-col rounded-2xl border border-border bg-surface p-4 text-left active:bg-surface-2"
     >
       <div className="mb-1 flex items-center gap-1.5 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
         <Icon className="size-3" />
         {label}
       </div>
-      <div className="font-display text-2xl font-extrabold tabular">
-        {value}
+      <div className="font-display text-3xl font-extrabold tabular">
+        {value ?? "—"}
         <span className="ml-1 text-xs font-bold text-faint">{unit}</span>
       </div>
+      {sub && <div className="mt-1 text-[0.7rem] text-faint">{sub}</div>}
+      {progress != null && (
+        <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-surface-3">
+          <div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(1, progress) * 100}%` }} />
+        </div>
+      )}
+      {lines && lines.length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {lines.map((l, i) => (
+            <li key={i} className="truncate text-xs text-muted">{l.text}</li>
+          ))}
+        </ul>
+      )}
+      {week && <WeekBars week={week} target={goal} color={color ?? "var(--color-accent)"} />}
     </button>
   );
 }
@@ -271,8 +361,10 @@ function Tile({
  * that says so, because a surplus or deficit is the thing being managed.
  */
 function MacroTile({
-  macro, label, unit, value, target, onClick,
+  macro, label, unit, value, target, onClick, week, top,
 }: {
+  week: { day: string; value: number }[];
+  top: { name: string; amount: number }[];
   macro: MacroKey;
   label: string;
   unit: string;
@@ -285,19 +377,35 @@ function MacroTile({
   const pct = has ? Math.min(100, (value / target!) * 100) : 0;
   const hit = has && value >= target! * 0.95;
   const over = has && macro === "cals" && value > target! * 1.1;
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label,
+          color: MACRO_COLOR[macro],
+          value: logged ? String(Math.round(value)) : null,
+          unit,
+          sub: has ? (logged ? `of ${Math.round(target!)} · ${Math.max(0, Math.round(target! - value))} to go` : `goal ${Math.round(target!)}`) : null,
+          progress: has ? value / target! : null,
+          done: hit,
+          empty: "Nothing logged",
+          onOpen: onClick,
+        }}
+      />
+    );
+  }
 
+  const big = hasFullRoom(size);
   return (
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-2xl border border-border bg-surface p-3 text-left"
+      className="glass-card flex h-full w-full flex-col rounded-2xl border border-border bg-surface p-4 text-left active:bg-surface-2"
     >
-      <div className="mb-1 flex items-center gap-1.5 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
-        <span
-          aria-hidden
-          className="h-2.5 w-[3px] shrink-0 rounded-full"
-          style={{ background: MACRO_COLOR[macro] }}
-        />
+      <div className="mb-2 flex items-center gap-1.5 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+        <span aria-hidden className="h-2.5 w-[3px] shrink-0 rounded-full" style={{ background: MACRO_COLOR[macro] }} />
         {label}
         {hit && (
           <span
@@ -311,21 +419,104 @@ function MacroTile({
           </span>
         )}
       </div>
-      <div className="font-display text-2xl font-extrabold tabular">
-        {logged ? Math.round(value) : "—"}
-        <span className="ml-1 text-xs font-bold text-faint">{unit}</span>
+      <div className="flex items-baseline gap-3">
+        <div className="font-display text-4xl font-extrabold tabular">
+          {logged ? Math.round(value) : "—"}
+          <span className="ml-1 text-sm font-bold text-faint">{unit}</span>
+        </div>
+        {has && (
+          <div className="text-xs tabular text-faint">
+            of {Math.round(target!)}
+            {logged && ` · ${Math.max(0, Math.round(target! - value))} to go`}
+          </div>
+        )}
       </div>
       {has && (
-        <>
-          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-surface-3">
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+          <div className="h-full rounded-full transition-[width]" style={{ width: `${pct}%`, background: MACRO_COLOR[macro] }} />
+        </div>
+      )}
+      <WeekBars week={week} target={target} color={MACRO_COLOR[macro]} />
+      {big && <TopFoods items={top} unit={unit} />}
+    </button>
+  );
+}
+
+/** "Across everything": the finding as a sentence, or how far off one is. */
+function Correlate({ text, empty, children }: { text: string | null; empty: string; children: React.ReactNode }) {
+  const size = useWidgetSize();
+  if (isGlance(size)) {
+    return (
+      <Glance
+        size={size}
+        spec={{ label: "Across everything", short: "Links", emptyShort: "Not yet", icon: Sparkles, lines: text ? [{ text }] : [], empty }}
+      />
+    );
+  }
+  return <>{children}</>;
+}
+
+/** Seven days of one figure as bars, today last and brightest, with the target as a line. */
+function WeekBars({
+  week, target, color,
+}: {
+  week: { day: string; value: number }[];
+  target?: number;
+  color: string;
+}) {
+  const max = Math.max(1, target ?? 0, ...week.map((w) => w.value));
+  return (
+    <div className="mt-auto pt-3">
+      <div className="relative flex h-14 items-end gap-1.5">
+        {target != null && target > 0 && (
+          <div
+            aria-hidden
+            className="absolute inset-x-0 border-t border-dashed border-fg/25"
+            style={{ bottom: `${(target / max) * 100}%` }}
+          />
+        )}
+        {week.map((w, i) => (
+          <div key={i} className="flex h-full flex-1 flex-col justify-end">
             <div
-              className="h-full rounded-full transition-[width]"
-              style={{ width: `${pct}%`, background: MACRO_COLOR[macro] }}
+              className="w-full rounded-t-[3px]"
+              style={{
+                height: `${Math.max(w.value > 0 ? 4 : 0, (w.value / max) * 100)}%`,
+                background: color,
+                opacity: i === week.length - 1 ? 1 : 0.45,
+              }}
             />
           </div>
-          <div className="mt-1 text-[0.6rem] tabular text-faint">of {Math.round(target!)}</div>
-        </>
+        ))}
+      </div>
+      <div className="mt-1 flex gap-1.5">
+        {week.map((w, i) => (
+          <div key={i} className="flex-1 text-center text-[0.55rem] font-bold text-faint">{w.day}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Where today's figure came from: the biggest contributors. */
+function TopFoods({ items, unit }: { items: { name: string; amount: number }[]; unit: string }) {
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <div className="mb-1 text-[0.58rem] font-bold uppercase tracking-wider text-faint">Most of it from</div>
+      {items.length === 0 ? (
+        <p className="text-xs text-faint">Nothing logged today.</p>
+      ) : (
+        <ul className="space-y-0.5">
+          {items.map((it, i) => (
+            <li key={i} className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="truncate text-muted">{it.name}</span>
+              <span className="shrink-0 tabular font-bold">
+                {Math.round(it.amount)}
+                <span className="text-faint"> {unit}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
       )}
-    </button>
+    </div>
   );
 }

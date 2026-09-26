@@ -1,19 +1,29 @@
-import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { SwitchCamera, X, Zap, ZapOff } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { analyzeFaceLandmarks, type FaceAnalysis } from "@/lib/aether/analyzeFace";
+import type { FaceAnalysis } from "@/lib/aether/analyzeFace";
 import {
   SESSION, faceBox, framingFromLandmarks, proxyPose, sampleLighting, scoreCapture,
   type Quality,
 } from "@/lib/aether/captureQuality";
-import { FACE } from "@/lib/aether/landmarks";
-import { measureHarmony } from "@/lib/aether/harmony";
-import { analyseSkin, puffinessRatio } from "@/lib/aether/skin";
+import { ANALYZER_VERSION, FACE } from "@/lib/aether/landmarks";
+import type { measureHarmony } from "@/lib/aether/harmony";
+import type { analyseSkin } from "@/lib/aether/skin";
 import {
-  detectFace, detectFaceTolerant, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
+  detectFaceTolerant, detectPose, eulerFromMatrix4, landmarksToPts, loadVision, smileFromBlendshapes,
 } from "@/lib/aether/mediapipe";
-import { saveScanImage } from "@/lib/habit-photos";
+import { canvasFromDataUrl, measureCanvas, measurePosture } from "@/lib/aether/measure";
+import {
+  cropForView, distanceCue, faceSquare, guide, irisSize, laplacianVariance, mergeSymmetry, poseHeadBox, poseHeadTurn,
+  rankFrames, screenCue, smoothSquare, turnedSide, type FaceSquare, type Guidance,
+} from "@/lib/aether/assist";
+import { AssistAudio } from "@/lib/aether/assist-audio";
+import { autoPlacement, type Placement } from "@/lib/aether/align";
+import { ALIGN_H, ALIGN_W, AlignSheet } from "@/components/aether/AlignSheet";
+import { FaceRing } from "@/components/aether/FaceRing";
+import { baselineIris, scanSlot, type ScanRecord } from "@/lib/aether/scan-store";
+import { loadScanImage, saveScanImage } from "@/lib/habit-photos";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -32,7 +42,74 @@ import { cn } from "@/lib/utils";
  * next photograph comparable to the last one rather than merely to exist.
  */
 
-const BURST = 5;
+/**
+ * Frames per capture. Eight at 80ms is about 0.6s — long enough to include a
+ * sharp, level frame, short enough that nobody drifts out of pose.
+ */
+const BURST = 8;
+
+type Facing = "user" | "environment";
+type Zoom = 1 | 2 | 3;
+
+interface AssistSettings {
+  facing: Facing;
+  zoom: Zoom;
+  flash: boolean;
+  sound: boolean;
+  voice: boolean;
+  /** Hold every scan to the distance of the first like-for-like one. */
+  lock: boolean;
+  /** Show the last scan of this pose faintly over the preview, to line up with. */
+  ghost: boolean;
+  /** Front ring light: how far the warm frame reaches in, % of the window's width. */
+  glow: number;
+  /** Settings format; see loadSettings. */
+  v?: number;
+}
+
+const SETTINGS_KEY = "soma-scan-assist";
+const SETTINGS_V = 2;
+const DEFAULT_SETTINGS: AssistSettings = {
+  facing: "user", zoom: 2, flash: false, sound: true, voice: true, lock: true, ghost: false, glow: 12, v: SETTINGS_V,
+};
+const GLOW_MIN = 4;
+const GLOW_MAX = 34;
+
+function loadSettings(): AssistSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    const saved = JSON.parse(raw) as Partial<AssistSettings>;
+    // Ghost used to default on, and a faint old photo over the live picture
+    // read as a frozen camera. Settings saved before v2 start with it off.
+    if (saved.v !== SETTINGS_V) saved.ghost = false;
+    return { ...DEFAULT_SETTINGS, ...saved, v: SETTINGS_V };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+/** Warm white: truer skin than blue-white LCD light, and less of a glare. */
+const FLASH_COLOR = "#fff1dc";
+/** Exposure needs a moment to adapt to the screen flash before frames count. */
+const FLASH_SETTLE_MS = 260;
+
+/** Focus score for a frame, measured on a small copy so it stays cheap. */
+function sharpnessOf(source: HTMLCanvasElement): number {
+  try {
+    const w = 256;
+    const h = Math.max(3, Math.round((w * source.height) / Math.max(1, source.width)));
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return 0;
+    ctx.drawImage(source, 0, 0, w, h);
+    return laplacianVariance(ctx.getImageData(0, 0, w, h).data, w, h);
+  } catch {
+    return 0;
+  }
+}
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -68,6 +145,8 @@ interface Measured {
   puffiness: number | null;
   harmony: ReturnType<typeof measureHarmony>;
   dataUrl: string;
+  sharpness: number;
+  iris: number | null;
 }
 
 /**
@@ -92,6 +171,40 @@ interface PhotoOnly {
 
 type Grab = Measured | PhotoOnly;
 
+/** Neck carriage from the KEPT profile photo — see measurePosture. */
+async function postureOf(dataUrl: string) {
+  try {
+    return await measurePosture(await canvasFromDataUrl(dataUrl));
+  } catch {
+    return undefined;
+  }
+}
+
+/** A frame's analysis with the burst's median symmetry in place of its own. */
+function withMerged(
+  a: FaceAnalysis,
+  merged: ReturnType<typeof mergeSymmetry>,
+  total: number,
+): FaceAnalysis {
+  if (!merged || merged.used < 2) return a;
+  return {
+    ...a,
+    alpha: merged.alpha,
+    regional: merged.regional as FaceAnalysis["regional"],
+    notes: [...a.notes, `Symmetry is the median of ${merged.used} frames from a ${total}-frame burst.`],
+  };
+}
+
+interface LastBurst {
+  id: string;
+  kind: string;
+  side?: "left" | "right";
+  frames: Measured[];
+  merged: ReturnType<typeof mergeSymmetry>;
+  total: number;
+  chosen: number;
+}
+
 export function ScanSheet({ onClose }: { onClose: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -103,6 +216,9 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const lastFaceAt = useRef(0);
 
   const addScan = useSoma((s) => s.addScan);
+  const updateScan = useSoma((s) => s.updateScan);
+  const [lastBurst, setLastBurst] = useState<LastBurst | null>(null);
+  const [aligning, setAligning] = useState<{ img: HTMLImageElement; auto: Placement | null } | null>(null);
   const scans = useSoma((s) => s.scans);
 
   const [live, setLive] = useState(false);
@@ -110,22 +226,172 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0);
   const [burstPct, setBurstPct] = useState(0);
   const [hud, setHud] = useState<Quality | null>(null);
-  const [eyes, setEyes] = useState<{ lx: number; ly: number; rx: number; ry: number; mx: number } | null>(null);
+  const [square, setSquare] = useState<FaceSquare | null>(null);
+  /** The visible preview: every camera frame drawn cropped, see the effect below. */
+  const previewRef = useRef<HTMLCanvasElement>(null);
+  const [hasTrueDepth, setHasTrueDepth] = useState(false);
   const [status, setStatus] = useState("Open the camera. Front → 45° → profile.");
   const [pose, setPose] = useState<{ yaw: number; roll: number; pitch: number } | null>(null);
   const [autoFire, setAutoFire] = useState(true);
   const [holding, setHolding] = useState(0);
+  const [settings, setSettings] = useState<AssistSettings>(loadSettings);
+  /** True when the camera itself zooms (a lens or track zoom) — no crop needed. */
+  const [hwZoom, setHwZoom] = useState(false);
+  const [flashing, setFlashing] = useState(false);
+  const [guidance, setGuidance] = useState<Guidance | null>(null);
+  const [dist, setDist] = useState<ReturnType<typeof distanceCue>>(null);
+  const audioRef = useRef<AssistAudio | null>(null);
+  /** The latest render's capture, for the auto-shutter in the frame loop. */
+  const captureRef = useRef<() => Promise<void>>(async () => {});
+  audioRef.current ??= new AssistAudio();
+  const audio = audioRef.current;
+  audio.sound = settings.sound;
+  audio.voice = settings.voice;
 
   // Read inside the animation loop, which is attached once and would otherwise
   // close over the first render's values for the life of the screen.
-  const liveRefs = useRef({ autoFire, busy: false, step: 0 });
+  const liveRefs = useRef({
+    autoFire, busy: false, step: 0, zoom: 2 as number, mirror: true,
+    // Auto-shoot fires once per pose: after a shot you have to leave the pose
+    // before it can fire again. Without this, a frame still green after the
+    // shot fired again a second later — on the last step, forever.
+    armed: true,
+    // Every angle done: the coach goes quiet instead of talking on.
+    finished: false,
+    baseline: null as number | null,
+  });
 
   const s = SESSION[step]!;
   const kind = s.kind;
   liveRefs.current.autoFire = autoFire;
   liveRefs.current.step = step;
-  const done = new Set(scans.map((x) => x.kind));
+  // The crop the frames are taken with: none when the camera zooms itself.
+  liveRefs.current.zoom = hwZoom ? 1 : settings.zoom;
+  // Only the front camera behaves like a mirror.
+  liveRefs.current.mirror = settings.facing === "user";
+  // The iris size to match, or null (lock off, or nothing like-for-like yet).
+  const baseline = settings.lock
+    ? baselineIris(scans, scanSlot({ kind: s.kind, side: s.side }), settings.facing, settings.zoom)
+    : null;
+  liveRefs.current.baseline = baseline;
+
+  // The last scan of this pose, preferring one taken the same way, shown
+  // faintly over the preview so the same pose can be matched by eye.
+  const slot = scanSlot({ kind: s.kind, side: s.side });
+  const ghostId = useMemo(() => {
+    const same = scans.filter((x) => scanSlot(x) === slot);
+    const alike = same.filter((x) => x.capture?.facing === settings.facing && x.capture?.zoom === settings.zoom);
+    const pool = alike.length ? alike : same;
+    return pool.reduce<ScanRecord | null>((a, b) => (!a || b.capturedAt > a.capturedAt ? b : a), null)?.id ?? null;
+  }, [scans, slot, settings.facing, settings.zoom]);
+  const [ghostUrl, setGhostUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setGhostUrl(null);
+    if (settings.ghost && ghostId) {
+      void loadScanImage(ghostId).then((url) => {
+        if (!cancelled) setGhostUrl(url);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [ghostId, settings.ghost]);
+
+  /** Swap the kept photo for another frame from the same burst. */
+  async function pickFrame(i: number) {
+    const b = lastBurst;
+    const f = b?.frames[i];
+    if (!b || !f || i === b.chosen) return;
+    await saveScanImage(b.id, f.dataUrl);
+    const posture = b.kind === "face_side" ? await postureOf(f.dataUrl) : undefined;
+    updateScan(b.id, {
+      face: withMerged(f.analysis, b.merged, b.total),
+      skin: f.skin,
+      puffiness: f.puffiness,
+      harmony: f.harmony,
+      capture: { facing: settings.facing, zoom: settings.zoom, iris: f.iris },
+      ...(posture ? { posture } : {}),
+    });
+    setLastBurst({ ...b, chosen: i });
+    toast.success("Swapped in that frame");
+  }
+
+  const patchSettings = (patch: Partial<AssistSettings>) => {
+    setSettings((cur) => {
+      const next = { ...cur, ...patch };
+      try {
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+      } catch {
+        /* private mode: settings last for this visit */
+      }
+      return next;
+    });
+  };
+  // Done-ness is per slot, so taking the right profile does not tick the left.
+  const done = new Set(scans.map(scanSlot));
+  const slotOf = (x: (typeof SESSION)[number]) => scanSlot({ kind: x.kind, side: x.side });
   const ready = hud?.ready ?? false;
+  // Hold fills the first half of the ring, the burst the second.
+  const ringProgress = busy ? 0.5 + burstPct / 200 : (holding / HOLD_FRAMES) * 0.5;
+  const frontGlow = settings.flash && settings.facing === "user" && live;
+
+  // Back camera with flash selected: the LED stays on for the whole preview,
+  // so the frame is lit while you line up, not only for the burst. Asked for
+  // again shortly after, since the camera starting up can switch it off.
+  const backLight = settings.flash && settings.facing === "environment" && live;
+  useEffect(() => {
+    if (!backLight) {
+      void setTorch(false);
+      return;
+    }
+    void setTorch(true);
+    const again = window.setTimeout(() => void setTorch(true), 600);
+    return () => window.clearTimeout(again);
+  }, [backLight]);
+
+  // Draw the preview: every animation frame, the analysed crop of the camera
+  // frame, mirrored for the front camera, at the canvas's own pixel size.
+  useEffect(() => {
+    if (!live) return;
+    let raf = 0;
+    const draw = () => {
+      raf = requestAnimationFrame(draw);
+      const video = videoRef.current;
+      const cv = previewRef.current;
+      if (!video || !cv || video.readyState < 2 || !video.videoWidth) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const w = Math.round(cv.clientWidth * dpr);
+      const h = Math.round(cv.clientHeight * dpr);
+      if (!w || !h) return;
+      if (cv.width !== w) cv.width = w;
+      if (cv.height !== h) cv.height = h;
+      const ctx = cv.getContext("2d");
+      if (!ctx) return;
+      const c = cropForView(video.videoWidth, video.videoHeight, liveRefs.current.zoom);
+      ctx.save();
+      if (liveRefs.current.mirror) {
+        ctx.translate(w, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, w, h);
+      ctx.restore();
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [live]);
+
+  // Open the camera with the sheet: the tap on Scan is the gesture that asks
+  // for it. Sound needs a gesture of its own on iOS, so the first touch
+  // anywhere on the sheet unlocks it.
+  useEffect(() => {
+    void startCam();
+    void import("@/lib/native/face-depth").then((m) => m.trueDepthAvailable()).then(setHasTrueDepth);
+    const unlock = () => audioRef.current?.enable();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    return () => window.removeEventListener("pointerdown", unlock);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // The camera and the animation frame both have to stop when this closes, or
   // the light stays on and the loop keeps running behind the diary.
@@ -133,6 +399,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     () => () => {
       cancelAnimationFrame(rafRef.current);
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      void import("@/lib/native/torch").then((m) => m.setNativeTorch(false));
+      audioRef.current?.dispose();
     },
     [],
   );
@@ -142,7 +410,51 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     held.current = 0;
     setHolding(0);
+    liveRefs.current.armed = true;
+    liveRefs.current.finished = false;
+    // Spoken, because on the profile step the screen is out of sight.
+    if (live) audioRef.current?.announce(SESSION[step]!.coach);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);
+
+  /**
+   * Zoom inside the camera track where the browser allows it (Chrome on
+   * Android). Returns false where it does not — iOS Safari — and the frames
+   * are cropped instead.
+   */
+  function applyTrackZoom(stream: MediaStream, zoom: number): boolean {
+    try {
+      const track = stream.getVideoTracks()[0];
+      const caps = track?.getCapabilities?.() as (MediaTrackCapabilities & { zoom?: { min: number; max: number } }) | undefined;
+      if (!track || !caps?.zoom) return false;
+      const z = Math.max(caps.zoom.min, Math.min(caps.zoom.max, zoom));
+      void track.applyConstraints({ advanced: [{ zoom: z } as MediaTrackConstraintSet] }).catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * The back camera's LED. The iOS web view's stream has no `torch`
+   * constraint, so the native build switches it through the Torch plugin;
+   * a browser that does offer the constraint uses that. Returns false when
+   * neither can, so the caller can say so.
+   */
+  async function setTorch(on: boolean): Promise<boolean> {
+    try {
+      const track = streamRef.current?.getVideoTracks()[0];
+      const caps = track?.getCapabilities?.() as (MediaTrackCapabilities & { torch?: boolean }) | undefined;
+      if (track && caps?.torch) {
+        await track.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
+        return true;
+      }
+    } catch {
+      // Fall through to the native switch.
+    }
+    const { setNativeTorch } = await import("@/lib/native/torch");
+    return setNativeTorch(on);
+  }
 
   /**
    * Ask for the camera FIRST, before anything that awaits.
@@ -158,15 +470,34 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
    * behind the preview afterwards. That also happens to be the better screen:
    * the picture appears immediately instead of after a blank ten seconds.
    */
-  async function startCam() {
+  async function startCam(override?: Partial<AssistSettings>) {
+    const want = { ...settings, ...override };
+    // Inside the tap: the only moment iOS lets sound and speech start.
+    audio.enable();
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus("This browser has no camera access. It needs a secure (https) page.");
       return;
     }
 
     // Started before any await, so the tap is still what is asking.
+    // 3x on the back camera asks for the telephoto LENS by name, which only
+    // resolves once a camera permission exists (labels are blank before).
+    // Real optics beat a crop: same framing from further back, full detail.
+    //
+    // Looked up ONLY for that case: it is an await, and every other path must
+    // reach getUserMedia with no await in between (see above). enumerateDevices
+    // is fast, and a tap on "3x" is itself the gesture, but the common path
+    // stays exactly as it was.
+    const tele =
+      want.facing === "environment" && want.zoom === 3
+        ? (await navigator.mediaDevices.enumerateDevices().catch(() => [] as MediaDeviceInfo[])).find(
+            (d) => d.kind === "videoinput" && /telephoto/i.test(d.label),
+          )
+        : undefined;
     const pending = navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1920 }, height: { ideal: 2560 } },
+      video: tele
+        ? { deviceId: { exact: tele.deviceId }, width: { ideal: 1440 }, height: { ideal: 1920 }, aspectRatio: { ideal: 3 / 4 } }
+        : { facingMode: want.facing, width: { ideal: 1440 }, height: { ideal: 1920 }, aspectRatio: { ideal: 3 / 4 } },
       audio: false,
     });
     setStatus("Allow the camera when asked…");
@@ -200,6 +531,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       // Autoplay refusal on a muted inline video is rare and not fatal.
     }
     setLive(true);
+    setHwZoom(!!tele || applyTrackZoom(stream, want.zoom));
 
     // The model loads behind a live preview rather than in front of a blank one.
     setStatus("Camera on. Loading the face model…");
@@ -215,6 +547,27 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   function loop() {
     cancelAnimationFrame(rafRef.current);
     let lastTick = 0;
+    // Held green long enough, and nothing else in flight: take it.
+    const fireWhenHeld = (readyHere: boolean) => {
+      if (!readyHere) liveRefs.current.armed = true;
+      if (readyHere && liveRefs.current.autoFire && liveRefs.current.armed && !liveRefs.current.busy && !liveRefs.current.finished) {
+        held.current += 1;
+        setHolding(held.current);
+        if (held.current >= HOLD_FRAMES) {
+          held.current = 0;
+          setHolding(0);
+          liveRefs.current.armed = false;
+          // Through the ref: this loop was built when the camera opened, and a
+          // direct call would run THAT render's capture — the step, kind and
+          // flash setting of that moment, so a 45° or profile shot was
+          // measured and saved as a front scan.
+          void captureRef.current();
+        }
+      } else if (held.current !== 0) {
+        held.current = 0;
+        setHolding(0);
+      }
+    };
     const tick = async (t: number) => {
       rafRef.current = requestAnimationFrame(tick);
       // Eight times a second, not sixty: the model is the cost, and the coach
@@ -224,12 +577,62 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       const video = videoRef.current;
       const small = smallRef.current;
       if (!video || !small || video.readyState < 2) return;
+      // The same centre crop the preview shows and the capture keeps, so the
+      // landmarks, the guides and the saved photo all describe one frame.
+      const c = cropForView(video.videoWidth, video.videoHeight, liveRefs.current.zoom);
       small.width = 320;
-      small.height = Math.round(320 * (video.videoHeight / Math.max(1, video.videoWidth)));
+      small.height = Math.round(320 * (c.sh / Math.max(1, c.sw)));
       const ctx = small.getContext("2d");
       if (!ctx) return;
-      ctx.drawImage(video, 0, 0, small.width, small.height);
+      ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, small.width, small.height);
       try {
+        const sideStep = SESSION[liveRefs.current.step]!;
+        if (sideStep.kind === "face_side") {
+          // A true 90° profile: the face model cannot see a face there, the
+          // body-pose model can (nose and both ears, in 3D).
+          const pr = await detectPose(small);
+          const turn = poseHeadTurn(pr.worldLandmarks?.[0]);
+          const box = poseHeadBox(pr.landmarks?.[0], small.width / Math.max(1, small.height));
+          if (!turn || !box) {
+            if (Date.now() - lastFaceAt.current < FACE_GRACE_MS) return;
+            setSquare(null);
+            held.current = 0;
+            setHolding(0);
+            const lost = guide({
+              kind: sideStep.kind, hasFace: false, yawDeg: 0, pitchDeg: 0, rollDeg: 0,
+              turned: null, quality: { ready: false, lighting: 0, reasons: [] }, faceHeightFrac: 0, smile: 0,
+              targetSide: sideStep.side,
+            });
+            if (!liveRefs.current.busy && !liveRefs.current.finished) audioRef.current?.update(lost);
+            setGuidance(lost);
+            return;
+          }
+          lastFaceAt.current = Date.now();
+          const q = scoreCapture({
+            kind: sideStep.kind, yawDeg: turn.yawAbs, rollDeg: 0, pitchDeg: 0,
+            lighting: sampleLighting(small, box),
+            framing: { faceHeightFrac: 0.45, eyesY: box.y + box.h * 0.45, centerX: box.x + box.w / 2, notes: [] },
+            smile: 0, hasFace: true,
+          });
+          const readyHere = q.ready && turn.turned === sideStep.side;
+          setHud({ ...q, ready: readyHere });
+          setDist(null);
+          const g = guide({
+            kind: sideStep.kind, hasFace: true, yawDeg: turn.yawAbs, pitchDeg: 0, rollDeg: 0,
+            turned: turn.turned, quality: { ...q, ready: readyHere }, faceHeightFrac: 0, smile: 0,
+            targetSide: sideStep.side,
+          });
+          if (!liveRefs.current.busy && !liveRefs.current.finished) audioRef.current?.update(g);
+          setGuidance(g);
+          setPose({ yaw: turn.turned === "right" ? turn.yawAbs : -turn.yawAbs, roll: 0, pitch: 0 });
+          fireWhenHeld(readyHere);
+          const sq = faceSquare(
+            [{ x: box.x, y: box.y }, { x: box.x + box.w, y: box.y + box.h }],
+            liveRefs.current.mirror,
+          );
+          if (sq) setSquare((prev) => smoothSquare(prev, sq));
+          return;
+        }
         const res = await detectFaceTolerant(small);
         const lms = res.landmarks;
         if (!lms) {
@@ -244,9 +647,16 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
               smile: 0, hasFace: false,
             }),
           );
-          setEyes(null);
+          setSquare(null);
           held.current = 0;
           setHolding(0);
+          const lost = guide({
+            kind: SESSION[liveRefs.current.step]!.kind, hasFace: false, yawDeg: 0, pitchDeg: 0, rollDeg: 0,
+            turned: null, quality: { ready: false, lighting: 0, reasons: [] }, faceHeightFrac: 0, smile: 0,
+            targetSide: SESSION[liveRefs.current.step]!.side,
+          });
+          if (!liveRefs.current.busy && !liveRefs.current.finished) audioRef.current?.update(lost);
+          setGuidance(lost);
           return;
         }
         lastFaceAt.current = Date.now();
@@ -256,38 +666,44 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         const yawDeg = eu?.yawDeg ?? proxy.yawDeg;
         const rollDeg = eu?.rollDeg ?? proxy.rollDeg;
         const pitchDeg = eu?.pitchDeg ?? proxy.pitchDeg;
+        const framing = framingFromLandmarks(pts);
+        const smile = smileFromBlendshapes(res.blendshapes as never);
+        const stepKind = SESSION[liveRefs.current.step]!.kind;
         const q = scoreCapture({
-          kind: SESSION[liveRefs.current.step]!.kind,
+          kind: stepKind,
           yawDeg, rollDeg, pitchDeg,
           lighting: sampleLighting(small, faceBox(pts)),
-          framing: framingFromLandmarks(pts),
-          smile: smileFromBlendshapes(res.blendshapes as never),
+          framing,
+          smile,
           hasFace: true,
         });
-        setHud(q);
+        // Distance against the first like-for-like scan: part of "green", so
+        // the shutter never fires from a different spot than last time.
+        const cue = distanceCue(irisSize(pts, small.width, small.height), liveRefs.current.baseline);
+        const readyHere = q.ready && (!cue || cue.cue === "ok");
+        setHud({ ...q, ready: readyHere });
+        setDist(cue);
+        // One instruction per frame, played as sound: rate for distance to
+        // target, left/right ear for which way to turn, pitch for up/down.
+        const g = guide({
+          kind: stepKind, hasFace: true, yawDeg, pitchDeg, rollDeg,
+          turned: turnedSide(pts[FACE.noseTip]?.x, pts[FACE.leftOuter]?.x, pts[FACE.rightOuter]?.x),
+          quality: { ...q, ready: readyHere }, faceHeightFrac: framing.faceHeightFrac, smile,
+          distance: cue?.cue ?? null,
+          targetSide: SESSION[liveRefs.current.step]!.side,
+        });
+        if (!liveRefs.current.busy && !liveRefs.current.finished) audioRef.current?.update(g);
+        setGuidance(g);
         // Shown so the gates can be checked rather than trusted. A coach line
         // saying "turn more" is not falsifiable; a yaw of 41° is.
         setPose({ yaw: yawDeg, roll: rollDeg, pitch: pitchDeg });
 
-        // Held green long enough, and nothing else in flight: take it.
-        if (q.ready && liveRefs.current.autoFire && !liveRefs.current.busy) {
-          held.current += 1;
-          setHolding(held.current);
-          if (held.current >= HOLD_FRAMES) {
-            held.current = 0;
-            setHolding(0);
-            void capture();
-          }
-        } else if (held.current !== 0) {
-          held.current = 0;
-          setHolding(0);
-        }
-        const li = pts[FACE.leftInner];
-        const ri = pts[FACE.rightInner];
+        fireWhenHeld(readyHere);
         // Mirrored for display only. The preview is flipped so it behaves like
         // a mirror; the ANALYSIS runs on unmirrored pixels, or left and right
         // would swap between the coach and the Face File.
-        if (li && ri) setEyes({ lx: 1 - li.x, ly: li.y, rx: 1 - ri.x, ry: ri.y, mx: 1 - (li.x + ri.x) / 2 });
+        const sq = faceSquare(pts, liveRefs.current.mirror);
+        if (sq) setSquare((prev) => smoothSquare(prev, sq));
       } catch {
         // A dropped frame during live detection is not worth a message.
       }
@@ -299,44 +715,20 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
-    canvas.width = video.videoWidth || 1080;
-    canvas.height = video.videoHeight || 1440;
+    const c = cropForView(video.videoWidth || 1080, video.videoHeight || 1440, liveRefs.current.zoom);
+    canvas.width = c.sw;
+    canvas.height = c.sh;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const res = await detectFaceTolerant(canvas);
-    const lms = res.landmarks;
-    if (!lms) {
+    ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, c.sw, c.sh);
+    const m = await measureCanvas(canvas, kind);
+    if (!m) {
       // No landmarks anywhere in this frame. The PHOTO is still worth keeping —
       // see the note on photoOnly below — so it comes back without an analysis
       // rather than as nothing at all.
       return { photoOnly: true, dataUrl: canvas.toDataURL("image/jpeg", 0.82) };
     }
-    const pts = landmarksToPts(lms);
-    const eu = eulerFromMatrix4(res.matrix);
-    const proxy = proxyPose(pts);
-    const lighting = sampleLighting(canvas, faceBox(pts));
-    const framing = framingFromLandmarks(pts);
-    const smile = smileFromBlendshapes(res.blendshapes as never);
-    const yawDeg = eu?.yawDeg ?? proxy.yawDeg;
-    const rollDeg = eu?.rollDeg ?? proxy.rollDeg;
-    const pitchDeg = eu?.pitchDeg ?? proxy.pitchDeg;
-    const quality = scoreCapture({ kind, yawDeg, rollDeg, pitchDeg, lighting, framing, smile, hasFace: true });
-    const analysis = analyzeFaceLandmarks(pts, {
-      yawDeg, pitchDeg, rollDeg,
-      poseSource: eu ? "matrix" : "proxy",
-      lighting, framing, quality, smileBlend: smile,
-    });
-    // Pixel measurements come off the SAME canvas the landmarks were found on,
-    // so a patch placed at a landmark lands on the skin it names.
-    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    return {
-      analysis,
-      skin: analyseSkin(pixels, pts),
-      puffiness: puffinessRatio(pts),
-      harmony: measureHarmony(pts),
-      dataUrl: canvas.toDataURL("image/jpeg", 0.82),
-    };
+    return { ...m, dataUrl: canvas.toDataURL("image/jpeg", 0.82), sharpness: sharpnessOf(canvas) };
   }
 
   /**
@@ -361,6 +753,21 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     setBusy(true);
     liveRefs.current.busy = true;
     setBurstPct(0);
+    audio.update(null);
+    audio.cue("capture");
+    // Front: the screen is the flash. Back: the LED torch, already on for the
+    // preview; asked for again in case the camera switched it off.
+    const flash = settings.flash && settings.facing === "user";
+    const torch = settings.flash && settings.facing === "environment" ? await setTorch(true) : false;
+    if (settings.flash && settings.facing === "environment" && !torch) {
+      toast("Couldn't switch on the camera light — shooting without it.");
+    }
+    if (flash) {
+      setFlashing(true);
+      await sleep(FLASH_SETTLE_MS);
+    }
+    // The LED takes longer than the screen for exposure to settle on.
+    if (torch) await sleep(FLASH_SETTLE_MS * 2);
     try {
       const frames: Grab[] = [];
       for (let i = 0; i < BURST; i++) {
@@ -369,6 +776,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         setBurstPct(((i + 1) / BURST) * 100);
         if (i < BURST - 1) await sleep(80);
       }
+      setFlashing(false);
       if (!frames.length) {
         setStatus("Nothing came back from the camera. Try again.");
         return;
@@ -382,45 +790,77 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
       // month's is most of what a profile is for, and an invented measurement
       // would be far worse than an honest picture.
       if (!measured.length) {
-        await saveScanImage(id, frames[frames.length - 1]!.dataUrl);
+        const photo = frames[frames.length - 1]!.dataUrl;
+        await saveScanImage(id, photo);
+        const posture = kind === "face_side" ? await postureOf(photo) : undefined;
         addScan({
+          analyzer: ANALYZER_VERSION,
           id,
           date: getLocalDateKey(new Date()),
           capturedAt: new Date().toISOString(),
           kind,
+          ...(s.side ? { side: s.side } : {}),
+          ...(posture ? { posture } : {}),
         });
         setStatus(
-          "Photo kept, no measurements — the landmark model cannot read a head turned this far.",
+          posture?.cvaEst != null
+            ? `Photo kept. No face metrics at this angle, but neck angle ≈ ${posture.cvaEst.toFixed(1)}°.`
+            : "Profile photo kept. Face measurements at 90° come from the 3D scan.",
         );
+        audio.cue("done");
+        audio.announce(`${s.short} photo saved.`);
         toast.success(`${s.short} photo saved`);
         if (step < SESSION.length - 1) setStep(step + 1);
+        else finishIfAllDone();
         return;
       }
 
-      measured.sort((a, b) => (b.analysis.quality?.overall ?? 0) - (a.analysis.quality?.overall ?? 0));
-      const best = measured[0]!;
+      // Best frame by pose/light quality, sharpness breaking ties — then the
+      // symmetry reading is the median of every frame that passed its gates,
+      // so the kept number does not hinge on one instant.
+      const ranked = rankFrames(
+        measured.map((f) => ({ f, overall: f.analysis.quality?.overall ?? 0, sharpness: f.sharpness })),
+      );
+      const best = ranked[0]!.f;
+      const merged = mergeSymmetry(
+        measured.map((f) => ({ alpha: f.analysis.alpha, regional: f.analysis.regional, gatesOk: f.analysis.gates.ok })),
+      );
+      const keep = withMerged(best.analysis, merged, measured.length);
       await saveScanImage(id, best.dataUrl);
+      const posture = kind === "face_side" ? await postureOf(best.dataUrl) : undefined;
       addScan({
+        analyzer: ANALYZER_VERSION,
         id,
         date: getLocalDateKey(new Date()),
-        capturedAt: best.analysis.capturedAt,
+        capturedAt: keep.capturedAt,
         kind,
-        face: best.analysis,
+        ...(s.side ? { side: s.side } : {}),
+        face: keep,
         skin: best.skin,
         puffiness: best.puffiness,
         harmony: best.harmony,
+        capture: { facing: settings.facing, zoom: settings.zoom, iris: best.iris },
+        ...(posture ? { posture } : {}),
       });
-      const q = best.analysis.quality;
+      const q = keep.quality;
       setStatus(
         q?.ready
-          ? `Kept ${s.short}. Light ${best.analysis.lighting?.grade ?? "?"}.`
-          : `Kept the best of ${measured.length}. ${q?.coach ?? best.analysis.gates.reasons[0] ?? ""}`,
+          ? `Kept ${s.short}. Light ${keep.lighting?.grade ?? "?"}.`
+          : `Kept the best of ${measured.length}. ${q?.coach ?? keep.gates.reasons[0] ?? ""}`,
       );
-      toast.success(`${s.short} captured · evenness ${(100 - best.analysis.alpha * 100).toFixed(1)}`);
+      audio.cue("done");
+      audio.announce(`${s.short} captured.`);
+      toast.success(`${s.short} captured · evenness ${(100 - keep.alpha * 100).toFixed(1)}`);
+      // Keep the runners-up, so a better-looking frame can be swapped in.
+      setLastBurst({
+        id, kind, side: s.side, frames: ranked.slice(0, 4).map((r) => r.f), merged, total: measured.length, chosen: 0,
+      });
       if (q && q.overall >= 0.55 && step < SESSION.length - 1) setStep(step + 1);
+      else finishIfAllDone();
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Capture failed.");
     } finally {
+      setFlashing(false);
       setBusy(false);
       // A short cooldown, or the frame right after a capture is still green and
       // fires again immediately.
@@ -431,7 +871,56 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
     }
   }
 
-  /** A still from the library, through exactly the same pipeline. */
+  captureRef.current = capture;
+
+  /** Every angle has a scan: say so once, and stop coaching. */
+  function finishIfAllDone() {
+    const have = new Set(useSoma.getState().scans.map(scanSlot));
+    if (!SESSION.every((x) => have.has(slotOf(x)))) return;
+    liveRefs.current.finished = true;
+    audio.update(null);
+    audio.announce("All four angles done. You can close the scan.");
+    setStatus("All four angles captured. Tap a step to retake one, or close.");
+  }
+
+  /**
+   * The Front step on the Face ID camera. ARKit needs that camera to itself,
+   * so the preview stops for the scan and comes back after.
+   */
+  async function trueDepthFront() {
+    cancelAnimationFrame(rafRef.current);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setLive(false);
+    setBusy(true);
+    try {
+      const { runTrueDepthScan } = await import("@/lib/aether/truedepth-scan");
+      audio.enable();
+      const { record, extra } = await runTrueDepthScan(audio, "sweep", scans);
+      addScan(record);
+      extra.forEach(addScan);
+      const sym = record.depth?.sweep?.symmetry;
+      const noise = record.depth?.sweep?.symmetryNoiseMm;
+      toast.success(
+        sym
+          ? `3D sweep saved · asymmetry ${sym.rmsMm.toFixed(2)}${noise != null ? ` ± ${noise.toFixed(2)}` : ""} mm`
+          : "3D sweep saved",
+      );
+      // The sweep also filled 45°, so the next thing left is a profile.
+      setStep(extra.length ? 2 : 1);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "3D scan failed.";
+      if (!/cancelled/i.test(msg)) toast.error(msg);
+    } finally {
+      setBusy(false);
+      void startCam();
+    }
+  }
+
+  /**
+   * A still from the library: find the face, open the aligner already lined
+   * up on it, and measure only once it sits on the guides.
+   */
   async function fromFile(file: File) {
     setBusy(true);
     try {
@@ -442,39 +931,57 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         i.onerror = () => reject(new Error("Could not read that image."));
         i.src = URL.createObjectURL(file);
       });
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      canvas.width = img.width;
-      canvas.height = img.height;
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
       canvas.getContext("2d")?.drawImage(img, 0, 0);
-      const res = await detectFace(canvas);
-      const lms = res.faceLandmarks?.[0];
-      if (!lms) {
+      const found = await detectFaceTolerant(canvas).catch(() => null);
+      let auto: Placement | null = null;
+      if (found?.landmarks) {
+        const px = (i: number) => {
+          const q = found.landmarks![i];
+          return q ? { x: q.x * img.naturalWidth, y: q.y * img.naturalHeight } : null;
+        };
+        const l = px(FACE.leftIris), r = px(FACE.rightIris), brow = px(FACE.glabella), chin = px(FACE.chin);
+        if (l && r && brow && chin) auto = autoPlacement(l, r, brow, chin, ALIGN_W, ALIGN_H);
+      }
+      setAligning({ img, auto });
+      setStatus(auto ? "Lined up on your face — adjust if needed." : "No face found automatically. Place it by hand.");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Import failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Measure an aligned import, through exactly the capture pipeline. */
+  async function saveImported(canvas: HTMLCanvasElement) {
+    setAligning(null);
+    setBusy(true);
+    try {
+      const m = await measureCanvas(canvas, kind);
+      const posture = kind === "face_side" ? await measurePosture(canvas) : undefined;
+      if (!m && !posture) {
         setStatus("No face found in that image.");
         return;
       }
-      const pts = landmarksToPts(lms);
-      const eu = eulerFromMatrix4(res.facialTransformationMatrixes?.[0]?.data as number[] | undefined);
-      const proxy = proxyPose(pts);
-      const analysis = analyzeFaceLandmarks(pts, {
-        yawDeg: eu?.yawDeg ?? proxy.yawDeg,
-        pitchDeg: eu?.pitchDeg ?? proxy.pitchDeg,
-        rollDeg: eu?.rollDeg ?? proxy.rollDeg,
-        poseSource: eu ? "matrix" : "proxy",
-        lighting: sampleLighting(canvas, faceBox(pts)),
-        framing: framingFromLandmarks(pts),
-      });
-      const pixels = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height);
       const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
       await saveScanImage(id, canvas.toDataURL("image/jpeg", 0.82));
       addScan({
-        id, date: getLocalDateKey(new Date()), capturedAt: analysis.capturedAt, kind,
-        face: analysis,
-        skin: analyseSkin(pixels, pts),
-        puffiness: puffinessRatio(pts),
-        harmony: measureHarmony(pts),
+        analyzer: ANALYZER_VERSION,
+        id,
+        date: getLocalDateKey(new Date()),
+        capturedAt: m?.analysis.capturedAt ?? new Date().toISOString(),
+        kind,
+        ...(s.side ? { side: s.side } : {}),
+        ...(m ? { face: m.analysis, skin: m.skin, puffiness: m.puffiness, harmony: m.harmony } : {}),
+        ...(posture ? { posture } : {}),
       });
-      setStatus(`Imported as ${s.short}. Evenness ${(100 - analysis.alpha * 100).toFixed(1)}.`);
+      setStatus(
+        m
+          ? `Imported as ${s.short}. Evenness ${(100 - m.analysis.alpha * 100).toFixed(1)}.`
+          : `Imported as ${s.short}. Neck angle ≈ ${posture!.cvaEst?.toFixed(1) ?? "?"}°.`,
+      );
     } catch (err) {
       setStatus(err instanceof Error ? err.message : "Import failed.");
     } finally {
@@ -484,6 +991,20 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+      {aligning && (
+        <AlignSheet
+          img={aligning.img}
+          auto={aligning.auto}
+          front={kind === "face_front_true"}
+          onCancel={() => setAligning(null)}
+          onUse={(c) => void saveImported(c)}
+        />
+      )}
+      {flashing && (
+        // The whole screen becomes the light. Warm, not blue-white: truer skin
+        // tone and less squinting, which also keeps the eyes measurable.
+        <div aria-hidden className="fixed inset-0 z-[80]" style={{ background: FLASH_COLOR }} />
+      )}
       <div className="flex items-center justify-between border-b border-border px-4 pb-3">
         <div>
           <div className="font-display text-sm font-extrabold">Scan</div>
@@ -500,109 +1021,115 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         <div className="mb-2 flex gap-1.5" data-no-swipe-nav>
           {SESSION.map((x, i) => (
             <button
-              key={x.kind}
+              key={slotOf(x)}
               type="button"
               onClick={() => setStep(i)}
               className={cn(
                 "h-9 flex-1 rounded-full text-xs font-bold transition-colors",
                 step === i
                   ? "bg-accent text-accent-ink"
-                  : done.has(x.kind)
+                  : done.has(slotOf(x))
                     ? "bg-emerald-500/20 text-emerald-300"
                     : "bg-surface-2 text-muted",
               )}
             >
               {x.short}
-              {done.has(x.kind) ? " ✓" : ""}
+              {done.has(slotOf(x)) ? " ✓" : ""}
             </button>
           ))}
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-black">
-          {/* Mirrored preview so it behaves like a mirror. The analysis reads
-              the unmirrored canvas below, so left and right never swap. */}
-          <video ref={videoRef} className="w-full -scale-x-100" playsInline muted />
-          <canvas ref={canvasRef} className={cn("w-full", live && "hidden")} />
+        {/* One fixed 3:4 window, whatever shape the camera delivers: the frame
+            is centre-cropped to 3:4 for the preview, the analysis and the
+            saved photo alike, so what you see is exactly what is measured. */}
+        <div
+          className="relative mx-auto aspect-[3/4] w-full max-w-[calc(64svh*0.75)] overflow-hidden rounded-2xl border border-border bg-black"
+          style={{ containerType: "inline-size" }}
+        >
+          {/* The camera's own <video> only feeds the frames: it stays in the
+              page (iOS stops decoding a video that is display:none) but out of
+              sight. What you see is the preview canvas, drawn from exactly the
+              crop that is analysed — so no shape of camera frame (the iPhone
+              sometimes hands back square video) can leave bars, and the face
+              square can never drift off the face. */}
+          <video
+            ref={videoRef}
+            className="pointer-events-none absolute left-0 top-0 size-px opacity-0"
+            playsInline
+            muted
+          />
+          <canvas ref={previewRef} className="absolute inset-0 size-full" />
+          <canvas ref={canvasRef} className="hidden" />
           <canvas ref={smallRef} className="hidden" />
-
-          <svg
-            className="pointer-events-none absolute inset-0 size-full"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-          >
-            <line x1="33" y1="8" x2="33" y2="92" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
-            <line x1="66" y1="8" x2="66" y2="92" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
-            <line x1="8" y1="33" x2="92" y2="33" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
-            <line x1="8" y1="66" x2="92" y2="66" stroke="rgba(255,255,255,.12)" strokeWidth="0.2" />
-            {/* Centred only for the front shot. A turned face is not supposed
-                to straddle the middle of the frame, and a bright line saying it
-                should is the same mistake as the two eye marks. */}
-            <line
-              x1="50" y1="6" x2="50" y2="94"
-              stroke={
-                kind !== "face_front_true"
-                  ? "rgba(255,255,255,.10)"
-                  : ready
-                    ? "rgba(48,209,88,.75)"
-                    : "rgba(255,255,255,.4)"
-              }
-              strokeWidth={kind === "face_front_true" ? 0.3 : 0.18}
+          {!live && (
+            <div className="absolute inset-0 grid place-items-center text-xs font-bold text-white/50">
+              Opening the camera…
+            </div>
+          )}
+          {ghostUrl && live && (
+            // Saved photos are un-mirrored frames; mirror them like the preview.
+            <img
+              src={ghostUrl}
+              alt=""
+              aria-hidden
+              className="pointer-events-none absolute inset-0 size-full object-cover opacity-30"
+              style={{ transform: settings.facing === "user" ? "scaleX(-1)" : undefined }}
             />
-            <line x1="12" y1="40" x2="88" y2="40" stroke="rgba(255,255,255,.35)" strokeWidth="0.22" />
+          )}
 
-            {/* The eye marks belong to the POSE, not to the screen. Drawing two
-                of them on the profile step asked for something a profile
-                cannot do — you cannot put both eyes on marks when one of them
-                is behind your nose — so the guide was telling you that you had
-                failed at the exact moment you had done it right.
+          {frontGlow && (
+            // Ring light: a warm frame INSIDE the window, thicker toward the
+            // middle as the slider goes up. The window keeps its place, so
+            // nothing above or below is covered.
+            // A border in container-width units (the slider's % of the width),
+            // with an outer radius that grows with it so the INNER edge keeps
+            // a 32 px round corner at any thickness.
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0"
+              style={{
+                border: `${settings.glow}cqw solid ${FLASH_COLOR}`,
+                borderRadius: `calc(${settings.glow}cqw + 32px)`,
+              }}
+            />
+          )}
 
-                The profile line bulges right, so these steps all turn the face
-                to the right of frame: the near eye moves toward the nose side
-                and the far one narrows to nothing as it passes behind it. */}
-            {kind === "face_front_true" && (
-              <>
-                <ellipse cx="38" cy="40" rx="9" ry="6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
-                <ellipse cx="62" cy="40" rx="9" ry="6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
-                <ellipse cx="50" cy="48" rx="28" ry="36" fill="none" stroke="rgba(255,255,255,.22)" strokeWidth="0.3" />
-              </>
-            )}
+          {live && (
+            <FaceRing
+              square={square}
+              ready={ready}
+              progress={ringProgress}
+              cue={screenCue(guidance, settings.facing === "user")}
+            />
+          )}
 
-            {kind === "face_oblique" && (
-              <>
-                {/* Near eye keeps its width; the far one is foreshortened and
-                    sits close to the nose line, which is what 45° looks like. */}
-                <ellipse cx="44" cy="40" rx="8.5" ry="5.6" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
-                <ellipse cx="66" cy="40" rx="4.5" ry="5" fill="none" stroke="rgba(10,132,255,.5)" strokeWidth="0.35" />
-                <path d="M58 16 C78 28 82 70 62 88" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
-              </>
-            )}
-
-            {kind === "face_side" && (
-              <>
-                {/* ONE eye. The other is behind the nose at a true profile. */}
-                <ellipse cx="60" cy="40" rx="7" ry="5.4" fill="none" stroke="rgba(10,132,255,.85)" strokeWidth="0.4" />
-                {/* And the ear, which is the landmark a profile is judged on —
-                    the CVA measurement is taken from the tragus. */}
-                <circle cx="33" cy="43" r="4.5" fill="none" stroke="rgba(10,132,255,.5)" strokeWidth="0.35" />
-                <text x="33" y="51.5" fill="rgba(10,132,255,.6)" fontSize="3" textAnchor="middle">
-                  ear
-                </text>
-                <path d="M68 14 C88 30 90 72 70 90" fill="none" stroke="rgba(10,132,255,.55)" strokeWidth="0.45" />
-              </>
-            )}
-            {eyes && (
-              <>
-                <circle cx={eyes.lx * 100} cy={eyes.ly * 100} r="1.1" fill="#0a84ff" />
-                <circle cx={eyes.rx * 100} cy={eyes.ry * 100} r="1.1" fill="#0a84ff" />
-                {/* The midline is only meaningful where there is a midline to
-                    be on. At profile it is behind the face and lining up to it
-                    would be actively wrong. */}
-                {kind === "face_front_true" && (
-                  <line x1={eyes.mx * 100} y1="8" x2={eyes.mx * 100} y2="92" stroke="rgba(10,132,255,.35)" strokeWidth="0.2" />
-                )}
-              </>
-            )}
-          </svg>
+          {/* Camera controls on the picture, where a phone camera has them. */}
+          <div className="absolute right-2 top-2 flex flex-col gap-2" data-no-swipe-nav>
+            <button
+              type="button"
+              aria-label={settings.flash ? "Flash on" : "Flash off"}
+              aria-pressed={settings.flash}
+              onClick={() => patchSettings({ flash: !settings.flash })}
+              className={cn(
+                "grid size-9 place-items-center rounded-full backdrop-blur",
+                settings.flash ? "bg-[#ffd60a] text-black" : "bg-black/50 text-white",
+              )}
+            >
+              {settings.flash ? <Zap className="size-4" /> : <ZapOff className="size-4" />}
+            </button>
+            <button
+              type="button"
+              aria-label="Switch camera"
+              onClick={() => {
+                const f = settings.facing === "user" ? "environment" : "user";
+                patchSettings({ facing: f });
+                if (live) void startCam({ facing: f });
+              }}
+              className="grid size-9 place-items-center rounded-full bg-black/50 text-white backdrop-blur"
+            >
+              <SwitchCamera className="size-4" />
+            </button>
+          </div>
 
           {hud && (
             <div className="absolute left-2 top-2 flex gap-1.5">
@@ -621,13 +1148,24 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
                   {label} {Math.round(v * 100)}
                 </span>
               ))}
+              {dist && (
+                // Shown as the ratio to the first scan, so "how far off" is a number.
+                <span
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[0.55rem] font-extrabold tabular-nums",
+                    dist.cue === "ok" ? "bg-emerald-500/25 text-emerald-300" : "bg-danger/25 text-red-300",
+                  )}
+                >
+                  DIST {dist.cue === "ok" ? "✓" : dist.cue === "back" ? "↓ back" : "↑ closer"}
+                </span>
+              )}
             </div>
           )}
 
           {pose && (
             // The raw angles, so the coach line can be checked rather than
             // taken on faith. "Turn more" is not falsifiable; 41° is.
-            <div className="absolute right-2 top-2 rounded-lg bg-black/55 px-2 py-1 text-right text-[0.55rem] font-bold tabular text-white/75">
+            <div className="absolute bottom-10 right-2 rounded-lg bg-black/55 px-2 py-1 text-right text-[0.55rem] font-bold tabular text-white/75">
               <div>yaw {pose.yaw.toFixed(0)}°</div>
               <div className="text-white/50">
                 target {s.yawAbs[0]}–{s.yawAbs[1]}°
@@ -644,18 +1182,8 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           >
             {holding > 0
               ? `Hold… ${Math.max(1, HOLD_FRAMES - holding)}`
-              : (hud?.coach ?? s.coach)}
+              : (guidance?.phrase ?? hud?.coach ?? s.coach)}
           </div>
-
-          {holding > 0 && (
-            // A ring closing round the frame, so the countdown is visible
-            // without looking away from your own face.
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 rounded-2xl border-4 border-emerald-400 transition-opacity"
-              style={{ opacity: holding / HOLD_FRAMES }}
-            />
-          )}
 
           {burstPct > 0 && (
             <div className="absolute inset-x-0 top-0 h-1 bg-white/10">
@@ -664,7 +1192,140 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
+        {frontGlow && (
+          <label className="mt-2 flex items-center gap-3 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+            Ring light
+            <input
+              type="range"
+              min={GLOW_MIN}
+              max={GLOW_MAX}
+              value={settings.glow}
+              onChange={(e) => patchSettings({ glow: Number(e.target.value) })}
+              className="flex-1 accent-[#fff1dc]"
+              data-no-swipe-nav
+            />
+          </label>
+        )}
+
+        {hasTrueDepth && kind === "face_front_true" && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void trueDepthFront()}
+            className="mt-2 w-full rounded-xl border border-accent/40 bg-accent/10 px-3 py-2 text-left text-xs font-bold text-accent disabled:opacity-50"
+          >
+            3D sweep with the Face ID camera (most accurate)
+            <span className="block text-[0.62rem] font-semibold text-faint">
+              Look straight, then circle your head slowly like Face ID setup. Front and 45° in one
+              pass, in real millimetres, with its own error margin.
+            </span>
+          </button>
+        )}
+
         <p className="mt-2 text-xs text-muted">{status}</p>
+
+        {!live && (
+          <div className="mt-2 rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-xs">
+            <div className="mb-1 font-bold">Before you scan</div>
+            {/* The things that change a reading more than your face does. */}
+            <ul className="space-y-0.5 text-muted">
+              <li>• Hair off the forehead, glasses off</li>
+              <li>• Jaw relaxed, teeth apart, no smile</li>
+              <li>• Same light and time of day as last time</li>
+              <li>• Phone at eye level, stand where you stood before</li>
+            </ul>
+          </div>
+        )}
+
+        {lastBurst && lastBurst.frames.length > 1 && (
+          <div className="mt-2">
+            <div className="mb-1 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+              Kept the best of the burst — tap another to use it instead
+            </div>
+            <div className="flex gap-1.5">
+              {lastBurst.frames.map((f, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => void pickFrame(i)}
+                  className={cn(
+                    "overflow-hidden rounded-lg border-2",
+                    i === lastBurst.chosen ? "border-accent" : "border-transparent opacity-70",
+                  )}
+                >
+                  <img src={f.dataUrl} alt={`Frame ${i + 1}`} className="h-16 w-12 object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {hud && hud.lighting < 0.5 && !settings.flash && (
+          <button
+            type="button"
+            onClick={() => patchSettings({ flash: true })}
+            className="mt-2 w-full rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-left text-xs font-bold text-amber-200"
+          >
+            Too dark for a reliable reading — tap to turn on the flash
+          </button>
+        )}
+
+        <div className="mt-3 space-y-2" data-no-swipe-nav>
+          <ChipRow label="Camera">
+            {(["user", "environment"] as const).map((f) => (
+              <Chip
+                key={f}
+                on={settings.facing === f}
+                onClick={() => {
+                  if (settings.facing === f) return;
+                  patchSettings({ facing: f });
+                  if (live) void startCam({ facing: f });
+                }}
+              >
+                {f === "user" ? "Front" : "Back"}
+              </Chip>
+            ))}
+          </ChipRow>
+          <ChipRow label="Zoom">
+            {([1, 2, 3] as const).map((z) => (
+              <Chip
+                key={z}
+                on={settings.zoom === z}
+                onClick={() => {
+                  if (settings.zoom === z) return;
+                  patchSettings({ zoom: z });
+                  // A lens change (3x telephoto) needs a new stream; a crop does not,
+                  // but restarting keeps the two paths identical.
+                  if (live) void startCam({ zoom: z });
+                }}
+              >
+                {z}×
+              </Chip>
+            ))}
+          </ChipRow>
+          <ChipRow label="Assist">
+            <Chip on={settings.flash} onClick={() => patchSettings({ flash: !settings.flash })}>
+              Flash
+            </Chip>
+            <Chip on={settings.sound} onClick={() => patchSettings({ sound: !settings.sound })}>
+              Beeps
+            </Chip>
+            <Chip on={settings.voice} onClick={() => patchSettings({ voice: !settings.voice })}>
+              Voice
+            </Chip>
+            <Chip on={settings.lock} onClick={() => patchSettings({ lock: !settings.lock })}>
+              Match
+            </Chip>
+            <Chip on={settings.ghost} onClick={() => patchSettings({ ghost: !settings.ghost })}>
+              Ghost
+            </Chip>
+          </ChipRow>
+          <p className="text-[0.62rem] leading-snug text-faint">
+            Beeps speed up as you get closer to the pose and come from the side to turn
+            toward — best in AirPods. A steady tone means hold still. Sound follows your
+            silent switch. Match holds every scan to your first scan's distance; Ghost shows your last one faintly to line up with. {hwZoom ? "Zoom uses the camera lens." : "Zoom crops the frame: stand further back to fill it, which is what removes selfie distortion."}
+          </p>
+        </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Button onClick={() => void startCam()}>{live ? "Restart camera" : "Camera"}</Button>
@@ -709,7 +1370,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         </button>
 
         <label className="mt-2 flex h-11 cursor-pointer items-center justify-center rounded-xl border border-border bg-surface-2 text-sm font-semibold">
-          Import a still instead
+          Import from camera roll
           <input
             type="file"
             accept="image/*"
@@ -730,5 +1391,33 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
         </p>
       </div>
     </div>
+  );
+}
+
+function ChipRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-12 shrink-0 text-[0.6rem] font-bold uppercase tracking-wider text-faint">{label}</span>
+      <div className="flex flex-1 gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+function Chip({
+  on, disabled, onClick, children,
+}: { on: boolean; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-pressed={on}
+      className={cn(
+        "h-8 flex-1 rounded-full text-xs font-bold transition-colors disabled:opacity-40",
+        on ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted",
+      )}
+    >
+      {children}
+    </button>
   );
 }

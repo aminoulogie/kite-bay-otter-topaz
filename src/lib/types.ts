@@ -4,7 +4,7 @@ import type { HabitRamp } from "./habit-ramp";
 export type { HabitRamp };
 
 import type { TrainingGoal } from "./goal-mode.ts";
-export type SetType = "normal" | "dropset" | "warmup";
+export type SetType = "normal" | "dropset" | "warmup" | "feeder" | "stretch";
 export type Unit = "kg" | "lb";
 export type ThemePref = "dark" | "light" | "system";
 export type TabId =
@@ -46,6 +46,13 @@ export interface WorkoutSet {
    */
   limiter?: "target" | "synergist" | "form" | "choice";
   closeness?: "reps_left" | "one_left" | "nothing" | "forced";
+  /** Numeric RPE, set directly by the feeder quick-log. Absent elsewhere. */
+  rpe?: number | null;
+  /** Omni-grip: how the set was held. Absent means "not recorded". */
+  grip?: {
+    width: "wide" | "medium" | "narrow";
+    orientation: "pronated" | "supinated" | "neutral";
+  };
   limitedBy?: string[];
   burn?: 1 | 2 | 3;
   form?: 1 | 2 | 3;
@@ -343,6 +350,16 @@ export interface Settings {
    */
   tradingEquity?: number;
   /**
+   * Dollars per point at 1.00 lot, where your broker differs from the table.
+   *
+   * Forex and the metals are contract arithmetic and need no correcting. The
+   * indices and crypto are a CFD convention that brokers vary, and a risk
+   * figure you cannot check against your own account is one you should not
+   * trust — so the value is shown on the card and can be replaced. Keyed by
+   * instrument id; only entries that differ from the shipped figure are kept.
+   */
+  pointValues?: Record<string, number>;
+  /**
    * Which way you are eating. Decides whether hunger costs points: on a cut it
    * is the deficit working, on a bulk it means the surplus did not happen.
    */
@@ -441,6 +458,10 @@ export interface ExerciseDef {
   tier: string;
   isAxial: boolean;
   isBW: boolean;
+  /** Photo blob key in the exercise-photos IndexedDB store, when the user set one. */
+  photoId?: string;
+  /** Remote image (Muscle & Strength CDN) shown until the user sets their own photo. */
+  img?: string;
 }
 
 /**
@@ -466,7 +487,13 @@ export interface TodoItem {
   id: string;
   text: string;
   done: boolean;
-  /** The day it was added, so a list can be cleared by age rather than by hand. */
+  /**
+   * The day it was added — or last moved, see `scope` below.
+   *
+   * Kept as one meaning for both lists on purpose: a "day" item is active
+   * while this IS today, a "week" item is active while this falls inside the
+   * current Monday-to-Sunday week. See lib/todos.ts for the arithmetic.
+   */
   date: string;
   /**
    * When it has to be done by, as a local date key. Optional, and stays that
@@ -474,6 +501,20 @@ export interface TodoItem {
    * turns "buy milk" into an appointment.
    */
   due?: string;
+  /**
+   * Which list this lives on. Undefined reads as `"day"` — every to-do made
+   * before the weekly list existed was a single flat list tied to the day it
+   * was added, which is exactly what `"day"` means now.
+   */
+  scope?: "day" | "week";
+  /**
+   * Swept out of the active list by hand, before its day or week was up.
+   *
+   * Not a delete. The item still belongs to the day (or week) in `date` for
+   * history's sake — this only hides it from the list you are working from,
+   * which is what "Clear done" does instead of throwing the row away.
+   */
+  cleared?: boolean;
 }
 
 export interface MindEntry {

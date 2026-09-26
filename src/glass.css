@@ -1,0 +1,403 @@
+/* ==========================================================================
+   Liquid Glass.
+
+   Apple's iOS 26 material, built with CSS: a surface that looks like a pane of
+   glass floating over the page — translucent, blurring and saturating whatever
+   is behind it, catching a line of light along its top edge (the "specular
+   rim"), and carrying a faint sheen that drifts as the device tilts.
+
+   The system is split into two strength classes, on purpose:
+
+   * Hero surfaces — the header, the dock, the desktop rail, overlay scrims,
+     sheet panels, drawers and full-screen sheets — get REAL translucency plus
+     a backdrop filter. They are few, and only one or two are composited at a
+     time, so the blur they pay for is the thing that makes the glass visible.
+
+   * Secondary surfaces — cards, chips, buttons, inputs, badges, inner panels —
+     keep their existing opaque base colour and get the specular rim, the sheen
+     and the depth shadow. No backdrop filter. Twenty cards each running a
+     blur would cost the 120fps budget this file exists to protect; the rim and
+     sheen read as the same material at a fraction of the cost. This is also
+     how iOS tiers its materials: secondary surfaces are tinted, not blurred.
+
+   Tilt parallax: use-liquid-glass.ts publishes --glass-tx / --glass-ty on the
+   root element (pointer position on desktops, device orientation on phones),
+   eased every animation frame. Only two layers consume them — the ambient
+   backdrop and its light spots — so the whole parallax costs two compositor
+   moves, nothing else, and every rule that samples the vars degrades to a
+   static frame when they are absent (old browsers, reduced motion, tests).
+
+   Every effect in this file is disabled under prefers-reduced-motion: the
+   parallax vars are zeroed and the ambient layer sits still. The existing
+   rule in styles.css already flattens animation/transition durations, so this
+   file only has to handle its own continuously-updated properties.
+   ========================================================================== */
+
+:root {
+  /* The one blur the hero surfaces share. */
+  --glass-blur: 22px;
+  --glass-sat: 1.8;
+
+  /* Fills. Each is a translucent wash over the (already blurred) backdrop. */
+  --glass-tint-header: rgba(11, 12, 16, 0.72);
+  --glass-tint-dock: rgba(20, 23, 32, 0.78);
+  --glass-tint-rail: rgba(255, 255, 255, 0.04);
+  --glass-tint-panel: rgba(22, 26, 37, 0.76); /* sheets & drawers */
+  --glass-tint-page: rgba(11, 12, 16, 0.9);   /* full-screen sheets */
+
+  /* The specular rim: light caught on the top edge of the glass. */
+  --glass-rim-top: rgba(255, 255, 255, 0.18);
+  --glass-rim-soft: rgba(255, 255, 255, 0.09);
+
+  /* The sheen: a diagonal fall of light over the surface. Painted as a
+     background-image LAYER over the element's own background colour, which is
+     why secondary surfaces keep their opaque base: colour below, light above. */
+  --glass-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.09) 0%,
+    rgba(255, 255, 255, 0.025) 42%,
+    rgba(255, 255, 255, 0) 72%
+  );
+  --glass-sheen-strong: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.13) 0%,
+    rgba(255, 255, 255, 0.03) 40%,
+    rgba(255, 255, 255, 0) 70%
+  );
+
+  /* The vertical offset is at least half the blur on purpose: a shadow
+     reaches up by (blur / 2 - offset), and at 10px/28px that was four pixels
+     of darkness above every card, landing on the bottom edge of whatever it
+     was stacked under. Below the card is where a shadow belongs. */
+  --glass-shadow-card:
+    inset 0 1px 0 var(--glass-rim-soft),
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 13px 26px rgba(0, 0, 0, 0.28);
+  --glass-shadow-float:
+    inset 0 1px 0 var(--glass-rim-top),
+    0 8px 20px rgba(0, 0, 0, 0.4),
+    0 24px 60px rgba(0, 0, 0, 0.45);
+
+  /* Ambient light spots. Accent-tinted, very low opacity: their only job is
+     to give the translucent layers something to refract. Without them a flat
+     page behind glass reads as grey nothing. */
+  --glass-ambient-accent: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --glass-ambient-cool: rgba(56, 189, 248, 0.07);
+  --glass-ambient-warm: rgba(245, 158, 11, 0.05);
+}
+
+html[data-soma-theme="light"] {
+  --glass-tint-header: rgba(244, 246, 249, 0.72);
+  --glass-tint-dock: rgba(255, 255, 255, 0.85);
+  --glass-tint-rail: rgba(255, 255, 255, 0.5);
+  --glass-tint-panel: rgba(255, 255, 255, 0.82);
+  --glass-tint-page: rgba(244, 246, 249, 0.92);
+
+  --glass-rim-top: rgba(255, 255, 255, 0.95);
+  --glass-rim-soft: rgba(255, 255, 255, 0.65);
+
+  --glass-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.8) 0%,
+    rgba(255, 255, 255, 0.25) 45%,
+    rgba(255, 255, 255, 0) 72%
+  );
+  --glass-sheen-strong: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.3) 40%,
+    rgba(255, 255, 255, 0) 70%
+  );
+
+  --glass-shadow-card:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(16, 24, 40, 0.06),
+    0 12px 24px rgba(16, 24, 40, 0.1);
+  --glass-shadow-float:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 8px 20px rgba(16, 24, 40, 0.12),
+    0 24px 56px rgba(16, 24, 40, 0.16);
+
+  --glass-ambient-accent: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --glass-ambient-cool: rgba(56, 189, 248, 0.08);
+  --glass-ambient-warm: rgba(245, 158, 11, 0.06);
+}
+
+/* ==========================================================================
+   Ambient backdrop.
+
+   One fixed layer behind everything the app draws. Two huge radial light
+   spots sit inside it and counter-drift with the tilt, which is the depth
+   cue that makes the glass read as glass rather than as a grey rectangle.
+   Radii are drawn INTO the gradients (transparent falloff), so there is no
+   blur filter here — the layer rasters once and then only ever transforms.
+
+   Compositor-only: the vars change every frame while tilting, but all that
+   moves is a translate3d, so 120Hz costs two composited layer moves.
+   ========================================================================== */
+.soma-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  /* Scaled slightly past the edges so the parallax shift never shows the
+     seam where the backdrop ends. */
+  transform: translate3d(
+      calc(var(--glass-tx, 0) * -18px),
+      calc(var(--glass-ty, 0) * -12px),
+      0
+    )
+    scale(1.12);
+  transform-origin: center;
+  will-change: transform;
+}
+
+.soma-ambient::before,
+.soma-ambient::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+}
+
+/* The accent spot drifts WITH the tilt (foreground light). */
+.soma-ambient::before {
+  top: -22%;
+  left: -18%;
+  width: 72vmax;
+  height: 72vmax;
+  background: radial-gradient(
+    circle at center,
+    var(--glass-ambient-accent) 0%,
+    transparent 62%
+  );
+  transform: translate3d(
+    calc(var(--glass-tx, 0) * 26px),
+    calc(var(--glass-ty, 0) * 18px),
+    0
+  );
+}
+
+/* The cool/warm spots drift against it (far light), which is what sells the
+   sense of two panes of glass at different depths. */
+.soma-ambient::after {
+  bottom: -28%;
+  right: -22%;
+  width: 84vmax;
+  height: 84vmax;
+  background:
+    radial-gradient(circle at 30% 30%, var(--glass-ambient-cool) 0%, transparent 55%),
+    radial-gradient(circle at 70% 70%, var(--glass-ambient-warm) 0%, transparent 55%);
+  transform: translate3d(
+    calc(var(--glass-tx, 0) * -16px),
+    calc(var(--glass-ty, 0) * -11px),
+    0
+  );
+}
+
+/* ==========================================================================
+   Hero surfaces — real translucency + backdrop blur.
+   ========================================================================== */
+
+/* The sticky header. Translucent so the page refracts through it while it
+   scrolls underneath, blurred so type passing under it never fights the
+   header's own type. */
+.glass-header {
+  background: var(--glass-tint-header);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow:
+    inset 0 -1px 0 var(--glass-rim-soft),
+    0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+/* The floating dock. The heaviest glass in the app: it floats over content,
+   so it gets the strongest blur, the strongest rim and the deepest shadow. */
+.glass-dock {
+  background: var(--glass-tint-dock);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-sat));
+  backdrop-filter: blur(calc(var(--glass-blur) + 6px)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-shadow-float);
+}
+
+/* The selected-tab pill rides ON the glass, so it becomes a tinted-glass
+   button itself: bright top catch, darker underside, accent glow. */
+.glass-dock > span[aria-hidden] {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    var(--shadow-glow);
+}
+
+/* The desktop rail. */
+.glass-rail {
+  background: var(--glass-tint-rail);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow:
+    inset -1px 0 0 var(--glass-rim-soft),
+    inset 0 1px 0 var(--glass-rim-soft);
+}
+
+/* Overlay scrims. Every fixed, full-viewport overlay that dims the page
+   (bg-black/xx, bg-bg/xx) also frosts it: one blur for the whole backdrop,
+   which the panel on top then tints — the panel itself never needs its own
+   backdrop filter, so nested-filter artifacts cannot happen.
+
+   Excluded:
+   * `bg-bg` (exact token) — full-screen opaque sheets, handled below. They
+     get their own blur because they ARE the panel.
+   * `opacity-0` — a closed drawer's scrim stays mounted and invisible; blur
+     behind an invisible element is a compositor bill nobody can see. */
+[class~="fixed"][class~="inset-0"]:not([class~="bg-bg"]):not([class~="opacity-0"]) {
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) - 6px)) saturate(var(--glass-sat));
+  backdrop-filter: blur(calc(var(--glass-blur) - 6px)) saturate(var(--glass-sat));
+}
+
+/* Full-screen sheets (scan, report, routine runner, settings panels). The
+   page stays softly visible through them, so the sheet reads as one big pane
+   of glass instead of a new screen that forgot its background. */
+[class~="fixed"][class~="inset-0"][class~="bg-bg"] {
+  background: var(--glass-tint-page);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+}
+
+/* Sheet panels. Everything that rises from the bottom of a scrim — the
+   .soma-expand and .soma-sheet hooks the sheets already carry, plus a class
+   for the three panels that were written before either convention (the date
+   drawer, the photo calendar dialog, the membership sheet). Translucent over
+   the frosted scrim: the tint is the glass, the blur comes from underneath. */
+[class~="fixed"][class~="inset-0"] > :is(.soma-expand, .soma-sheet),
+.glass-panel {
+  background: var(--glass-tint-panel);
+  box-shadow: var(--glass-shadow-float);
+}
+
+/* ==========================================================================
+   Secondary surfaces — specular rim + sheen, no backdrop filter.
+
+   The background COLOUR stays the element's own (bg-surface, bg-surface-2,
+   whatever the class list says). What this adds is the light: a sheen layer
+   painted over the colour, a 1px catch along the top edge, and the shadow
+   depth. Hover/active colour states are untouched, so interactive feedback
+   keeps working exactly as written.
+
+   The selector net below is deliberate: every bordered, rounded surface chip
+   in the app — inner panels, table boxes, heatmap frames — picks the
+   treatment up without each call site having to remember a class. Buttons,
+   inputs and selects are excluded from the net (they get it through
+   .glass-btn / .glass-field), and so is anything with its own background
+   shorthand, like .soma-skeleton's shimmer.
+   ========================================================================== */
+.glass-card,
+/* A widget's children get the glass only if they are a SURFACE.
+   `> *` matched every direct child, including the transparent layout
+   wrappers — `grid grid-cols-2 gap-2`, `flex flex-wrap gap-2` — that exist
+   only to arrange things. Those then cast a rounded drop shadow and drew a
+   white rim across whatever was behind them, which is what put a dark
+   rounded corner over the accent buttons underneath. A box with no surface
+   has no edge to catch the light on. */
+.soma-widget-box
+  > :where([class~="bg-surface"], [class~="bg-surface-2"], [class~="bg-surface-3"]),
+.soma-widget-natural
+  > :where([class~="bg-surface"], [class~="bg-surface-2"], [class~="bg-surface-3"]),
+:where(div, section, article, aside):where(
+    [class~="rounded-2xl"],
+    [class~="rounded-xl"],
+    [class~="rounded-lg"]
+  )[class~="border-border"]:where(
+    [class~="bg-surface"],
+    [class~="bg-surface-2"],
+    [class~="bg-surface-3"]
+  ) {
+  background-image: var(--glass-sheen);
+  box-shadow: var(--glass-shadow-card);
+}
+
+/* Cards that already carry shadow-card get the stronger glass shadow by
+   class instead of by the net above, so the two never fight. */
+.glass-card {
+  background-image: var(--glass-sheen-strong);
+  box-shadow: var(--glass-shadow-card);
+}
+
+/* Chips: tab bars, badges. */
+.glass-chip {
+  background-image: var(--glass-sheen);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim-soft),
+    0 2px 10px rgba(0, 0, 0, 0.16);
+}
+
+/* Buttons. The specular catch on top is what turns a flat fill into a
+   tinted-glass control; the press scale already in styles.css gives the
+   "push into the glass" response. */
+.glass-btn {
+  box-shadow: inset 0 1px 0 var(--glass-rim-soft);
+}
+
+.glass-btn:where([class~="bg-accent"]) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.16),
+    var(--shadow-glow);
+}
+
+.glass-btn:where([class~="bg-transparent"]) {
+  box-shadow: none;
+}
+
+/* Inputs: an inset catch-light plus a faint inner shadow, so the field reads
+   as recessed glass the user can press into. The focus ring already in
+   input.tsx replaces this on focus. */
+.glass-field {
+  background-image: var(--glass-sheen);
+  box-shadow:
+    inset 0 1px 0 var(--glass-rim-soft),
+    inset 0 2px 6px rgba(0, 0, 0, 0.14);
+}
+
+/* ==========================================================================
+   Motion. Nothing here animates layout: transforms and opacity only, which
+   is the whole 120Hz contract — the compositor runs them at the display's
+   refresh rate while the main thread does nothing.
+   ========================================================================== */
+
+/* The dock pill glides with a spring, transform-only (see AppShell.tsx). */
+.glass-dock > span[aria-hidden],
+.soma-pill {
+  will-change: transform;
+}
+
+/* Reduced motion: the tilt vars are zeroed, so every parallax consumer is
+   static, and nothing in this file moves. The global rule in styles.css
+   flattens the rest. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --glass-tx: 0;
+    --glass-ty: 0;
+  }
+  .soma-ambient,
+  .soma-ambient::before,
+  .soma-ambient::after {
+    transform: none !important;
+  }
+}
+
+/* Print: paper has no glass. The ambient layer would otherwise sit over the
+   white page. */
+@media print {
+  .soma-ambient {
+    display: none;
+  }
+  .glass-header,
+  .glass-dock,
+  .glass-rail,
+  .glass-panel {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+}

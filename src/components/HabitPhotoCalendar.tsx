@@ -99,7 +99,7 @@ export function HabitPhotoCalendar({ habit, onClose }: { habit: Habit; onClose: 
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-surface">
+      <div className="glass-panel flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border">
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0">
           <div className="truncate font-display text-sm font-extrabold">{habit.name}</div>

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist, type PersistStorage } from "zustand/middleware";
+import msExercises from "./ms-exercises.json";
 import {
   BASE_EXERCISE_DB,
   DEFAULT_GOALS,
@@ -38,6 +39,7 @@ import { followsSettings, resolveGoals, sameGoals } from "./goals";
 import { learn, unlearn, type LangTrack } from "./lang/study";
 import type { LangCode, Level } from "./lang/words";
 import { resolveTab } from "./tab-order";
+import { isActive, scopeOf, type TodoScope } from "./todos";
 
 /** One entry per language, with the words taken on either device kept. */
 function mergeLangs(incoming: unknown, mine: LangTrack[]): LangTrack[] {
@@ -86,7 +88,7 @@ import type { HungerEntry } from "./hunger";
 import {
   deduct, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
 } from "./pantry";
-import { deloadSetCount } from "./autoregulate";
+import { deloadSetCount, feederRamp } from "./autoregulate";
 import { cleanDue } from "./due";
 import {
   clampStep, cleanRoutine, newRoutineId, newStepId as newRoutineStepId, startRun,
@@ -158,7 +160,7 @@ export interface SomaStore {
   activeProgram: () => Program;
   setPrograms: (programs: Program[]) => void;
   setActiveProgram: (id: string) => void;
-  refreshScheduledDay: () => void;
+  refreshScheduledDay: (force?: boolean) => void;
   purgeNutritionBefore: (cutoff: string) => number;
   upsertLibraryFood: (food: FoodItem) => void;
   foodLibrary: () => FoodItem[];
@@ -168,7 +170,7 @@ export interface SomaStore {
   isFoodEdited: (name: string) => boolean;
   clearSeededHabitHistory: () => number;
   normalizeLive: () => void;
-  rollDayIfNeeded: () => boolean;
+  rollDayIfNeeded: () => { rolled: boolean; saved: boolean };
   setTab: (tab: SomaStore["tab"]) => void;
   setActiveDate: (d: string) => void;
   patchSettings: (p: Partial<Settings>) => void;
@@ -211,6 +213,34 @@ export interface SomaStore {
    * that reopens into a mode you forgot you left on looks broken.
    */
   editingDashboard: boolean;
+  /**
+   * The book that was open when the app went away, or null.
+   *
+   * PERSISTED, and the distinction it draws is the whole point: this is set
+   * while a book is OPEN and cleared when you close it. So "left it on" means
+   * left — walked away, locked the phone, got killed in the background — and
+   * not "finished with". Shut the book and the app opens on Home next time,
+   * the way it always did.
+   */
+  readingBook: string | null;
+  setReadingBook: (id: string | null) => void;
+  /**
+   * A book another card has asked to open, at a passage inside it.
+   *
+   * The highlights list and the shelf are separate widgets on the same page
+   * with no way to talk to each other, and "take me to this one" has to cross
+   * that gap. A field rather than a prop chain because the two are siblings
+   * under a layout grid that reorders them.
+   *
+   * Deliberately NOT persisted. It is a request made a moment ago, and an app
+   * that reopens by throwing you into chapter nine of a book you closed last
+   * week has not remembered anything useful — it has lost your place.
+   */
+  openBookAt: { bookId: string; chapter: number; offset: number } | null;
+  /** Ask for a book to be opened at a character offset in a chapter. */
+  askForBook: (bookId: string, chapter: number, offset: number) => void;
+  /** Said by whoever honoured the request, so it is not honoured twice. */
+  bookOpened: () => void;
   planFor: (date?: string) => TimeBlock[];
   setDayPlan: (date: string, blocks: TimeBlock[]) => void;
   resetDayPlan: (date: string) => void;
@@ -275,15 +305,23 @@ export interface SomaStore {
   renameProjectStep: (id: string, stepId: string, label: string) => void;
   moveProjectStep: (id: string, stepId: string, delta: number) => void;
   removeProjectStep: (id: string, stepId: string) => void;
-  addTodo: (text: string) => void;
+  /** Defaults to the day list — see lib/todos.ts for what that means. */
+  addTodo: (text: string, scope?: TodoScope) => void;
   toggleTodo: (id: string) => void;
   renameTodo: (id: string, text: string) => void;
   /** Set or clear a to-do's deadline. Null clears it. */
   setTodoDue: (id: string, due: string | null) => void;
+  /** Move it onto the other list, dated as of right now. */
+  setTodoScope: (id: string, scope: TodoScope) => void;
   removeTodo: (id: string) => void;
   restoreTodo: (idx: number, todo: TodoItem) => void;
-  /** Drop everything already ticked. */
-  clearDoneTodos: () => number;
+  /**
+   * Sweep what is done, on one list, out of the active view.
+   *
+   * Not a delete — see `TodoItem.cleared`. Returns how many moved, for the
+   * toast.
+   */
+  clearDoneTodos: (scope: TodoScope) => number;
   /** What is in the house, and the list of what is not. */
   pantry: PantryItem[];
   grocery: GroceryLine[];
@@ -348,12 +386,17 @@ export interface SomaStore {
   loadSplit: (name: string) => void;
   addExercise: (name: string) => void;
   addCustomExercise: (ex: ExerciseDef) => void;
+  upsertCustomExercise: (ex: ExerciseDef) => void;
+  importExercises: (list: { name: string; muscle?: string; img?: string; tier?: string }[]) => void;
   updateSet: (exIdx: number, setIdx: number, patch: Partial<WorkoutSet>) => void;
   updateExercise: (exIdx: number, patch: Partial<SessionExercise>) => void;
   addSet: (exIdx: number, type?: WorkoutSet["type"]) => void;
   removeSet: (exIdx: number, setIdx: number) => void;
   removeExercise: (exIdx: number) => void;
   cycleSetType: (exIdx: number, setIdx: number) => void;
+  insertFeederRamp: (exIdx: number, setIdx: number) => void;
+  quickRateFeeder: (exIdx: number, setIdx: number, rpe: number) => void;
+  cycleGrip: (exIdx: number, setIdx: number) => void;
   cycleSuperset: (exIdx: number) => void;
   swapExercise: (exIdx: number, name: string) => void;
   snapshot: () => void;
@@ -402,7 +445,14 @@ export interface SomaStore {
   scans: ScanRecord[];
   addScan: (scan: ScanRecord) => void;
   removeScan: (id: string) => void;
+  /** Merge a re-measurement into a stored scan, keeping its id, date and kind. */
+  updateScan: (id: string, patch: Partial<Omit<ScanRecord, "id" | "date" | "kind">>) => void;
   restoreScan: (index: number, scan: ScanRecord) => void;
+  /**
+   * Move a scan to the pose it was really taken at. Its measurements were
+   * taken as the wrong pose, so it is marked for re-analysis.
+   */
+  refileScan: (id: string, kind: ScanRecord["kind"], side?: "left" | "right") => void;
   /** Money and mind, both dated logs, both persisted with everything else. */
   ledger: LedgerEntry[];
   mind: MindEntry[];
@@ -543,6 +593,8 @@ export const useSoma = create<SomaStore>()(
       langs: [],
       readingSince: null,
       editingDashboard: false,
+      readingBook: null,
+      openBookAt: null,
       programs: [],
       activeProgramId: null,
       live: defaultLive("Legs A (Quad / Squat Dominant)"),
@@ -573,28 +625,44 @@ export const useSoma = create<SomaStore>()(
        * An unsaved session in progress is NOT discarded. If it has completed
        * sets it is saved to the day it was actually trained on first, because
        * losing a finished workout to a midnight tick would be the worst
-       * possible failure here. Returns whether the day actually rolled.
+       * possible failure here.
+       *
+       * "Completed" means a ticked set, which is the one thing this store
+       * trusts as "the user actually did this" — everything else, including
+       * the weight and reps fields, gets pre-filled from last time before
+       * anyone touches anything, so it cannot tell a real session from a
+       * glance at one. But a session with exercises in it and NOT a single
+       * tick is exactly what a lifter gets who logs the numbers as they go
+       * and ticks them off at the end, or forgets to and closes the app —
+       * and until now that carried zero signal either way and was simply
+       * thrown away with the tick check. It rides into the new day as a
+       * single Undo instead: recoverable if it mattered, aged out with
+       * everything else if it did not. Returns whether the day rolled, and
+       * whether a session actually got saved to history in the process.
        */
       rollDayIfNeeded: () => {
         const today = getLocalDateKey(new Date());
         const prev = get().activeDate;
-        if (prev === today) return false;
+        if (prev === today) return { rolled: false, saved: false };
 
         const live = get().live;
         const hasDone = live.exercises.some((ex) => ex.sets.some((s) => s.done));
+        let saved = false;
         if (hasDone && !live.finished) {
           // saveWorkout writes to activeDate, which is still yesterday here —
           // exactly where this session belongs.
-          get().saveWorkout();
+          saved = !!get().saveWorkout();
         }
+        const rescue =
+          !saved && !hasDone && live.exercises.length > 0 ? [JSON.stringify(live.exercises)] : [];
 
         set({ activeDate: today });
         get().ensureDay(today);
-        set({ live: defaultLive(live.split, today) });
         // The new day has its own programmed split; carrying yesterday's label
         // over was only ever a placeholder.
+        set({ live: { ...defaultLive(live.split, today), undoStack: rescue } });
         get().refreshScheduledDay();
-        return true;
+        return { rolled: true, saved };
       },
 
       normalizeLive: () => {
@@ -910,11 +978,16 @@ export const useSoma = create<SomaStore>()(
       /**
        * Re-derive today's split from the active programme.
        *
-       * Only replaces the live session when nothing has been logged into it.
-       * Rebuilding a session with completed sets in it would throw away work
+       * Only replaces the live session when nothing has been logged into it —
+       * rebuilding a session with completed sets in it would throw away work
        * the user has already done, which is never worth a label being right.
+       * `force` is the escape hatch for when the user was just asked and said
+       * to replace it anyway (see ProgramBuilder's save handler): it skips the
+       * "nothing logged" check but still refuses to touch a session that was
+       * already finished and saved to history, which this has no business
+       * unwinding.
        */
-      refreshScheduledDay: () => {
+      refreshScheduledDay: (force = false) => {
         const proj = SomaIntelligenceEngine.getProgramProjectedDay(
           new Date(),
           get().settings.scheduleOverrides,
@@ -922,7 +995,7 @@ export const useSoma = create<SomaStore>()(
         );
         const live = get().live;
         const untouched = !live.exercises.some((ex) => ex.sets.some((st) => st.done));
-        if (untouched && !live.finished) {
+        if ((untouched || force) && !live.finished) {
           set({ live: defaultLive(proj.split) });
           if (!proj.isRest) get().loadSplit(proj.split);
         }
@@ -1123,6 +1196,10 @@ export const useSoma = create<SomaStore>()(
         set({ langs: get().langs.map((l) => (l.code === code ? learn(l, word) : l)) }),
       unlearnWord: (code, word) =>
         set({ langs: get().langs.map((l) => (l.code === code ? unlearn(l, word) : l)) }),
+      setReadingBook: (id) => set({ readingBook: id }),
+      askForBook: (bookId, chapter, offset) =>
+        set({ openBookAt: { bookId, chapter: Math.max(0, chapter), offset: Math.max(0, offset) } }),
+      bookOpened: () => set({ openBookAt: null }),
       startReading: () => set({ readingSince: Date.now() }),
       /** Bank whatever the timer holds and stop it. Returns the minutes kept. */
       stopReading: () => {
@@ -1334,13 +1411,13 @@ export const useSoma = create<SomaStore>()(
         set((s) => ({
           projects: s.projects.map((p) => (p.id === id ? removeStep(p, stepId) : p)),
         })),
-      addTodo: (text) => {
+      addTodo: (text, scope = "day") => {
         const t = text.trim();
         if (!t) return;
         set({
           todos: [
             ...get().todos,
-            { id: newId(), text: t, done: false, date: getLocalDateKey(new Date()) },
+            { id: newId(), text: t, done: false, date: getLocalDateKey(new Date()), scope },
           ],
         });
       },
@@ -1357,6 +1434,18 @@ export const useSoma = create<SomaStore>()(
             t.id === id ? { ...t, due: cleanDue(due ?? undefined) } : t,
           ),
         }),
+      setTodoScope: (id, scope) =>
+        set({
+          todos: get().todos.map((t) =>
+            t.id === id
+              ? // Re-dated to now: moving "buy milk" onto this week means it is
+                // active for THIS week, not whatever week it happened to be
+                // added in, and the same for a move back onto today. Cleared
+                // is dropped too, since the point of moving it is to see it.
+                { ...t, scope, date: getLocalDateKey(new Date()), cleared: false }
+              : t,
+          ),
+        }),
       removeTodo: (id) => set({ todos: get().todos.filter((t) => t.id !== id) }),
       restoreTodo: (idx, todo) => {
         const next = [...get().todos];
@@ -1365,10 +1454,19 @@ export const useSoma = create<SomaStore>()(
         next.splice(Math.max(0, Math.min(idx, next.length)), 0, todo);
         set({ todos: next });
       },
-      clearDoneTodos: () => {
-        const before = get().todos.length;
-        set({ todos: get().todos.filter((t) => !t.done) });
-        return before - get().todos.length;
+      clearDoneTodos: (scope) => {
+        const today = getLocalDateKey(new Date());
+        let n = 0;
+        set({
+          todos: get().todos.map((t) => {
+            if (t.done && !t.cleared && scopeOf(t) === scope && isActive(t, today)) {
+              n += 1;
+              return { ...t, cleared: true };
+            }
+            return t;
+          }),
+        });
+        return n;
       },
 
       addStock: (item) => set({ pantry: [...get().pantry, { ...item, id: newId() }] }),
@@ -1628,7 +1726,17 @@ export const useSoma = create<SomaStore>()(
           return { habits: next };
         }),
 
-      allExercises: () => [...(BASE_EXERCISE_DB as ExerciseDef[]), ...get().customExercises],
+      // Customs shadow built-ins by name: editing a shipped exercise's tier
+      // or photo upserts an entry here, and it must win over the base copy.
+      allExercises: () => {
+        const customs = get().customExercises;
+        if (!customs.length) return [...(BASE_EXERCISE_DB as ExerciseDef[])];
+        const names = new Set(customs.map((c) => c.name));
+        return [
+          ...(BASE_EXERCISE_DB as ExerciseDef[]).filter((e) => !names.has(e.name)),
+          ...customs,
+        ];
+      },
       routines: () =>
         SomaIntelligenceEngine.mergeRoutines(ROUTINE_PRESETS, {
           ...get().settings.customRoutines,
@@ -1666,6 +1774,20 @@ export const useSoma = create<SomaStore>()(
         const routines = get().routines();
         const resolved = resolveSplitName(name, Object.keys(routines)) ?? name;
         const list = routines[resolved] || [];
+        // Exercises the routine names but the library does not have yet (the
+        // fetched seed) are brought in on the spot, with their photo and tier,
+        // so a template split never loads bare, photo-less rows.
+        const db0 = get().allExercises();
+        const have = new Set(db0.map((e) => e.name.toLowerCase()));
+        const missing = list.filter((item) => !have.has(item.name.toLowerCase()));
+        if (missing.length) {
+          const seed = new Map((msExercises as { name: string }[]).map((e) => [e.name.toLowerCase(), e]));
+          const fresh = missing
+            .map((item) => seed.get(item.name.toLowerCase()))
+            .filter((x): x is { name: string; muscle?: string; img?: string; tier?: string } => !!x)
+            .map((x) => makeExerciseDef(x.name, x.muscle, x.img, x.tier ?? "S-Tier"));
+          if (fresh.length) set({ customExercises: [...get().customExercises, ...fresh] });
+        }
         const db = get().allExercises();
         const exercises = list.map((item) => makeSessionEx(item.name, db, get()));
         set({
@@ -1690,6 +1812,17 @@ export const useSoma = create<SomaStore>()(
       addCustomExercise: (ex) => {
         set({ customExercises: [...get().customExercises, ex] });
         get().addExercise(ex.name);
+      },
+      upsertCustomExercise: (ex) => {
+        const rest = get().customExercises.filter((c) => c.name !== ex.name);
+        set({ customExercises: [...rest, ex] });
+      },
+      importExercises: (list) => {
+        const have = new Set(get().allExercises().map((e) => e.name.toLowerCase()));
+        const fresh = list
+          .filter((x) => x && x.name && !have.has(x.name.toLowerCase()))
+          .map((x) => makeExerciseDef(x.name, x.muscle, x.img, x.tier));
+        if (fresh.length) set({ customExercises: [...get().customExercises, ...fresh] });
       },
       updateSet: (exIdx, setIdx, patch) => {
         const exercises = get().live.exercises.map((ex, i) => {
@@ -1723,7 +1856,7 @@ export const useSoma = create<SomaStore>()(
           const last = ex.sets[ex.sets.length - 1];
           const weight =
             type === "dropset" && last && Number(last.weight) > 0
-              ? Math.round(Number(last.weight) * 0.8 * 2) / 2
+              ? Math.round(Number(last.weight) * 0.7 * 2) / 2
               : last?.weight ?? "";
           return {
             ...ex,
@@ -1759,7 +1892,9 @@ export const useSoma = create<SomaStore>()(
         const cycle: Record<string, WorkoutSet["type"]> = {
           normal: "dropset",
           dropset: "warmup",
-          warmup: "normal",
+          warmup: "feeder",
+          feeder: "stretch",
+          stretch: "normal",
         };
         const exercises = get().live.exercises.map((ex, i) => {
           if (i !== exIdx) return ex;
@@ -1768,6 +1903,63 @@ export const useSoma = create<SomaStore>()(
             sets: ex.sets.map((s, j) =>
               j === setIdx ? { ...s, type: cycle[s.type] || "dropset" } : s,
             ),
+          };
+        });
+        set({ live: { ...get().live, exercises } });
+      },
+      insertFeederRamp: (exIdx, setIdx) => {
+        get().snapshot();
+        const unit = get().settings.unit ?? "kg";
+        const exercises = get().live.exercises.map((ex, i) => {
+          if (i !== exIdx) return ex;
+          const top = ex.sets[setIdx];
+          const target = top && Number(top.weight) > 0 ? Number(top.weight) : 0;
+          if (!target) return ex;
+          const feeders = feederRamp(target, unit).map((f) => ({
+            weight: f.weight,
+            reps: f.reps,
+            done: false,
+            failure: 2,
+            type: "feeder" as const,
+          }));
+          const sets = [...ex.sets.slice(0, setIdx), ...feeders, ...ex.sets.slice(setIdx)];
+          return { ...ex, sets };
+        });
+        set({ live: { ...get().live, exercises, finished: null } });
+      },
+      quickRateFeeder: (exIdx, setIdx, rpe) => {
+        get().snapshot();
+        const exercises = get().live.exercises.map((ex, i) => {
+          if (i !== exIdx) return ex;
+          return {
+            ...ex,
+            sets: ex.sets.map((s, j) =>
+              j === setIdx
+                ? { ...s, rpe, done: true, failure: rpe >= 9 ? 3 : rpe >= 7 ? 2 : 1 }
+                : s,
+            ),
+          };
+        });
+        set({ live: { ...get().live, exercises, firstSetAt: get().live.firstSetAt ?? Date.now() } });
+      },
+      cycleGrip: (exIdx, setIdx) => {
+        get().snapshot();
+        const grips: NonNullable<WorkoutSet["grip"]>[] = [
+          { width: "wide", orientation: "pronated" },
+          { width: "medium", orientation: "neutral" },
+          { width: "narrow", orientation: "supinated" },
+        ];
+        const exercises = get().live.exercises.map((ex, i) => {
+          if (i !== exIdx) return ex;
+          return {
+            ...ex,
+            sets: ex.sets.map((s, j) => {
+              if (j !== setIdx) return s;
+              const cur = s.grip;
+              if (!cur) return { ...s, grip: grips[0] };
+              const idx = grips.findIndex((g) => g.width === cur.width && g.orientation === cur.orientation);
+              return { ...s, grip: grips[(idx + 1) % grips.length] ?? grips[0] };
+            }),
           };
         });
         set({ live: { ...get().live, exercises } });
@@ -2173,6 +2365,14 @@ export const useSoma = create<SomaStore>()(
       },
       addScan: (scan) => set({ scans: [...get().scans, scan] }),
       removeScan: (id) => set({ scans: get().scans.filter((x) => x.id !== id) }),
+      updateScan: (id, patch) =>
+        set({ scans: get().scans.map((x) => (x.id === id ? { ...x, ...patch } : x)) }),
+      refileScan: (id, kind, side) =>
+        set({
+          scans: get().scans.map((x) =>
+            x.id === id ? { ...x, kind, side, analyzer: "refiled" } : x,
+          ),
+        }),
       restoreScan: (index, scan) => {
         const next = [...get().scans];
         next.splice(Math.max(0, Math.min(index, next.length)), 0, scan);
@@ -2507,12 +2707,19 @@ export const useSoma = create<SomaStore>()(
         reading: s.reading,
         langs: s.langs,
         readingSince: s.readingSince,
+        readingBook: s.readingBook,
         live: s.live,
         activeDate: s.activeDate,
       }),
     },
   ),
 );
+
+// Development only: a handle on the live store for the widget screenshot
+// harness, which cannot import the module the app itself is running.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __soma?: typeof useSoma }).__soma = useSoma;
+}
 
 /**
  * Rebuild a saved session's totals from its exercises.
@@ -2546,6 +2753,22 @@ function recomputeSession(session: HistorySession, exercises: SessionExercise[])
     totalSets,
     axialVol,
     muscles: tallyMuscles(exercises),
+  };
+}
+
+function makeExerciseDef(name: string, muscle?: string, img?: string, tier?: string): ExerciseDef {
+  const guess = guessMuscles(name);
+  return {
+    name,
+    muscle: muscle || guess.muscle,
+    subTarget: guess.subTarget,
+    targetKeys: guess.targetKeys,
+    position: "",
+    risk: "Low",
+    tier: tier ?? "",
+    isAxial: false,
+    isBW: false,
+    img,
   };
 }
 

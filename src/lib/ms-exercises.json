@@ -1,0 +1,400 @@
+﻿[
+    {
+        "name":  "Plyometric Push Up",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/plyometric-push-up",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/plyometric-pushup.jpg"
+    },
+    {
+        "name":  "Decline Push Up",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/decline-push-up",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/decline-push-up.jpg"
+    },
+    {
+        "name":  "Decline Push Up (Feet on Bench)",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/decline-push-up",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/decline-push-up.jpg"
+    },
+    {
+        "name":  "Wall Push Up",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/wall-push-up",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/wall-push-up.jpg"
+    },
+    {
+        "name":  "Hammer Strength Incline Bench Press",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/hammer-strength-incline-bench-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/machine-incline-bench-press.jpg",
+        "tier":  "S-Tier"
+    },
+    {
+        "name":  "Hammer Strength Machine Incline Bench Press",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/hammer-strength-incline-bench-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/machine-incline-bench-press.jpg"
+    },
+    {
+        "name":  "One Arm Dumbbell Fly",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/one-arm-dumbbell-fly",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/flat-1-arm-dumbbell-fly.jpg"
+    },
+    {
+        "name":  "Incline Dumbbell Twist Fly",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/incline-dumbbell-twist-fly",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/incline-dumbbell-twist-fly.jpg"
+    },
+    {
+        "name":  "Wide Grip Incline Push Up",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/wide-grip-incline-push-up",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/wide-grip-incline-push-up.jpg"
+    },
+    {
+        "name":  "Cross Body Arm Swings",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/cross-body-arm-swings",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/crossbody-arm-swings.jpg"
+    },
+    {
+        "name":  "Sled Press",
+        "muscle":  "Chest",
+        "url":  "https://www.muscleandstrength.com/exercises/sled-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/sled-press.jpg"
+    },
+    {
+        "name":  "Bent Over Cable Rear Delt Fly",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/bent-over-cable-rear-delt-fly",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/bent-over-cable-rear-delt-fly.jpg"
+    },
+    {
+        "name":  "Bent Over Low Pulley Rear Delt Fly",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/bent-over-cable-rear-delt-fly",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/bent-over-cable-rear-delt-fly.jpg"
+    },
+    {
+        "name":  "Cable Face Pull",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/cable-face-pull",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/cable-face-pull.jpg",
+        "tier":  "S-Tier"
+    },
+    {
+        "name":  "Machine Reverse Fly",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/machine-reverse-fly",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/machine-reverse-fly.jpg"
+    },
+    {
+        "name":  "Machine Shoulder Press",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/machine-shoulder-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/machine-shoulder-press.jpg",
+        "tier":  "S-Tier"
+    },
+    {
+        "name":  "Scapular Wall Slide",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/scapular-wall-slide",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/scapula-wall-slide.jpg"
+    },
+    {
+        "name":  "Band Pull Apart",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/band-pull-apart",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/band-pull-apart_0.jpg"
+    },
+    {
+        "name":  "Cable Face Pull With External Rotation",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/cable-face-pull-with-external-rotation",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/cable-face-pull-with-external-rotation.jpg"
+    },
+    {
+        "name":  "Cable External Rotation",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/cable-external-rotation",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/cable-external-rotation.jpg"
+    },
+    {
+        "name":  "Single Arm Landmine Press",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/single-arm-landmine-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/single-arm-landmine-press.jpg"
+    },
+    {
+        "name":  "Step Behind Rotational Medicine Ball Throw",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/step-behind-rotational-medicine-ball-throw",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/step-behind-rotational-medicine-ball-throw.jpg"
+    },
+    {
+        "name":  "Dumbbell 6 Ways",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/dumbbell-6-ways",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/dumbbell-6-ways.jpg"
+    },
+    {
+        "name":  "Dumbbell 6 Ways (Raise)",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/dumbbell-6-ways",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/dumbbell-6-ways.jpg"
+    },
+    {
+        "name":  "Rotational Med Ball Throw",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/rotational-med-ball-throw",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/rotational-medicine-ball-throw.jpg"
+    },
+    {
+        "name":  "Rotational Medicine Ball Throw",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/rotational-med-ball-throw",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/rotational-medicine-ball-throw.jpg"
+    },
+    {
+        "name":  "Cable Internal Rotation",
+        "muscle":  "Shoulders",
+        "url":  "https://www.muscleandstrength.com/exercises/cable-internal-rotation",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/cable-internal-rotation.jpg"
+    },
+    {
+        "name":  "Standing Dumbbell Drag Curl",
+        "muscle":  "Biceps",
+        "url":  "https://www.muscleandstrength.com/exercises/standing-dumbbell-drag-curl",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/dumbbell-drag-curl.jpg"
+    },
+    {
+        "name":  "Seated Zottman Curl",
+        "muscle":  "Biceps",
+        "url":  "https://www.muscleandstrength.com/exercises/seated-zottman-curl",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/seated-zottman-curl.jpg",
+        "tier":  "S-Tier"
+    },
+    {
+        "name":  "Standing Overhead Ez Bar Tricep Extension",
+        "muscle":  "Triceps",
+        "url":  "https://www.muscleandstrength.com/exercises/standing-overhead-ez-bar-tricep-extension",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/standing-overhead-ez-bar-extension.jpg"
+    },
+    {
+        "name":  "Dumbbell Tate Press",
+        "muscle":  "Triceps",
+        "url":  "https://www.muscleandstrength.com/exercises/dumbbell-tate-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/dumbbell-tate-press-thumb.jpg"
+    },
+    {
+        "name":  "One Arm Kettlebell Floor Press",
+        "muscle":  "Triceps",
+        "url":  "https://www.muscleandstrength.com/exercises/one-arm-kettlebell-floor-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/one-arm-kettlebell-floor-press.jpg"
+    },
+    {
+        "name":  "Machine Tricep Extension",
+        "muscle":  "Triceps",
+        "url":  "https://www.muscleandstrength.com/exercises/machine-tricep-extension",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/machine-tricep-extension.jpg"
+    },
+    {
+        "name":  "Sphinx Push Up",
+        "muscle":  "Triceps",
+        "url":  "https://www.muscleandstrength.com/exercises/sphinx-push-up",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/sphinx-push-up.jpg"
+    },
+    {
+        "name":  "Close Grip Ez Bar Press",
+        "muscle":  "Triceps",
+        "url":  "https://www.muscleandstrength.com/exercises/close-grip-ez-bar-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/close-grip-ez-bar-press.jpg",
+        "tier":  "S-Tier"
+    },
+    {
+        "name":  "Pallof Press",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/pallof-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/pallof-press.jpg"
+    },
+    {
+        "name":  "Ab Crunch",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/ab-crunch",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/ab-crunch.jpg"
+    },
+    {
+        "name":  "Dead Bug",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/dead-bug",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/deadbug.jpg"
+    },
+    {
+        "name":  "Glute Bridge Pallof Press",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/glute-bridge-pallof-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/glute-bridge-pallof-press.jpg"
+    },
+    {
+        "name":  "Rotating Mountain Climber",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/rotating-mountain-climber",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/rotating-mountain-climber.jpg"
+    },
+    {
+        "name":  "Half Kneeling Pallof Press",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/half-kneeling-pallof-press",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/half-kneeling-pallof-press.jpg"
+    },
+    {
+        "name":  "Shoulder Taps",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/shoulder-taps",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/shoulder-taps.jpg"
+    },
+    {
+        "name":  "Kettlebell Dead Bug",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/kettlebell-dead-bug",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/kettlebell-dead-bug.jpg"
+    },
+    {
+        "name":  "Plank To Hip Raise",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/plank-to-hip-raise",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/plank-to-hip-raise.jpg"
+    },
+    {
+        "name":  "Alternate Straight Leg Lowering",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/alternate-straight-leg-lowering",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/alternate-straight-leg-lower.jpg"
+    },
+    {
+        "name":  "Alternate Straight Leg Lower",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/alternate-straight-leg-lowering",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/alternate-straight-leg-lower.jpg"
+    },
+    {
+        "name":  "Pallof Press With Rotation",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/pallof-press-with-rotation",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/pallof-press-with-rotation.jpg"
+    },
+    {
+        "name":  "Standing Stomach Vacuum",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/standing-stomach-vacuum",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/standing-stomach-vacuum.jpg"
+    },
+    {
+        "name":  "Turkish Get Up",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/turkish-get-up",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/turkish-get-up.jpg"
+    },
+    {
+        "name":  "Reverse Crunch To Dead Bug",
+        "muscle":  "Abs",
+        "url":  "https://www.muscleandstrength.com/exercises/reverse-crunch-to-dead-bug",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/reverse-crunch-to-dead-bug.jpg"
+    },
+    {
+        "name":  "Plate Pinch Carry",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/plate-pinch-carry",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/plate-pinch-carry.jpg"
+    },
+    {
+        "name":  "Farmers Walk",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/farmers-walk",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/dumbbell-farmers-carry.jpg"
+    },
+    {
+        "name":  "Dumbbell Farmers Carry",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/farmers-walk",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/dumbbell-farmers-carry.jpg"
+    },
+    {
+        "name":  "Dumbbell Suitcase Carry",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/dumbbell-suitcase-carry",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/dumbbell-suitcase-carry.jpg"
+    },
+    {
+        "name":  "Dumbbell High Low Carry",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/dumbbell-high-low-carry",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/dumbbell-high-low-carry.jpg"
+    },
+    {
+        "name":  "Kettlebell Single Arm Bottoms Up Carry",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/kettlebell-single-arm-bottoms-up-carry",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/kettlebell-single-arm-bottoms-up-carry.jpg"
+    },
+    {
+        "name":  "Forearm Extensors Lacrosse Ball",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/forearm-extensors-lacrosse-ball",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/forearm-extensors-lacrosse-balls.jpg"
+    },
+    {
+        "name":  "Kettlebell Racked Crossover Walk",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/kettlebell-racked-crossover-walk",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/kettlebell-racked-crossover-walk.jpg"
+    },
+    {
+        "name":  "Overhead Barbell Carry",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/overhead-barbell-carry",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/overhead-barbell-carry.jpg"
+    },
+    {
+        "name":  "Trap Bar Farmers Carry",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/trap-bar-farmers-carry",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/trap-bar-farmers-carry.jpg"
+    },
+    {
+        "name":  "Fat Gripz Dumbbell Farmers Carry",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/fat-gripz-dumbbell-farmers-carry",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/fat-gripz-dumbbell-farmers-carry.jpg"
+    },
+    {
+        "name":  "Zercher Carry",
+        "muscle":  "Forearms",
+        "url":  "https://www.muscleandstrength.com/exercises/zercher-carry",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/zercher-carry.jpg"
+    },
+    {
+        "name":  "Pull Up: Video Exercise Guide \u0026 Tips",
+        "muscle":  "Back",
+        "url":  "https://www.muscleandstrength.com/exercises/pull-up",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/pull-up-1.jpg",
+        "tier":  "S-Tier"
+    },
+    {
+        "name":  "Romanian Deadlift (AKA RDL): Video Exercise Guide \u0026 Tips",
+        "muscle":  "Legs",
+        "url":  "https://www.muscleandstrength.com/exercises/romanian-deadlift",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/romanian-deadlift.jpg",
+        "tier":  "S-Tier"
+    },
+    {
+        "name":  "Seated Leg Curl: Video Exercise Guide \u0026 Tips",
+        "muscle":  "Legs",
+        "url":  "https://www.muscleandstrength.com/exercises/seated-leg-curl",
+        "img":  "https://cdn.muscleandstrength.com/sites/default/files/seated-leg-curl-1.jpg",
+        "tier":  "S-Tier"
+    }
+]

@@ -53,7 +53,7 @@ export interface Pick {
 type Panel = "none" | "ink" | "meaning" | "language";
 
 export function WordMenu({
-  pick, theme, translateTo, box, saved, onClose, onCopy, onMark, onUnmark, onSave, onTranslated,
+  pick, theme, translateTo, box, saved, onCopy, onMark, onUnmark, onSave, onTranslated,
 }: {
   pick: Pick;
   theme: ReturnType<typeof themeSpec>;
@@ -62,7 +62,6 @@ export function WordMenu({
   box: { w: number; h: number };
   /** Whether this word is already starred in the word book. */
   saved: boolean;
-  onClose: () => void;
   onCopy: () => void;
   onMark: (colour: string) => void;
   onUnmark: (id: string) => void;
@@ -117,32 +116,40 @@ export function WordMenu({
     }
   };
 
-  // Opaque, not glass. A translucent bar over a page of text is a bar with
-  // the page's own words printed through its labels, and the one thing this
-  // has to be is readable while sitting on top of exactly that.
-  const chrome = {
-    background: theme.dark ? "#1f1f22" : "#fcfbf8",
+  // Glass, but heavier than the pills at the edges of the screen.
+  //
+  // Those float over a margin; this floats over the sentence you are reading,
+  // and a thin pane there means the page's own words printed through its
+  // labels. So the same material — blurred, saturated, lit along the top —
+  // mixed far more opaque. It still reads as glass and it is still readable,
+  // which is the only combination that works over text.
+  const chrome: React.CSSProperties = {
+    background: theme.dark ? "rgba(34,34,38,0.92)" : "rgba(252,251,248,0.94)",
+    backdropFilter: "blur(calc(var(--glass-blur,22px) * 1.4)) saturate(var(--glass-sat,1.8))",
+    WebkitBackdropFilter: "blur(calc(var(--glass-blur,22px) * 1.4)) saturate(var(--glass-sat,1.8))",
     color: theme.fg,
     boxShadow: theme.dark
-      ? "0 12px 34px rgba(0,0,0,0.7), 0 0 0 0.5px rgba(255,255,255,0.12) inset"
-      : "0 12px 34px rgba(0,0,0,0.22), 0 0 0 0.5px rgba(0,0,0,0.08) inset",
+      ? "inset 0 0.5px 0 rgba(255,255,255,0.20), inset 0 0 0 0.5px rgba(255,255,255,0.10), 0 12px 34px rgba(0,0,0,0.7)"
+      : "inset 0 0.5px 0 rgba(255,255,255,0.95), inset 0 0 0 0.5px rgba(0,0,0,0.07), 0 12px 34px rgba(0,0,0,0.22)",
   };
 
   return (
     <>
-      {/* Anywhere else on the page puts the menu away and leaves the word
-          alone. No dimming: the sentence stays readable, which is the reason
-          the menu is a bar rather than a sheet. */}
-      <div
-        className="absolute inset-0 z-[60]"
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
-      />
+      {/* No backdrop, and that is a fix rather than a simplification.
+          A full-screen catcher over the page swallowed the one touch that
+          matters most here: a finger on a selection handle, dragging it to
+          take in another word. It closed the menu instead. The menu already
+          knows when to go — the selection tells it, because a tap anywhere
+          on the page collapses the selection and a collapsed selection has
+          no menu. Nothing needs to sit over the page to notice that.
+
+          No dimming either: the sentence stays readable, which is the whole
+          reason this is a bar and not a sheet. */}
       <div
         className="absolute z-[61] select-none"
         style={{ left, top, width: WIDTH }}
+        // The bar keeps its own touches: pressing a button here must not also
+        // be a tap on the page under it.
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="rounded-2xl" style={chrome}>

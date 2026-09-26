@@ -6,14 +6,17 @@
  * today" — and a run of days you can see is most of what makes you open it
  * tomorrow.
  *
- * SOMA is not the reader, so the minutes cannot be taken automatically the way
- * a reading app takes them. They come from a timer you start, or from typing
- * them. That makes one rule unavoidable and it is the rule everything else
- * here bends around: **a day with nothing logged is a day with nothing logged,
- * not a day with zero minutes.** A streak may only be broken by a day that
- * went by, never by a day nobody got round to recording — but a blank day
- * cannot count towards one either. Both halves matter, and the second is why
- * the streak walks backwards from today rather than counting entries.
+ * The minutes arrive three ways. A book open in SOMA counts itself — see
+ * `reading-clock.ts` — and a timer you start by hand or a tap on +15 covers
+ * everything read on paper, which is most of what anybody reads.
+ *
+ * Because two of those three depend on somebody remembering, one rule is
+ * unavoidable and it is the rule everything else here bends around: **a day
+ * with nothing logged is a day with nothing logged, not a day with zero
+ * minutes.** A streak may only be broken by a day that went by, never by a day
+ * nobody got round to recording — but a blank day cannot count towards one
+ * either. Both halves matter, and the second is why the streak walks backwards
+ * from today rather than counting entries.
  */
 
 import { addDays, getLocalDateKey, parseLocalDateKey } from "./soma/dates.ts";
@@ -196,6 +199,45 @@ export function arcD(cx: number, cy: number, r: number, fromDeg: number, toDeg: 
 export function clockOf(minutes: number): string {
   const m = clampMinutes(minutes);
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Seconds on a running timer, capped like the minutes are.
+ *
+ * The second hand is the honest one: a session that has been running for
+ * ninety seconds is not "1 minute" of reading, and rounding it up on every
+ * save is how a total quietly drifts away from the truth.
+ */
+export function elapsedSeconds(since: number | null | undefined, now = Date.now()): number {
+  if (!since || !Number.isFinite(since)) return 0;
+  const secs = (now - since) / 1000;
+  if (secs <= 0) return 0;
+  return Math.min(MAX_SESSION_MIN * 60, Math.floor(secs));
+}
+
+/** What today shows, in seconds: what is banked, plus the live session. */
+export function todaySeconds(
+  log: ReadingLog | undefined,
+  date: string,
+  since: number | null | undefined,
+  now = Date.now(),
+): number {
+  return clampMinutes(minutesOn(log, date)) * 60 + elapsedSeconds(since, now);
+}
+
+/**
+ * "0:00:00", "0:29:58", "1:04:07" — hours, minutes, seconds.
+ *
+ * The dial's readout carries seconds because that is the thing that tells you
+ * the timer is actually running: a minute-granularity clock sits still for
+ * sixty seconds at a time and looks broken while it does it.
+ */
+export function clockHMS(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
 // ----------------------------------------------------------------- books --

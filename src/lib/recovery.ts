@@ -52,6 +52,7 @@ export const MUSCLE_REGIONS: {
   { key: "adductors", label: "Adductors", view: "front" },
   { key: "forearm", label: "Forearms", view: "front" },
   { key: "trapezius", label: "Traps", view: "front" },
+  { key: "neck", label: "Neck", view: "front" },
   { key: "triceps", label: "Triceps", view: "front" },
   { key: "calves", label: "Calves", view: "front" },
   { key: "upper_back", label: "Lats / Upper Back", view: "back" },

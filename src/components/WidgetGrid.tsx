@@ -2,9 +2,11 @@ import { Eye, EyeOff, Plus, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Children, createContext, isValidElement, useContext, useMemo, useState } from "react";
 import {
-  SIZE_SPECS, addSpacer, hidden as hiddenOf, isDefault, isSpacer, isTile, move, reconcile,
-  removeWidget, resize, specFor, toggleHidden, visible, widgetDef, type WidgetSize,
+  SIZE_SPECS, addSpacer, allowedSizes, hasDetailRoom, hasFullRoom, hidden as hiddenOf, isDefault,
+  isNatural, isSpacer, move, reconcile, removeWidget, resize, specFor, toggleHidden, visible, widgetDef,
+  type WidgetSize,
 } from "@/lib/dashboard-layout";
+import { Glance, GlanceOpenContext, isGlance, type GlanceSpec } from "@/components/Glance";
 import { useSoma } from "@/lib/store";
 import { useLongPressDrag } from "@/lib/use-long-press-drag";
 import { cn } from "@/lib/utils";
@@ -40,6 +42,38 @@ const SizeContext = createContext<WidgetSize>("2x4");
 
 export function useWidgetSize(): WidgetSize {
   return useContext(SizeContext);
+}
+
+/**
+ * A part of a card that only some sizes can afford.
+ *
+ * Resizing a widget is supposed to change what it SAYS, not how much of it is
+ * cut off — the difference between an iOS widget and a photograph of one. So a
+ * card marks its parts by how much room they need and the grid answers for the
+ * size it was given:
+ *
+ *   core   — the one number or line that IS the widget. Always drawn.
+ *   detail — the second tier: a breakdown, a legend, a trend, a footnote.
+ *            Drawn at 2 rows and up.
+ *   full   — everything the card has: charts, controls, history. Drawn at the
+ *            tall sizes only.
+ *
+ * A card that ignores this is not broken — it simply renders the same at every
+ * size and relies on the tile's own fade, which is what almost every card did
+ * before this existed. Cards are converted one at a time, deliberately: the
+ * rule has to be that a small size shows LESS, never that it shows something
+ * unreadable.
+ */
+export function WidgetPart({
+  level, children,
+}: {
+  level: "core" | "detail" | "full";
+  children: React.ReactNode;
+}) {
+  const size = useWidgetSize();
+  if (level === "detail" && !hasDetailRoom(size)) return null;
+  if (level === "full" && !hasFullRoom(size)) return null;
+  return <>{children}</>;
 }
 
 /**
@@ -88,17 +122,26 @@ const ROW: Record<1 | 2 | 3, { tile: string; wide: string }> = {
   // and says it in one, so the phone's floor is left as empty space under the
   // content — which is what made four tiles of two numbers each fill a third
   // of a 900px screen.
+  //
+  // Only the one-row and three-row sizes come down. Two rows is where the ring
+  // tiles live, and a ring is a fixed lump of pixels that does not reflow when
+  // the card gets wider — trimming that row put the "of 2300 · 377 to go" line
+  // under the tile's own bottom fade, which reads as a rendering fault rather
+  // than as a smaller card. A wide 2-row CARD still comes down, because it has
+  // text in it that does reflow.
   1: { tile: "h-[5.25rem] lg:h-[4.5rem]", wide: "" },
-  2: { tile: "h-[11rem] lg:h-[8.5rem]", wide: "min-h-[11rem] lg:min-h-[8.5rem]" },
-  3: { tile: "h-[17rem] lg:h-[13.5rem]", wide: "min-h-[17rem] lg:min-h-[13.5rem]" },
+  2: { tile: "h-[11rem]", wide: "min-h-[11rem] lg:min-h-[9rem]" },
+  3: { tile: "h-[17rem] lg:h-[14.5rem]", wide: "min-h-[17rem] lg:min-h-[14.5rem]" },
 };
 
-function boxFor(size: WidgetSize): string {
+function boxFor(size: WidgetSize, natural: boolean): string {
   const spec = specFor(size);
   const h = ROW[spec.h];
-  // A tile is a glance and gets a hard box; a full-width card gets a floor and
-  // may grow past it, so a card with controls in it stays usable.
-  return cn(COL[spec.w], isTile(size) ? h.tile : h.wide);
+  // Furniture and working cards keep their own height at one row. Every other
+  // small size is a glance with a hard box; a big card gets a floor and may
+  // grow past it, so a card with controls in it stays usable.
+  if (natural) return COL[spec.w];
+  return cn(COL[spec.w], isGlance(size) ? h.tile : h.wide);
 }
 
 /**
@@ -189,6 +232,8 @@ export function WidgetGrid({
 
   /** Which widget's size picker is open, if any. */
   const [picking, setPicking] = useState<string | null>(null);
+  /** A small widget tapped open: its whole card, in a sheet. */
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const shown = visible(layout);
   const off = hiddenOf(layout);
@@ -232,6 +277,34 @@ export function WidgetGrid({
               </Button>
             )}
           </div>
+
+          {/* The way back, AT THE TOP.
+              This list used to sit under the whole page, which on a sixteen
+              card tab is four screens below the eye you just tapped: hiding
+              something worked and looked permanent. It belongs beside the
+              control that hid it, where the answer to "where did it go" is on
+              screen while you are still asking. */}
+          {off.length > 0 && (
+            <div className="mt-2.5 border-t border-accent-line pt-2">
+              <div className="text-[0.6rem] font-bold uppercase tracking-[0.14em] text-muted">
+                Off the page — tap to bring back
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {off.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setDashboard(toggleHidden(layout, p.id))}
+                    className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[0.7rem] font-bold text-fg"
+                    aria-label={`Show ${widgetDef(tab, p.id)?.label ?? p.id}`}
+                  >
+                    <Eye className="size-3.5" />
+                    {widgetDef(tab, p.id)?.label ?? p.id}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -262,6 +335,8 @@ export function WidgetGrid({
           // called what the view called it — which for an exercise card is the
           // heading already printed on its face.
           const label = spacer ? "Spacing" : def?.label ?? p.id;
+          const natural = isNatural(tab, p.id);
+          const glance = !spacer && !natural && isGlance(p.size);
           const held = drag.dragging === i;
           const target = drag.over === i && drag.dragging !== null && !held;
 
@@ -281,7 +356,7 @@ export function WidgetGrid({
                 // a target: the review queue renders null when no word is due,
                 // and a zero-height cell cannot be dragged onto or tapped.
                 editing && "min-h-16",
-                boxFor(p.size),
+                boxFor(p.size, natural),
                 held && "scale-[0.97] opacity-60",
                 target && "ring-2 ring-accent ring-offset-2 ring-offset-bg rounded-3xl",
               )}
@@ -292,6 +367,7 @@ export function WidgetGrid({
                     edit mode the card is a thing you move, not a thing you
                     press. */}
                 <SizeContext.Provider value={p.size}>
+                 <GlanceOpenContext.Provider value={editing ? null : () => setExpanded(p.id)}>
                   <div
                     className={cn(
                       // A spacer is deliberately empty, and the rule that
@@ -308,12 +384,12 @@ export function WidgetGrid({
                       // A tile is a glance and gets a hard box with a fade
                       // where its content runs out; a full-width card keeps
                       // its natural height and only gains a floor.
-                      !spacer && isTile(p.size) && "soma-widget-tile",
-                      !spacer && specFor(p.size).w === 1 && "soma-tile-1",
+                      glance && "soma-widget-tile",
                     )}
                   >
                     {node}
                   </div>
+                 </GlanceOpenContext.Provider>
                 </SizeContext.Provider>
 
                 {/* No grip glyph: the whole card is the handle, so an icon in
@@ -380,35 +456,25 @@ export function WidgetGrid({
         })}
       </div>
 
-      {editing && off.length > 0 && (
-        <div className="mt-4">
-          <h2 className="px-1 text-[0.6rem] font-bold uppercase tracking-[0.14em] text-faint">
-            Off the page
-          </h2>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {off.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => setDashboard(toggleHidden(layout, p.id))}
-                className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.7rem] font-bold text-muted"
-                aria-label={`Show ${widgetDef(tab, p.id)?.label ?? p.id}`}
-              >
-                <Eye className="size-3.5" />
-                {widgetDef(tab, p.id)?.label ?? p.id}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {picking && (
         <SizeSheet
           label={isSpacer(picking) ? "Spacing" : widgetDef(tab, picking)?.label ?? picking}
           current={layout.find((x) => x.id === picking)?.size ?? "2x4"}
+          sizes={allowedSizes(tab, picking)}
           onPick={(sz) => setDashboard(resize(layout, picking, sz, tab))}
           onClose={() => setPicking(null)}
         />
+      )}
+
+      {expanded && nodes[expanded] && (
+        <WidgetSheet
+          label={widgetDef(tab, expanded)?.label ?? expanded}
+          onClose={() => setExpanded(null)}
+        >
+          <SizeContext.Provider value="3x4">
+            <GlanceOpenContext.Provider value={null}>{nodes[expanded]}</GlanceOpenContext.Provider>
+          </SizeContext.Provider>
+        </WidgetSheet>
       )}
 
       {extras}
@@ -432,10 +498,11 @@ export function WidgetGrid({
  * which is the whole job of a picker.
  */
 function SizeSheet({
-  label, current, onPick, onClose,
+  label, current, sizes, onPick, onClose,
 }: {
   label: string;
   current: WidgetSize;
+  sizes: WidgetSize[];
   onPick: (size: WidgetSize) => void;
   onClose: () => void;
 }) {
@@ -453,13 +520,14 @@ function SizeSheet({
       >
         <div className="mb-1 font-display text-base font-extrabold">Size</div>
         <p className="mb-3 text-[0.68rem] leading-snug text-faint">
-          {label} — rows by columns, out of four. A narrow size is a fixed tile and
-          anything past its edge fades out; a full-width one can grow taller than it
-          says, so a card with controls in it stays usable.
+          {label} — rows by columns, out of four. The small sizes show the headline
+          (tap one to open the whole card); the big ones show everything and can grow
+          taller than they say, so a card with controls in it stays usable.
+          {sizes.length < SIZE_SPECS.length && " This one only comes in the sizes where it still works."}
         </p>
 
         <div className="grid grid-cols-3 gap-2">
-          {SIZE_SPECS.map((spec) => {
+          {SIZE_SPECS.filter((spec) => sizes.includes(spec.id)).map((spec) => {
             const on = spec.id === current;
             return (
               <button
@@ -498,4 +566,61 @@ function SizeSheet({
       </div>
     </div>
   );
+}
+
+/** A small widget, opened: the whole card in a sheet, at its largest. */
+function WidgetSheet({
+  label, onClose, children,
+}: {
+  label: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex flex-col justify-end bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      onClick={onClose}
+    >
+      <div
+        className="soma-expand max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-3"
+        onClick={(e) => e.stopPropagation()}
+        data-no-swipe-nav
+      >
+        <div className="mb-2 flex items-center justify-between">
+          <div className="font-display text-base font-extrabold">{label}</div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid size-8 place-items-center rounded-full border border-border bg-surface-2"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+        <div className="flex flex-col">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A card that has a glance: the glance at the small sizes, the card itself
+ * at the big ones (and in the sheet a glance opens).
+ *
+ * For cards written inline in a view — wrapping them is one line, where
+ * teaching each one about sizes would be a rewrite. The spec is only built
+ * when it is needed.
+ */
+export function Sized({
+  glance, children,
+}: {
+  glance: GlanceSpec | (() => GlanceSpec);
+  children: React.ReactNode;
+}) {
+  const size = useWidgetSize();
+  if (isGlance(size)) return <Glance size={size} spec={typeof glance === "function" ? glance() : glance} />;
+  return <>{children}</>;
 }

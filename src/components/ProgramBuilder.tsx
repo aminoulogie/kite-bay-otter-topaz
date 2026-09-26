@@ -41,6 +41,12 @@ import { cn } from "@/lib/utils";
  */
 const TEMPLATES: { name: string; sub: string; kind: ProgramKind; days: string[] }[] = [
   {
+    name: "PPL (JN)",
+    sub: "JN's push · pull · legs — S-tier only",
+    kind: "cycle",
+    days: ["PPL (JN) Push", "PPL (JN) Pull", "PPL (JN) Legs"],
+  },
+  {
     name: "PPL",
     sub: "push · pull · legs, rolling",
     kind: "cycle",
@@ -107,6 +113,7 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
   // render — which is what took this screen down with React #185.
   const customRoutines = useSoma((s) => s.settings.customRoutines);
   const removedRoutines = useSoma((s) => s.settings.customRoutinesRemoved);
+  const scheduleOverrides = useSoma((s) => s.settings.scheduleOverrides);
   const routines = useMemo(
     () =>
       SomaIntelligenceEngine.mergeRoutines(ROUTINE_PRESETS, {
@@ -127,6 +134,12 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
 
   const persist = (next: Program[]) => setPrograms(next);
 
+  // Templates and actual programmes share one array and one backup, but they
+  // are two different lists on screen — a template is never active and
+  // should never turn up in "Your programmes" looking selectable.
+  const savedPrograms = programs.filter((p) => !p.isTemplate);
+  const customTemplates = programs.filter((p) => p.isTemplate);
+
   if (editing) {
     return (
       <ProgramEditor
@@ -134,9 +147,51 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
         splitNames={splitNames}
         onCancel={() => setEditing(null)}
         onSave={(p) => {
+          // Whether this edit actually changes what today is scheduled as —
+          // only relevant when p is (or is becoming) the active programme,
+          // since an edit to a programme you are not on cannot touch today.
+          const wasOnThisProgram = activeId === p.id || (!activeId && p.builtIn);
+          const live = useSoma.getState().live;
+          const hasLoggedWork = live.exercises.some((ex) => ex.sets.some((st) => st.done));
+          const proj = wasOnThisProgram
+            ? SomaIntelligenceEngine.getProgramProjectedDay(new Date(), scheduleOverrides, p)
+            : null;
+          const todayIsChanging = !!proj && proj.split !== live.split;
+
           persist([...programs.filter((x) => x.id !== p.id), p]);
           setEditing(null);
-          toast.success(`${p.name} saved`);
+
+          if (!wasOnThisProgram || !todayIsChanging) {
+            toast.success(`${p.name} saved`);
+            return;
+          }
+          if (live.finished) {
+            // refreshScheduledDay refuses to touch a finished, saved session
+            // even when forced — nothing to offer beyond saying so.
+            toast.success(`${p.name} saved — today's finished session stays ${live.split}`);
+            return;
+          }
+          if (!hasLoggedWork) {
+            // The unforced refresh inside setPrograms above already applied
+            // it, since nothing was logged to protect.
+            toast.success(`${p.name} saved — today is now ${proj!.split}`);
+            return;
+          }
+          // Today already has real sets logged under the old split. Never
+          // swap what Train is showing out from under that without asking —
+          // this is exactly the "picked Pull, title stayed Leg" confusion:
+          // silently keeping the old split looked like the app was stuck,
+          // when it was protecting logged work with no way to tell it wasn't.
+          const replace = confirm(
+            `Today already has sets logged under ${live.split}. Replace it with ${proj!.split}? ` +
+              `This discards those logged sets.`,
+          );
+          if (replace) {
+            useSoma.getState().refreshScheduledDay(true);
+            toast.success(`${p.name} saved — today switched to ${proj!.split}`);
+          } else {
+            toast.success(`${p.name} saved — today keeps ${live.split} since it's already logged`);
+          }
         }}
       />
     );
@@ -172,7 +227,7 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
               toast.success("Default rotation selected");
             }}
           />
-          {programs.map((p) => (
+          {savedPrograms.map((p) => (
             <ProgramRow
               key={p.id}
               program={p}
@@ -188,6 +243,15 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
                 // Falling back rather than leaving a dangling id, which would
                 // silently drop the whole app back to the default anyway.
                 if (activeId === p.id) setActiveProgram("built-in");
+              }}
+              onSaveAsTemplate={() => {
+                const name = window.prompt("Template name", `${p.name} template`)?.trim();
+                if (!name) return;
+                persist([
+                  ...programs,
+                  makeProgram({ name, kind: p.kind, days: p.days, isTemplate: true }),
+                ]);
+                toast.success(`Saved "${name}" under Start from a template`);
               }}
             />
           ))}
@@ -225,9 +289,37 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
               </div>
             </button>
           ))}
+          {customTemplates.map((t) => (
+            <div key={t.id} className="relative rounded-xl border border-accent/40 bg-surface-2">
+              <button
+                type="button"
+                onClick={() =>
+                  // Already the user's own routine names — nothing to resolve.
+                  setEditing(makeProgram({ name: t.name, kind: t.kind, days: t.days }))
+                }
+                className="w-full px-3 py-2.5 pr-7 text-left active:bg-surface-3"
+              >
+                <div className="truncate text-[0.75rem] font-bold">{t.name}</div>
+                <div className="text-[0.58rem] leading-tight text-accent-text">Yours</div>
+                <div className="mt-0.5 text-[0.6rem] text-faint">
+                  {t.days.filter((d) => !isRestSplit(d)).length} training ·{" "}
+                  {t.kind === "week" ? "fixed weekdays" : `${t.days.length}-day cycle`}
+                </div>
+              </button>
+              <button
+                type="button"
+                aria-label={`Delete template ${t.name}`}
+                onClick={() => persist(programs.filter((x) => x.id !== t.id))}
+                className="absolute right-1.5 top-1.5 text-faint"
+              >
+                <Trash2 className="size-3" />
+              </button>
+            </div>
+          ))}
         </div>
         <p className="mt-2 text-[0.6rem] text-faint">
-          A template opens as a copy — editing it never changes the template.
+          A template opens as a copy — editing it never changes the template. Save one of
+          your own from "Your programmes" above.
         </p>
       </Card>
 
@@ -239,13 +331,14 @@ export function ProgramBuilder({ onClose }: { onClose: () => void }) {
 }
 
 function ProgramRow({
-  program, active, onSelect, onEdit, onDelete,
+  program, active, onSelect, onEdit, onDelete, onSaveAsTemplate,
 }: {
   program: Program;
   active: boolean;
   onSelect: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  onSaveAsTemplate?: () => void;
 }) {
   return (
     <div
@@ -277,6 +370,16 @@ function ProgramRow({
       {onEdit && (
         <button type="button" onClick={onEdit} className="text-[0.65rem] font-bold text-accent-text">
           Edit
+        </button>
+      )}
+      {onSaveAsTemplate && (
+        <button
+          type="button"
+          onClick={onSaveAsTemplate}
+          className="shrink-0 text-[0.65rem] font-bold text-faint"
+          aria-label={`Save ${program.name} as a template`}
+        >
+          + Template
         </button>
       )}
       {onDelete && (

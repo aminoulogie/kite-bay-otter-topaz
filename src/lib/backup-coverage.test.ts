@@ -48,6 +48,7 @@ function resolveKeys(text: string, raw: string[]): string[] {
 const NOT_USER_DATA: Record<string, string> = {
   "soma-last-backup": "when this phone last backed up — restoring it would tell a fresh phone it was already safe",
   "grok-auth.bearer-token": "a session token, and sessionStorage besides — it dies with the tab by design",
+  "soma-scan-assist": "scan camera/zoom/flash choices for THIS phone's lenses — a restored 3x on a phone without a telephoto would be wrong",
 };
 
 /** Written by the zustand persist middleware, and the thing exportJson dumps. */
@@ -131,8 +132,8 @@ test("book files are the one deliberate hole in the backup, and it is written do
   const stores = [...photos.matchAll(/createObjectStore\(([A-Z_]+|"[a-z]+")/g)].map((m) => m[1]);
   assert.deepEqual(
     stores,
-    ["STORE", "SCAN_STORE", "BOOK_STORE"],
-    "a new object store: put it in the backup, or say here why it is out",
+    ["STORE", "SCAN_STORE", "BOOK_STORE", "EXERCISE_STORE", "VAULT_STORE"],
+    "a new object store: put it in the backup, or say here why it is out — exercise photos are user-picked pictures, deliberately like habit photos: not in the JSON backup; VAULT_STORE holds a FileSystemDirectoryHandle to a folder on THIS device's disk, which is not serialisable and would be meaningless on another device or browser profile anyway: deliberately not in the JSON backup",
   );
 });
 
@@ -155,6 +156,8 @@ test("the export carries every section the store persists", () => {
       "state about the install rather than the user's data: it records that the demo log has been replaced, and importJson sets it on any restore anyway",
     readingSince:
       "the moment a reading timer was started on THIS device. Restoring it elsewhere would resume a timer nobody is running and bank minutes nobody read",
+    readingBook:
+      "which book THIS phone had open when it was put down. The page you reached is in the book itself and is backed up with it; this is only the memory of a session that was interrupted, and restoring it would open a fresh phone into a book nobody was reading on it",
   };
   const expected = persisted.filter((k) => !(k in notData));
   const missing = expected.filter((k) => !new RegExp(`^\\s*${k}:`, "m").test(exportBody));

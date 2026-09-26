@@ -33,7 +33,7 @@ test("region views match the view the muscle is actually drawn on", () => {
 
 // Drawn for anatomical completeness but not trainable in this app: no
 // exercise targets them, so a readiness row would always read 100%.
-const DECORATIVE = new Set(["neck", "tibialis"]);
+const DECORATIVE = new Set(["tibialis"]);
 
 test("every trainable muscle drawn on the body has a region entry", () => {
   // Without this, a muscle can be painted but never reported in the list, so

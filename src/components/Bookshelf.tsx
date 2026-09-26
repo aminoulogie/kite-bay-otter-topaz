@@ -17,12 +17,14 @@ import { pickBookFiles, readBookFile } from "@/lib/book-import";
 import { captureImage, savePhoto } from "@/lib/habit-photos";
 import { searchBooks, upgradeCoverUrl, type BookMatch } from "@/lib/lookup";
 import {
-  counts, coverKey, finishedIn, onlyBooks, percentOf, shelfLabel, sortShelf,
+  counts, coverKey, finishedIn, onlyBooks, percentOf, shelfLabel, sortShelf, statusOf,
 } from "@/lib/shelf";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { MindEntry } from "@/lib/types";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * What you are reading, as a shelf you sweep a thumb along.
@@ -54,34 +56,79 @@ export function Bookshelf() {
   const [readingId, setReadingId] = useState<string | null>(null);
   const [importing, setImporting] = useState(0);
 
-  const startReading = useSoma((s) => s.startReading);
-  const stopReading = useSoma((s) => s.stopReading);
   /**
-   * Whether the READER started the clock, as opposed to the goal card.
+   * The reader keeps its own time — see `lib/use-reading-clock.ts`.
    *
-   * Opening a book starts the reading timer, because opening a book is what
-   * reading is — a timer you have to remember to start is a timer that shows
-   * you did no reading this week. But if you had already started it yourself,
-   * the reader must not restart it, and closing the book must not stop what
-   * you started: the minutes you had banked are yours either way.
+   * This used to start the goal card's stopwatch on open and stop it on close,
+   * which meant a session was recorded only if the book was closed properly
+   * (iOS discards a backgrounded web view whenever it likes, and takes the
+   * whole evening with it) and that a book left open on the arm of a chair
+   * counted the afternoon. The reader now banks a minute at a time and stops
+   * counting when nobody is turning pages.
    */
-  const clockIsOurs = useRef(false);
+  const setReadingBook = useSoma((s) => s.setReadingBook);
 
+  // Opening a book from the shelf means "where I left off", so any landing a
+  // highlight asked for is dropped first. Leaving it set would send the next
+  // ordinary open back to the same passage for ever.
   const openReader = (id: string) => {
+    setLanding(undefined);
     setReadingId(id);
-    if (!useSoma.getState().readingSince) {
-      startReading();
-      clockIsOurs.current = true;
-    }
+    setReadingBook(id);
+  };
+  const closeReader = () => {
+    setLanding(undefined);
+    setReadingId(null);
+    // Closing the book is what says you are done with it. Everything else —
+    // backgrounding, locking the phone, the app being killed — leaves this
+    // set, which is what makes the next launch land back on the page.
+    setReadingBook(null);
   };
 
-  const closeReader = () => {
-    setReadingId(null);
-    if (!clockIsOurs.current) return;
-    clockIsOurs.current = false;
-    const kept = stopReading();
-    if (kept > 0) toast.success(`${kept} min read`);
-  };
+  /**
+   * Back to the page you were on, on the next launch.
+   *
+   * Only for a book that is still on the shelf and still has its file: the
+   * alternative is opening into a reader that can only show an error, which
+   * is a worse start than the shelf. Either way the memory is spent here, so
+   * a book you then close does not come back the launch after.
+   */
+  const hydrated = useSoma((s) => s.hydrated);
+  const resumed = useRef(false);
+  useEffect(() => {
+    if (!hydrated || resumed.current) return;
+    resumed.current = true;
+    const want = useSoma.getState().readingBook;
+    if (!want) return;
+    const book = useSoma.getState().mind.find((m) => m.id === want);
+    if (!book || book.kind !== "book" || !book.fileKind) {
+      setReadingBook(null);
+      return;
+    }
+    setReadingId(want);
+  }, [hydrated, setReadingBook]);
+
+  /**
+   * "Take me to this highlight", asked for by a card that cannot reach here.
+   *
+   * The request is cleared as soon as it is taken up, so the passage is a
+   * place the reader STARTS at and not a place it keeps being dragged back
+   * to — turn one page and the request is already spent.
+   *
+   * `landing` is held separately from the store field for that reason: the
+   * reader needs the target for its first render, and by then the request is
+   * gone.
+   */
+  const request = useSoma((s) => s.openBookAt);
+  const bookOpened = useSoma((s) => s.bookOpened);
+  const [landing, setLanding] = useState<{ chapter: number; offset: number } | undefined>();
+  useEffect(() => {
+    if (!request) return;
+    bookOpened();
+    if (!useSoma.getState().mind.some((m) => m.id === request.bookId)) return;
+    setLanding({ chapter: request.chapter, offset: request.offset });
+    setReadingId(request.bookId);
+  }, [request, bookOpened]);
 
   const books = useMemo(() => sortShelf(onlyBooks(mind)), [mind]);
   const tally = useMemo(() => counts(books), [books]);
@@ -228,6 +275,27 @@ export function Bookshelf() {
     toast.success(files.length === 1 ? "On the shelf" : `${files.length} books on the shelf`);
   };
 
+  const size = useWidgetSize();
+  // The reader draws over everything from inside this card, so a book being
+  // read keeps the full card mounted whatever size it is.
+  if (isGlance(size) && !reading) {
+    const current = books.filter((b) => statusOf(b) === "reading");
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Reading shelf",
+          short: "Shelf",
+          icon: BookOpen,
+          value: String(tally.reading),
+          unit: "reading",
+          sub: `${tally.unread} to read · ${thisYear} finished this year`,
+          lines: (current.length ? current : books).map((b) => ({ text: b.title, value: shelfLabel(b) })),
+          empty: "No books yet",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -351,7 +419,11 @@ export function Bookshelf() {
 
       {reading && (
         <BookReader
+          // Keyed on the landing too, so asking for a second highlight in the
+          // book already open re-opens it there rather than doing nothing.
+          key={`${reading.id}:${landing ? `${landing.chapter}:${landing.offset}` : ""}`}
           book={reading}
+          startAt={landing}
           onClose={closeReader}
           onChange={(patch) => updateMind(reading.id, patch)}
         />

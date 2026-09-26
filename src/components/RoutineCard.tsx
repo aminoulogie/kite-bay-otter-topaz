@@ -10,8 +10,12 @@ import {
   MIN_STEP_SECONDS, ROUTINE_COLORS, clock, duration, isOverCommitted, plannedSeconds,
   slackSeconds, spans, stepsOf, type Routine, type StepSource,
 } from "@/lib/routine";
+import { getLocalDateKey } from "@/lib/soma";
+import { activeOf } from "@/lib/todos";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Glance, isGlance } from "@/components/Glance";
+import { useWidgetSize } from "@/components/WidgetGrid";
 
 /**
  * Routines: several things done back to back, against one clock.
@@ -52,6 +56,27 @@ export function RoutineCard() {
     setOpen(id);
   };
 
+  const size = useWidgetSize();
+  // A running routine draws its runner from inside this card, so it stays whole.
+  if (isGlance(size) && !running) {
+    return (
+      <Glance
+        size={size}
+        spec={{
+          label: "Routines",
+          icon: Timer,
+          value: routines.length ? String(routines.length) : null,
+          lines: routines.map((r) => ({
+            text: r.name,
+            color: r.color,
+            value: `${Math.round(r.windowSeconds / 60)}m · ${r.steps.length} steps`,
+          })),
+          empty: "No routines yet",
+          emptyShort: "None",
+        }}
+      />
+    );
+  }
   return (
     <Card>
       <CardTitle>
@@ -185,6 +210,18 @@ function RoutineSheet({ id, onClose }: { id: string; onClose: () => void }) {
   const slack = slackSeconds(routine);
   const over = isOverCommitted(routine);
   const used = new Set(stepsOf(routine).map((s) => s.refId).filter(Boolean));
+  /**
+   * Only what is actually on a live list.
+   *
+   * Every to-do ever ticked off `!t.done` used to qualify, which is fine for
+   * a week and a mess after a year — reaching for "walk the dog" and finding
+   * it buried under four hundred finished errands from last spring. A step
+   * can only ever point at something on today's or this week's list now.
+   */
+  const today = getLocalDateKey(new Date());
+  const openTodos = [...activeOf(todos, "day", today), ...activeOf(todos, "week", today)].filter(
+    (t) => !t.done,
+  );
 
   return (
     <div
@@ -327,8 +364,8 @@ function RoutineSheet({ id, onClose }: { id: string; onClose: () => void }) {
 
         <Picker
           title="From to-dos"
-          items={todos
-            .filter((t) => !t.done && !used.has(t.id))
+          items={openTodos
+            .filter((t) => !used.has(t.id))
             .map((t) => ({ id: t.id, label: t.text, seconds: undefined }))}
           onPick={(item) =>
             addStep(routine.id, {

@@ -15,7 +15,7 @@ import {
   setStart, splitBlock, startOf, totalHours, type TimeBlock,
 } from "@/lib/day-plan";
 import { getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -62,7 +62,15 @@ export function TimeView() {
 
   return (
     <WidgetGrid tab="time">
-      <Card key="header" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_14%,transparent),transparent_55%),var(--color-surface)]">
+      <Sized key="header" glance={{
+          label: isToday ? "Today" : day.toLocaleDateString(undefined, { weekday: "long" }),
+          short: "Flexible",
+          value: formatHours(freeLeft),
+          unit: "flexible",
+          valueClass: plan.over ? "text-danger" : undefined,
+          sub: plan.over ? "Fixed blocks run past 24 hours" : `24 hours from ${clockAt(dayStart)}`,
+        }}>
+      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_14%,transparent),transparent_55%),var(--color-surface)]">
         <div className="flex items-start justify-between gap-2">
           <div>
             <div className="text-[0.6rem] font-bold uppercase tracking-[0.14em] text-faint">
@@ -93,8 +101,25 @@ export function TimeView() {
           </p>
         )}
       </Card>
+      </Sized>
 
-      <div key="ring">
+      <Sized
+        key="ring"
+        glance={() => {
+          const at = hourOfDay();
+          const cur = list.find((a) => {
+            const h = ((at - a.startHour) % 24 + 24) % 24;
+            return h < a.endHour - a.startHour;
+          });
+          return {
+            label: "The ring",
+            visual: (px: number) => <PlanDonut list={list} px={px} />,
+            lines: cur ? [{ text: `Now: ${cur.block.label}`, color: cur.block.color, value: `until ${clockAt(cur.endHour)}` }] : [],
+            stats: list.slice(0, 4).map((a) => ({ label: a.block.label, value: formatHours(a.block.hours), color: a.block.color })),
+          };
+        }}
+      >
+      <div>
       <DayRing
         blocks={plan.blocks}
         selectedId={editing?.id ?? null}
@@ -111,6 +136,7 @@ export function TimeView() {
           measured against the flexible hours rather than the whole 24: sleep
           and work are not time the phone was competing for. */}
       </div>
+      </Sized>
 
       {/* On Time rather than Habits: the question a routine answers is a
           question about time — do five things fit in twenty minutes — and
@@ -119,7 +145,13 @@ export function TimeView() {
 
       <ScreenTimeCard key="screen" flexibleHours={freeLeft} />
 
-      <Card key="blocks">
+      <Sized key="blocks" glance={() => ({
+          label: "The day, in order",
+          short: "Day",
+          lines: list.map((a) => ({ text: a.block.label, color: a.block.color, value: clockAt(a.startHour) })),
+          empty: "Nothing planned",
+        })}>
+      <Card>
         <div className="mb-2 flex items-center justify-between gap-2">
           <CardTitle className="mb-0">The day, in order</CardTitle>
           <button
@@ -191,6 +223,7 @@ export function TimeView() {
           </span>
         </div>
       </Card>
+      </Sized>
 
       <button
         type="button"
@@ -527,4 +560,33 @@ function AddSheet({
       </Button>
     </Sheet>
   );
+}
+
+/** The day plan as a plain coloured ring, for the glance: no dragging, no labels. */
+function PlanDonut({ list, px }: { list: ReturnType<typeof arcs>; px: number }) {
+  const r = 40;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg viewBox="0 0 100 100" style={{ width: px, height: px }} className="-rotate-90" aria-hidden>
+      <circle cx={50} cy={50} r={r} fill="none" stroke="var(--color-surface-3)" strokeWidth={16} />
+      {list.map((a) => (
+        <circle
+          key={a.block.id}
+          cx={50}
+          cy={50}
+          r={r}
+          fill="none"
+          stroke={a.block.color}
+          strokeWidth={16}
+          strokeDasharray={`${Math.max(0, (a.block.hours / 24) * c - 1)} ${c}`}
+          strokeDashoffset={-((((a.startHour % 24) + 24) % 24) / 24) * c}
+        />
+      ))}
+    </svg>
+  );
+}
+
+function hourOfDay(): number {
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60;
 }

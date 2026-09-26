@@ -17,7 +17,7 @@ import {
   RAMP_PRESETS, bumpSizes, formatAmount, isBuild, rungLabel, status,
 } from "@/lib/habit-ramp";
 import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
-import { WidgetGrid } from "@/components/WidgetGrid";
+import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -40,20 +40,37 @@ export function HabitsView() {
 
   const [tab, setTab] = useState<HabitTab>("today");
   const [name, setName] = useState("");
+  const doneToday = habits.filter((h) => h.history[activeDate]).length;
+  const habitLines = habits.map((h) => ({ text: h.name, done: !!h.history[activeDate], color: h.color }));
 
   return (
     <WidgetGrid tab="habits">
-      <Card key="header" className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
+      <Sized key="header" glance={{
+          label: "Consistency",
+          short: "Habits",
+          value: `${doneToday}/${habits.length}`,
+          sub: habits.length === doneToday && habits.length ? "all done today" : `${habits.length - doneToday} to go today`,
+          progress: habits.length ? doneToday / habits.length : null,
+          done: habits.length > 0 && doneToday === habits.length,
+          lines: habitLines,
+          empty: "No habits yet",
+        }}>
+      <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <Badge tone="accent">Habits · {activeDate}</Badge>
         <h1 className="mt-2 font-display text-xl font-extrabold tracking-tight">Consistency</h1>
         <p className="mt-1 text-xs text-muted">
           {habits.length} tracked · {habits.filter((h) => h.history[activeDate]).length} done today
         </p>
       </Card>
+      </Sized>
 
       <TopTabs key="tabs" tabs={TABS} value={tab} onChange={setTab} />
 
-      <div key="list" className="space-y-3">
+      <Sized
+        key="list"
+        glance={{ label: "The habits", short: "Today", lines: habitLines, empty: "No habits yet", emptyShort: "None" }}
+      >
+      <div className="space-y-3">
       {tab === "today" && <TodayPanel />}
 
       {tab === "month" && (
@@ -90,8 +107,10 @@ export function HabitsView() {
       )}
 
       </div>
+      </Sized>
 
-      <Card key="new">
+      <Sized key="new" glance={{ label: "New habit", short: "New", empty: "Tap to add a habit", emptyShort: "Add" }}>
+      <Card>
         <CardTitle>New habit</CardTitle>
         <div className="flex gap-2">
           <Input
@@ -179,6 +198,7 @@ export function HabitsView() {
           </div>
         )}
       </Card>
+      </Sized>
     </WidgetGrid>
   );
 }

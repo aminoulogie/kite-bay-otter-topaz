@@ -49,6 +49,13 @@ export interface Program {
    */
   anchor?: string;
   builtIn?: boolean;
+  /**
+   * A starting point, not a schedule — shown under "Start from a template"
+   * rather than "Your programmes", and never itself the active programme.
+   * Opening one to edit makes a normal (non-template) copy, same as the
+   * shipped templates already work.
+   */
+  isTemplate?: boolean;
 }
 
 export function isRestSplit(name: string): boolean {
@@ -83,6 +90,7 @@ export function makeProgram(partial: Partial<Program> & { name: string }): Progr
     days: days.length ? days : [REST_DAY],
     anchor: partial.anchor,
     builtIn: partial.builtIn,
+    isTemplate: partial.isTemplate,
   };
 }
 
