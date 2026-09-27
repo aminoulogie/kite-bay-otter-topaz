@@ -7,6 +7,7 @@ import { useSoma } from "@/lib/store";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
 import { cn } from "@/lib/utils";
+import { MACRO_COLOR } from "@/components/MacroStrip";
 import { Glance, isGlance } from "@/components/Glance";
 
 /**
@@ -65,7 +66,7 @@ export function WeeklyFuel() {
         spec={{
           label: "The last seven days",
           short: "7 days",
-          color: "#ff9f0a",
+          color: MACRO_COLOR.cals,
           value: week.loggedDays ? String(week.avg.cals) : null,
           unit: "kcal avg",
           sub: week.loggedDays ? `${week.onTarget}/${week.loggedDays} days on target · protein ${week.proteinHit}/${week.loggedDays}` : null,
@@ -92,7 +93,7 @@ export function WeeklyFuel() {
     <Card>
       <CardTitle>
         <span>The last seven days</span>
-        <span className="tabular text-sm font-bold text-accent-text">
+        <span className="tabular text-sm font-bold" style={{ color: MACRO_COLOR.cals }}>
           {week.avg.cals} kcal
         </span>
       </CardTitle>
@@ -101,19 +102,24 @@ export function WeeklyFuel() {
           the question here is consistency, and a row of bars the same height
           answers it at a glance whatever the level was. The target line is
           what says whether the level was right. */}
-      <div className="flex h-16 items-end gap-1.5">
+      {/* Each column is the full height of the row: with the row aligned to
+          its end, the columns shrank to their labels and every bar — sized as
+          a share of a column with no height — drew at zero. */}
+      <div className="flex h-16 gap-1.5">
         {rows.map((r, i) => {
           const on =
             goals.cals > 0 && Math.abs(r.totals.cals - goals.cals) <= goals.cals * 0.1;
           return (
-            <div key={r.date} className="flex flex-1 flex-col items-center gap-1">
-              <div className="flex h-full w-full items-end">
+            <div key={r.date} className="flex min-h-0 flex-1 flex-col items-center gap-1">
+              <div className="flex min-h-0 w-full flex-1 items-end">
                 <div
-                  className={cn(
-                    "w-full rounded-t-md transition-[height]",
-                    !r.logged ? "bg-surface-3" : on ? "bg-accent" : "bg-info",
-                  )}
-                  style={{ height: `${Math.max(r.logged ? 8 : 4, bars[i]! * 100)}%` }}
+                  className={cn("w-full rounded-t-md transition-[height]", !r.logged && "bg-surface-3")}
+                  // Calories' own pink: solid on a day that landed on target,
+                  // faded on one that missed it either way.
+                  style={{
+                    height: `${Math.max(r.logged ? 8 : 4, bars[i]! * 100)}%`,
+                    ...(r.logged ? { background: MACRO_COLOR.cals, opacity: on ? 1 : 0.45 } : {}),
+                  }}
                 />
               </div>
               <span className="text-[0.55rem] font-bold uppercase text-faint">
@@ -130,18 +136,18 @@ export function WeeklyFuel() {
       {hasDetailRoom(size) && (
         <div className="mt-3 grid grid-cols-4 gap-2">
           <Count n={week.loggedDays} of={7} label="Logged" />
-          <Count n={week.onTarget} of={week.loggedDays} label="On target" />
-          <Count n={week.proteinHit} of={week.loggedDays} label="Protein" />
-          <Count n={week.waterHit} of={week.loggedDays} label="Water" />
+          <Count n={week.onTarget} of={week.loggedDays} label="On target" color={MACRO_COLOR.cals} />
+          <Count n={week.proteinHit} of={week.loggedDays} label="Protein" color={MACRO_COLOR.p} />
+          <Count n={week.waterHit} of={week.loggedDays} label="Water" color="#00d8ff" />
         </div>
       )}
 
       {hasFullRoom(size) && (
         <div className="mt-3 grid grid-cols-4 gap-2 border-t border-border pt-3">
-          <Avg n={week.avg.protein} label="Protein" unit="g" />
-          <Avg n={week.avg.carbs} label="Carbs" unit="g" />
-          <Avg n={week.avg.fat} label="Fat" unit="g" />
-          <Avg n={week.avg.fiber} label="Fiber" unit="g" />
+          <Avg n={week.avg.protein} label="Protein" unit="g" color={MACRO_COLOR.p} />
+          <Avg n={week.avg.carbs} label="Carbs" unit="g" color={MACRO_COLOR.c} />
+          <Avg n={week.avg.fat} label="Fat" unit="g" color={MACRO_COLOR.f} />
+          <Avg n={week.avg.fiber} label="Fiber" unit="g" color="#b18cff" />
         </div>
       )}
 
@@ -156,10 +162,13 @@ export function WeeklyFuel() {
   );
 }
 
-function Count({ n, of, label }: { n: number; of: number; label: string }) {
+function Count({ n, of, label, color }: { n: number; of: number; label: string; color?: string }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-2 px-2 py-1.5 text-center">
-      <div className="font-display text-base font-extrabold tabular leading-none">
+    <div
+      className="rounded-xl border border-border bg-surface-2 px-2 py-1.5 text-center"
+      style={color ? { background: `linear-gradient(160deg, ${color}1f, transparent 70%), var(--color-surface-2)` } : undefined}
+    >
+      <div className="font-display text-base font-extrabold tabular leading-none" style={{ color }}>
         {n}
         <span className="text-[0.6rem] font-bold text-faint">/{of}</span>
       </div>
@@ -170,10 +179,10 @@ function Count({ n, of, label }: { n: number; of: number; label: string }) {
   );
 }
 
-function Avg({ n, label, unit }: { n: number; label: string; unit: string }) {
+function Avg({ n, label, unit, color }: { n: number; label: string; unit: string; color: string }) {
   return (
     <div className="text-center">
-      <div className="font-display text-sm font-extrabold tabular leading-none">
+      <div className="font-display text-sm font-extrabold tabular leading-none" style={{ color }}>
         {n}
         <span className="text-[0.6rem] font-bold text-faint">{unit}</span>
       </div>

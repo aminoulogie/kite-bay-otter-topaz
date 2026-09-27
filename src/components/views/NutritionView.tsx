@@ -27,7 +27,8 @@ import { useSoma } from "@/lib/store";
 import { useLongPressMove } from "@/lib/use-long-press-move";
 import { SwipeRow } from "@/components/SwipeRow";
 import { PlatePhoto } from "@/components/PlatePhoto";
-import { MacroStrip } from "@/components/MacroStrip";
+import { MACRO_COLOR, MacroStrip } from "@/components/MacroStrip";
+import { RING_DEFS } from "@/lib/rings";
 import { rebalance } from "@/lib/rebalance";
 import { eatBack, sessionBurn } from "@/lib/training-burn";
 import { nextDates, suggestDay, suggestWeek } from "@/lib/meal-suggest";
@@ -327,15 +328,18 @@ export function NutritionView() {
         </div>
         <div className="mt-4">
           <div className="mb-1 flex justify-between text-xs font-bold">
-            <span className="text-muted">Calories</span>
-            <span className="tabular">
+            <span className="flex items-center gap-1.5 text-muted">
+              <span aria-hidden className="h-2.5 w-[3px] rounded-full" style={{ background: CALS.from }} />
+              Calories
+            </span>
+            <span className="tabular" style={{ color: CALS.from }}>
               {Math.round(totals.cals)} / {goalCals}
               {plannedTotals.cals > 0 && (
                 <span className="ml-1 text-faint">+{Math.round(plannedTotals.cals)}</span>
               )}
             </span>
           </div>
-          <Progress value={(totals.cals / goalCals) * 100} />
+          <Progress value={(totals.cals / goalCals) * 100} color={ringFill(CALS)} track={`${CALS.from}2e`} />
         </div>
 
         {/* The mode everything you add next will obey. Stated where the day is
@@ -432,9 +436,9 @@ export function NutritionView() {
       </Sized>
 
       <div key="actions" className="grid grid-cols-3 gap-2">
-        <Macro label="Protein" used={totals.p} goal={goals.protein} unit="g" />
-        <Macro label="Carbs" used={totals.c} goal={goals.carbs} unit="g" />
-        <Macro label="Fat" used={totals.f} goal={goals.fat} unit="g" />
+        <Macro label="Protein" used={totals.p} goal={goals.protein} unit="g" color={MACRO_COLOR.p} />
+        <Macro label="Carbs" used={totals.c} goal={goals.carbs} unit="g" color={MACRO_COLOR.c} />
+        <Macro label="Fat" used={totals.f} goal={goals.fat} unit="g" color={MACRO_COLOR.f} />
       </div>
 
       <Sized key="water" glance={{
@@ -450,12 +454,15 @@ export function NutritionView() {
         }}>
       <Card>
         <CardTitle>
-          <span>Water</span>
-          <span className="tabular text-sm font-bold text-accent-text">
+          <span className="flex items-center gap-2">
+            <Droplet aria-hidden className="size-4" style={{ color: WATER.from }} />
+            Water
+          </span>
+          <span className="tabular text-sm font-bold" style={{ color: WATER.from }}>
             {water} / {goals.water} ml
           </span>
         </CardTitle>
-        <Progress value={waterPct} barClassName="bg-info" />
+        <Progress value={waterPct} color={ringFill(WATER)} track={`${WATER.from}2e`} />
         {fromFood > 0 && (
           <p className="mt-1.5 text-[0.65rem] text-muted">
             {fromFood} ml of that came from what you drank — juice, milk and anything else
@@ -1029,18 +1036,32 @@ export function NutritionView() {
   );
 }
 
-function Macro({ label, used, goal, unit }: { label: string; used: number; goal: number; unit: string }) {
+// The rings' own colours, so a bar here and the ring on Home for the same
+// number are one colour — and a gradient, as the ring is.
+const CALS = RING_DEFS.find((r) => r.id === "cals")!;
+const WATER = RING_DEFS.find((r) => r.id === "water")!;
+const ringFill = (r: { from: string; to: string }) => `linear-gradient(90deg, ${r.from}, ${r.to})`;
+
+function Macro({ label, used, goal, unit, color }: { label: string; used: number; goal: number; unit: string; color: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-surface-2 p-3">
-      <div className="text-[0.62rem] font-bold uppercase tracking-wider text-faint">{label}</div>
-      <div className="mt-0.5 font-display text-lg font-extrabold tabular">
+    <div
+      className="rounded-2xl border border-border p-3"
+      // A wash of the macro's colour from the top corner: enough to tell the
+      // three apart at a glance, not so much that the number fights it.
+      style={{ background: `linear-gradient(160deg, ${color}1f, transparent 70%), var(--color-surface-2)` }}
+    >
+      <div className="flex items-center gap-1.5 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+        <span aria-hidden className="h-2.5 w-[3px] rounded-full" style={{ background: color }} />
+        {label}
+      </div>
+      <div className="mt-0.5 font-display text-lg font-extrabold tabular" style={{ color }}>
         {Math.round(used)}
         <span className="text-xs font-bold text-muted">
           /{goal}
           {unit}
         </span>
       </div>
-      <Progress className="mt-2" value={(used / goal) * 100} />
+      <Progress className="mt-2" value={(used / goal) * 100} color={color} track={`${color}2e`} />
     </div>
   );
 }

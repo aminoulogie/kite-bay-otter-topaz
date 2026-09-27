@@ -9,6 +9,7 @@ import type { NutritionDay } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Glance, isGlance } from "@/components/Glance";
 import { useWidgetSize } from "@/components/WidgetGrid";
+import { MACRO_COLOR } from "@/components/MacroStrip";
 
 /**
  * What was actually eaten against what was aimed for.
@@ -25,12 +26,13 @@ import { useWidgetSize } from "@/components/WidgetGrid";
 
 type Nutrient = "cals" | "p" | "c" | "f" | "fiber";
 
-const NUTRIENTS: { id: Nutrient; label: string; unit: string; goal: keyof import("@/lib/types").Goals }[] = [
-  { id: "cals", label: "Calories", unit: "kcal", goal: "cals" },
-  { id: "p", label: "Protein", unit: "g", goal: "protein" },
-  { id: "c", label: "Carbs", unit: "g", goal: "carbs" },
-  { id: "f", label: "Fat", unit: "g", goal: "fat" },
-  { id: "fiber", label: "Fiber", unit: "g", goal: "fiber" },
+// Each line in its own macro's colour, the same one its tile and ring wear.
+const NUTRIENTS: { id: Nutrient; label: string; unit: string; goal: keyof import("@/lib/types").Goals; color: string }[] = [
+  { id: "cals", label: "Calories", unit: "kcal", goal: "cals", color: MACRO_COLOR.cals },
+  { id: "p", label: "Protein", unit: "g", goal: "protein", color: MACRO_COLOR.p },
+  { id: "c", label: "Carbs", unit: "g", goal: "carbs", color: MACRO_COLOR.c },
+  { id: "f", label: "Fat", unit: "g", goal: "fat", color: MACRO_COLOR.f },
+  { id: "fiber", label: "Fiber", unit: "g", goal: "fiber", color: "#b18cff" },
 ];
 
 const RANGES = [
@@ -122,7 +124,7 @@ export function NutritionGraphs() {
         spec={{
           label: `${spec.label} · ${RANGES.find((r) => r.id === rangeId)!.label}`,
           short: spec.label,
-          color: "#c8ff2e",
+          color: spec.color,
           value: average ? String(average) : null,
           unit: `${spec.unit} avg`,
           sub: target ? `${hitRate}% of days on target ${target}${spec.unit}` : null,
@@ -145,10 +147,11 @@ export function NutritionGraphs() {
             onClick={() => setNutrient(n.id)}
             className={cn(
               "shrink-0 rounded-full border px-3 py-1.5 text-[0.7rem] font-bold transition-colors",
-              nutrient === n.id
-                ? "border-accent bg-accent text-accent-ink"
-                : "border-border bg-surface-2 text-muted",
+              nutrient !== n.id && "border-border bg-surface-2 text-muted",
             )}
+            // The chosen one in the colour its line is drawn in. Dark type on
+            // the bright green, white on the rest.
+            style={nutrient === n.id ? { background: n.color, borderColor: n.color, color: n.id === "p" ? "#0b0d12" : "#fff" } : undefined}
           >
             {n.label}
           </button>
@@ -211,8 +214,8 @@ export function NutritionGraphs() {
                 margin={{ top: 6, right: 10, bottom: 0, left: 4 }}>
                 <defs>
                   <linearGradient id="fill-nutrient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.35} />
-                    <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0.02} />
+                    <stop offset="0%" stopColor={spec.color} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={spec.color} stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
@@ -264,13 +267,13 @@ export function NutritionGraphs() {
                 <Area
                   type="monotone"
                   dataKey="value"
-                  stroke="var(--color-accent)"
+                  stroke={spec.color}
                   strokeWidth={2}
                   fill="url(#fill-nutrient)"
                   // Gaps stay gaps: joining across an unlogged day would invent
                   // a meal that was never eaten.
                   connectNulls={false}
-                  dot={{ r: 2 }}
+                  dot={{ r: 2, fill: spec.color, stroke: spec.color }}
                   isAnimationActive
                   animationDuration={400}
                 />
