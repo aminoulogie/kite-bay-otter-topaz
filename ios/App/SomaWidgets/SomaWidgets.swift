@@ -112,8 +112,7 @@ struct RingStack: View {
                 if d > w {
                     RingArc(f: r.f, from: r.from, to: r.to, width: w)
                         .frame(width: d, height: d)
-                        .saturation(muteUnfilled && r.f < 1 ? 0.35 : 1)
-                        .opacity(muteUnfilled && r.f < 1 ? 0.55 : 1)
+                        .opacity(muteUnfilled && r.f < 1 ? 0.3 : 1)
                 }
             }
             if arrows {

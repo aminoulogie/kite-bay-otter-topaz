@@ -125,9 +125,11 @@ export function RingSet({
         const ex = c0 + radius * Math.cos(a);
         const ey = c0 + radius * Math.sin(a);
         return (
-          <g key={i} style={dull ? { filter: "saturate(0.35)" } : undefined} opacity={dull ? 0.55 : 1}>
+          // As dim as a day still to come (the calendar draws those at 30%),
+          // so an open ring and an empty day read as the same kind of absence.
+          <g key={i} opacity={dull ? 0.3 : 1}>
             {/* The track: the ring's own colour, faint. */}
-            <circle cx={c0} cy={c0} r={radius} fill="none" stroke={r.from} strokeOpacity={dull ? 0.3 : 0.24} strokeWidth={w} />
+            <circle cx={c0} cy={c0} r={radius} fill="none" stroke={r.from} strokeOpacity={0.24} strokeWidth={w} />
             {lap >= 1 && <circle cx={c0} cy={c0} r={radius} fill="none" stroke={grad} strokeWidth={w} />}
             {f > 0 && (rest > 0.0005 || lap === 0) && (
               <circle
