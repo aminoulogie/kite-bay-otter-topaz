@@ -70,6 +70,11 @@ export function SettingsView() {
   const [exercisesOpen, setExercisesOpen] = useState(false);
   // Raw text beside the stored numbers, so a half-typed target is not wiped on
   // every keystroke.
+  const [minDrafts, setMinDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(useSoma.getState().settings.nutrientMins ?? {}).map(([k, v]) => [k, String(v)]),
+    ),
+  );
   const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       Object.entries(useSoma.getState().settings.customGoals ?? {}).map(([k, v]) => [k, String(v)]),
@@ -904,6 +909,30 @@ export function SettingsView() {
                   if (n == null) delete next[g.key];
                   else next[g.key] = n;
                   patchSettings({ customGoals: next });
+                }}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="mt-4 text-[0.7rem] font-bold uppercase tracking-wide text-muted">Minimums</div>
+        <p className="mb-2 mt-0.5 text-xs text-muted">
+          The least that still counts as a good day. Drawn as a second line on the Fuel
+          charts; blank means no minimum.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {GOAL_FIELDS.map((g) => (
+            <label key={g.key} className="text-[0.62rem] font-bold uppercase tracking-wide text-faint">
+              {g.label}
+              <DecimalInput
+                className="mt-1"
+                placeholder="None"
+                value={minDrafts[g.key] ?? ""}
+                onValueChange={(n, raw) => {
+                  setMinDrafts({ ...minDrafts, [g.key]: raw });
+                  const next = { ...(settings.nutrientMins ?? {}) };
+                  if (n == null || n <= 0) delete next[g.key];
+                  else next[g.key] = n;
+                  patchSettings({ nutrientMins: next });
                 }}
               />
             </label>

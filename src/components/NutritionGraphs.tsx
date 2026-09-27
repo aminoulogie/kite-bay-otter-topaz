@@ -48,10 +48,13 @@ export function NutritionGraphs() {
   // only from stored day goals meant changing a target in Settings did nothing
   // to the chart until every day in range had been re-goaled.
   const customGoals = useSoma((s) => s.settings.customGoals);
+  const mins = useSoma((s) => s.settings.nutrientMins);
   const [nutrient, setNutrient] = useState<Nutrient>("p");
   const [rangeId, setRangeId] = useState<(typeof RANGES)[number]["id"]>("30");
 
   const spec = NUTRIENTS.find((n) => n.id === nutrient)!;
+  // Your floor for this nutrient, from Settings. Not every nutrient has one.
+  const minimum = (mins as Record<string, number | undefined> | undefined)?.[spec.goal] ?? 0;
   const days = RANGES.find((r) => r.id === rangeId)!.days;
 
   const { data, target, average, hitRate } = useMemo(() => {
@@ -105,14 +108,14 @@ export function NutritionGraphs() {
     // The axis has to contain the TARGET as well as the data. Fitting to the
     // data alone put a 3600 kcal target line off the top of a chart that maxed
     // at 2300 — the line the whole card exists to show was invisible.
-    const hi = Math.max(target || 0, ...(vs.length ? vs : [0]));
+    const hi = Math.max(target || 0, minimum, ...(vs.length ? vs : [0]));
     if (hi <= 0) return { min: 0, max: 1 };
     // Rounded up to a readable step. Multiplying by 1.08 gave axis labels like
     // "3888.0000000000005", which is a float artifact printed at the user.
     const headroom = hi * 1.08;
     const step = headroom > 1000 ? 100 : headroom > 100 ? 10 : 1;
     return { min: 0, max: Math.ceil(headroom / step) * step };
-  }, [data, target]);
+  }, [data, target, minimum]);
 
   const zoom = useChartZoom(fullX, fullY);
 
@@ -189,6 +192,11 @@ export function NutritionGraphs() {
                 <span className="text-muted">
                   target <b className="text-fg tabular-nums">{target}</b>
                 </span>
+                {minimum > 0 && (
+                  <span className="text-muted">
+                    min <b className="tabular-nums" style={{ color: spec.color }}>{minimum}</b>
+                  </span>
+                )}
                 <span className="ml-auto text-muted">
                   hit <b className={cn("tabular-nums", hitRate >= 70 ? "text-emerald-400" : "text-warn")}>
                     {hitRate}%
@@ -259,6 +267,25 @@ export function NutritionGraphs() {
                       value: `target ${target}`,
                       position: "insideTopRight",
                       fill: "var(--color-warn)",
+                      fontSize: 9,
+                      fontWeight: 700,
+                    }}
+                  />
+                )}
+                {minimum > 0 && (
+                  // Your floor, in the nutrient's own colour so it reads as
+                  // belonging to the line it bounds; the target stays amber.
+                  <ReferenceLine
+                    y={minimum}
+                    stroke={spec.color}
+                    strokeOpacity={0.8}
+                    strokeDasharray="2 4"
+                    strokeWidth={1.5}
+                    label={{
+                      value: `min ${minimum}`,
+                      // Left, so it never lands on the target's label.
+                      position: "insideBottomLeft",
+                      fill: spec.color,
                       fontSize: 9,
                       fontWeight: 700,
                     }}

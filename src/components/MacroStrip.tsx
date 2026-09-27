@@ -21,6 +21,16 @@ export const MACRO_COLOR = {
   c: "#3b82f6",
 } as const;
 
+/** Every nutrient Fuel charts, by the name the goals use, in its colour. */
+export const NUTRIENT_COLOR = {
+  cals: MACRO_COLOR.cals,
+  protein: MACRO_COLOR.p,
+  carbs: MACRO_COLOR.c,
+  fat: MACRO_COLOR.f,
+  fiber: "#b18cff",
+  water: "#00d8ff",
+} as const;
+
 export const MACRO_LABEL = {
   cals: "calories",
   p: "protein",

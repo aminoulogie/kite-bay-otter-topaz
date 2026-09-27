@@ -332,6 +332,12 @@ export interface Settings {
    * at whatever the default happened to be on the day it was first edited.
    */
   customGoals?: Partial<Goals>;
+  /**
+   * Floors, below the targets: the least of a nutrient that still counts as a
+   * day that went right. Drawn as a second line on the Fuel charts. Only the
+   * ones set are stored; none are set by default.
+   */
+  nutrientMins?: Partial<Record<"cals" | "protein" | "carbs" | "fat" | "fiber" | "water", number>>;
   unit: Unit;
   /** What money is counted in. Defaults to the dinar; free text, not a list. */
   currency?: string;

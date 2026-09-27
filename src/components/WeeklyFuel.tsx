@@ -1,13 +1,14 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
-import { barHeights, summariseWeek, type WeekRow } from "@/lib/week-fuel";
+import { summariseWeek, type DayTotals, type WeekRow } from "@/lib/week-fuel";
 import { useSoma } from "@/lib/store";
+import { totalWaterMl } from "@/lib/hydration";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
 import { cn } from "@/lib/utils";
-import { MACRO_COLOR } from "@/components/MacroStrip";
+import { MACRO_COLOR, NUTRIENT_COLOR } from "@/components/MacroStrip";
 import { Glance, isGlance } from "@/components/Glance";
 
 /**
@@ -21,6 +22,17 @@ import { Glance, isGlance } from "@/components/Glance";
  * Averages are over the days that were LOGGED — see lib/week-fuel.ts for why
  * dividing a four-day week by seven is a lie about a deficit nobody ran.
  */
+const PICKS: { id: keyof DayTotals; label: string; unit: string }[] = [
+  { id: "cals", label: "Calories", unit: "kcal" },
+  { id: "protein", label: "Protein", unit: "g" },
+  { id: "carbs", label: "Carbs", unit: "g" },
+  { id: "fat", label: "Fat", unit: "g" },
+  { id: "fiber", label: "Fiber", unit: "g" },
+  { id: "water", label: "Water", unit: "L" },
+];
+/** The bright colours take dark type on a chosen chip. */
+const DARK_TEXT = new Set<keyof DayTotals>(["protein", "water"]);
+
 export function WeeklyFuel() {
   const nutrition = useSoma((s) => s.nutrition);
   const settings = useSoma((s) => s.settings);
@@ -46,7 +58,7 @@ export function WeeklyFuel() {
           fiber: a.fiber + (i.fiber || 0),
           water: a.water,
         }),
-        { cals: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, water: day?.water || 0 },
+        { cals: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, water: totalWaterMl(day) },
       );
       out.push({ date, totals, logged: items.length > 0 || (day?.water ?? 0) > 0 });
     }
@@ -57,7 +69,7 @@ export function WeeklyFuel() {
     () => summariseWeek(rows, { cals: goals.cals, protein: goals.protein, water: goals.water }),
     [rows, goals.cals, goals.protein, goals.water],
   );
-  const bars = useMemo(() => barHeights(rows, (t) => t.cals), [rows]);
+  const [picked, setPicked] = useState<keyof DayTotals>("cals");
 
   if (isGlance(size)) {
     return (
@@ -89,46 +101,110 @@ export function WeeklyFuel() {
     );
   }
 
+  const pick = PICKS.find((x) => x.id === picked)!;
+  const color = NUTRIENT_COLOR[picked];
+  // The same target the chart below draws: yours if you set one, else the
+  // one the latest logged day was scored under, else the default.
+  const latestGoal = [...rows].reverse().map((r) => nutrition[r.date]?.goals?.[picked]).find((g) => (g ?? 0) > 0);
+  const goal = settings.customGoals?.[picked] || latestGoal || goals[picked] || 0;
+  const minimum = settings.nutrientMins?.[picked] ?? 0;
+  const values = rows.map((r) => (r.logged ? r.totals[picked] : 0));
+  // The scale has to hold the target and the floor as well as the days, or a
+  // line the card exists to show sits off its top.
+  const top = Math.max(...values, goal, minimum, 1) * 1.08;
+  const hit = (v: number) =>
+    minimum > 0
+      ? v >= minimum
+      : picked === "cals"
+        ? goal > 0 && Math.abs(v - goal) <= goal * 0.1
+        : goal > 0 && v >= goal * 0.9;
+  const shown = (v: number) => (picked === "water" ? `${(v / 1000).toFixed(1)}` : String(Math.round(v)));
+
   return (
     <Card>
       <CardTitle>
         <span>The last seven days</span>
-        <span className="tabular text-sm font-bold" style={{ color: MACRO_COLOR.cals }}>
-          {week.avg.cals} kcal
+        <span className="tabular text-sm font-bold" style={{ color }}>
+          {shown(week.avg[picked])} {pick.unit}
+          <span className="ml-1 text-[0.6rem] font-bold text-faint">avg</span>
         </span>
       </CardTitle>
 
-      {/* Seven bars against the week's own biggest day, not against the goal:
-          the question here is consistency, and a row of bars the same height
-          answers it at a glance whatever the level was. The target line is
-          what says whether the level was right. */}
-      {/* Each column is the full height of the row: with the row aligned to
-          its end, the columns shrank to their labels and every bar — sized as
-          a share of a column with no height — drew at zero. */}
-      <div className="flex h-16 gap-1.5">
+      {/* One nutrient at a time, each in its own colour: the week of protein
+          and the week of calories are different questions. */}
+      <div className="-mx-1 mb-3 flex gap-1 overflow-x-auto px-1 pb-0.5" data-no-swipe-nav>
+        {PICKS.map((x) => {
+          const on = x.id === picked;
+          return (
+            <button
+              key={x.id}
+              type="button"
+              onClick={() => setPicked(x.id)}
+              aria-pressed={on}
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-1 text-[0.66rem] font-bold transition-colors",
+                !on && "border-border bg-surface-2 text-muted",
+              )}
+              style={on ? { background: NUTRIENT_COLOR[x.id], borderColor: NUTRIENT_COLOR[x.id], color: DARK_TEXT.has(x.id) ? "#0b0d12" : "#fff" } : undefined}
+            >
+              {x.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Seven bars on a scale that includes the target and your minimum,
+          drawn as lines across them: solid on a day that made it, faded on
+          one that did not. */}
+      <div className="relative flex h-24 gap-1.5">
+        {goal > 0 && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-warn"
+            style={{ bottom: `calc(${(goal / top) * 100}% * (96 - 18) / 96 + 18px)` }}
+          />
+        )}
+        {minimum > 0 && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-dotted"
+            style={{ borderColor: color, bottom: `calc(${(minimum / top) * 100}% * (96 - 18) / 96 + 18px)` }}
+          />
+        )}
         {rows.map((r, i) => {
-          const on =
-            goals.cals > 0 && Math.abs(r.totals.cals - goals.cals) <= goals.cals * 0.1;
+          const v = values[i]!;
           return (
             <div key={r.date} className="flex min-h-0 flex-1 flex-col items-center gap-1">
               <div className="flex min-h-0 w-full flex-1 items-end">
                 <div
                   className={cn("w-full rounded-t-md transition-[height]", !r.logged && "bg-surface-3")}
-                  // Calories' own pink: solid on a day that landed on target,
-                  // faded on one that missed it either way.
                   style={{
-                    height: `${Math.max(r.logged ? 8 : 4, bars[i]! * 100)}%`,
-                    ...(r.logged ? { background: MACRO_COLOR.cals, opacity: on ? 1 : 0.45 } : {}),
+                    height: `${r.logged ? Math.max(6, (v / top) * 100) : 4}%`,
+                    ...(r.logged ? { background: color, opacity: hit(v) ? 1 : 0.4 } : {}),
                   }}
                 />
               </div>
-              <span className="text-[0.55rem] font-bold uppercase text-faint">
+              <span className="h-[14px] text-[0.55rem] font-bold uppercase leading-[14px] text-faint">
                 {parseLocalDateKey(r.date).toLocaleDateString(undefined, { weekday: "narrow" })}
               </span>
             </div>
           );
         })}
       </div>
+      {(goal > 0 || minimum > 0) && (
+        <div className="mt-1.5 flex gap-3 text-[0.6rem] font-bold text-faint">
+          {goal > 0 && (
+            <span className="flex items-center gap-1">
+              <span aria-hidden className="w-3 border-t border-dashed border-warn" /> target {shown(goal)}
+            </span>
+          )}
+          {minimum > 0 && (
+            <span className="flex items-center gap-1">
+              <span aria-hidden className="w-3 border-t-2 border-dotted" style={{ borderColor: color }} /> min {shown(minimum)}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* A small widget is a glance: the headline number and the bars are the
           glance, and four more counts under them would be unreadable at that
