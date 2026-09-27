@@ -29,6 +29,7 @@ import { MindView } from "@/components/views/MindView";
 import { ProjectsView } from "@/components/views/ProjectsView";
 import { LooksView } from "@/components/views/LooksView";
 import { TimeView } from "@/components/views/TimeView";
+import { pushWidgetSnapshot } from "@/lib/native/widget-bridge";
 
 /**
  * The dock, drawn in TAB_ORDER so it can never disagree with the direction a
@@ -197,6 +198,16 @@ export function AppShell() {
   useEdgeSwipe(openDrawer, ready && !drawerOpen);
 
   const hydrated = useSoma((s) => s.hydrated);
+
+  // The home-screen widget's rings, kept current with the app's own. Only
+  // once the saved data has loaded: before that the store holds an empty day,
+  // and the widget would briefly empty with it.
+  const nutrition = useSoma((s) => s.nutrition);
+  const history = useSoma((s) => s.history);
+  const customGoals = useSoma((s) => s.settings.customGoals);
+  useEffect(() => {
+    if (hydrated) pushWidgetSnapshot({ nutrition, history, customGoals });
+  }, [hydrated, nutrition, history, customGoals]);
   // Resolved on the way out, not only in setTab: the last-open tab is restored
   // straight from storage on boot, so a phone closed on Body would otherwise
   // reopen to a tab that is no longer in the dock.

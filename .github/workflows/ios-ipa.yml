@@ -136,6 +136,35 @@ jobs:
 
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
+
+          # The home-screen widget ships inside the app. Without it the
+          # "Rings" widget would silently be missing from the phone's gallery.
+          OUT="$RUNNER_TEMP/Payload/App.app"
+          WIDGET="$OUT/PlugIns/SomaWidgets.appex"
+          if [ ! -d "$WIDGET" ]; then
+            echo "FATAL: SomaWidgets.appex is not embedded in the app."
+            ls -la "$OUT/PlugIns" || true
+            exit 1
+          fi
+
+          # Ad-hoc signed, inside out, carrying the App Group entitlement. The
+          # app and its widget share today's rings through that group, and a
+          # sideloader reads the entitlements it should request from the
+          # binary — an unsigned binary carries none, so the group would never
+          # be granted. The sideloader re-signs everything with your Apple ID
+          # at install; this signature only states what is being asked for.
+          for f in "$OUT"/Frameworks/*; do
+            codesign --force --sign - "$f"
+          done
+          codesign --force --sign - \
+            --entitlements "$GITHUB_WORKSPACE/ios/App/SomaWidgets/SomaWidgets.entitlements" "$WIDGET"
+          codesign --force --sign - \
+            --entitlements "$GITHUB_WORKSPACE/ios/App/App/App.entitlements" "$OUT"
+          ENTS=$(codesign -d --entitlements - "$OUT" 2>&1 || true)
+          case "$ENTS" in
+            *application-groups*) echo "App Group entitlement present" ;;
+            *) echo "FATAL: App Group entitlement missing from the signed app."; echo "$ENTS"; exit 1 ;;
+          esac
           cd "$RUNNER_TEMP"
           zip -qry "SOMA-$V.ipa" Payload
           echo "Built $(du -h "SOMA-$V.ipa" | cut -f1) unsigned ipa"

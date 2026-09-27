@@ -7,21 +7,57 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		149BF40D0B408A40728BAA4F /* SomaWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 88ACC0F1D4956CBBB179A237 /* SomaWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeaderMapsOnCopy, ); }; };
+		2DB150EE28A7B0BC826B3394 /* WidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B9A07FAF3159423316D91F /* WidgetBridgePlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
+		35C21827D3B9C0787E7BBF27 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F5354F15091797E66F6A0BA /* WidgetKit.framework */; };
+		386D9E88B0D43740B6CFE2C5 /* RingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F0F56CA8FE985E51A8E816 /* RingsStore.swift */; };
+		45F7D4A312FFDB85CA125F79 /* FaceDepthPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D4671454A6DBCA282AECDD3 /* FaceDepthPlugin.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
-		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
-		45F7D4A312FFDB85CA125F79 /* FaceDepthPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D4671454A6DBCA282AECDD3 /* FaceDepthPlugin.swift */; };
 		513CD6F7A1849D0EA8FF7684 /* BodyDepthPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57D7305CA66F79DEE935DFE7 /* BodyDepthPlugin.swift */; };
 		51FB8B2343A51BFBC8715A30 /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65D07F5F73BC9222DCB2D819 /* MainViewController.swift */; };
+		93D2690F5E4DF5B8BF46E19A /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C438DA99C554200CA1455B63 /* SwiftUI.framework */; };
+		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
+		AFDEB49084EF3EC0CA4F3C37 /* SomaWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A4E0B7210C6E4060F55AC79 /* SomaWidgets.swift */; };
+		B862E6E77BCE4327AA3A4244 /* RingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F0F56CA8FE985E51A8E816 /* RingsStore.swift */; };
+		B9B376F26634959066988151 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4B0C4503E0F5C42B29E160CA /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		2C7876779B411C9CA1C9A552 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5CEC6C8F1B42354D81C93691;
+			remoteInfo = SomaWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0C730FE284C0038DFFA404C0 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				149BF40D0B408A40728BAA4F /* SomaWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		28B9A07FAF3159423316D91F /* WidgetBridgePlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetBridgePlugin.swift; sourceTree = "<group>"; };
+		2CA7BC2EF8931B4D76F2775C /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
+		353BAEC7490F31CC41429890 /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		4B0C4503E0F5C42B29E160CA /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -30,12 +66,18 @@
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
+		57D7305CA66F79DEE935DFE7 /* BodyDepthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyDepthPlugin.swift; sourceTree = "<group>"; };
+		5D4671454A6DBCA282AECDD3 /* FaceDepthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceDepthPlugin.swift; sourceTree = "<group>"; };
+		5F5354F15091797E66F6A0BA /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/WidgetKit.framework; sourceTree = DEVELOPER_DIR; };
+		61192122065437D5D97E8EC5 /* SomaWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = SomaWidgets.entitlements; sourceTree = "<group>"; };
+		65D07F5F73BC9222DCB2D819 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		88ACC0F1D4956CBBB179A237 /* SomaWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SomaWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8A4E0B7210C6E4060F55AC79 /* SomaWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SomaWidgets.swift; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
+		C438DA99C554200CA1455B63 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/SwiftUI.framework; sourceTree = DEVELOPER_DIR; };
+		E6F0F56CA8FE985E51A8E816 /* RingsStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RingsStore.swift; sourceTree = "<group>"; };
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
-		5D4671454A6DBCA282AECDD3 /* FaceDepthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceDepthPlugin.swift; sourceTree = "<group>"; };
-		57D7305CA66F79DEE935DFE7 /* BodyDepthPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyDepthPlugin.swift; sourceTree = "<group>"; };
-		65D07F5F73BC9222DCB2D819 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -47,6 +89,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		894B48A0DC136F4845AF2E19 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B9B376F26634959066988151 /* Foundation.framework in Frameworks */,
+				35C21827D3B9C0787E7BBF27 /* WidgetKit.framework in Frameworks */,
+				93D2690F5E4DF5B8BF46E19A /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -54,6 +106,7 @@
 			isa = PBXGroup;
 			children = (
 				AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */,
+				7CE932282ED3252C0966F7AD /* iOS */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -65,6 +118,7 @@
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
+				74BF28732B66C90DEB1904F8 /* SomaWidgets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -72,6 +126,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				88ACC0F1D4956CBBB179A237 /* SomaWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -90,8 +145,32 @@
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				28B9A07FAF3159423316D91F /* WidgetBridgePlugin.swift */,
+				353BAEC7490F31CC41429890 /* App.entitlements */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		74BF28732B66C90DEB1904F8 /* SomaWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				E6F0F56CA8FE985E51A8E816 /* RingsStore.swift */,
+				8A4E0B7210C6E4060F55AC79 /* SomaWidgets.swift */,
+				2CA7BC2EF8931B4D76F2775C /* Info.plist */,
+				61192122065437D5D97E8EC5 /* SomaWidgets.entitlements */,
+			);
+			name = SomaWidgets;
+			path = SomaWidgets;
+			sourceTree = "<group>";
+		};
+		7CE932282ED3252C0966F7AD /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				4B0C4503E0F5C42B29E160CA /* Foundation.framework */,
+				5F5354F15091797E66F6A0BA /* WidgetKit.framework */,
+				C438DA99C554200CA1455B63 /* SwiftUI.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 		7F8756D8B27F46E3366F6CEA /* Pods */ = {
@@ -114,16 +193,35 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				0C730FE284C0038DFFA404C0 /* Embed Foundation Extensions */,
 				9592DBEFFC6D2A0C8D5DEB22 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				4102D75DAA6510E49121AC9B /* PBXTargetDependency */,
 			);
 			name = App;
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		5CEC6C8F1B42354D81C93691 /* SomaWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 69FB826DA24DC4AB8FF713CB /* Build configuration list for PBXNativeTarget "SomaWidgets" */;
+			buildPhases = (
+				C68C5CFF83C329B95F3D5BE1 /* Sources */,
+				894B48A0DC136F4845AF2E19 /* Frameworks */,
+				012FB67146DF335666398D66 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SomaWidgets;
+			productName = SomaWidgets;
+			productReference = 88ACC0F1D4956CBBB179A237 /* SomaWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -150,18 +248,24 @@
 				Base,
 			);
 			mainGroup = 504EC2FB1FED79650016851F;
-			packageReferences = (
-			);
 			productRefGroup = 504EC3051FED79650016851F /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				5CEC6C8F1B42354D81C93691 /* SomaWidgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		012FB67146DF335666398D66 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3021FED79650016851F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -222,10 +326,30 @@
 				51FB8B2343A51BFBC8715A30 /* MainViewController.swift in Sources */,
 				45F7D4A312FFDB85CA125F79 /* FaceDepthPlugin.swift in Sources */,
 				513CD6F7A1849D0EA8FF7684 /* BodyDepthPlugin.swift in Sources */,
+				2DB150EE28A7B0BC826B3394 /* WidgetBridgePlugin.swift in Sources */,
+				B862E6E77BCE4327AA3A4244 /* RingsStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C68C5CFF83C329B95F3D5BE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				386D9E88B0D43740B6CFE2C5 /* RingsStore.swift in Sources */,
+				AFDEB49084EF3EC0CA4F3C37 /* SomaWidgets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4102D75DAA6510E49121AC9B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = SomaWidgets;
+			target = 5CEC6C8F1B42354D81C93691 /* SomaWidgets */;
+			targetProxy = 2C7876779B411C9CA1C9A552 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -247,6 +371,29 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		10B9A18C76A74DBA9EF6B82D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = SomaWidgets/SomaWidgets.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_LANGUAGE = en;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SomaWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.aminoulogie.soma.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		504EC3141FED79650016851F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -359,6 +506,7 @@
 			baseConfigurationReference = FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -379,6 +527,7 @@
 			baseConfigurationReference = AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				INFOPLIST_FILE = App/Info.plist;
@@ -392,6 +541,28 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
+		};
+		94AA834E5B96CC6FB115550B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = SomaWidgets/SomaWidgets.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_LANGUAGE = en;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SomaWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.aminoulogie.soma.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
 		};
 /* End XCBuildConfiguration section */
 
@@ -410,6 +581,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		69FB826DA24DC4AB8FF713CB /* Build configuration list for PBXNativeTarget "SomaWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				10B9A18C76A74DBA9EF6B82D /* Release */,
+				94AA834E5B96CC6FB115550B /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
