@@ -463,8 +463,13 @@ test("a panel that appears later lands beside its neighbours, not at the bottom"
 test("a card filed under a sibling page is not added to this one", () => {
   // Fuel renders all its cards into whichever page is open; only the
   // registry's own for that page may appear.
-  const l = reconcile(undefined, "nutrition-dash", ["target", "diary", "water", "Bench Press"]);
+  const l = reconcile(undefined, "nutrition-dash", ["target", "diary", "minerals", "Bench Press"]);
   const ids = l.map((p) => p.id);
-  assert.ok(!ids.includes("diary") && !ids.includes("water"), ids.join(","));
+  assert.ok(!ids.includes("diary") && !ids.includes("minerals"), ids.join(","));
   assert.ok(ids.includes("Bench Press"), "a truly invented card still is");
+});
+
+test("water is on Fuel's dashboard as well as its log", () => {
+  assert.ok(reconcile(undefined, "nutrition-dash").some((p) => p.id === "water"));
+  assert.ok(reconcile(undefined, "nutrition-log").some((p) => p.id === "water"));
 });

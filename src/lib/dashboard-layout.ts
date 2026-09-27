@@ -310,6 +310,9 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "suggest", label: "Suggest from pantry", size: "2x4" },
     { id: "plan", label: "Plan ahead", size: "2x4" },
     { id: "actions", label: "Scan / Search / Burn", size: "1x4", sizes: FURNITURE },
+    // On the page you open, not only in the log: water is logged a glass at a
+    // time all day, and hiding the buttons a tab away lost it.
+    { id: "water", label: "Water", size: "2x4" },
     { id: "plate", label: "Plate photo", size: "2x4" },
     { id: "hunger", label: "Hunger", size: "2x4" },
     { id: "add", label: "Add food", size: "2x4" },

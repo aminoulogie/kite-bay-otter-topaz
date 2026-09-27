@@ -176,7 +176,9 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
         <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
           <span
             className={cn("font-extrabold tabular", !hasValue && "text-faint", spec.valueClass)}
-            style={{ fontSize: `${Math.min(px * 0.3, (px * 0.62) / Math.max(2.2, text.length * 0.62))}px` }}
+            // Sized to the hole, not the ring: the bold digits run wider than
+            // 0.6em, and a "2342" sized to the ring's outside touched its stroke.
+            style={{ fontSize: `${Math.min(px * 0.3, (px * 0.5) / Math.max(2.2, text.length * 0.62))}px` }}
           >
             {text}
           </span>
@@ -266,9 +268,9 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
   let body: React.ReactNode;
   if (size === "1x1" && gaugeable) {
     body = (
-      <div className="flex h-full flex-col items-center justify-between">
+      <div className="flex h-full flex-col items-center gap-1.5">
         <div className="w-full">{head}</div>
-        {gauge(52, false)}
+        <div className="grid min-h-0 flex-1 place-items-center">{gauge(46, false)}</div>
       </div>
     );
   } else if (size === "1x1") {

@@ -130,7 +130,10 @@ const ROW: Record<1 | 2 | 3, { tile: string; wide: string }> = {
   // than as a smaller card. A wide 2-row CARD still comes down, because it has
   // text in it that does reflow.
   1: { tile: "h-[5.25rem] lg:h-[4.5rem]", wide: "" },
-  2: { tile: "h-[11rem]", wide: "min-h-[11rem] lg:min-h-[9rem]" },
+  // A 2-row tile spans two grid rows (see boxFor), so it is exactly two
+  // one-row tiles and the gap between them: its bottom edge lines up with a
+  // pair of 1x2s stacked beside it.
+  2: { tile: "h-[11.25rem] lg:h-[11rem]", wide: "min-h-[11rem] lg:min-h-[9rem]" },
   3: { tile: "h-[17rem] lg:h-[14.5rem]", wide: "min-h-[17rem] lg:min-h-[14.5rem]" },
 };
 
@@ -141,7 +144,9 @@ function boxFor(size: WidgetSize, natural: boolean): string {
   // small size is a glance with a hard box; a big card gets a floor and may
   // grow past it, so a card with controls in it stays usable.
   if (natural) return COL[spec.w];
-  return cn(COL[spec.w], isGlance(size) ? h.tile : h.wide);
+  // A tall tile takes the rows it covers, so the tiles after it can fill the
+  // column beside it instead of starting below it — as the home screen does.
+  return cn(COL[spec.w], isGlance(size) ? cn(h.tile, spec.h === 2 && "row-span-2") : h.wide);
 }
 
 /**
@@ -319,7 +324,10 @@ export function WidgetGrid({
           // are one row of a grid and belong close together; two cards stacked
           // are two separate things and were reading as one block — which is
           // what the exercise list looked like once it joined the grid.
-          "soma-grid grid grid-cols-4 items-start gap-x-2 gap-y-3 lg:grid-cols-12 lg:gap-x-4 lg:gap-y-4",
+          //
+          // Dense: a small tile that fits in a hole further up — beside a 2x2
+          // — goes into it rather than leaving the hole and opening a new row.
+          "soma-grid grid grid-flow-row-dense grid-cols-4 items-start gap-x-2 gap-y-3 lg:grid-cols-12 lg:gap-x-4 lg:gap-y-4",
           editing && "select-none",
         )}
         data-editing={editing ? "true" : "false"}
