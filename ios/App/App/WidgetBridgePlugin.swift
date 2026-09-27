@@ -19,7 +19,14 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "WidgetBridge"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "setRings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
     ]
+
+    /// Whether the widget can be reached at all, and through which group —
+    /// shown in Setup → About, so a failed install says so plainly.
+    @objc func status(_ call: CAPPluginCall) {
+        call.resolve(["shared": RingsStore.available, "group": RingsStore.groupID ?? ""])
+    }
 
     @objc func setRings(_ call: CAPPluginCall) {
         guard let options = call.options,

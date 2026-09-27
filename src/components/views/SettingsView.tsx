@@ -32,6 +32,7 @@ import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
+import { widgetStatus } from "@/lib/native/widget-bridge";
 
 const GOAL_FIELDS = [
   { key: "cals" as const, label: "Calories" },
@@ -80,6 +81,10 @@ export function SettingsView() {
       Object.entries(useSoma.getState().settings.customGoals ?? {}).map(([k, v]) => [k, String(v)]),
     ),
   );
+  const [widget, setWidget] = useState<{ shared: boolean; group: string } | null>(null);
+  useEffect(() => {
+    void widgetStatus().then(setWidget);
+  }, []);
   const [localBusy, setBusy] = useState(false);
   const [health, setHealth] = useState<StorageHealth | null>(null);
   const [sinceBackup, setSinceBackup] = useState<number | null>(daysSinceBackup());
@@ -994,6 +999,14 @@ export function SettingsView() {
           <span className="text-muted">Data</span>
           <span className="font-bold">on this device only</span>
         </div>
+        {widget && (
+          <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+            <span className="shrink-0 text-muted">Home-screen widget</span>
+            <span className={cn("truncate font-bold", widget.shared ? "text-emerald-400" : "text-warn")}>
+              {widget.shared ? "Connected" : "Not connected — reinstall with App Groups"}
+            </span>
+          </div>
+        )}
       </Card>
       </Sized>
 

@@ -4,7 +4,22 @@ import { widgetSnapshot, type WidgetSnapshot } from "@/lib/widget-snapshot";
 /** Hands the snapshot to ios/App/App/WidgetBridgePlugin.swift. */
 const WidgetBridge = registerPlugin<{
   setRings(s: WidgetSnapshot): Promise<{ ok: boolean; shared: boolean }>;
+  status(): Promise<{ shared: boolean; group: string }>;
 }>("WidgetBridge");
+
+/**
+ * Whether the home-screen widget can read the app's rings: null off iOS or
+ * on a build without the plugin. `shared` false means the install did not
+ * grant the App Group the app and widget share, so the widget has nothing.
+ */
+export async function widgetStatus(): Promise<{ shared: boolean; group: string } | null> {
+  if (Capacitor.getPlatform() !== "ios") return null;
+  try {
+    return await WidgetBridge.status();
+  } catch {
+    return null;
+  }
+}
 
 let last = "";
 let timer: ReturnType<typeof setTimeout> | undefined;
