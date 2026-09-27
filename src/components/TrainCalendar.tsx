@@ -300,6 +300,9 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
                     px={38}
                     shadow={false}
                     delay={i * 12}
+                    // Only closed rings are vivid; today is still in progress,
+                    // so it keeps its colour either way.
+                    muteUnfilled={date !== today}
                   />
                 </span>
                 {isEnd && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-amber-400" aria-label="Membership ends" />}

@@ -100,7 +100,7 @@ export function ActivityRings() {
                 {parseLocalDateKey(d).toLocaleDateString(undefined, { weekday: "narrow" })}
               </span>
               <span className={cn(future && "opacity-35")}>
-                <RingSet rings={specs(valuesOn(d))} px={36} animate delay={i * 40} />
+                <RingSet rings={specs(valuesOn(d))} px={36} animate delay={i * 40} muteUnfilled={d !== today} />
               </span>
             </button>
           );

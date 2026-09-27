@@ -63,6 +63,7 @@ export function RingSet({
   delay = 0,
   arrows = px >= 50,
   shadow = px >= 48,
+  muteUnfilled = false,
   className,
 }: {
   rings: RingSpec[];
@@ -72,6 +73,12 @@ export function RingSet({
   /** The small arrows at the start of each ring, as on the watch. */
   arrows?: boolean;
   shadow?: boolean;
+  /**
+   * Only a CLOSED ring is drawn vivid; one still short of its goal is dulled.
+   * For the week strip and the calendar, where the question is "which days
+   * did I close" — today's own big rings stay vivid all the way round.
+   */
+  muteUnfilled?: boolean;
   className?: string;
 }) {
   const id = useId().replace(/:/g, "");
@@ -110,14 +117,17 @@ export function RingSet({
         const lap = Math.floor(f);
         const rest = f - lap;
         const grad = `url(#${id}g${i})`;
+        // Judged on the day's real share, not the animation's progress, so a
+        // ring that will close does not flicker from dull to vivid on the way.
+        const dull = muteUnfilled && r.f < 1;
         // The end of the ring, for its cap and shadow.
         const a = (f % 1 === 0 && f > 0 ? 1 : f % 1) * 2 * Math.PI - Math.PI / 2;
         const ex = c0 + radius * Math.cos(a);
         const ey = c0 + radius * Math.sin(a);
         return (
-          <g key={i}>
+          <g key={i} style={dull ? { filter: "saturate(0.35)" } : undefined} opacity={dull ? 0.55 : 1}>
             {/* The track: the ring's own colour, faint. */}
-            <circle cx={c0} cy={c0} r={radius} fill="none" stroke={r.from} strokeOpacity={0.24} strokeWidth={w} />
+            <circle cx={c0} cy={c0} r={radius} fill="none" stroke={r.from} strokeOpacity={dull ? 0.3 : 0.24} strokeWidth={w} />
             {lap >= 1 && <circle cx={c0} cy={c0} r={radius} fill="none" stroke={grad} strokeWidth={w} />}
             {f > 0 && (rest > 0.0005 || lap === 0) && (
               <circle

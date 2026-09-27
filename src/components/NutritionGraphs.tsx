@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Card, CardTitle } from "@/components/ui/card";
 import { ZoomableChart, useChartZoom } from "@/components/ZoomableChart";
@@ -226,7 +226,6 @@ export function NutritionGraphs() {
                     <stop offset="100%" stopColor={spec.color} stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="t"
                   type="number"
@@ -263,13 +262,6 @@ export function NutritionGraphs() {
                     stroke="var(--color-warn)"
                     strokeDasharray="6 4"
                     strokeWidth={1.5}
-                    label={{
-                      value: `target ${target}`,
-                      position: "insideTopRight",
-                      fill: "var(--color-warn)",
-                      fontSize: 9,
-                      fontWeight: 700,
-                    }}
                   />
                 )}
                 {minimum > 0 && (
@@ -281,14 +273,6 @@ export function NutritionGraphs() {
                     strokeOpacity={0.8}
                     strokeDasharray="2 4"
                     strokeWidth={1.5}
-                    label={{
-                      value: `min ${minimum}`,
-                      // Left, so it never lands on the target's label.
-                      position: "insideBottomLeft",
-                      fill: spec.color,
-                      fontSize: 9,
-                      fontWeight: 700,
-                    }}
                   />
                 )}
                 <Area

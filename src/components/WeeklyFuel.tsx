@@ -191,20 +191,6 @@ export function WeeklyFuel() {
           );
         })}
       </div>
-      {(goal > 0 || minimum > 0) && (
-        <div className="mt-1.5 flex gap-3 text-[0.6rem] font-bold text-faint">
-          {goal > 0 && (
-            <span className="flex items-center gap-1">
-              <span aria-hidden className="w-3 border-t border-dashed border-warn" /> target {shown(goal)}
-            </span>
-          )}
-          {minimum > 0 && (
-            <span className="flex items-center gap-1">
-              <span aria-hidden className="w-3 border-t-2 border-dotted" style={{ borderColor: color }} /> min {shown(minimum)}
-            </span>
-          )}
-        </div>
-      )}
 
       {/* A small widget is a glance: the headline number and the bars are the
           glance, and four more counts under them would be unreadable at that
