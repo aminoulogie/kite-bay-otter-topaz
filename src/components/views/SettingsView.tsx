@@ -33,6 +33,8 @@ import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
 import { widgetStatus } from "@/lib/native/widget-bridge";
+import { forgetNativeVault, isNativeVault, pickNativeVault, storedNativeVault } from "@/lib/native/vault-folder";
+import { localPhotoKeys } from "@/lib/habit-photos";
 
 const GOAL_FIELDS = [
   { key: "cals" as const, label: "Calories" },
@@ -63,6 +65,9 @@ export function SettingsView() {
   const [vaultHandle, setVaultHandleState] = useState<FileSystemDirectoryHandle | null>(null);
   const [vaultBusy, setVaultBusy] = useState(false);
   const [vaultLastSync, setVaultLastSync] = useState<Date | null>(null);
+  // Desktop Chrome through File System Access; the iPhone app through its
+  // own folder picker (lib/native/vault-folder.ts). Safari on the web: neither.
+  const canVault = supportsVaultFolder() || isNativeVault();
   const clearSeededHabitHistory = useSoma((s) => s.clearSeededHabitHistory);
   const applyGoalsToOpenDays = useSoma((s) => s.applyGoalsToOpenDays);
   const activeProgram = useActiveProgram();
@@ -183,7 +188,7 @@ export function SettingsView() {
           // this device's own first sync, before it ever wrote photos out as
           // files) can still carry them embedded, and restorePhotos on an
           // empty array is a no-op.
-          await readVaultPhotos(handle);
+          await readVaultPhotos(handle, await localPhotoKeys());
           await restorePhotos(result.backup.photos);
           await restoreScanImages(result.backup.scanImages);
           await restoreExercisePhotos(result.backup.exercisePhotos);
@@ -207,8 +212,8 @@ export function SettingsView() {
   // once immediately — the closest this can get to "just works" without a
   // server: whatever changed elsewhere shows up the moment Setup is opened.
   useEffect(() => {
-    if (!supportsVaultFolder()) return;
-    void getStoredVaultFolder().then((handle) => {
+    if (!canVault) return;
+    void (isNativeVault() ? storedNativeVault() : getStoredVaultFolder()).then((handle) => {
       if (!handle) return;
       setVaultHandleState(handle);
       void syncVault(handle, { silent: true });
@@ -676,10 +681,11 @@ export function SettingsView() {
           </p>
         )}
         <p className="mb-2 text-[0.7rem] leading-relaxed text-faint">
-          A backup holds everything: every session and correction, all nutrition, water and
-          creatine, habits and their photos at full size, your foods and scanned barcodes, your
-          programmes and weekday splits, saved meals, membership periods, supplements, and
-          every face scan with its photograph.
+          A backup holds everything but pictures: every session and correction, all nutrition,
+          water and creatine, habits, your foods and scanned barcodes, your programmes and
+          weekday splits, saved meals, membership periods, supplements, and every face scan's
+          measurements and 3D data. Photos are kept as ordinary .jpg files in your vault
+          folder (Vault sync, below) — which is what keeps this file small.
         </p>
         <div className="flex flex-col gap-2">
           <Button variant="primary" disabled={busy} onClick={() => void download()}>
@@ -717,11 +723,12 @@ export function SettingsView() {
       <Sized key="vault" glance={{ label: "Vault sync", short: "Vault", empty: "Sync SOMA with a folder", emptyShort: "Open" }}>
       <Card>
         <CardTitle>Vault sync</CardTitle>
-        {supportsVaultFolder() ? (
+        {canVault ? (
           <>
             <p className="mb-3 text-xs text-muted">
               Point this at a folder synced by iCloud Drive (or Dropbox, or anything else),
-              and open the same folder from SOMA on your other devices. Not instant — it
+              and open the same folder from SOMA on your other devices — on iPhone, pick
+              the iCloud Drive folder your PC's vault is in. Not instant — it
               syncs whenever a device is opened, same as the files themselves sync. Photos
               save into it as ordinary .jpg files, not buried in the sync file's text, so
               they open from Files or Explorer directly and the file itself stays small.
@@ -744,7 +751,7 @@ export function SettingsView() {
                   <Button
                     variant="danger"
                     onClick={() => {
-                      void forgetVaultFolder();
+                      void (isNativeVault() ? forgetNativeVault() : forgetVaultFolder());
                       setVaultHandleState(null);
                       setVaultLastSync(null);
                     }}
@@ -761,7 +768,8 @@ export function SettingsView() {
                 onClick={() => {
                   void (async () => {
                     try {
-                      const handle = await pickVaultFolder();
+                      const handle = isNativeVault() ? await pickNativeVault() : await pickVaultFolder();
+                      if (!handle) return;
                       setVaultHandleState(handle);
                       await syncVault(handle);
                     } catch (err) {

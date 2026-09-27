@@ -119,8 +119,22 @@ async function subDir(root: FileSystemDirectoryHandle, name: string): Promise<Fi
   return root.getDirectoryHandle(name, { create: true });
 }
 
+/**
+ * Writes a file, unless the same file is already there. A photo never
+ * changes once taken, so one of the same size is the same photo — and
+ * skipping it is what keeps a sync from re-uploading every picture in the
+ * vault to iCloud each time. A handle that can report its size without
+ * reading the file (the iOS folder, see lib/native/vault-folder.ts) says so
+ * through `sizeHint`.
+ */
 async function writeFile(dir: FileSystemDirectoryHandle, name: string, contents: Blob): Promise<void> {
-  const fileHandle = await dir.getFileHandle(name, { create: true });
+  const existing = await dir.getFileHandle(name).catch(() => null);
+  if (existing && contents.size > 0) {
+    const hinted = existing as FileSystemFileHandle & { sizeHint?: () => Promise<number> };
+    const size = hinted.sizeHint ? await hinted.sizeHint() : (await existing.getFile()).size;
+    if (size === contents.size) return;
+  }
+  const fileHandle = existing ?? (await dir.getFileHandle(name, { create: true }));
   const writable = await fileHandle.createWritable();
   await writable.write(contents);
   await writable.close();
@@ -214,7 +228,13 @@ export async function writeVaultPhotos(
  * subfolders (nothing of that kind has been pushed from any device yet) are
  * silently skipped rather than treated as an error.
  */
-export async function readVaultPhotos(handle: FileSystemDirectoryHandle): Promise<number> {
+export async function readVaultPhotos(
+  handle: FileSystemDirectoryHandle,
+  /** Pictures already on this device, which are not read again. */
+  have: { habit: Set<string>; exercise: Set<string>; scan: Set<string> } = {
+    habit: new Set(), exercise: new Set(), scan: new Set(),
+  },
+): Promise<number> {
   const root = await handle.getDirectoryHandle(PHOTO_DIR).catch(() => null);
   if (!root) return 0;
   let n = 0;
@@ -226,6 +246,8 @@ export async function readVaultPhotos(handle: FileSystemDirectoryHandle): Promis
     const displays = new Map<string, File>();
     for await (const [name, entryHandle] of habitDir.entries()) {
       if (entryHandle.kind !== "file") continue;
+      const base = name.replace(/\.(thumb\.jpg|display\.jpg|meta\.json)$/, "");
+      if (have.habit.has(decodeURIComponent(base))) continue;
       const file = await (entryHandle as FileSystemFileHandle).getFile();
       if (name.endsWith(META_SUFFIX)) {
         metas.set(name.slice(0, -META_SUFFIX.length), JSON.parse(await file.text()));
@@ -259,6 +281,7 @@ export async function readVaultPhotos(handle: FileSystemDirectoryHandle): Promis
   if (scanDir) {
     for await (const [name, entryHandle] of scanDir.entries()) {
       if (entryHandle.kind !== "file" || !name.endsWith(".jpg")) continue;
+      if (have.scan.has(decodeURIComponent(name.slice(0, -4)))) continue;
       const file = await (entryHandle as FileSystemFileHandle).getFile();
       await saveScanImage(decodeURIComponent(name.slice(0, -4)), await blobToDataUrl(file));
       n++;
@@ -269,6 +292,7 @@ export async function readVaultPhotos(handle: FileSystemDirectoryHandle): Promis
   if (exerciseDir) {
     for await (const [name, entryHandle] of exerciseDir.entries()) {
       if (entryHandle.kind !== "file" || !name.endsWith(".jpg")) continue;
+      if (have.exercise.has(decodeURIComponent(name.slice(0, -4)))) continue;
       const file = await (entryHandle as FileSystemFileHandle).getFile();
       await putExercisePhotoRecord({
         key: decodeURIComponent(name.slice(0, -4)),

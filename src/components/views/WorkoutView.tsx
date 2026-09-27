@@ -25,6 +25,8 @@ import { currentDebt } from "@/lib/sleep-debt";
 import { rateExerciseInstance, rateSession, rateSet, ratingTone } from "@/lib/stimulus";
 import { tapMedium, tapSuccess } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
+import { sessionBurn } from "@/lib/training-burn";
+import { latestWeight } from "@/lib/rings";
 import type { SessionExercise } from "@/lib/types";
 
 const SUPERSET_COLOR: Record<string, string> = {
@@ -48,6 +50,10 @@ export function WorkoutView() {
   const settings = useSoma((s) => s.settings);
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
+  // The same burn the Burned ring uses (lib/training-burn.ts), worked out
+  // from the session rather than the figure stored when it was saved, which
+  // came from an older formula and disagreed with the ring.
+  const bodyweight = useMemo(() => latestWeight(nutrition), [nutrition]);
   const activeDate = useSoma((s) => s.activeDate);
   // Declared here rather than further down: the readiness drafts below read it
   // inside a closure that runs during this same render, and a const referenced
@@ -246,7 +252,7 @@ export function WorkoutView() {
           <>
             <div className="grid grid-cols-2 gap-2">
               <Stat label="Duration" value={past.durationFormatted} />
-              <Stat label="Burn" value={`${past.caloriesBurned} kcal`} />
+              <Stat label="Burn" value={`${sessionBurn(past, bodyweight || undefined).gross} kcal`} />
               <Stat label="Volume" value={past.totalVol.toLocaleString()} />
               <Stat label="Sets" value={String(past.totalSets)} />
             </div>
@@ -317,7 +323,7 @@ export function WorkoutView() {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Stat label="Duration" value={f.durationFormatted} />
-          <Stat label="Burn" value={`${f.caloriesBurned} kcal`} />
+          <Stat label="Burn" value={`${sessionBurn(f, bodyweight || undefined).gross} kcal`} />
           <Stat label="Volume" value={f.totalVol.toLocaleString()} />
           <Stat label="Sets" value={String(f.totalSets)} />
         </div>

@@ -28,6 +28,8 @@ import type {
   WorkoutSet,
 } from "./types";
 import CUSTOM_FOOD_SEED from "./custom-foods-seed.json";
+import { correctCustomFoods } from "./food-corrections";
+import { sessionBurn } from "./training-burn";
 import {
   defaultProgram, loadActiveId, loadPrograms, resolveActiveProgram, saveActiveId,
   savePrograms, type Program,
@@ -2016,7 +2018,6 @@ export const useSoma = create<SomaStore>()(
         const settings = get().settings;
         let totalVol = 0;
         let totalSets = 0;
-        let sumIntensity = 0;
         let axialVolume = 0;
         // Split by where the stimulus actually landed: a set the triceps ended
         // is not full chest work, and counting it as such both overstates the
@@ -2031,19 +2032,25 @@ export const useSoma = create<SomaStore>()(
             const vol = SomaIntelligenceEngine.calculateWorkVolume(w, r, ex.isBW);
             totalVol += vol;
             if (ex.isAxial) axialVolume += vol;
-            sumIntensity += s.failure || 3;
           }
         }
 
         const clockFrom = live.firstSetAt ?? live.startTime;
         const elapsedMinutes = Math.max(1, Math.round((Date.now() - clockFrom) / 60000));
-        const avgIntensity = totalSets ? sumIntensity / totalSets : 3;
-        const caloriesBurned = SomaIntelligenceEngine.calculateCaloriesBurned(
-          elapsedMinutes,
-          totalVol,
-          totalSets,
-          avgIntensity,
-        );
+        // Stored for the record, from the same model the rings and the Train
+        // tab read (lib/training-burn.ts) — the old flat 6 kcal/min figure
+        // here disagreed with both.
+        const nutritionNow = get().nutrition;
+        const weighed = Object.keys(nutritionNow).filter((k) => nutritionNow[k]?.bodyWeight).sort();
+        const bodyweight = weighed.length ? nutritionNow[weighed[weighed.length - 1]!]!.bodyWeight : undefined;
+        const caloriesBurned = sessionBurn(
+          {
+            exercises: live.exercises,
+            totalSets,
+            durationFormatted: `${Math.floor(elapsedMinutes)}:00`,
+          },
+          bodyweight,
+        ).gross;
         const mins = Math.floor(elapsedMinutes);
         const secs = Math.round(((Date.now() - clockFrom) / 1000) % 60);
         const session: HistorySession = {
@@ -2657,7 +2664,7 @@ export const useSoma = create<SomaStore>()(
        * runs on every load is not a migration, it is a rule — and this one as
        * a rule would mean nobody could ever set a tab bar to 2x4 again.
        */
-      version: 2,
+      version: 3,
       /**
        * The same localStorage, with one thing put right on the way in.
        *
@@ -2673,13 +2680,18 @@ export const useSoma = create<SomaStore>()(
        */
       storage: somaStorage,
       migrate: (state, from) => {
-        const s = state as { layouts?: Record<string, WidgetPlacement[]> } | undefined;
-        if (!s || from >= 2) return s;
+        let s = state as { layouts?: Record<string, WidgetPlacement[]>; customFoods?: FoodItem[] } | undefined;
+        if (!s) return s;
         // v2: page furniture went from a 2x4 default to a 1x4 one. A stored
         // layout holds sizes, so the new default does not reach anyone who
         // has ever arranged a tab — they would keep a 48px tab bar in a 176px
         // cell, which is the hole this change exists to close.
-        return { ...s, layouts: migrateToOneRow(s.layouts) };
+        if (from < 2) s = { ...s, layouts: migrateToOneRow(s.layouts) };
+        // v3: the imported custom foods whose own numbers contradicted each
+        // other, put right — only where the wrong figure is still there, so
+        // a food already fixed by hand keeps its fix. See food-corrections.ts.
+        if (from < 3 && Array.isArray(s.customFoods)) s = { ...s, customFoods: correctCustomFoods(s.customFoods) };
+        return s;
       },
       partialize: (s) => ({
         seeded: s.seeded,

@@ -5,8 +5,10 @@
  * standing between a cleared Safari and years of training history. That makes
  * four things non-negotiable here:
  *
- *  1. It has to include habit photos. They live in IndexedDB rather than the
- *     zustand store, so a JSON dump of the store silently leaves them behind.
+ *  1. Photos are the vault folder's job, not the backup's (see buildBackup):
+ *     they live in IndexedDB rather than the zustand store and are written
+ *     out to the vault as .jpg files. A vault sync still builds the backup
+ *     WITH them, to have them in hand to write.
  *  2. It has to include the stores that keep their own localStorage key —
  *     programmes, saved meals, membership, supplements. See lib/side-stores.ts,
  *     which is the list. The same trap as the photos, sprung four more times:
@@ -103,8 +105,23 @@ const blobToDataUrl = (b: Blob) =>
 
 const dataUrlToBlob = async (u: string) => (await fetch(u)).blob();
 
-export async function buildBackup(data: Record<string, unknown>): Promise<Backup> {
-  const rows = await allPhotos();
+/**
+ * The backup file, photos included or not.
+ *
+ * Save backup leaves them out (`photos: false`): with every habit, exercise
+ * and scan picture embedded as base64 text a backup ran to 30 MB, and the
+ * pictures already have a better home — the vault folder, where they are
+ * ordinary .jpg files (see lib/vault-sync.ts). Scan data that is NOT a
+ * picture (a 3D scan's mesh and depth grid) stays in either way: it has
+ * nowhere else to live. Restoring an older file that does carry photos still
+ * restores them.
+ */
+export async function buildBackup(
+  data: Record<string, unknown>,
+  opts: { photos?: boolean } = {},
+): Promise<Backup> {
+  const withPhotos = opts.photos !== false;
+  const rows = withPhotos ? await allPhotos() : [];
   const photos: BackupPhoto[] = [];
   for (const p of rows) {
     photos.push({
@@ -117,9 +134,11 @@ export async function buildBackup(data: Record<string, unknown>): Promise<Backup
   }
   // A full scan's raw capture (`raw:<id>`) is several MB of frames kept only
   // for exporting a misbehaving scan; it has no place in a backup.
-  const scanImages = (await allScanImages()).filter((img) => !img.id.startsWith("raw:"));
+  const scanImages = (await allScanImages()).filter(
+    (img) => !img.id.startsWith("raw:") && (withPhotos || !img.dataUrl.startsWith("data:image/")),
+  );
   const exercisePhotos: BackupExercisePhoto[] = [];
-  for (const p of await allExercisePhotos()) {
+  for (const p of withPhotos ? await allExercisePhotos() : []) {
     exercisePhotos.push({ key: p.key, dataUrl: await blobToDataUrl(p.blob) });
   }
   const body = { data, photos, scanImages, exercisePhotos };

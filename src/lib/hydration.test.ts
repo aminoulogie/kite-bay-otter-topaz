@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  foodWaterMl, suggestWaterPct, totalWaterMl, waterMlFor, waterPctFromMacros,
-} from "./hydration.ts";
+import { foodWaterMl, suggestWaterPct, totalWaterMl, waterMlFor, waterPctFromMacros, waterMlForPortion, looksLikeDrink } from "./hydration.ts";
+import LIBRARY from "./food-library.json" with { type: "json" };
 import type { FoodItem, NutritionDay } from "./types.ts";
 
 const food = (p: Partial<FoodItem>): FoodItem =>
@@ -70,4 +69,23 @@ test("the day's water is what was drunk plus what came in food", () => {
 test("a day with nothing logged is zero, not a crash", () => {
   assert.equal(totalWaterMl(undefined), 0);
   assert.equal(foodWaterMl(undefined), 0);
+});
+
+test("water only comes from something poured in millilitres", () => {
+  assert.equal(waterMlForPortion(250, "ml", 88), 220);
+  assert.equal(waterMlForPortion(200, "g", 91), 0); // a slice of watermelon
+});
+
+test("a food named after a drink is not always one", () => {
+  assert.equal(looksLikeDrink("Milk Chocolate"), false);
+  assert.equal(looksLikeDrink("Powdered Milk (Whole)"), false);
+  assert.equal(looksLikeDrink("Watermelon", 91), false);
+  assert.equal(looksLikeDrink("Candia choco"), true);
+  assert.equal(looksLikeDrink("Chorba Frik"), true);
+});
+
+test("in the food library, only liquids carry water, and every one is in ml", () => {
+  for (const f of LIBRARY as { name: string; unit: string; waterPct?: number }[]) {
+    if (f.waterPct) assert.equal(f.unit, "ml", `${f.name} has water but is weighed`);
+  }
 });

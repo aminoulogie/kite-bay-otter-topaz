@@ -332,6 +332,24 @@ export async function allScanImages(): Promise<{ id: string; dataUrl: string }[]
   });
 }
 
+/**
+ * The keys of every picture already on this device — habit photos
+ * ("habitId:date"), exercise photos and scan images — without loading any of
+ * the pictures. A vault sync reads only what is missing from these, instead
+ * of pulling every photo in the folder across again on every sync.
+ */
+export async function localPhotoKeys(): Promise<{ habit: Set<string>; exercise: Set<string>; scan: Set<string> }> {
+  const db = await open();
+  const keysOf = (name: string) =>
+    new Promise<Set<string>>((resolve, reject) => {
+      const t = db.transaction(name, "readonly");
+      const req = t.objectStore(name).getAllKeys();
+      req.onsuccess = () => resolve(new Set((req.result as IDBValidKey[]).map(String)));
+      req.onerror = () => reject(req.error ?? new Error("Could not read keys"));
+    });
+  return { habit: await keysOf(STORE), exercise: await keysOf(EXERCISE_STORE), scan: await keysOf(SCAN_STORE) };
+}
+
 // --------------------------------------------------------------- vault handle --
 
 const VAULT_KEY = "folder";

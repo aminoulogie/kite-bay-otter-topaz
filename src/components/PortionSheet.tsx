@@ -3,7 +3,7 @@ import { Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { looksLikeDrink, suggestWaterPct, waterMlFor } from "@/lib/hydration";
+import { looksLikeDrink, suggestWaterPct, waterMlForPortion } from "@/lib/hydration";
 import { cn } from "@/lib/utils";
 import type { FoodItem } from "@/lib/types";
 
@@ -66,7 +66,7 @@ export function scaleTo(
     unit,
     meal,
     waterPct: waterPct || undefined,
-    waterMl: waterMlFor(grams, waterPct) || undefined,
+    waterMl: waterMlForPortion(grams, unit, waterPct) || undefined,
     cals: Math.round(b.cals * k),
     p: round1(b.p * k),
     c: round1(b.c * k),
@@ -131,7 +131,11 @@ export function PortionSheet({
   // what the name suggests, which is right for juice and milk and zero for
   // everything the table has no basis for.
   const [waterPct, setWaterPct] = useState(() =>
-    String(item.waterPct ?? suggestWaterPct(item.name, item)),
+    String(
+      item.unit === "ml" || looksLikeDrink(item.name, item.waterPct)
+        ? (item.waterPct ?? suggestWaterPct(item.name, item))
+        : 0,
+    ),
   );
 
   const n = Number(grams);
@@ -195,40 +199,44 @@ export function PortionSheet({
           </div>
         </div>
 
-        <div>
-          <div className="mb-1 flex items-baseline justify-between gap-2">
-            <label className="text-xs font-bold text-muted">Water content</label>
-            <span className="text-[0.68rem] font-bold tabular-nums text-info">
-              {preview.waterMl || 0} ml to your water
-            </span>
+        {/* Water is a property of a liquid: offered only when this is being
+            poured in millilitres. Weighed food adds nothing to the water. */}
+        {unit === "ml" && (
+          <div>
+            <div className="mb-1 flex items-baseline justify-between gap-2">
+              <label className="text-xs font-bold text-muted">Water content</label>
+              <span className="text-[0.68rem] font-bold tabular-nums text-info">
+                {preview.waterMl || 0} ml to your water
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={100}
+                className="w-20 text-center"
+                value={waterPct}
+                onChange={(e) => setWaterPct(e.target.value)}
+              />
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={pct}
+                onChange={(e) => setWaterPct(e.target.value)}
+                aria-label="Percent of this food that is water"
+                className="min-w-0 flex-1 accent-[var(--color-accent)]"
+              />
+            </div>
+            <p className="mt-1 text-[0.6rem] leading-snug text-faint">
+              Percent of the drink that is water — roughly 88% for juice and milk, 100% for
+              water itself. It counts towards the day&apos;s water and follows this item, so
+              deleting it takes its water back out.
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={100}
-              className="w-20 text-center"
-              value={waterPct}
-              onChange={(e) => setWaterPct(e.target.value)}
-            />
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={pct}
-              onChange={(e) => setWaterPct(e.target.value)}
-              aria-label="Percent of this food that is water"
-              className="min-w-0 flex-1 accent-[var(--color-accent)]"
-            />
-          </div>
-          <p className="mt-1 text-[0.6rem] leading-snug text-faint">
-            Percent of the drink that is water — roughly 88% for juice and milk, 100% for
-            water itself. It counts towards the day&apos;s water and follows this item, so
-            deleting it takes its water back out.
-          </p>
-        </div>
+        )}
 
         <div>
           <label className="mb-1 block text-xs font-bold text-muted">Meal</label>

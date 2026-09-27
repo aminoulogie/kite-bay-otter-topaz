@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		116A3E096488CB5135DC4220 /* VaultFolderPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72FF2C4EA18CD8C2D759B4A6 /* VaultFolderPlugin.swift */; };
 		149BF40D0B408A40728BAA4F /* SomaWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 88ACC0F1D4956CBBB179A237 /* SomaWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeaderMapsOnCopy, ); }; };
 		2DB150EE28A7B0BC826B3394 /* WidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B9A07FAF3159423316D91F /* WidgetBridgePlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
@@ -71,6 +72,7 @@
 		5F5354F15091797E66F6A0BA /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/WidgetKit.framework; sourceTree = DEVELOPER_DIR; };
 		61192122065437D5D97E8EC5 /* SomaWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = SomaWidgets.entitlements; sourceTree = "<group>"; };
 		65D07F5F73BC9222DCB2D819 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		72FF2C4EA18CD8C2D759B4A6 /* VaultFolderPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VaultFolderPlugin.swift; sourceTree = "<group>"; };
 		88ACC0F1D4956CBBB179A237 /* SomaWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SomaWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8A4E0B7210C6E4060F55AC79 /* SomaWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SomaWidgets.swift; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -147,6 +149,7 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 				28B9A07FAF3159423316D91F /* WidgetBridgePlugin.swift */,
 				353BAEC7490F31CC41429890 /* App.entitlements */,
+				72FF2C4EA18CD8C2D759B4A6 /* VaultFolderPlugin.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -328,6 +331,7 @@
 				513CD6F7A1849D0EA8FF7684 /* BodyDepthPlugin.swift in Sources */,
 				2DB150EE28A7B0BC826B3394 /* WidgetBridgePlugin.swift in Sources */,
 				B862E6E77BCE4327AA3A4244 /* RingsStore.swift in Sources */,
+				116A3E096488CB5135DC4220 /* VaultFolderPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

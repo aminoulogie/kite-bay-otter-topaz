@@ -19,9 +19,19 @@
  * What is here instead is the ACSM metabolic equation, which is the standard
  * one and is stated in METs: kcal/min = MET × 3.5 × kg / 200. Resistance
  * training sits between 3.5 METs and 6 depending on how hard the sets are
- * taken. One MET is resting, so subtracting it leaves the cost of training
- * ABOVE simply existing — which is the only part maintenance does not already
- * account for, and therefore the only part it is honest to eat back.
+ * taken (Compendium of Physical Activities, 2024: 3.5 for light-to-moderate
+ * multi-exercise training, 6.0 for vigorous). One MET is resting, so
+ * subtracting it leaves the cost of training ABOVE simply existing — which is
+ * the only part maintenance does not already account for, and therefore the
+ * only part it is honest to eat back.
+ *
+ * Those METs are WHOLE-SESSION averages: the Compendium's figures were
+ * measured across the bout, rests between sets included, because breathing
+ * stays up between sets while the body repays the set. An earlier version
+ * applied them only to 45 seconds a set and billed the rest of the clock at
+ * 1.5 METs — which double-counted the rest, and put an hour of lifting at
+ * about 2.4 METs, below the Compendium's lightest resistance-training entry.
+ * The guard against a session left open is the clock cap, not the MET.
  *
  * Nothing here rewrites a stored figure. The number is derived from the session
  * that was logged, so a session recorded under the old formula is re-read
@@ -40,20 +50,8 @@ export const RESTING_MET = 1;
 export const MET_EASY = 3.5;
 export const MET_HARD = 6;
 
-/**
- * A working set, under tension and the moments either side of it.
- *
- * This is what separates a session from ninety minutes of the sport it is
- * named after. Applying a vigorous MET to the whole clock assumes continuous
- * work, and a lifting session is not continuous: twenty sets is fifteen
- * minutes of effort inside an hour and a half, and the other seventy-five are
- * spent standing about. Billing all ninety at six METs is how a session that
- * cost two hundred and fifty calories gets reported as nine hundred.
- */
+/** A working set under tension — reported, not billed separately. */
 export const SET_SECONDS = 45;
-
-/** Standing between sets. Above true rest, well below the set itself. */
-export const REST_MET = 1.5;
 
 /** A set plus its rest. Used to sanity-check the clock, not to replace it. */
 export const MINUTES_PER_SET = 3;
@@ -118,7 +116,7 @@ export interface Burn {
   /** What it cost ABOVE resting — the only part not already in maintenance. */
   net: number;
   minutes: number;
-  /** The MET of a working set. The session average is lower — most of it is rest. */
+  /** The session's average MET, rests included. */
   met: number;
   /** Minutes actually under tension, out of the billed total. */
   workMinutes: number;
@@ -141,15 +139,11 @@ export function sessionBurn(
   const minutes = credibleMinutes(minutesFrom(session.durationFormatted), sets);
   if (minutes <= 0) return none;
 
-  // Split the clock: time under tension at the set's own MET, the rest of it
-  // at standing-about. A single average over the whole session would bill the
-  // rests as if they were the sets.
+  // The whole credible clock at the session's average MET — the way the
+  // Compendium measured it, rests and all.
   const met = metFor(averageIntensity(session));
   const workMinutes = Math.min(minutes, (sets * SET_SECONDS) / 60);
-  const restMinutes = minutes - workMinutes;
-
-  const metMinutes = met * workMinutes + REST_MET * restMinutes;
-  const gross = metMinutes * KCAL_PER_MET_MIN * kg;
+  const gross = met * minutes * KCAL_PER_MET_MIN * kg;
   const resting = RESTING_MET * minutes * KCAL_PER_MET_MIN * kg;
 
   return {
