@@ -1017,10 +1017,20 @@ export function SettingsView() {
           <span className="font-bold tabular-nums">{__APP_VERSION__}</span>
         </div>
         {installed && installed !== __APP_VERSION__ && (
-          <div className="mt-1 flex items-center justify-between text-xs">
-            <span className="text-muted">Installed build</span>
-            <span className="font-bold tabular-nums">{installed}</span>
-          </div>
+          <>
+            <div className="mt-1 flex items-center justify-between text-xs">
+              <span className="text-muted">Installed build</span>
+              <span className="font-bold tabular-nums">{installed}</span>
+            </div>
+            {/* Says, in so many words, that the version above came over the
+                air — the proof that live updates work on this phone. */}
+            <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+              <span className="shrink-0 text-muted">Delivered</span>
+              <span className="truncate font-bold text-emerald-400">
+                ⚡ live update, no reinstall
+              </span>
+            </div>
+          </>
         )}
         {live.state !== "off" && (
           <div className="mt-1 flex items-center justify-between gap-3 text-xs">
