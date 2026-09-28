@@ -9,11 +9,16 @@ import type { ActivityState } from "@/lib/routine-activity";
 const RoutineActivity = registerPlugin<{
   update(s: ActivityState): Promise<{ ok: boolean; live: boolean; reason?: string }>;
   end(): Promise<void>;
-  status(): Promise<{ extension: boolean; activitiesEnabled: boolean; notifications: boolean }>;
+  status(): Promise<LockScreenStatus>;
 }>("RoutineActivity");
 
 export interface LockScreenStatus {
   extension: boolean;
+  /** The widget's own bundle id, and the id its profile was made for. */
+  extensionId?: string;
+  extensionSignedFor?: string;
+  /** False when the sideloader signed it for another id: iOS ignores it. */
+  extensionSignedRight?: boolean;
   activitiesEnabled: boolean;
   notifications: boolean;
 }

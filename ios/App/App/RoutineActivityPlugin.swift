@@ -32,6 +32,10 @@ public class RoutineActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     /// as a missing home-screen widget.
     @objc func status(_ call: CAPPluginCall) {
         var result: [String: Any] = ["extension": Self.extensionInstalled()]
+        let signing = Self.extensionSigning()
+        result["extensionId"] = signing.bundleId ?? ""
+        result["extensionSignedFor"] = signing.signedFor ?? ""
+        result["extensionSignedRight"] = signing.matches
         if #available(iOS 16.2, *) {
             result["activitiesEnabled"] = ActivityAuthorizationInfo().areActivitiesEnabled
         } else {
@@ -42,6 +46,32 @@ public class RoutineActivityPlugin: CAPPlugin, CAPBridgedPlugin {
                 || settings.authorizationStatus == .provisional
             call.resolve(result)
         }
+    }
+
+    /// Whether the widget was signed for its OWN identifier.
+    ///
+    /// iOS only runs an extension whose provisioning profile names its bundle
+    /// id. A sideloader that signs it with the app's profile leaves the file
+    /// on the phone ("installed") but iOS never registers it: no widget in
+    /// the gallery, nothing on the lock screen, and no error anywhere.
+    static func extensionSigning() -> (bundleId: String?, signedFor: String?, matches: Bool) {
+        guard let appex = Bundle.main.builtInPlugInsURL?.appendingPathComponent("SomaWidgets.appex"),
+              let bundle = Bundle(url: appex)
+        else { return (nil, nil, false) }
+        let id = bundle.bundleIdentifier
+        guard let data = try? Data(contentsOf: appex.appendingPathComponent("embedded.mobileprovision")),
+              let start = data.range(of: Data("<?xml".utf8)),
+              let end = data.range(of: Data("</plist>".utf8), in: start.lowerBound..<data.endIndex),
+              let plist = try? PropertyListSerialization.propertyList(
+                from: data.subdata(in: start.lowerBound..<end.upperBound), format: nil
+              ) as? [String: Any],
+              let ents = plist["Entitlements"] as? [String: Any],
+              let appId = ents["application-identifier"] as? String
+        else { return (id, nil, false) }
+        // "TEAMID.io.github.aminoulogie.soma.widgets" — drop the team prefix.
+        let signedFor = appId.split(separator: ".", maxSplits: 1).last.map(String.init) ?? appId
+        let matches = id != nil && (signedFor == id || (signedFor.hasSuffix("*") && id!.hasPrefix(String(signedFor.dropLast()))))
+        return (id, signedFor, matches)
     }
 
     static func extensionInstalled() -> Bool {

@@ -1026,6 +1026,18 @@ export function SettingsView() {
               good="Installed"
               bad="Missing — Sideloadly dropped it"
             />
+            {lock.extension && lock.extensionSignedRight !== undefined && (
+              <StatusRow
+                label="Widget signing"
+                ok={lock.extensionSignedRight}
+                good="Signed for itself"
+                bad={
+                  lock.extensionSignedFor
+                    ? `Signed for ${lock.extensionSignedFor} — iOS ignores it`
+                    : "No profile of its own — iOS ignores it"
+                }
+              />
+            )}
             <StatusRow
               label="Live Activities"
               ok={lock.activitiesEnabled}
