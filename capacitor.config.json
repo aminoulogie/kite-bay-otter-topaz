@@ -8,5 +8,17 @@
   },
   "server": {
     "iosScheme": "capacitor"
+  },
+  "plugins": {
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "resetWhenUpdate": true,
+      "appReadyTimeout": 15000,
+      "autoDeleteFailed": true,
+      "autoDeletePrevious": true,
+      "updateUrl": "",
+      "statsUrl": "",
+      "channelUrl": ""
+    }
   }
 }

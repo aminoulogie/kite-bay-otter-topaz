@@ -30,6 +30,7 @@ import { ProjectsView } from "@/components/views/ProjectsView";
 import { LooksView } from "@/components/views/LooksView";
 import { TimeView } from "@/components/views/TimeView";
 import { pushWidgetSnapshot } from "@/lib/native/widget-bridge";
+import { applyLiveNow, checkLive, liveReady, onLiveStatus } from "@/lib/native/live-update";
 import { RoutineDock } from "@/components/RoutineDock";
 
 /**
@@ -209,6 +210,33 @@ export function AppShell() {
   useEffect(() => {
     if (hydrated) pushWidgetSnapshot({ nutrition, history, customGoals });
   }, [hydrated, nutrition, history, customGoals]);
+
+  // Live updates (lib/native/live-update.ts): say this layer started, then
+  // look for a newer one shortly after launch and whenever the app comes back.
+  // A downloaded one is used from the next launch; the toast offers it now.
+  useEffect(() => {
+    void liveReady();
+    const first = setTimeout(() => void checkLive(true), 4000);
+    const back = () => {
+      if (document.visibilityState === "visible") void checkLive();
+    };
+    document.addEventListener("visibilitychange", back);
+    let told = "";
+    const off = onLiveStatus((st) => {
+      if (st.state !== "ready" || told === st.version) return;
+      told = st.version;
+      toast.success(`SOMA ${st.version} is ready`, {
+        description: "It starts the next time you open the app.",
+        action: { label: "Restart now", onClick: () => void applyLiveNow() },
+        duration: 10000,
+      });
+    });
+    return () => {
+      clearTimeout(first);
+      document.removeEventListener("visibilitychange", back);
+      off();
+    };
+  }, []);
   // Resolved on the way out, not only in setTab: the last-open tab is restored
   // straight from storage on boot, so a phone closed on Body would otherwise
   // reopen to a tab that is no longer in the dock.

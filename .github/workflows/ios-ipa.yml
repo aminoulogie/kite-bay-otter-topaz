@@ -234,6 +234,28 @@ jobs:
           gh release upload "$TAG" "$RUNNER_TEMP/altstore.json" "$RUNNER_TEMP/icon.png" --clobber
           echo "AltStore source: $BASE/$TAG/altstore.json"
 
+      # Live updates: the web layer as a zip on this build's release, and
+      # live.json beside the AltStore source saying which installed builds it
+      # runs on (scripts/live_manifest.py). The app reads live.json on launch
+      # and downloads the zip when it fits — see src/lib/native/live-update.ts.
+      - name: Publish live update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.ver.outputs.marketing }}
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download"
+          ZIP="$RUNNER_TEMP/SOMA-web-$V.zip"
+          (cd .vercel/output/static && zip -qr "$ZIP" .)
+          gh release upload "ios-v$V" "$ZIP" --clobber
+          curl -fsSL "$BASE/altstore/live.json" -o "$RUNNER_TEMP/live-previous.json" || true
+          python3 scripts/live_manifest.py \
+            --version "$V" \
+            --url "$BASE/ios-v$V/SOMA-web-$V.zip" \
+            --previous "$RUNNER_TEMP/live-previous.json" \
+            --out "$RUNNER_TEMP/live.json"
+          gh release upload altstore "$RUNNER_TEMP/live.json" --clobber
+
       - uses: actions/upload-artifact@v4
         with:
           name: SOMA-${{ steps.ver.outputs.marketing }}-ipa

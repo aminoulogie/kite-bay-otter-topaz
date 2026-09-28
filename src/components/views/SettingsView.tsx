@@ -34,6 +34,9 @@ import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
 import { widgetStatus } from "@/lib/native/widget-bridge";
 import { lockScreenStatus, type LockScreenStatus } from "@/lib/native/routine-activity";
+import {
+  applyLiveNow, checkLive, liveStatus, nativeVersion, onLiveStatus, type LiveStatus,
+} from "@/lib/native/live-update";
 import { forgetNativeVault, isNativeVault, pickNativeVault, storedNativeVault } from "@/lib/native/vault-folder";
 import { localPhotoKeys } from "@/lib/habit-photos";
 
@@ -89,6 +92,12 @@ export function SettingsView() {
   );
   const [widget, setWidget] = useState<{ shared: boolean; group: string } | null>(null);
   const [lock, setLock] = useState<LockScreenStatus | null>(null);
+  const [live, setLive] = useState<LiveStatus>(liveStatus());
+  const [installed, setInstalled] = useState<string | null>(null);
+  useEffect(() => {
+    void nativeVersion().then(setInstalled);
+    return onLiveStatus(setLive);
+  }, []);
   useEffect(() => {
     void widgetStatus().then(setWidget);
     void lockScreenStatus().then(setLock);
@@ -1006,6 +1015,41 @@ export function SettingsView() {
               what actually shipped the way a hand-edited number does. */}
           <span className="font-bold tabular-nums">{__APP_VERSION__}</span>
         </div>
+        {installed && installed !== __APP_VERSION__ && (
+          <div className="mt-1 flex items-center justify-between text-xs">
+            <span className="text-muted">Installed build</span>
+            <span className="font-bold tabular-nums">{installed}</span>
+          </div>
+        )}
+        {live.state !== "off" && (
+          <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+            <span className="shrink-0 text-muted">Updates</span>
+            {live.state === "ready" ? (
+              <button type="button" onClick={() => void applyLiveNow()} className="truncate font-bold text-accent-text">
+                {live.version} ready — restart now
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void checkLive(true)}
+                className={cn(
+                  "truncate font-bold",
+                  live.state === "reinstall" || live.state === "error" ? "text-warn" : "text-emerald-400",
+                )}
+              >
+                {live.state === "checking"
+                  ? "Checking…"
+                  : live.state === "downloading"
+                    ? `Downloading ${live.version}…`
+                    : live.state === "current"
+                      ? "Up to date · check"
+                      : live.state === "reinstall"
+                        ? `${live.version} needs a reinstall from SideStore`
+                        : `${live.message} · retry`}
+              </button>
+            )}
+          </div>
+        )}
         <div className="mt-1 flex items-center justify-between text-xs">
           <span className="text-muted">Data</span>
           <span className="font-bold">on this device only</span>
