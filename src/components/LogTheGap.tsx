@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { Check, Moon, Pill, Repeat, Utensils } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardTitle } from "@/components/ui/card";
-import { DecimalInput } from "@/components/ui/decimal-input";
+import { DecimalInput, parseDecimal } from "@/components/ui/decimal-input";
+import { SLEEP_COLOR } from "@/lib/sleep-color";
 import { recentFoods } from "@/lib/food-recents";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -94,7 +95,7 @@ export function LogTheGap() {
       <CardTitle>Log the gap</CardTitle>
 
       {needSleep && (
-        <Row icon={Moon} label="Sleep">
+        <Row icon={Moon} label="Sleep" color={SLEEP_COLOR}>
           <div className="flex items-center gap-1.5">
             <DecimalInput
               value={sleepHours}
@@ -105,9 +106,12 @@ export function LogTheGap() {
             />
             <span className="text-xs text-faint">h</span>
             <Act
-              disabled={!Number(sleepHours)}
+              // parseDecimal, not Number: "7,5" is how a French or Arabic
+              // keyboard types seven and a half, and Number("7,5") is NaN —
+              // so the button stayed greyed out and the sleep never logged.
+              disabled={!parseDecimal(sleepHours)}
               onClick={() => {
-                const h = Number(sleepHours);
+                const h = parseDecimal(sleepHours) ?? 0;
                 if (!h) return;
                 // Quality is left unrated rather than assumed: the readiness
                 // blend weights hours twice as heavily as quality, and a
@@ -218,10 +222,12 @@ export function LogTheGap() {
 }
 
 function Row({
-  icon: Icon, label, children,
+  icon: Icon, label, color, children,
 }: {
   icon: typeof Moon;
   label: string;
+  /** The icon's colour, when the thing it stands for has one (sleep). */
+  color?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -229,7 +235,7 @@ function Row({
       {/* The label keeps its width and the controls wrap under it: squeezed
           side by side, "4 habits left" became "4 habi…". */}
       <span className="flex shrink-0 items-center gap-2">
-        <Icon className="size-4 shrink-0 text-faint" />
+        <Icon className="size-4 shrink-0 text-faint" style={color ? { color } : undefined} />
         <span className="text-sm font-bold">{label}</span>
       </span>
       <div className="ml-auto">{children}</div>

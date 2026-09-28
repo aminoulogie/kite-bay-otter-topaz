@@ -117,9 +117,13 @@ export function ActivityRings() {
           {date === today ? "Today" : parseLocalDateKey(date).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" })}
           <ChevronRight className="size-3.5 text-faint" aria-hidden />
         </div>
-        <div className={cn("flex items-center", big ? "gap-8 pr-2" : "gap-6")}>
+        <div className={cn("flex items-center", big ? "gap-4" : "gap-3")}>
           <RingSet key={date} rings={specs(values)} px={big ? 176 : 140} delay={120} />
-          <div className={cn("min-w-0 flex-1 space-y-2", big && "pl-3")}>
+          {/* Centred in the room beside the ring rather than pushed against
+              it: left-aligned, the numbers sat hard by the ring with an empty
+              strip down the right of the card. */}
+          <div className="flex min-w-0 flex-1 justify-center">
+          <div className={cn("min-w-0 space-y-2", big ? "w-full max-w-[11.5rem]" : "w-fit")}>
             {RING_DEFS.map((ring) => {
               const { value, goal } = values[ring.id];
               return (
@@ -141,6 +145,7 @@ export function ActivityRings() {
                 </div>
               );
             })}
+          </div>
           </div>
         </div>
       </button>
