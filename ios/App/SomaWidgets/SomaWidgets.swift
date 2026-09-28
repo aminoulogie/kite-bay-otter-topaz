@@ -307,5 +307,6 @@ struct RingsWidget: Widget {
 struct SomaWidgetsBundle: WidgetBundle {
     var body: some Widget {
         RingsWidget()
+        RoutineLiveActivity()
     }
 }

@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
-import { RoutineRunner } from "@/components/RoutineRunner";
 import {
   MIN_STEP_SECONDS, ROUTINE_COLORS, clock, duration, isOverCommitted, plannedSeconds,
   slackSeconds, spans, stepsOf, type Routine, type StepSource,
@@ -32,7 +31,6 @@ import { useWidgetSize } from "@/components/WidgetGrid";
  */
 export function RoutineCard() {
   const routines = useSoma((s) => s.dayRoutines);
-  const run = useSoma((s) => s.dayRoutineRun);
   const addRoutine = useSoma((s) => s.addDayRoutine);
   const removeRoutine = useSoma((s) => s.removeDayRoutine);
   const restoreRoutine = useSoma((s) => s.restoreDayRoutine);
@@ -41,8 +39,6 @@ export function RoutineCard() {
   const [name, setName] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [swiped, setSwiped] = useState<string | null>(null);
-
-  const running = routines.find((r) => r.id === run?.routineId);
 
   const nextColor = () =>
     ROUTINE_COLORS.find((c) => !routines.some((r) => r.color === c)) ??
@@ -57,8 +53,7 @@ export function RoutineCard() {
   };
 
   const size = useWidgetSize();
-  // A running routine draws its runner from inside this card, so it stays whole.
-  if (isGlance(size) && !running) {
+  if (isGlance(size)) {
     return (
       <Glance
         size={size}
@@ -141,7 +136,8 @@ export function RoutineCard() {
       </div>
 
       {open && <RoutineSheet id={open} onClose={() => setOpen(null)} />}
-      {running && run && <RoutineRunner routine={running} onClose={() => undefined} />}
+      {/* The running routine is drawn by RoutineDock, from the app shell, so
+          it can shrink to a player and follow you to other tabs. */}
     </Card>
   );
 }

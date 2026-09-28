@@ -16,6 +16,7 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(TorchPlugin())
         bridge?.registerPluginInstance(WidgetBridgePlugin())
         bridge?.registerPluginInstance(VaultFolderPlugin())
+        bridge?.registerPluginInstance(RoutineActivityPlugin())
     }
 }
 

@@ -33,6 +33,10 @@
 	     as many frames over the same 300ms. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- A running routine on the lock screen and in the Dynamic Island.
+	     See RoutineActivityPlugin.swift and SomaWidgets/RoutineLiveActivity.swift. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>SOMA uses the camera to photograph habits and to take face, posture and hair scans. Photos stay on your device.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

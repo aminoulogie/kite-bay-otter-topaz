@@ -30,6 +30,7 @@ import { ProjectsView } from "@/components/views/ProjectsView";
 import { LooksView } from "@/components/views/LooksView";
 import { TimeView } from "@/components/views/TimeView";
 import { pushWidgetSnapshot } from "@/lib/native/widget-bridge";
+import { RoutineDock } from "@/components/RoutineDock";
 
 /**
  * The dock, drawn in TAB_ORDER so it can never disagree with the direction a
@@ -434,7 +435,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="soma-page relative mx-auto min-h-dvh max-w-lg bg-bg pb-[calc(var(--dock-h,7rem)+0.75rem)] lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
+    <div className="soma-page relative mx-auto min-h-dvh max-w-lg bg-bg pb-[calc(var(--dock-h,7rem)+var(--player-h,0px)+0.75rem)] lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
       {/* The ambient light behind every glass surface. Fixed, pointer-dead,
           and the only layer the tilt parallax moves — the glass refracts it,
           the content never does. It sits at z-0; the rail and the content
@@ -602,6 +603,10 @@ export function AppShell() {
       )}
 
       <DateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+
+      {/* A running routine: full screen, or shrunk to a player above the
+          dock that follows you across tabs. */}
+      <RoutineDock />
 
       <main key={tab} className="soma-scroll px-4 pt-4 soma-view soma-stagger">
         {tab === "dashboard" && <DashboardView />}
