@@ -143,3 +143,11 @@ test("a thumb that arcs across the screen is still turning a page", () => {
   assert.equal(isTurning(-10, 200, 393, true), false);
   assert.equal(turnFrom(-10, 200, 393, true), "stay");
 });
+
+test("the whole book is counted in pages at this chapter's density", async () => {
+  const { bookPages } = await import("./paginate.ts");
+  // Chapter 1 is on screen: 6000 characters over 4 pages, 1500 a page.
+  const at = bookPages([1500, 6000, 3100, 400], 1, 2, 4)!;
+  assert.deepEqual(at, { page: 1 + 2 + 1, total: 1 + 4 + 3 + 1 });
+  assert.equal(bookPages([], 0, 0, 1), null);
+});

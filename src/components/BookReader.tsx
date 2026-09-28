@@ -24,7 +24,7 @@ import {
 } from "@/lib/curl";
 import { linesIn, stepLine, type Rect } from "@/lib/lines";
 import {
-  PAGE_GAP, bookProgress, clampPage, damp, isTurning, pageCount, pageForX, pageOffset,
+  PAGE_GAP, bookPages, bookProgress, clampPage, damp, isTurning, pageCount, pageForX, pageOffset,
   tapAt, turnFrom,
 } from "@/lib/paginate";
 import {
@@ -306,11 +306,19 @@ export function BookReader({
   }, [onClose, back, forward]);
 
   const epub = book.fileKind === "epub";
-  const progress = epub
-    ? bookProgress(at - 1, Math.max(1, total), spread.page, spread.pages)
-    : total > 0
-      ? at / total
-      : 0;
+  /** Every chapter's length, once per book, for counting pages across it. */
+  const lengths = useMemo(
+    () => (epub ? index.titles.map((_, i) => index.textOf(i).length) : []),
+    [epub, index],
+  );
+  const pageOfBook = epub ? bookPages(lengths, at - 1, spread.page, spread.pages) : null;
+  const progress = pageOfBook
+    ? pageOfBook.total > 1 ? (pageOfBook.page - 1) / (pageOfBook.total - 1) : 1
+    : epub
+      ? bookProgress(at - 1, Math.max(1, total), spread.page, spread.pages)
+      : total > 0
+        ? at / total
+        : 0;
 
   const common = {
     book,
@@ -401,7 +409,9 @@ export function BookReader({
           style={{ color: theme.faint }}
         >
           {epub
-            ? `Chapter ${at} of ${total || "?"} · ${spread.page + 1}/${spread.pages}`
+            ? pageOfBook
+              ? `Page ${pageOfBook.page} of ${pageOfBook.total}`
+              : `Page ${spread.page + 1} of ${spread.pages}`
             : `Page ${at} of ${total || "?"}`}
         </div>
         <div
@@ -2893,15 +2903,18 @@ function Bar({
         "pointer-events-none absolute inset-x-0 z-[70] px-3 transition-opacity duration-200",
         edge === "top"
           ? "top-0 pb-6 pt-[max(12px,env(safe-area-inset-top))]"
-          : "bottom-0 pt-8 pb-[max(12px,env(safe-area-inset-bottom))]",
+          : "bottom-0 pt-10 pb-[max(12px,env(safe-area-inset-bottom))]",
         show ? "opacity-100" : "opacity-0",
         className,
       )}
       style={{
         background:
           edge === "top"
-            ? `linear-gradient(to bottom, rgba(${fade},0.92), rgba(${fade},0))`
-            : `linear-gradient(to top, rgba(${fade},0.92), rgba(${fade},0))`,
+            ? `linear-gradient(to bottom, rgba(${fade},0.97) calc(100% - 1.5rem), rgba(${fade},0))`
+            // Solid behind the counter and controls, fading only in the strip
+            // above them: a gradient all the way up let the page's last lines
+            // show through the page number.
+            : `linear-gradient(to top, rgba(${fade},1) calc(100% - 1.75rem), rgba(${fade},0))`,
       }}
     >
       {children}
