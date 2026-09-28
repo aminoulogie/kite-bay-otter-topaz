@@ -9,10 +9,15 @@
  * being logged.
  */
 
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 
 type Pattern = number | number[];
+
+const Tick = registerPlugin<{
+  tick(o: { style: "selection" | "light" | "medium" }): Promise<void>;
+  prepare(): Promise<void>;
+}>("Tick");
 
 /**
  * In the native iOS build the Taptic Engine is reachable through the
@@ -51,10 +56,30 @@ export const tapLight = () => native({ impact: ImpactStyle.Light }) || buzz(8);
  * iOS has, made to be felt many times a second without becoming a buzz.
  */
 export const tapTick = (): void => {
-  // A light impact rather than the selection feel: selection ticks are so
-  // faint on a 14 Pro that a scrub felt like nothing at all.
+  // The app's own native tick first (MainViewController.swift): one prepared
+  // generator, fired at once. The packaged plugin fires a cold one per call,
+  // and a quick run of those came out as nothing on the phone.
+  try {
+    if (Capacitor.getPlatform() === "ios") {
+      void Tick.tick({ style: "light" }).catch(() => {
+        native({ impact: ImpactStyle.Light });
+      });
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
   if (native({ impact: ImpactStyle.Light })) return;
   buzz(4);
+};
+
+/** Get the Taptic Engine ready before a run of ticks (a scrub starting). */
+export const tickReady = (): void => {
+  try {
+    if (Capacitor.getPlatform() === "ios") void Tick.prepare().catch(() => {});
+  } catch {
+    /* nothing to prepare off the phone */
+  }
 };
 
 /** A set marked done. */

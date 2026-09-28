@@ -122,9 +122,14 @@ export function BookReader({
     box: { w: number; h: number };
   }>({ chapter: -1, page: 0, pages: 1, html: "", label: "", box: { w: 0, h: 0 } });
   /** The contents and the searchable book, published by the renderer. */
-  const [index, setIndex] = useState<{ titles: string[]; textOf: (i: number) => string }>({
+  const [index, setIndex] = useState<{
+    titles: string[];
+    textOf: (i: number) => string;
+    partOf: (i: number) => { html: string; title: string } | null;
+  }>({
     titles: [],
     textOf: () => "",
+    partOf: () => null,
   });
   const [panel, setPanel] = useState<"contents" | "search" | "kept" | null>(null);
   /**
@@ -334,6 +339,12 @@ export function BookReader({
     shown.current = bookPages(lengths, at - 1, spread.page, spread.pages, density.current?.perPage);
   }
   const pageOfBook = epub ? shown.current : null;
+  /** Pages a chapter the strip has not laid out yet is expected to have. */
+  const perPage = density.current?.perPage;
+  const estimatePages = useCallback(
+    (i: number) => Math.max(1, Math.ceil((lengths[i] ?? 0) / Math.max(250, perPage ?? 1500))),
+    [lengths, perPage],
+  );
   const progress = pageOfBook
     ? pageOfBook.total > 1 ? (pageOfBook.page - 1) / (pageOfBook.total - 1) : 1
     : epub
@@ -455,16 +466,16 @@ export function BookReader({
             <PageScrubber
               theme={theme}
               prefs={prefs}
-              html={spread.html}
-              label={spread.label}
               box={spread.box}
-              pages={spread.pages}
+              chapter={at - 1}
               page={spread.page}
+              pages={spread.chapter === at - 1 ? spread.pages : 1}
+              chapters={total || 1}
+              partOf={index.partOf}
+              estimate={estimatePages}
               onPick={(n) => pager.current?.to(n)}
+              onJump={(c, p) => goTo({ chapter: c, page: p })}
               onScrub={setScrubbing}
-              prevTitle={at > 1 ? index.titles[at - 2] || `Chapter ${at - 1}` : null}
-              nextTitle={total && at < total ? index.titles[at] || `Chapter ${at + 1}` : null}
-              onEdge={(dir) => (dir < 0 ? back() : forward())}
             />
           ) : (
             <div className="flex-1" />
@@ -558,6 +569,8 @@ interface Seek {
   rank?: number;
   offset?: number;
   end?: number;
+  /** A page of the chapter, from the page strip. */
+  page?: number;
   /** Changes on every request, so asking for the same place twice works. */
   nonce: number;
 }
@@ -780,7 +793,11 @@ function EpubPages({
     box: { w: number; h: number };
   }) => void;
   /** The book's contents and its searchable text, once it is open. */
-  onIndex: (ix: { titles: string[]; textOf: (i: number) => string }) => void;
+  onIndex: (ix: {
+    titles: string[];
+    textOf: (i: number) => string;
+    partOf: (i: number) => { html: string; title: string } | null;
+  }) => void;
   seek?: Seek;
   /** Characters into the chapter, written down so the book reopens here. */
   onAnchor: (offset: number) => void;
@@ -916,7 +933,17 @@ function EpubPages({
         // titles are read now because they are cheap and wanted the moment a
         // finger reaches the top-left; the text is a function because it is
         // neither, and nothing should read a hundred chapters to open one.
-        onIndex({ titles: opened.titles(), textOf: (i) => opened.plain(i) });
+        // Chapters for the page strip, kept once read: it lays out the ones
+        // around the cursor and asks again every time it moves.
+        const parts = new Map<number, { html: string; title: string } | null>();
+        onIndex({
+          titles: opened.titles(),
+          textOf: (i) => opened.plain(i),
+          partOf: (i) => {
+            if (!parts.has(i)) parts.set(i, opened.chapter(i));
+            return parts.get(i) ?? null;
+          },
+        });
       } catch (err) {
         if (alive) onError(messageFor(err, "That EPUB would not open."));
       }
@@ -1114,6 +1141,10 @@ function EpubPages({
     if (!seek || seek.chapter !== chapter) return;
     const el = column.current;
     if (!el || !box.w || !pages) return;
+    if (seek.page != null) {
+      const id = requestAnimationFrame(() => setPage(clampPage(seek.page!, pages)));
+      return () => cancelAnimationFrame(id);
+    }
     const id = requestAnimationFrame(() => {
       const runs = textRuns(el);
       const whole = runs.map((r) => r.textContent ?? "").join("");

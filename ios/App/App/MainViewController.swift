@@ -17,6 +17,57 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(WidgetBridgePlugin())
         bridge?.registerPluginInstance(VaultFolderPlugin())
         bridge?.registerPluginInstance(RoutineActivityPlugin())
+        bridge?.registerPluginInstance(TickPlugin())
+    }
+}
+
+/**
+ * The detent tick of a picker wheel, for the page strip under a book.
+ *
+ * Its own plugin rather than the packaged haptics one: that one builds a new
+ * feedback generator for every call and fires it cold, and a generator that
+ * has not been prepared can take long enough to spin the Taptic Engine up
+ * that a quick run of ticks comes out as nothing at all. This keeps one
+ * generator, prepared, and fires it straight away on the main thread.
+ * JS: Tick.tick({ style }) with style "selection" | "light" | "medium".
+ */
+@objc(TickPlugin)
+public class TickPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "TickPlugin"
+    public let jsName = "Tick"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "tick", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "prepare", returnType: CAPPluginReturnPromise),
+    ]
+
+    private lazy var light = UIImpactFeedbackGenerator(style: .light)
+    private lazy var medium = UIImpactFeedbackGenerator(style: .medium)
+    private lazy var selection = UISelectionFeedbackGenerator()
+
+    @objc func prepare(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            self.light.prepare()
+            self.selection.prepare()
+        }
+        call.resolve()
+    }
+
+    @objc func tick(_ call: CAPPluginCall) {
+        let style = call.getString("style") ?? "light"
+        DispatchQueue.main.async {
+            switch style {
+            case "selection":
+                self.selection.selectionChanged()
+                self.selection.prepare()
+            case "medium":
+                self.medium.impactOccurred()
+                self.medium.prepare()
+            default:
+                self.light.impactOccurred(intensity: 0.9)
+                self.light.prepare()
+            }
+        }
+        call.resolve()
     }
 }
 

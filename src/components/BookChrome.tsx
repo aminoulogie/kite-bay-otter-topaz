@@ -1,12 +1,12 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, Highlighter, List, Search, Star, Trash2, X } from "lucide-react";
 import { MIN_QUERY, findIn, tally, type Hit } from "@/lib/book-search";
 import { markChip, type BookMark } from "@/lib/marks";
 import { fontStack, type ReaderPrefs, type themeSpec } from "@/lib/reader-prefs";
-import { PAGE_GAP } from "@/lib/paginate";
+import { pageCount } from "@/lib/paginate";
 import type { MindEntry } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { tapTick } from "@/lib/haptics";
+import { tapTick, tickReady } from "@/lib/haptics";
 
 /**
  * The furniture around a book: its contents, its search, and what you kept.
@@ -455,127 +455,164 @@ export const ChapterRail = memo(function ChapterRail({
 
 /* ====================================================================== */
 
-/**
- * The page scrubber, in the shape Apple Books settled on.
- *
- * A floating pill over the page: a strip of page thumbnails running under a
- * fixed cursor, and whichever page sits under the cursor is the page. It
- * moves like a film roll — throw it and it coasts, slows, and settles with a
- * page exactly under the cursor, ticking once for every page that passes —
- * and wherever it comes to rest is where you land.
- *
- * The motion is run by hand rather than by native scrolling with snap points:
- * native scrolling let a diagonal swipe drag the strip sideways and up, and
- * could leave the page it reported off-centre from the one it showed.
- *
- * Each thumbnail is the real page, laid out at full size exactly as the
- * reader lays it out and scaled down — so its page breaks are the reader's
- * page breaks. An earlier version set the whole chapter again at a tenth of
- * the type size, and at 1.7px text the browser does not honour the size it
- * is given: the tiny layout broke its pages in different places, ran past
- * the end of the strip, and the pages at the end of a chapter came out blank.
- * Only the thumbnails near the cursor are built, so a long chapter costs the
- * same as a short one.
- */
 const THUMB_H = 34;
-/** How many thumbnails either side of the cursor are built at once. */
-const THUMB_WINDOW = 7;
+/** Slots either side of the cursor that get a frame drawn. */
+const FRAME_WINDOW = 26;
 
-const PageThumb = memo(function PageThumb({
-  i, html, label, prefs, theme, box, scale,
+/**
+ * One chapter, laid out at full size exactly as the reader lays it out and
+ * scaled down to the strip: every one of its pages side by side in ONE
+ * element. The gap between columns is widened to the strip's gap, which
+ * changes nothing about where the pages break (the column width and height
+ * are the reader's), so each column lands on its own slot.
+ *
+ * One layout per chapter rather than one per thumbnail: a thumbnail per page
+ * meant laying the whole chapter out again for every page, which is why only
+ * the few nearest the cursor were ever drawn and the rest of the strip was
+ * empty.
+ */
+const ChapterFilm = memo(function ChapterFilm({
+  index, left, html, label, prefs, theme, box, scale, gap, onMeasured,
 }: {
-  i: number;
+  index: number;
+  left: number;
   html: string;
   label: string;
   prefs: ReaderPrefs;
   theme: ReturnType<typeof themeSpec>;
   box: { w: number; h: number };
   scale: number;
+  /** The gap between pages, in the chapter's own (unscaled) pixels. */
+  gap: number;
+  onMeasured: (index: number, pages: number) => void;
 }) {
+  const el = useRef<HTMLDivElement>(null);
   const markup = useMemo(() => ({ __html: html }), [html]);
+  useLayoutEffect(() => {
+    const node = el.current;
+    if (!node) return;
+    const measure = () => onMeasured(index, pageCount(node.scrollWidth, box.w, gap));
+    measure();
+    // Images arrive after the text and can push pages on.
+    const imgs = node.querySelectorAll("img");
+    imgs.forEach((img) => img.addEventListener("load", measure, { once: true }));
+    return () => imgs.forEach((img) => img.removeEventListener("load", measure));
+  }, [index, html, label, box.w, box.h, gap, prefs.font, prefs.size, prefs.lineHeight, onMeasured]);
   return (
     <div
       aria-hidden
-      className="absolute left-0 top-0 origin-top-left"
-      style={{ width: box.w, height: box.h, transform: `scale(${scale})`, background: theme.bg }}
+      className="pointer-events-none absolute top-0 origin-top-left"
+      style={{ left, transform: `scale(${scale})` }}
     >
-      <div className="h-full w-full overflow-hidden">
-        <div
-          className="soma-epub"
-          style={{
-            fontFamily: fontStack(prefs.font),
-            fontSize: `${prefs.size}px`,
-            lineHeight: prefs.lineHeight,
-            color: theme.fg,
-            height: `${box.h}px`,
-            columnWidth: `${box.w}px`,
-            columnGap: `${PAGE_GAP}px`,
-            columnFill: "auto",
-            transform: `translateX(${-i * (box.w + PAGE_GAP)}px)`,
-          }}
-        >
-          {label && (
-            <p className="soma-epub-label" style={{ color: theme.faint }}>
-              {label}
-            </p>
-          )}
-          <div dangerouslySetInnerHTML={markup} />
-        </div>
+      <div
+        ref={el}
+        className="soma-epub"
+        style={{
+          width: `${box.w}px`,
+          height: `${box.h}px`,
+          fontFamily: fontStack(prefs.font),
+          fontSize: `${prefs.size}px`,
+          lineHeight: prefs.lineHeight,
+          color: theme.fg,
+          columnWidth: `${box.w}px`,
+          columnGap: `${gap}px`,
+          columnFill: "auto",
+        }}
+      >
+        {label && (
+          <p className="soma-epub-label" style={{ color: theme.faint }}>
+            {label}
+          </p>
+        )}
+        <div dangerouslySetInnerHTML={markup} />
       </div>
     </div>
   );
 });
 
+/**
+ * The page scrubber, in the shape Apple Books settled on: a film strip of
+ * every page in the book running under a fixed cursor. Throw it and it
+ * coasts, ticking once for each page that passes, and wherever it stops is
+ * where you land — in this chapter or any other.
+ *
+ * Run by hand rather than by native scrolling: native scrolling let a
+ * diagonal swipe drag the strip up and down too, and could report a page
+ * other than the one in the middle.
+ *
+ * Chapters near the cursor are laid out for real (see ChapterFilm) and report
+ * their true page counts; the rest are counted from their length until they
+ * come near. When a count behind the cursor corrects itself the strip is
+ * shifted by the same amount, so nothing moves under your finger.
+ */
 export const PageScrubber = memo(function PageScrubber({
-  theme, prefs, html, label, box, pages, page, onPick, onScrub, prevTitle, nextTitle, onEdge,
+  theme, prefs, box, chapter, page, pages, chapters, partOf, estimate, onPick, onJump, onScrub,
 }: {
   theme: ReturnType<typeof themeSpec>;
   prefs: ReaderPrefs;
-  html: string;
-  label: string;
   box: { w: number; h: number };
-  pages: number;
+  /** The chapter on screen, and its page and real page count. */
+  chapter: number;
   page: number;
+  pages: number;
+  chapters: number;
+  /** A chapter's markup and title. */
+  partOf: (index: number) => { html: string; title: string } | null;
+  /** Pages a chapter not yet laid out is expected to have. */
+  estimate: (index: number) => number;
+  /** Land on a page of the chapter on screen. */
   onPick: (page: number) => void;
+  /** Land on a page of another chapter. */
+  onJump: (chapter: number, page: number) => void;
   onScrub?: (active: boolean) => void;
-  /** The chapters either side, if any: pulling past an end goes to them. */
-  prevTitle?: string | null;
-  nextTitle?: string | null;
-  /** Pulled past an end: step into the chapter next door. */
-  onEdge?: (dir: -1 | 1) => void;
 }) {
   const strip = useRef<HTMLDivElement>(null);
   const pick = useRef(onPick);
   pick.current = onPick;
+  const jump = useRef(onJump);
+  jump.current = onJump;
   const scrubbing = useRef(onScrub);
   scrubbing.current = onScrub;
-  const edge = useRef(onEdge);
-  edge.current = onEdge;
 
   const scale = box.h ? THUMB_H / box.h : 0.05;
-  const cardW = Math.max(14, Math.round(box.w * scale));
-  const gapW = Math.max(4, Math.round(PAGE_GAP * scale));
+  const cardW = Math.max(14, box.w * scale);
+  const gapW = 4;
   const stride = cardW + gapW;
+  const gap = gapW / scale;
 
-  // The strip holds this chapter's pages and nothing else. Pulling it past
-  // either end — further than the rubber band gives — steps into the chapter
-  // next door, where there is one; there are no cards for them on the strip.
-  const lo = 0;
-  const hi = pages - 1;
-  const bounds = useRef({ lo, hi });
-  bounds.current = { lo, hi };
-  const hasPrev = !!prevTitle;
-  const hasNext = !!nextTitle;
+  // Measured page counts, per chapter, for this layout of the type.
+  const typeKey = `${prefs.font}|${prefs.size}|${prefs.lineHeight}|${box.w}x${box.h}`;
+  const [measured, setMeasured] = useState<{ key: string; n: Record<number, number> }>({ key: typeKey, n: {} });
+  const counts = useMemo(() => {
+    const n = measured.key === typeKey ? measured.n : {};
+    return Array.from({ length: Math.max(1, chapters) }, (_, i) =>
+      i === chapter ? Math.max(1, pages) : n[i] ?? Math.max(1, estimate(i)),
+    );
+  }, [measured, typeKey, chapters, chapter, pages, estimate]);
+  const offsets = useMemo(() => {
+    const out = [0];
+    for (const c of counts) out.push(out[out.length - 1]! + c);
+    return out;
+  }, [counts]);
+  const total = offsets[offsets.length - 1]!;
+  const chapterAt = (g: number) => {
+    let lo = 0;
+    let hi = counts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (offsets[mid]! <= g) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  };
+  const view = useRef({ offsets, total, chapterAt, chapter });
+  view.current = { offsets, total, chapterAt, chapter };
 
-  /**
-   * Where the strip is, in pages (fractional while it moves). Driven by hand
-   * rather than by native scrolling: the finger only ever moves it sideways —
-   * a diagonal swipe can no longer drag it up and down — and the page under
-   * the cursor is always exactly in the middle, whatever the pill's width.
-   */
-  const pos = useRef(page);
-  const [under, setUnder] = useState(page);
-  const underRef = useRef(page);
+  /** Where the strip is, in pages of the whole book (fractional mid-move). */
+  const here = offsets[chapter]! + Math.min(page, counts[chapter]! - 1);
+  const pos = useRef(here);
+  const [under, setUnder] = useState(here);
+  const underRef = useRef(here);
   const drag = useRef<{ x: number; pos: number; id: number; samples: { t: number; x: number }[] } | null>(null);
   const anim = useRef(0);
   const preview = useRef(0);
@@ -595,32 +632,65 @@ export const PageScrubber = memo(function PageScrubber({
     if (!live) return;
     // One detent for every page that passes under the cursor.
     tapTick();
-    // The book follows the strip while it moves, a frame at a time.
+    // Within the chapter on screen the book follows the strip as it moves.
+    // Another chapter is only opened where the strip comes to rest: opening
+    // every chapter the strip passes would reflow the book dozens of times.
+    const v = view.current;
+    const c = v.chapterAt(n);
     cancelAnimationFrame(preview.current);
-    if (n >= 0 && n < pages) preview.current = requestAnimationFrame(() => pick.current(n));
+    if (c === v.chapter) preview.current = requestAnimationFrame(() => pick.current(n - v.offsets[c]!));
   };
 
-  // Follow the reader when the page changes from anywhere else — a turn, a
-  // search hit, a chapter jump.
+  const land = (g: number) => {
+    const v = view.current;
+    const c = v.chapterAt(g);
+    const p = g - v.offsets[c]!;
+    if (c === v.chapter) pick.current(p);
+    else jump.current(c, p);
+  };
+
+  // Follow the reader when the page changes from anywhere else, and when a
+  // count corrects itself. Never mid-drag: the finger owns the strip then.
   useLayoutEffect(() => {
-    if (drag.current) return;
-    cancelAnimationFrame(anim.current);
-    pos.current = page;
-    underRef.current = page;
-    setUnder(page);
-    paint(page, 0);
+    if (drag.current || anim.current) return;
+    pos.current = here;
+    underRef.current = here;
+    setUnder(here);
+    paint(here, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pages, stride]);
+  }, [here, stride]);
 
   useEffect(() => () => {
     cancelAnimationFrame(anim.current);
     cancelAnimationFrame(preview.current);
   }, []);
 
+  const onMeasured = useCallback((index: number, n: number) => {
+    setMeasured((cur) => {
+      const base = cur.key === typeKey ? cur.n : {};
+      if (base[index] === n) return cur;
+      // A chapter behind the cursor changed length: move the strip with it,
+      // so the page under the finger stays under the finger.
+      const v = view.current;
+      if (index < v.chapterAt(pos.current) && index !== v.chapter) {
+        const old = base[index] ?? Math.max(1, estimate(index));
+        const d = n - old;
+        if (d) {
+          pos.current += d;
+          if (drag.current) drag.current.pos += d;
+          underRef.current += d;
+          paint(pos.current);
+        }
+      }
+      return { key: typeKey, n: { ...base, [index]: n } };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeKey, estimate]);
+
   /** Coast to a page, ticking for each one it passes, then land there. */
   const coast = (target: number) => {
     const from = pos.current;
-    const ms = Math.min(700, 180 + Math.abs(target - from) * 45);
+    const ms = Math.min(700, 180 + Math.abs(target - from) * 40);
     const began = performance.now();
     cancelAnimationFrame(anim.current);
     const run = (now: number) => {
@@ -633,30 +703,47 @@ export const PageScrubber = memo(function PageScrubber({
         anim.current = requestAnimationFrame(run);
         return;
       }
+      anim.current = 0;
       pos.current = target;
       cancelAnimationFrame(preview.current);
-      pick.current(target);
+      land(target);
       scrubbing.current?.(false);
     };
     anim.current = requestAnimationFrame(run);
   };
 
-  if (!box.w || pages < 1) return null;
+  if (!box.w || chapters < 1) return null;
 
-  const from = Math.max(0, under - THUMB_WINDOW);
-  const to = Math.min(pages - 1, under + THUMB_WINDOW);
+  // Chapters with a page within reach of the cursor, and always the ones
+  // either side of it, are laid out; the rest of the strip is empty frames
+  // until it gets there.
+  const lo = Math.max(0, under - FRAME_WINDOW);
+  const hi = Math.min(total - 1, under + FRAME_WINDOW);
+  const near = new Set<number>();
+  for (let c = chapterAt(lo); c <= chapterAt(hi); c++) near.add(c);
+  const mid = chapterAt(under);
+  if (mid > 0) near.add(mid - 1);
+  if (mid + 1 < chapters) near.add(mid + 1);
   const outline = theme.dark ? "rgba(235,235,245,0.45)" : "rgba(60,60,67,0.4)";
+  const slots: number[] = [];
+  for (let g = lo; g <= hi; g++) slots.push(g);
 
   return (
     <div className="pointer-events-auto min-w-0 flex-1">
       <div className="rounded-full px-2 py-[7px]" style={readerGlass(theme)}>
         <div
-          className="relative overflow-hidden"
-          // Horizontal only, and nothing else gets the gesture.
-          style={{ height: THUMB_H + 6, touchAction: "none" }}
+          className="relative select-none overflow-hidden"
+          // Sideways only, and nothing else gets the gesture: not a scroll,
+          // not a text selection, not a drag of the thumbnails' own text or
+          // pictures — any of which cancels the pointer mid-swipe.
+          style={{ height: THUMB_H + 6, touchAction: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
+          onDragStart={(e) => e.preventDefault()}
           onPointerDown={(e) => {
             e.stopPropagation();
+            e.preventDefault();
+            tickReady();
             cancelAnimationFrame(anim.current);
+            anim.current = 0;
             (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
             drag.current = { x: e.clientX, pos: pos.current, id: e.pointerId, samples: [{ t: e.timeStamp, x: e.clientX }] };
             scrubbing.current?.(true);
@@ -664,14 +751,14 @@ export const PageScrubber = memo(function PageScrubber({
           onPointerMove={(e) => {
             const d = drag.current;
             if (!d || d.id !== e.pointerId) return;
-            const { lo: a, hi: b } = bounds.current;
+            const last = view.current.total - 1;
             let p = d.pos - (e.clientX - d.x) / stride;
-            // Past the ends it resists, like a rubber band, instead of stopping dead.
-            if (p < a) p = a - (a - p) * 0.45;
-            if (p > b) p = b + (p - b) * 0.45;
+            // Past the ends of the book it resists, like a rubber band.
+            if (p < 0) p *= 0.35;
+            if (p > last) p = last + (p - last) * 0.35;
             pos.current = p;
             paint(p);
-            mark(Math.max(a, Math.min(b, p)), true);
+            mark(Math.max(0, Math.min(last, p)), true);
             d.samples.push({ t: e.timeStamp, x: e.clientX });
             if (d.samples.length > 6) d.samples.shift();
           }}
@@ -680,81 +767,85 @@ export const PageScrubber = memo(function PageScrubber({
             if (!d || d.id !== e.pointerId) return;
             drag.current = null;
             const first = d.samples[0]!;
-            const last = d.samples[d.samples.length - 1]!;
-            const dt = Math.max(1, last.t - first.t);
-            // Pages per ms, then thrown: a flick carries on for a few pages.
-            const v = e.timeStamp - last.t > 80 ? 0 : -(last.x - first.x) / dt / stride;
-            const { lo: a, hi: b } = bounds.current;
-            // Pulled well past the first or last page: the chapter next door.
-            if (pos.current < a - 0.6 && hasPrev) {
-              // Spring back without landing on a page here: the turn below
-              // puts the strip on the new chapter's page.
-              pos.current = a;
-              paint(a, 220);
-              scrubbing.current?.(false);
-              edge.current?.(-1);
-              return;
-            }
-            if (pos.current > b + 0.6 && hasNext) {
-              // Spring back without landing on a page here: the turn below
-              // puts the strip on the new chapter's page.
-              pos.current = b;
-              paint(b, 220);
-              scrubbing.current?.(false);
-              edge.current?.(1);
-              return;
-            }
+            const lastS = d.samples[d.samples.length - 1]!;
+            const dt = Math.max(1, lastS.t - first.t);
+            // Pages per ms, thrown: a flick carries on for a few pages.
+            const v = e.timeStamp - lastS.t > 80 ? 0 : -(lastS.x - first.x) / dt / stride;
             const moved = Math.abs(e.clientX - d.x) > 4;
-            // A tap on a card goes to that card.
-            let target = Math.round(pos.current + v * 220);
+            let target = Math.round(pos.current + v * 240);
             if (!moved) {
-              const box = e.currentTarget.getBoundingClientRect();
-              target = Math.round(pos.current + (e.clientX - (box.left + box.width / 2)) / stride);
+              // A tap on a thumbnail goes to that page.
+              const r = e.currentTarget.getBoundingClientRect();
+              target = Math.round(pos.current + (e.clientX - (r.left + r.width / 2)) / stride);
             }
-            coast(Math.max(a, Math.min(b, target)));
+            coast(Math.max(0, Math.min(view.current.total - 1, target)));
           }}
           onPointerCancel={() => {
             if (!drag.current) return;
             drag.current = null;
-            coast(Math.max(bounds.current.lo, Math.min(bounds.current.hi, Math.round(pos.current))));
+            coast(Math.max(0, Math.min(view.current.total - 1, Math.round(pos.current))));
           }}
         >
           <div
             ref={strip}
             className="absolute left-1/2 top-[3px] will-change-transform"
-            style={{ height: THUMB_H, width: stride * pages }}
+            style={{ height: THUMB_H, width: stride * total }}
           >
-            {Array.from({ length: pages }, (_, i) => {
-              const on = i === under;
-              const near = i >= from && i <= to;
+            {/* Paper under every page within reach. */}
+            {slots.map((g) => (
+              <div
+                key={`p${g}`}
+                className="absolute top-0 rounded-[3px]"
+                style={{ left: g * stride, width: cardW, height: THUMB_H, background: theme.bg, boxShadow: `0 0 0 0.5px ${theme.fg}22` }}
+              />
+            ))}
+            {/* The pages themselves: one layout per chapter. */}
+            {[...near].map((c) => {
+              const part = c === chapter || near.has(c) ? partOf(c) : null;
+              if (!part) return null;
               return (
                 <div
-                  key={i}
-                  className="absolute top-0 overflow-hidden rounded-[3px]"
-                  style={{
-                    left: i * stride,
-                    width: cardW,
-                    height: THUMB_H,
-                    background: theme.bg,
-                    zIndex: on ? 2 : 1,
-                    // The page under the cursor gets a quiet grey contour all
-                    // the way round; the rest are dimmed.
-                    boxShadow: on ? `0 0 0 1.5px ${outline}` : `0 0 0 0.5px ${theme.fg}22`,
-                  }}
+                  key={`c${c}`}
+                  className="absolute top-0 overflow-hidden"
+                  style={{ left: offsets[c]! * stride, width: counts[c]! * stride - gapW, height: THUMB_H }}
                 >
-                  {near && (
-                    <PageThumb i={i} html={html} label={label} prefs={prefs} theme={theme} box={box} scale={scale} />
-                  )}
-                  {!on && (
-                    <span
-                      aria-hidden
-                      className="absolute inset-0"
-                      style={{ background: theme.dark ? "rgba(0,0,0,0.42)" : "rgba(255,255,255,0.36)" }}
-                    />
-                  )}
+                  <ChapterFilm
+                    index={c}
+                    left={0}
+                    html={part.html}
+                    label={part.title}
+                    prefs={prefs}
+                    theme={theme}
+                    box={box}
+                    scale={scale}
+                    gap={gap}
+                    onMeasured={onMeasured}
+                  />
                 </div>
               );
             })}
+            {/* Every page but the one under the cursor is dimmed; that one
+                gets a quiet grey contour all the way round. */}
+            {slots.map((g) =>
+              g === under ? (
+                <div
+                  key={`o${g}`}
+                  className="pointer-events-none absolute top-0 z-[2] rounded-[3px]"
+                  style={{ left: g * stride, width: cardW, height: THUMB_H, boxShadow: `0 0 0 1.5px ${outline}` }}
+                />
+              ) : (
+                <div
+                  key={`o${g}`}
+                  className="pointer-events-none absolute top-0 rounded-[3px]"
+                  style={{
+                    left: g * stride,
+                    width: cardW,
+                    height: THUMB_H,
+                    background: theme.dark ? "rgba(0,0,0,0.42)" : "rgba(255,255,255,0.36)",
+                  }}
+                />
+              ),
+            )}
           </div>
         </div>
       </div>
