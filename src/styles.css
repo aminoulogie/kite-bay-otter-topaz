@@ -1004,3 +1004,17 @@ select,
   visibility: visible;
   pointer-events: auto;
 }
+
+/*
+ * A full-screen sheet covers the page below its own bottom edge too.
+ *
+ * When the keyboard opens, iOS slides the whole page up under it, and a
+ * fixed full-screen sheet stays where it was laid out — so a strip opened
+ * up between the sheet's bottom and the keys, with whatever card sat behind
+ * it on the page (a review field, a button) showing through. A solid shadow
+ * the colour of the sheet, one screen deep, fills that strip without moving
+ * or resizing anything in the sheet.
+ */
+[class~="fixed"][class~="inset-0"][class~="bg-bg"] {
+  box-shadow: 0 100vh 0 0 var(--color-bg);
+}

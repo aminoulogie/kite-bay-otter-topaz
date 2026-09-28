@@ -33,6 +33,7 @@ import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
 import { widgetStatus } from "@/lib/native/widget-bridge";
+import { testHaptics } from "@/lib/haptics";
 import { lockScreenStatus, type LockScreenStatus } from "@/lib/native/routine-activity";
 import {
   applyLiveNow, checkLive, liveStatus, nativeVersion, onLiveStatus, type LiveStatus,
@@ -1088,6 +1089,21 @@ export function SettingsView() {
               good="Allowed"
               bad="Off — Settings › SOMA › Live Activities"
             />
+            <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+              <span className="shrink-0 text-muted">Vibration test</span>
+              <span className="flex gap-1.5">
+                {(["tick", "plugin"] as const).map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => void testHaptics(w).then((m) => toast(m))}
+                    className="rounded-full border border-border bg-surface-2 px-2.5 py-1 font-bold"
+                  >
+                    {w === "tick" ? "Tick" : "Standard"}
+                  </button>
+                ))}
+              </span>
+            </div>
             <StatusRow
               label="Timer alerts"
               ok={lock.notifications}

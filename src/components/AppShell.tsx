@@ -716,7 +716,15 @@ export function AppShell() {
         </div>
       </nav>
       </div>
-      <Toaster position="top-center" theme={settings.theme === "light" ? "light" : "dark"} />
+      {/* Below the header, not over it: at the very top a toast sat on the
+          status bar and covered the header's own buttons, so the Undo in it
+          and the Edit/Calendar under it fought for the same spot. */}
+      <Toaster
+        position="top-center"
+        theme={settings.theme === "light" ? "light" : "dark"}
+        offset={{ top: "calc(env(safe-area-inset-top) + 64px)" }}
+        mobileOffset={{ top: "calc(env(safe-area-inset-top) + 64px)" }}
+      />
     </div>
   );
 }

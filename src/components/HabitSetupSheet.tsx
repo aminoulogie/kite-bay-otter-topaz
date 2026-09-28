@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { MAX_TARGET, newStepId, targetOf } from "@/lib/habit-steps";
-import { TIME_STEPS, formatAmount, isBuild, totalRungs, type RampAdvance, type RampUnit } from "@/lib/habit-ramp";
+import { TIME_STEPS, convertRamp, formatAmount, isBuild, totalRungs, type RampAdvance, type RampUnit } from "@/lib/habit-ramp";
 import { getLocalDateKey } from "@/lib/soma";
 import { cn } from "@/lib/utils";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
@@ -13,6 +13,7 @@ type Shape = "simple" | "checklist" | "ramp";
 
 const UNITS: { id: RampUnit; label: string }[] = [
   { id: "min", label: "Minutes" },
+  { id: "sec", label: "Seconds" },
   { id: "count", label: "Times" },
   { id: "page", label: "Pages" },
 ];
@@ -225,7 +226,7 @@ export function HabitSetupSheet({
             </p>
 
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <Field label={ramp.unit === "min" ? "Start (min)" : "Start at"}>
+              <Field label={ramp.unit === "min" ? "Start (min)" : ramp.unit === "sec" ? "Start (sec)" : "Start at"}>
                 <DecimalInput
                   value={String(ramp.start)}
                   onValueChange={(n) => setRamp((r) => ({ ...r, start: n ?? 0 }))}
@@ -233,7 +234,7 @@ export function HabitSetupSheet({
               </Field>
               {/* A time ramp's step is typed in SECONDS: "30" is half a minute
                   a day, which a minutes field could only say as 0.5. */}
-              <Field label={ramp.unit === "min" ? "Each day (sec)" : "Each day"}>
+              <Field label={ramp.unit === "min" || ramp.unit === "sec" ? "Each day (sec)" : "Each day"}>
                 <DecimalInput
                   value={String(ramp.unit === "min" ? Math.round(ramp.step * 60) : ramp.step)}
                   onValueChange={(n) =>
@@ -241,7 +242,7 @@ export function HabitSetupSheet({
                   }
                 />
               </Field>
-              <Field label={ramp.unit === "min" ? "Until (min)" : "Until"}>
+              <Field label={ramp.unit === "min" ? "Until (min)" : ramp.unit === "sec" ? "Until (sec)" : "Until"}>
                 <DecimalInput
                   value={String(ramp.target)}
                   onValueChange={(n) => setRamp((r) => ({ ...r, target: n ?? 0 }))}
@@ -249,21 +250,25 @@ export function HabitSetupSheet({
               </Field>
             </div>
 
-            {ramp.unit === "min" && (
+            {(ramp.unit === "min" || ramp.unit === "sec") && (
               <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="How much it moves each day">
-                {TIME_STEPS.map((st) => (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => setRamp((r) => ({ ...r, step: st }))}
-                    className={cn(
-                      "h-8 rounded-full px-3 text-[0.7rem] font-bold tabular transition-colors",
-                      Math.abs(ramp.step - st) < 1e-6 ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted",
-                    )}
-                  >
-                    {formatAmount(st, "min")}
-                  </button>
-                ))}
+                {TIME_STEPS.map((st) => {
+                  // The same steps either way, held in the ramp's own unit.
+                  const v = ramp.unit === "sec" ? Math.round(st * 60) : st;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setRamp((r) => ({ ...r, step: v }))}
+                      className={cn(
+                        "h-8 rounded-full px-3 text-[0.7rem] font-bold tabular transition-colors",
+                        Math.abs(ramp.step - v) < 1e-6 ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted",
+                      )}
+                    >
+                      {formatAmount(st, "min")}
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -272,7 +277,7 @@ export function HabitSetupSheet({
                 <button
                   key={u.id}
                   type="button"
-                  onClick={() => setRamp((r) => ({ ...r, unit: u.id }))}
+                  onClick={() => setRamp((r) => convertRamp(r, u.id))}
                   className={cn(
                     "h-8 flex-1 rounded-full text-[0.7rem] font-bold transition-colors",
                     ramp.unit === u.id ? "bg-surface-3 text-fg" : "bg-surface-2 text-faint",

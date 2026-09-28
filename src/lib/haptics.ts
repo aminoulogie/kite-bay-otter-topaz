@@ -73,6 +73,24 @@ export const tapTick = (): void => {
   buzz(4);
 };
 
+/**
+ * For Settings: fire each haptic path once, so it is plain which of them the
+ * phone actually plays — the app's own tick, or the packaged plugin.
+ */
+export async function testHaptics(which: "tick" | "plugin"): Promise<string> {
+  try {
+    if (Capacitor.getPlatform() !== "ios") return "Only on the iPhone app";
+    if (which === "tick") {
+      await Tick.tick({ style: "medium" });
+      return "Sent through SOMA's own tick";
+    }
+    await Haptics.impact({ style: ImpactStyle.Heavy });
+    return "Sent through the standard haptics plugin";
+  } catch (err) {
+    return err instanceof Error ? `Failed: ${err.message}` : "Failed";
+  }
+}
+
 /** Get the Taptic Engine ready before a run of ticks (a scrub starting). */
 export const tickReady = (): void => {
   try {

@@ -1,6 +1,7 @@
 import AVFoundation
 import Capacitor
 import UIKit
+import WebKit
 
 /**
  * The app's root view controller. Exists only to register plugins that live
@@ -10,6 +11,41 @@ import UIKit
  * handed to the bridge here.
  */
 class MainViewController: CAPBridgeViewController {
+    /**
+     * Page animations at the screen's own rate.
+     *
+     * The app is allowed 120Hz (CADisableMinimumFrameDurationOnPhone in
+     * Info.plist), but WebKit still paces requestAnimationFrame at 60 unless
+     * its "prefer page rendering near 60fps" setting is off — so the page
+     * curl, the page strip and every hand-run animation in the app ran at
+     * half the phone's rate. That setting has no public switch; it is turned
+     * off here through WebKit's own feature list when this iOS has it, and
+     * left alone when it does not.
+     */
+    override open func webViewConfiguration(for instanceConfiguration: InstanceConfiguration) -> WKWebViewConfiguration {
+        let config = super.webViewConfiguration(for: instanceConfiguration)
+        Self.unlockFrameRate(config.preferences)
+        return config
+    }
+
+    static func unlockFrameRate(_ prefs: WKPreferences) {
+        let direct = NSSelectorFromString("_setPreferPageRenderingUpdatesNear60FPSEnabled:")
+        if prefs.responds(to: direct) {
+            prefs.perform(direct, with: nil) // nil is NO
+        }
+        let list = NSSelectorFromString("_features")
+        let set = NSSelectorFromString("_setEnabled:forFeature:")
+        guard WKPreferences.responds(to: list), prefs.responds(to: set),
+              let features = WKPreferences.perform(list)?.takeUnretainedValue() as? [NSObject]
+        else { return }
+        for feature in features {
+            guard let key = feature.value(forKey: "key") as? String,
+                  key == "PreferPageRenderingUpdatesNear60FPSEnabled"
+            else { continue }
+            prefs.perform(set, with: nil, with: feature) // nil is NO
+        }
+    }
+
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(FaceDepthPlugin())
         bridge?.registerPluginInstance(BodyDepthPlugin())

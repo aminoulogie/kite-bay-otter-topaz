@@ -196,3 +196,16 @@ test("seconds add up exactly, without floating-point drift", () => {
   // A minute and a half logged meets a minute-and-a-half rung.
   assert.equal(meets(ramp, 1.5, clampValue(1.5, "min")), true);
 });
+
+test("a ramp can be held in seconds, and switching keeps its meaning", async () => {
+  const { convertRamp, formatAmount, bumpSizes } = await import("./habit-ramp.ts");
+  const minRamp = { start: 1, target: 30, step: 0.25, unit: "min" as const };
+  const sec = convertRamp(minRamp, "sec");
+  assert.deepEqual([sec.start, sec.target, sec.step, sec.unit], [60, 1800, 15, "sec"]);
+  const back = convertRamp(sec, "min");
+  assert.deepEqual([back.start, back.target, back.step], [1, 30, 0.25]);
+  assert.equal(formatAmount(45, "sec"), "45s");
+  assert.equal(formatAmount(90, "sec"), "1m 30s");
+  assert.equal(formatAmount(0, "sec"), "0s");
+  assert.deepEqual(bumpSizes("sec"), [5, 10, 30, 60]);
+});

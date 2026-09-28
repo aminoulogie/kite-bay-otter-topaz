@@ -31,7 +31,8 @@
 import { addDays, getLocalDateKey, parseLocalDateKey } from "./soma/dates.ts";
 import type { Habit } from "./types.ts";
 
-export type RampUnit = "min" | "count" | "page";
+/** "sec" holds whole seconds, "min" minutes (to the second), the rest whole numbers. */
+export type RampUnit = "min" | "sec" | "count" | "page";
 
 /** How the rung moves: only on days you made it, or every day regardless. */
 export type RampAdvance = "earned" | "calendar";
@@ -188,13 +189,13 @@ export function goalDate(ramp: HabitRamp, date: string, log: AmountLog | undefin
 /** "1h 59m", "1m 30s", "45s", "12 pages", "30". */
 export function formatAmount(value: number, unit: RampUnit): string {
   const n = clampValue(value, unit);
-  if (unit === "min") {
-    const total = Math.round(n * 60);
+  if (unit === "min" || unit === "sec") {
+    const total = unit === "min" ? Math.round(n * 60) : Math.round(n);
     const h = Math.floor(total / 3600);
     const m = Math.floor((total % 3600) / 60);
     const sec = total % 60;
     const parts = [h ? `${h}h` : "", m ? `${m}m` : "", sec ? `${sec}s` : ""].filter(Boolean);
-    return parts.length ? parts.join(" ") : "0m";
+    return parts.length ? parts.join(" ") : unit === "sec" ? "0s" : "0m";
   }
   if (unit === "page") return `${n} ${n === 1 ? "page" : "pages"}`;
   return String(n);
@@ -210,6 +211,7 @@ export function rungLabel(ramp: HabitRamp, rung: number): string {
 export function bumpSizes(unit: RampUnit): number[] {
   // Thirty seconds first: a ramp that moves by seconds needs a way to log them.
   if (unit === "min") return [0.5, 1, 5, 15];
+  if (unit === "sec") return [5, 10, 30, 60];
   if (unit === "page") return [1, 5, 10];
   return [1, 5, 10];
 }
@@ -292,6 +294,19 @@ export function setRamp(habit: Habit, ramp: HabitRamp | null): Habit {
       step: Math.max(0, clampValue(ramp.step)),
     },
   });
+}
+
+/**
+ * A time ramp moved between minutes and seconds keeps its meaning: 1 minute
+ * becomes 60 seconds, not 1 second. Other units carry their numbers across.
+ */
+export function convertRamp<T extends { start: number; target: number; step: number; unit: RampUnit }>(
+  ramp: T,
+  to: RampUnit,
+): T {
+  const f = ramp.unit === "min" && to === "sec" ? 60 : ramp.unit === "sec" && to === "min" ? 1 / 60 : 1;
+  const round = (v: number) => clampValue(v * f, to);
+  return { ...ramp, unit: to, start: round(ramp.start), target: round(ramp.target), step: round(ramp.step) };
 }
 
 /** The daily steps offered for a time ramp, in minutes: seconds up to five minutes. */
