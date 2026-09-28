@@ -52,11 +52,20 @@ export interface HabitRamp {
 /** Nothing here should produce an absurd ladder from a typo. */
 export const MAX_VALUE = 100_000;
 
-export function clampValue(n: number): number {
+/**
+ * A number made safe for its unit. Minutes keep their seconds — a ramp can
+ * move thirty seconds a day — so they are held to the nearest second (1/60 of
+ * a minute); pages and counts are whole.
+ */
+export function clampValue(n: number, unit?: RampUnit): number {
   const v = Number(n);
   if (!Number.isFinite(v) || v < 0) return 0;
-  return Math.min(MAX_VALUE, Math.round(v));
+  const rounded = unit === "min" ? Math.round(v * 60) / 60 : Math.round(v);
+  return Math.min(MAX_VALUE, rounded);
 }
+
+/** Small enough to be a rounding difference, not a real one. */
+const EPSILON = 1e-6;
 
 /** Building up to something, rather than cutting down to it. */
 export function isBuild(ramp: HabitRamp): boolean {
@@ -79,7 +88,7 @@ export function daysBetween(from: string, to: string): number {
  */
 export function meets(ramp: HabitRamp, rung: number, value: number | undefined): boolean {
   if (value === undefined || !Number.isFinite(value)) return false;
-  return isBuild(ramp) ? value >= rung : value <= rung;
+  return isBuild(ramp) ? value >= rung - EPSILON : value <= rung + EPSILON;
 }
 
 /** The rung after n advances, never past the target. */
@@ -87,9 +96,12 @@ export function rungAfter(ramp: HabitRamp, advances: number): number {
   const n = Math.max(0, Math.floor(Number(advances) || 0));
   const step = Math.abs(Number(ramp.step) || 0);
   const moved = isBuild(ramp) ? ramp.start + step * n : ramp.start - step * n;
-  return isBuild(ramp)
+  const rung = isBuild(ramp)
     ? Math.min(ramp.target, moved)
     : Math.max(ramp.target, moved);
+  // Held to the second, so thirty 2-second steps land on exactly one minute
+  // rather than on 0.99999 of one.
+  return ramp.unit === "min" ? Math.round(rung * 60) / 60 : rung;
 }
 
 export type AmountLog = Record<string, number>;
@@ -139,7 +151,7 @@ export interface RampStatus {
 export function totalRungs(ramp: HabitRamp): number {
   const step = Math.abs(Number(ramp.step) || 0);
   if (step <= 0) return 0;
-  return Math.ceil(Math.abs(ramp.target - ramp.start) / step);
+  return Math.ceil(Math.abs(ramp.target - ramp.start) / step - EPSILON);
 }
 
 export function status(ramp: HabitRamp, date: string, log: AmountLog | undefined): RampStatus {
@@ -173,15 +185,16 @@ export function goalDate(ramp: HabitRamp, date: string, log: AmountLog | undefin
   return getLocalDateKey(addDays(parseLocalDateKey(date), daysRemaining(ramp, date, log)));
 }
 
-/** "1h 59m", "12 pages", "30". */
+/** "1h 59m", "1m 30s", "45s", "12 pages", "30". */
 export function formatAmount(value: number, unit: RampUnit): string {
-  const n = clampValue(value);
+  const n = clampValue(value, unit);
   if (unit === "min") {
-    const h = Math.floor(n / 60);
-    const m = n % 60;
-    if (h && m) return `${h}h ${m}m`;
-    if (h) return `${h}h`;
-    return `${m}m`;
+    const total = Math.round(n * 60);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const sec = total % 60;
+    const parts = [h ? `${h}h` : "", m ? `${m}m` : "", sec ? `${sec}s` : ""].filter(Boolean);
+    return parts.length ? parts.join(" ") : "0m";
   }
   if (unit === "page") return `${n} ${n === 1 ? "page" : "pages"}`;
   return String(n);
@@ -195,7 +208,8 @@ export function rungLabel(ramp: HabitRamp, rung: number): string {
 
 /** Sensible increments for the logger's buttons, per unit. */
 export function bumpSizes(unit: RampUnit): number[] {
-  if (unit === "min") return [1, 5, 15];
+  // Thirty seconds first: a ramp that moves by seconds needs a way to log them.
+  if (unit === "min") return [0.5, 1, 5, 15];
   if (unit === "page") return [1, 5, 10];
   return [1, 5, 10];
 }
@@ -252,7 +266,7 @@ export function syncRampHistory(habit: Habit): Habit {
 export function logAmount(habit: Habit, date: string, value: number | null): Habit {
   const log = { ...(habit.amountLog ?? {}) };
   if (value === null) delete log[date];
-  else log[date] = clampValue(value);
+  else log[date] = clampValue(value, habit.ramp?.unit);
   return syncRampHistory({ ...habit, amountLog: log });
 }
 
@@ -272,3 +286,6 @@ export function setRamp(habit: Habit, ramp: HabitRamp | null): Habit {
     },
   });
 }
+
+/** The daily steps offered for a time ramp, in minutes: seconds up to five minutes. */
+export const TIME_STEPS = [5 / 60, 10 / 60, 15 / 60, 20 / 60, 30 / 60, 45 / 60, 1, 2, 5];

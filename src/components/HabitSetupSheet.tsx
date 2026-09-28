@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { MAX_TARGET, newStepId, targetOf } from "@/lib/habit-steps";
-import { formatAmount, isBuild, totalRungs, type RampAdvance, type RampUnit } from "@/lib/habit-ramp";
+import { TIME_STEPS, formatAmount, isBuild, totalRungs, type RampAdvance, type RampUnit } from "@/lib/habit-ramp";
 import { getLocalDateKey } from "@/lib/soma";
 import { cn } from "@/lib/utils";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
@@ -225,25 +225,47 @@ export function HabitSetupSheet({
             </p>
 
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <Field label="Start at">
+              <Field label={ramp.unit === "min" ? "Start (min)" : "Start at"}>
                 <DecimalInput
                   value={String(ramp.start)}
                   onValueChange={(n) => setRamp((r) => ({ ...r, start: n ?? 0 }))}
                 />
               </Field>
-              <Field label="Each day">
+              {/* A time ramp's step is typed in SECONDS: "30" is half a minute
+                  a day, which a minutes field could only say as 0.5. */}
+              <Field label={ramp.unit === "min" ? "Each day (sec)" : "Each day"}>
                 <DecimalInput
-                  value={String(ramp.step)}
-                  onValueChange={(n) => setRamp((r) => ({ ...r, step: n ?? 0 }))}
+                  value={String(ramp.unit === "min" ? Math.round(ramp.step * 60) : ramp.step)}
+                  onValueChange={(n) =>
+                    setRamp((r) => ({ ...r, step: r.unit === "min" ? (n ?? 0) / 60 : (n ?? 0) }))
+                  }
                 />
               </Field>
-              <Field label="Until">
+              <Field label={ramp.unit === "min" ? "Until (min)" : "Until"}>
                 <DecimalInput
                   value={String(ramp.target)}
                   onValueChange={(n) => setRamp((r) => ({ ...r, target: n ?? 0 }))}
                 />
               </Field>
             </div>
+
+            {ramp.unit === "min" && (
+              <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="How much it moves each day">
+                {TIME_STEPS.map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setRamp((r) => ({ ...r, step: st }))}
+                    className={cn(
+                      "h-8 rounded-full px-3 text-[0.7rem] font-bold tabular transition-colors",
+                      Math.abs(ramp.step - st) < 1e-6 ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted",
+                    )}
+                  >
+                    {formatAmount(st, "min")}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="mt-2 flex gap-1">
               {UNITS.map((u) => (

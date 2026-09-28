@@ -166,7 +166,7 @@ test("a logged amount cannot be negative or absurd", () => {
 });
 
 test("the bump buttons suit the unit", () => {
-  assert.deepEqual(bumpSizes("min"), [1, 5, 15]);
+  assert.deepEqual(bumpSizes("min"), [0.5, 1, 5, 15], "thirty seconds first, for ramps that move by seconds");
   assert.deepEqual(bumpSizes("page"), [1, 5, 10]);
 });
 
@@ -178,4 +178,21 @@ test("the six-year case: a long lapse costs nothing but the days themselves", ()
   const after = rungOn(quit, day(45), log);
   assert.equal(before, 106);
   assert.equal(after, 106, "the ceiling waited where it was left");
+});
+
+test("a time ramp can move by seconds a day", () => {
+  const ramp = { start: 1, target: 5, step: 30 / 60, from: "2026-09-01", unit: "min" as const, advance: "calendar" as const };
+  assert.equal(formatAmount(rungOn(ramp, "2026-09-02", {}), "min"), "1m 30s");
+  assert.equal(formatAmount(rungOn(ramp, "2026-09-09", {}), "min"), "5m");
+  assert.equal(totalRungs(ramp), 8);
+  assert.equal(formatAmount(0.25, "min"), "15s");
+  assert.equal(formatAmount(61.5, "min"), "1h 1m 30s");
+});
+
+test("seconds add up exactly, without floating-point drift", () => {
+  const ramp = { start: 0, target: 1, step: 2 / 60, from: "2026-09-01", unit: "min" as const, advance: "calendar" as const };
+  assert.equal(rungOn(ramp, "2026-10-01", {}), 1);
+  assert.equal(totalRungs(ramp), 30);
+  // A minute and a half logged meets a minute-and-a-half rung.
+  assert.equal(meets(ramp, 1.5, clampValue(1.5, "min")), true);
 });

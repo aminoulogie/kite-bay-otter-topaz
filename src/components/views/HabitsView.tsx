@@ -586,9 +586,9 @@ function RampRow({
             type="button"
             onClick={() => onLog(soFar + n)}
             className="h-8 min-w-12 rounded-full border border-border bg-surface-3 px-2.5 text-xs font-bold tabular"
-            aria-label={`Add ${n} to ${habit.name}`}
+            aria-label={`Add ${formatAmount(n, ramp.unit)} to ${habit.name}`}
           >
-            +{n}
+            +{ramp.unit === "count" ? n : formatAmount(n, ramp.unit).replace(/ pages?$/, "")}
           </button>
         ))}
         <button
