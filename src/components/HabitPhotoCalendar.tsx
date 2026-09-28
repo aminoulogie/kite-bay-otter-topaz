@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { canChange } from "@/lib/habit-lock";
 import { Camera, Check, ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -425,12 +426,13 @@ export function DaySheet({
           <Button
             className="flex-1"
             variant={done ? "primary" : undefined}
+            disabled={!canChange(done, date)}
             onClick={() => {
               onToggle();
               onClose();
             }}
           >
-            <Check className="size-4" /> {done ? "Done" : "Mark done"}
+            <Check className="size-4" /> {done ? "Done" : canChange(done, date) ? "Mark done" : "Missed"}
           </Button>
           <Button className="flex-1" disabled={busy} onClick={() => void capture()}>
             <Camera className="size-4" /> {hasPhoto ? "Replace" : "Capture"}

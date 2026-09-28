@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { canTickOn } from "@/lib/habit-lock";
 import { Check, Moon, Pill, Repeat, Utensils } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -58,7 +59,8 @@ export function LogTheGap() {
   const needSleep = day?.sleep?.hours == null;
   const needFood = !day?.items?.length;
   const needCreatine = !(day?.creatine ?? 0);
-  const openHabits = habits.filter((h) => h.history?.[date] !== true);
+  // Habits are ticked on the day only, so a past day offers none.
+  const openHabits = canTickOn(date) ? habits.filter((h) => h.history?.[date] !== true) : [];
   const needSession = !history[date] && live.exercises.length === 0;
 
   const anything =

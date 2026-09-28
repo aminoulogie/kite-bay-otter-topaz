@@ -41,6 +41,7 @@ import {
 import { collectSideStores, restoreSideStores, type SideStores } from "./side-stores";
 import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
 import { logAmount, rungOn, setRamp } from "./habit-ramp";
+import { canTickOn } from "./habit-lock";
 import { followsSettings, resolveGoals, sameGoals } from "./goals";
 import { learn, unlearn, type LangTrack } from "./lang/study";
 import type { LangCode, Level } from "./lang/words";
@@ -1735,6 +1736,8 @@ export const useSoma = create<SomaStore>()(
           habits: get().habits.map((h) => {
             if (h.id !== id) return h;
             const on = !h.history[key];
+            // Only today can be ticked; any day can be cleared.
+            if (on && !canTickOn(key)) return h;
             // A ramping habit has no separate notion of done either: ticking it
             // means "I did exactly what today asked for", so it writes that
             // number rather than a mark the log would contradict.
@@ -1745,6 +1748,7 @@ export const useSoma = create<SomaStore>()(
       },
       logHabitAmount: (id, value, date) => {
         const key = date || get().activeDate;
+        if (value !== null && !canTickOn(key)) return;
         set({ habits: get().habits.map((h) => (h.id === id ? logAmount(h, key, value) : h)) });
       },
       setHabitRamp: (id, ramp) => {
@@ -1752,6 +1756,7 @@ export const useSoma = create<SomaStore>()(
       },
       bumpHabitStep: (id, stepId, date) => {
         const key = date || get().activeDate;
+        if (!canTickOn(key)) return;
         set({
           habits: get().habits.map((h) => (h.id === id ? bumpStep(h, key, stepId) : h)),
         });

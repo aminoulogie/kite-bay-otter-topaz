@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { canChange, canTickOn } from "@/lib/habit-lock";
 import { CalendarDays, Camera, Check, ListChecks, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
@@ -390,9 +391,10 @@ function TodayPanel() {
                     never claims more than the steps say. */}
                 <button
                   type="button"
+                  disabled={!canChange(done, activeDate)}
                   onClick={() => toggleHabit(h.id)}
                   className={cn(
-                    "flex size-11 items-center justify-center rounded-full border transition-transform active:scale-90",
+                    "flex size-11 items-center justify-center rounded-full border transition-transform active:scale-90 disabled:opacity-40",
                     done
                       ? "border-accent bg-accent text-accent-ink"
                       : steps.length && list.done > 0
@@ -436,6 +438,7 @@ function TodayPanel() {
                     <button
                       key={st.id}
                       type="button"
+                      disabled={!canTickOn(activeDate)}
                       onClick={() => bumpHabitStep(h.id, st.id)}
                       className={cn(
                         "flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors active:scale-[0.99]",

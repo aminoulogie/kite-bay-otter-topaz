@@ -265,8 +265,15 @@ export function syncRampHistory(habit: Habit): Habit {
 /** Record an amount for a day. Zero is a real value and is kept as one. */
 export function logAmount(habit: Habit, date: string, value: number | null): Habit {
   const log = { ...(habit.amountLog ?? {}) };
-  if (value === null) delete log[date];
-  else log[date] = clampValue(value, habit.ramp?.unit);
+  if (value === null) {
+    // Clearing has to clear the tick too: the sync below only walks the days
+    // still in the log, so without this a cleared day stayed done forever.
+    delete log[date];
+    const history = { ...habit.history };
+    delete history[date];
+    return syncRampHistory({ ...habit, amountLog: log, history });
+  }
+  log[date] = clampValue(value, habit.ramp?.unit);
   return syncRampHistory({ ...habit, amountLog: log });
 }
 
