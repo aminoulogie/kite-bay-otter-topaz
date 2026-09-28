@@ -225,9 +225,9 @@ struct RingsWidgetView: View {
                         .foregroundColor(.gray)
                     HStack(alignment: .firstTextBaseline, spacing: 1) {
                         Text("\(Int(r.value.rounded()))")
-                            .font(.system(size: compact ? 16 : 19, weight: .heavy, design: .rounded))
+                            .font(.system(size: compact ? 16 : 19, weight: .heavy))
                         Text("/\(Int(r.goal.rounded()))")
-                            .font(.system(size: compact ? 11 : 13, weight: .bold, design: .rounded))
+                            .font(.system(size: compact ? 11 : 13, weight: .bold))
                         Text(r.unit)
                             .font(.system(size: 9, weight: .bold))
                             .padding(.leading, 2)

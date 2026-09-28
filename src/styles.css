@@ -2,9 +2,15 @@
 @import "./glass.css";
 
 @theme {
-  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Syne", "Manrope", ui-sans-serif, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* San Francisco, Apple's system face — what iOS and macOS draw their own
+     apps in. Asked for by name rather than loaded: it ships with every
+     iPhone and Mac, so there is nothing to download and it is always the
+     exact version the OS uses (Text at small sizes, Display at large ones,
+     chosen by the system). Elsewhere the same stack falls to that platform's
+     own UI face. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --color-bg: #0b0c10;
   --color-surface: #141720;

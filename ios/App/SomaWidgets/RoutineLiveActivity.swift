@@ -102,7 +102,7 @@ private struct StepClock: View {
                 Text(state.stepEnd, style: .timer)
             }
         }
-        .font(.system(size: size, weight: .heavy, design: .rounded))
+        .font(.system(size: size, weight: .heavy))
         .monospacedDigit()
         .multilineTextAlignment(.trailing)
         .lineLimit(1)
