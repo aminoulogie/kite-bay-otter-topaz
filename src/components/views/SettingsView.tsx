@@ -33,7 +33,7 @@ import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
 import { widgetStatus } from "@/lib/native/widget-bridge";
-import { testHaptics } from "@/lib/haptics";
+import { testHaptics, tickWay } from "@/lib/haptics";
 import { lockScreenStatus, type LockScreenStatus } from "@/lib/native/routine-activity";
 import {
   applyLiveNow, checkLive, liveStatus, nativeVersion, onLiveStatus, type LiveStatus,
@@ -93,6 +93,7 @@ export function SettingsView() {
   );
   const [widget, setWidget] = useState<{ shared: boolean; group: string } | null>(null);
   const [lock, setLock] = useState<LockScreenStatus | null>(null);
+  const [way, setWay] = useState(tickWay());
   const [live, setLive] = useState<LiveStatus>(liveStatus());
   const [installed, setInstalled] = useState<string | null>(null);
   useEffect(() => {
@@ -1102,14 +1103,22 @@ export function SettingsView() {
             <div className="mt-1 flex items-center justify-between gap-3 text-xs">
               <span className="shrink-0 text-muted">Vibration test</span>
               <span className="flex gap-1.5">
-                {(["tick", "plugin"] as const).map((w) => (
+                {(["tick", "plugin", "system"] as const).map((w) => (
                   <button
                     key={w}
                     type="button"
-                    onClick={() => void testHaptics(w).then((m) => toast(m))}
-                    className="rounded-full border border-border bg-surface-2 px-2.5 py-1 font-bold"
+                    onClick={() =>
+                      void testHaptics(w).then((m) => {
+                        setWay(tickWay());
+                        toast(m);
+                      })
+                    }
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 font-bold",
+                      way === w ? "border-accent bg-accent/15 text-accent-text" : "border-border bg-surface-2",
+                    )}
                   >
-                    {w === "tick" ? "Tick" : "Standard"}
+                    {w === "tick" ? "Tick" : w === "plugin" ? "Standard" : "System"}
                   </button>
                 ))}
               </span>

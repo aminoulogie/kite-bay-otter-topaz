@@ -1,3 +1,4 @@
+import AVFoundation
 import UIKit
 import Capacitor
 
@@ -7,7 +8,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Vibrations are allowed while the app's audio is live. The web view's
+        // sounds (the rest timer's chime) hold an audio session, and iOS
+        // mutes haptics under an active session unless told otherwise.
+        if #available(iOS 13.0, *) {
+            try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(true)
+        }
         return true
     }
 

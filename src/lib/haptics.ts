@@ -15,7 +15,7 @@ import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 type Pattern = number | number[];
 
 const Tick = registerPlugin<{
-  tick(o: { style: "selection" | "light" | "medium" }): Promise<void>;
+  tick(o: { style: "selection" | "light" | "medium" | "system" }): Promise<void>;
   prepare(): Promise<void>;
 }>("Tick");
 
@@ -55,15 +55,39 @@ export const tapLight = () => native({ impact: ImpactStyle.Light }) || buzz(8);
  * A detent: the tick of a picker wheel passing each value. The lightest feel
  * iOS has, made to be felt many times a second without becoming a buzz.
  */
+/**
+ * Which way the page strip's tick reaches the Taptic Engine, chosen in
+ * Settings from the vibration test: whichever one this phone actually plays.
+ */
+export type TickWay = "tick" | "plugin" | "system";
+const WAY_KEY = "soma.tickWay";
+export function tickWay(): TickWay {
+  try {
+    const v = localStorage.getItem(WAY_KEY);
+    return v === "plugin" || v === "system" ? v : "tick";
+  } catch {
+    return "tick";
+  }
+}
+export function setTickWay(way: TickWay): void {
+  try {
+    localStorage.setItem(WAY_KEY, way);
+  } catch {
+    /* private mode: the default stays */
+  }
+}
+
 export const tapTick = (): void => {
-  // The app's own native tick first (MainViewController.swift): one prepared
-  // generator, fired at once. The packaged plugin fires a cold one per call,
-  // and a quick run of those came out as nothing on the phone.
   try {
     if (Capacitor.getPlatform() === "ios") {
-      void Tick.tick({ style: "light" }).catch(() => {
-        native({ impact: ImpactStyle.Light });
-      });
+      const way = tickWay();
+      if (way === "plugin") {
+        void Haptics.impact({ style: ImpactStyle.Light }).catch(() => {});
+      } else {
+        void Tick.tick({ style: way === "system" ? "system" : "light" }).catch(() => {
+          native({ impact: ImpactStyle.Light });
+        });
+      }
       return;
     }
   } catch {
@@ -77,15 +101,14 @@ export const tapTick = (): void => {
  * For Settings: fire each haptic path once, so it is plain which of them the
  * phone actually plays — the app's own tick, or the packaged plugin.
  */
-export async function testHaptics(which: "tick" | "plugin"): Promise<string> {
+export async function testHaptics(which: TickWay): Promise<string> {
   try {
     if (Capacitor.getPlatform() !== "ios") return "Only on the iPhone app";
-    if (which === "tick") {
-      await Tick.tick({ style: "medium" });
-      return "Sent through SOMA's own tick";
-    }
-    await Haptics.impact({ style: ImpactStyle.Heavy });
-    return "Sent through the standard haptics plugin";
+    if (which === "plugin") await Haptics.impact({ style: ImpactStyle.Heavy });
+    else await Tick.tick({ style: which === "system" ? "system" : "medium" });
+    setTickWay(which);
+    const name = which === "tick" ? "Tick" : which === "plugin" ? "Standard" : "System";
+    return `${name} sent — the page strip uses it now`;
   } catch (err) {
     return err instanceof Error ? `Failed: ${err.message}` : "Failed";
   }

@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import Capacitor
 import UIKit
@@ -98,6 +99,11 @@ public class TickPlugin: CAPPlugin, CAPBridgedPlugin {
             case "medium":
                 self.medium.impactOccurred()
                 self.medium.prepare()
+            case "system":
+                // The Peek tap, played as a system sound. It goes straight to
+                // the Taptic Engine without UIFeedbackGenerator, which iOS
+                // mutes when System Haptics is off.
+                AudioServicesPlaySystemSound(1519)
             default:
                 self.light.impactOccurred(intensity: 0.9)
                 self.light.prepare()
