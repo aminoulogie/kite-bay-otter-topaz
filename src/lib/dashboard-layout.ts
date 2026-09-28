@@ -281,6 +281,13 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "filter", label: "Active / Paused / Done", size: "1x4", sizes: FURNITURE },
     { id: "list", label: "The projects", size: "2x4" },
   ],
+  // The Goals page behind the same tab: the three horizons, and the tally.
+  "projects-goals": [
+    { id: "header", label: "Goals at a glance", size: "2x4" },
+    { id: "week", label: "This week", size: "2x4" },
+    { id: "month", label: "This month", size: "2x4" },
+    { id: "year", label: "This year", size: "2x4" },
+  ],
   // Money is two pages behind one tab: what you spend, and what you trade.
   // The spending page keeps the bare "money" key rather than gaining a suffix,
   // because every layout already saved is stored under it and renaming the

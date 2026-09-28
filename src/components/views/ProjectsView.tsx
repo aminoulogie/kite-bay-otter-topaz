@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { SwipeRow } from "@/components/SwipeRow";
 import { TopTabs } from "@/components/TopTabs";
+import { GoalsView } from "@/components/views/GoalsView";
 import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
 import { Glance, isGlance } from "@/components/Glance";
 import { getLocalDateKey } from "@/lib/soma";
@@ -33,7 +34,26 @@ import { cn } from "@/lib/utils";
  * in by hand is a mood, and the rest of this app is built on not letting
  * anyone grade their own homework.
  */
+/**
+ * Two pages behind one tab: projects, which have steps and a finish line, and
+ * goals, which have a week, a month or a year to happen in.
+ */
+const PAGES = [
+  { id: "projects", label: "Projects" },
+  { id: "goals", label: "Goals" },
+] as const;
+
 export function ProjectsView() {
+  const [page, setPage] = useState<(typeof PAGES)[number]["id"]>("projects");
+  return (
+    <>
+      <TopTabs tabs={PAGES} value={page} onChange={setPage} className="mb-3" />
+      {page === "projects" ? <ProjectsBoard /> : <GoalsView />}
+    </>
+  );
+}
+
+function ProjectsBoard() {
   const projects = useSoma((s) => s.projects);
   const addProject = useSoma((s) => s.addProject);
   const removeProject = useSoma((s) => s.removeProject);

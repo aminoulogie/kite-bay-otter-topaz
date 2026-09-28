@@ -32,6 +32,7 @@ import CUSTOM_FOOD_SEED from "./custom-foods-seed.json";
 import { correctCustomFoods } from "./food-corrections";
 import { liveIsUntouched, withRescue } from "./live-guard";
 import { cleanSlot } from "./timeline";
+import { asGoals, type Goal } from "./life-goals";
 import { sessionBurn } from "./training-burn";
 import {
   defaultProgram, loadActiveId, loadPrograms, resolveActiveProgram, saveActiveId,
@@ -293,6 +294,12 @@ export interface SomaStore {
   setDayRoutineRun: (run: RunState | null) => void;
   /** Things with a finish line. See lib/projects.ts. */
   projects: Project[];
+  /** Goals for the week, month and year. See lib/life-goals.ts. */
+  goals: Goal[];
+  addGoal: (goal: Omit<Goal, "id" | "createdAt" | "done">) => string;
+  patchGoal: (id: string, patch: Partial<Omit<Goal, "id">>) => void;
+  removeGoal: (id: string) => void;
+  restoreGoal: (idx: number, goal: Goal) => void;
   /** The trading journal. See lib/trading.ts for the rules it enforces. */
   trades: Trade[];
   addProject: (name: string, color: string) => string;
@@ -592,6 +599,7 @@ export const useSoma = create<SomaStore>()(
       grocery: [],
       todos: [],
       projects: [],
+      goals: [],
       trades: [],
       dayRoutines: [],
       dayRoutineRun: null,
@@ -1338,6 +1346,26 @@ export const useSoma = create<SomaStore>()(
           projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)),
         })),
       removeProject: (id) => set((s) => ({ projects: s.projects.filter((p) => p.id !== id) })),
+      addGoal: (goal) => {
+        const id = newId();
+        set((s) => ({ goals: [...s.goals, { ...goal, id, done: false, createdAt: Date.now() }] }));
+        return id;
+      },
+      patchGoal: (id, patch) =>
+        set((s) => ({ goals: s.goals.map((g) => (g.id === id ? { ...g, ...patch } : g)) })),
+      removeGoal: (id) =>
+        set((s) => ({
+          // The goals that served it lose the link rather than vanishing with it.
+          goals: s.goals
+            .filter((g) => g.id !== id)
+            .map((g) => (g.parentId === id ? { ...g, parentId: undefined } : g)),
+        })),
+      restoreGoal: (idx, goal) =>
+        set((s) => {
+          const next = [...s.goals];
+          next.splice(Math.max(0, Math.min(next.length, idx)), 0, goal);
+          return { goals: next };
+        }),
       restoreProject: (idx, project) =>
         set((s) => {
           const next = [...s.projects];
@@ -2481,6 +2509,7 @@ export const useSoma = create<SomaStore>()(
             grocery: get().grocery,
             todos: get().todos,
             projects: get().projects,
+            goals: get().goals,
             trades: get().trades,
             dayRoutines: get().dayRoutines,
             dayPlans: get().dayPlans,
@@ -2534,6 +2563,7 @@ export const useSoma = create<SomaStore>()(
               grocery: data.grocery || [],
               todos: data.todos || [],
               projects: asProjects(data.projects),
+              goals: asGoals(data.goals),
               trades: asTrades(data.trades),
               dayRoutines: asRoutines(data.dayRoutines),
               dayPlans: data.dayPlans || {},
@@ -2635,6 +2665,7 @@ export const useSoma = create<SomaStore>()(
             grocery: mergeById(data.grocery || [], cur.grocery),
             todos: mergeById(data.todos || [], cur.todos),
             projects: mergeById(asProjects(data.projects), cur.projects),
+            goals: mergeById(asGoals(data.goals), cur.goals),
             trades: mergeById(asTrades(data.trades), cur.trades),
             dayRoutines: mergeById(asRoutines(data.dayRoutines), cur.dayRoutines),
             // Incoming days fill gaps; a plan on the device is the newer edit.
@@ -2756,6 +2787,7 @@ export const useSoma = create<SomaStore>()(
         grocery: s.grocery,
         todos: s.todos,
         projects: s.projects,
+        goals: s.goals,
         trades: s.trades,
         dayRoutines: s.dayRoutines,
         dayPlans: s.dayPlans,
