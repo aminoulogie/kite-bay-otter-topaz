@@ -37,14 +37,14 @@
  * capping that would put its buttons somewhere you cannot reach them. So a
  * wide card can grow past its size, and a narrow one is clipped behind a fade.
  */
-export type WidgetSize = "1x1" | "1x2" | "2x2" | "1x4" | "2x4" | "3x4";
+export type WidgetSize = "1x1" | "1x2" | "2x2" | "1x4" | "2x4" | "3x4" | "4x4";
 
 export interface SizeSpec {
   id: WidgetSize;
   /** Columns out of four. */
   w: 1 | 2 | 4;
   /** Height units. One unit is about one column wide, so 1x1 is a square. */
-  h: 1 | 2 | 3;
+  h: 1 | 2 | 3 | 4;
 }
 
 /** Smallest to largest, which is the order the picker shows them in. */
@@ -55,9 +55,23 @@ export const SIZE_SPECS: SizeSpec[] = [
   { id: "1x4", w: 4, h: 1 },
   { id: "2x4", w: 4, h: 2 },
   { id: "3x4", w: 4, h: 3 },
+  { id: "4x4", w: 4, h: 4 },
 ];
 
-export const SIZES: WidgetSize[] = SIZE_SPECS.map((s) => s.id);
+/**
+ * The six every widget comes in, and the ladder the size button steps along.
+ * 4x4 — four rows, full width — is opt-in and outside it: a window you scroll
+ * inside, like the Timeline's day, earns it; a card that simply ends leaves
+ * most of a 4x4 empty.
+ */
+export const SIZES: WidgetSize[] = SIZE_SPECS.filter((s) => s.id !== "4x4").map((s) => s.id);
+export const STANDARD_SIZES = SIZES;
+
+/** Every size a stored layout may hold. */
+export const ALL_SIZES: WidgetSize[] = SIZE_SPECS.map((s) => s.id);
+
+/** A window worth scrolling inside: medium up to the tall 4x4. */
+export const WINDOW_SIZES: WidgetSize[] = ["2x4", "3x4", "4x4"];
 
 export function specFor(size: WidgetSize): SizeSpec {
   return SIZE_SPECS.find((s) => s.id === size) ?? SIZE_SPECS[4]!;
@@ -68,7 +82,7 @@ export function columnsFor(size: WidgetSize): 1 | 2 | 4 {
   return specFor(size).w;
 }
 
-export function rowsFor(size: WidgetSize): 1 | 2 | 3 {
+export function rowsFor(size: WidgetSize): 1 | 2 | 3 | 4 {
   return specFor(size).h;
 }
 
@@ -169,7 +183,7 @@ const LEGACY: Record<string, WidgetSize> = {
 
 export function asSize(value: unknown): WidgetSize | null {
   if (typeof value === "string") {
-    if ((SIZES as string[]).includes(value)) return value as WidgetSize;
+    if ((ALL_SIZES as string[]).includes(value)) return value as WidgetSize;
     return LEGACY[value] ?? null;
   }
   if (value === 1) return "2x2";
@@ -290,8 +304,13 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   time: [
     { id: "header", label: "The day", size: "2x4" },
+    // The day as a calendar: hours down the side, what is on at each, and a
+    // line at now. A window you scroll inside, hence the tall size.
+    { id: "timeline", label: "Timeline", size: "4x4", sizes: WINDOW_SIZES },
     { id: "routines", label: "Routines", size: "2x4" },
-    { id: "ring", label: "The ring", size: "2x4" },
+    // A glance now, not the page's centrepiece: the timeline is where the day
+    // is planned, and the ring answers only "does it fit in 24 hours".
+    { id: "ring", label: "The ring", size: "2x2" },
     { id: "screen", label: "Screen time", size: "2x4" },
     { id: "blocks", label: "The day, in order", size: "2x4" },
   ],
@@ -541,10 +560,10 @@ function cleanSize(tab: string, id: string, value: unknown): WidgetSize {
  * at its own height.
  */
 export function allowedSizes(tab: string, id: string): WidgetSize[] {
-  if (isSpacer(id)) return SIZES;
+  if (isSpacer(id)) return STANDARD_SIZES;
   const def = widgetDef(tab, id);
   if (!def) return FURNITURE;
-  return def.sizes?.length ? def.sizes : SIZES;
+  return def.sizes?.length ? def.sizes : STANDARD_SIZES;
 }
 
 /**

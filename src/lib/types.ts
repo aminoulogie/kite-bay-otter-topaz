@@ -527,6 +527,20 @@ export interface TodoItem {
    * which is what "Clear done" does instead of throwing the row away.
    */
   cleared?: boolean;
+  /**
+   * A place on the timeline: the day, and when in it, as minutes from
+   * midnight. Unset means "some time" — most of a list is not an
+   * appointment, and only what you drag into the day gets a time.
+   */
+  slot?: TodoSlot;
+}
+
+export interface TodoSlot {
+  date: string;
+  /** Minutes from midnight. */
+  start: number;
+  /** Minutes long. */
+  mins: number;
 }
 
 export interface MindEntry {

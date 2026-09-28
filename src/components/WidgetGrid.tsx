@@ -109,7 +109,7 @@ const COL: Record<1 | 2 | 4, string> = {
  * WidgetSize for why a 3x4 Routines editor must be allowed to grow past its
  * own size and a 1x1 must not.
  */
-const ROW: Record<1 | 2 | 3, { tile: string; wide: string }> = {
+const ROW: Record<1 | 2 | 3 | 4, { tile: string; wide: string }> = {
   // One row, full width, is the one size with NO floor: it means "as tall as
   // this needs to be". That is what makes a tab bar 48px rather than a 48px
   // bar sitting in an 84px hole — and it is why the ladder now only ever goes
@@ -135,6 +135,8 @@ const ROW: Record<1 | 2 | 3, { tile: string; wide: string }> = {
   // pair of 1x2s stacked beside it.
   2: { tile: "h-[11.25rem] lg:h-[11rem]", wide: "min-h-[11rem] lg:min-h-[9rem]" },
   3: { tile: "h-[17rem] lg:h-[14.5rem]", wide: "min-h-[17rem] lg:min-h-[14.5rem]" },
+  // Full width only (see STANDARD_SIZES): a window scrolled inside.
+  4: { tile: "", wide: "min-h-[23rem]" },
 };
 
 function boxFor(size: WidgetSize, natural: boolean): string {

@@ -7,6 +7,7 @@ import { DayRing } from "@/components/DayRing";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { ScreenTimeCard } from "@/components/ScreenTimeCard";
 import { RoutineCard } from "@/components/RoutineCard";
+import { TimelineCard } from "@/components/TimelineCard";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import {
@@ -102,6 +103,9 @@ export function TimeView() {
         )}
       </Card>
       </Sized>
+
+      {/* The day as a calendar — the tab's centre. See TimelineCard. */}
+      <TimelineCard key="timeline" />
 
       <Sized
         key="ring"

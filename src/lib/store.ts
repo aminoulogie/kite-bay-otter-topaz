@@ -25,11 +25,13 @@ import type {
   MindEntry,
   TabId,
   TodoItem,
+  TodoSlot,
   WorkoutSet,
 } from "./types";
 import CUSTOM_FOOD_SEED from "./custom-foods-seed.json";
 import { correctCustomFoods } from "./food-corrections";
 import { liveIsUntouched, withRescue } from "./live-guard";
+import { cleanSlot } from "./timeline";
 import { sessionBurn } from "./training-burn";
 import {
   defaultProgram, loadActiveId, loadPrograms, resolveActiveProgram, saveActiveId,
@@ -314,6 +316,10 @@ export interface SomaStore {
   renameTodo: (id: string, text: string) => void;
   /** Set or clear a to-do's deadline. Null clears it. */
   setTodoDue: (id: string, due: string | null) => void;
+  /** Puts a to-do on the timeline at a time, or takes it off (null). */
+  setTodoSlot: (id: string, slot: TodoSlot | null) => void;
+  /** A new to-do, straight onto the timeline. */
+  addTodoAt: (text: string, slot: TodoSlot) => void;
   /** Move it onto the other list, dated as of right now. */
   setTodoScope: (id: string, scope: TodoScope) => void;
   removeTodo: (id: string) => void;
@@ -1439,6 +1445,27 @@ export const useSoma = create<SomaStore>()(
             t.id === id ? { ...t, due: cleanDue(due ?? undefined) } : t,
           ),
         }),
+      setTodoSlot: (id, slot) =>
+        set({
+          todos: get().todos.map((t) => {
+            if (t.id !== id) return t;
+            if (!slot) {
+              const { slot: _gone, ...rest } = t;
+              void _gone;
+              return rest;
+            }
+            // A to-do placed on a day is that day's to-do: it moves onto the
+            // day list for that date, so it shows up where it is done.
+            return { ...t, slot: cleanSlot(slot), scope: "day", date: slot.date, cleared: false };
+          }),
+        }),
+      addTodoAt: (text, slot) => {
+        const t = text.trim();
+        if (!t) return;
+        get().addTodo(t, "day");
+        const added = get().todos[get().todos.length - 1];
+        if (added && added.text === t) get().setTodoSlot(added.id, slot);
+      },
       setTodoScope: (id, scope) =>
         set({
           todos: get().todos.map((t) =>
@@ -2671,7 +2698,7 @@ export const useSoma = create<SomaStore>()(
        * runs on every load is not a migration, it is a rule — and this one as
        * a rule would mean nobody could ever set a tab bar to 2x4 again.
        */
-      version: 3,
+      version: 4,
       /**
        * The same localStorage, with one thing put right on the way in.
        *
@@ -2698,6 +2725,17 @@ export const useSoma = create<SomaStore>()(
         // other, put right — only where the wrong figure is still there, so
         // a food already fixed by hand keeps its fix. See food-corrections.ts.
         if (from < 3 && Array.isArray(s.customFoods)) s = { ...s, customFoods: correctCustomFoods(s.customFoods) };
+        // v4: the day ring became a glance (2x2) once the Timeline took over
+        // planning the day. Only the old default moves; a size you chose stays.
+        if (from < 4 && s.layouts?.time) {
+          s = {
+            ...s,
+            layouts: {
+              ...s.layouts,
+              time: s.layouts.time.map((p) => (p.id === "ring" && p.size === "2x4" ? { ...p, size: "2x2" } : p)),
+            },
+          };
+        }
         return s;
       },
       partialize: (s) => ({
