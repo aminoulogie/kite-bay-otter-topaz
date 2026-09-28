@@ -26,11 +26,26 @@ const MANIFEST =
 const EVERY_MS = 30 * 60_000;
 
 type Updater = typeof import("@capgo/capacitor-updater").CapacitorUpdater;
-let plugin: Promise<Updater | null> | null = null;
-const updater = () =>
+/**
+ * The plugin, boxed. A Capacitor plugin object answers EVERY property as a
+ * native method — `then` included — so a promise that resolves to one tries
+ * to "await" it, calls a native method called `then` that does not exist,
+ * and fails. That is what hid the updater entirely on the first build that
+ * had it. Held in an object, it is never mistaken for a promise.
+ */
+let plugin: Promise<{ u: Updater } | null> | null = null;
+let importError = "";
+const box = () =>
   (plugin ??= Capacitor.getPlatform() === "ios"
-    ? import("@capgo/capacitor-updater").then((m) => m.CapacitorUpdater).catch(() => null)
+    ? import("@capgo/capacitor-updater")
+        .then((m) => ({ u: m.CapacitorUpdater }))
+        .catch((err) => {
+          importError = err instanceof Error ? err.message : String(err);
+          return null;
+        })
     : Promise.resolve(null));
+// Never `return` the plugin from an async function or a .then(): that is the
+// same trap. Callers unbox it where they use it: `const u = (await box())?.u`.
 
 export type LiveStatus =
   | { state: "off" }
@@ -61,7 +76,7 @@ export const runningVersion = () => __APP_VERSION__;
 
 /** The native build installed, as the plugin reports it. */
 export async function nativeVersion(): Promise<string | null> {
-  const u = await updater();
+  const u = (await box())?.u;
   if (!u) return null;
   try {
     return (await u.current()).native || null;
@@ -75,7 +90,7 @@ export async function nativeVersion(): Promise<string | null> {
  * downloaded layer that never says so is rolled back.
  */
 export async function liveReady(): Promise<void> {
-  const u = await updater();
+  const u = (await box())?.u;
   if (!u) return;
   try {
     await u.notifyAppReady();
@@ -89,9 +104,9 @@ export function checkLive(force = false): Promise<LiveStatus> {
   if (running) return running;
   if (!force && Date.now() - lastCheck < EVERY_MS) return Promise.resolve(status);
   running = (async () => {
-    const u = await updater();
+    const u = (await box())?.u;
     if (!u) {
-      publish({ state: "off" });
+      publish(importError ? { state: "error", message: `Updater did not load: ${importError}` } : { state: "off" });
       return status;
     }
     lastCheck = Date.now();
@@ -135,7 +150,7 @@ export function checkLive(force = false): Promise<LiveStatus> {
 
 /** Switch to the downloaded layer now. The app reloads. */
 export async function applyLiveNow(): Promise<void> {
-  const u = await updater();
+  const u = (await box())?.u;
   if (!u || status.state !== "ready") return;
   await u.set({ id: status.id });
 }
