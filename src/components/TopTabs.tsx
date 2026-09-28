@@ -70,14 +70,14 @@ export function TopTabs<T extends string>({
   return (
     <div
       className={cn(
-        "glass-chip relative flex snap-x gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "glass-chip relative isolate flex snap-x gap-1 overflow-x-auto rounded-full border border-border bg-surface p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         className,
       )}
       role="tablist"
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute left-0 top-1 origin-left rounded-full bg-accent transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)] will-change-transform"
+        className="pointer-events-none absolute left-0 top-1 z-0 origin-left rounded-full bg-accent transition-transform duration-200 ease-[cubic-bezier(0.34,1.4,0.64,1)] will-change-transform"
         style={{
           width: pill.base,
           height: "calc(100% - 0.5rem)",
@@ -103,6 +103,11 @@ export function TopTabs<T extends string>({
             "relative z-10 flex h-10 min-w-max flex-1 basis-0 snap-center items-center justify-center gap-1.5 rounded-full px-2 text-xs font-bold transition-colors duration-200",
             value === t.id ? "text-accent-ink" : "text-muted",
           )}
+          // Its own layer, above the pill's. On iOS the pill is promoted to a
+          // GPU layer (it glides on transform) and WebKit then painted it OVER
+          // the labels in a scrolling bar, z-index notwithstanding — the
+          // selected tab's text vanished under its own highlight.
+          style={{ transform: "translateZ(0)" }}
         >
           {t.icon ? <t.icon className="size-3.5 shrink-0" /> : null}
           {t.label}

@@ -51,18 +51,9 @@ export const tapLight = () => native({ impact: ImpactStyle.Light }) || buzz(8);
  * iOS has, made to be felt many times a second without becoming a buzz.
  */
 export const tapTick = (): void => {
-  try {
-    if (Capacitor.isNativePlatform()) {
-      // selectionChanged does nothing on iOS unless a selection generator has
-      // been started first; starting one each tick is cheap and always ready.
-      void Haptics.selectionStart()
-        .then(() => Haptics.selectionChanged())
-        .catch(() => {});
-      return;
-    }
-  } catch {
-    /* fall through */
-  }
+  // A light impact rather than the selection feel: selection ticks are so
+  // faint on a 14 Pro that a scrub felt like nothing at all.
+  if (native({ impact: ImpactStyle.Light })) return;
   buzz(4);
 };
 

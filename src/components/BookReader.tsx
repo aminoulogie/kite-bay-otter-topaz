@@ -430,6 +430,9 @@ export function BookReader({
               page={spread.page}
               onPick={(n) => pager.current?.to(n)}
               onScrub={setScrubbing}
+              prevTitle={at > 1 ? index.titles[at - 2] || `Chapter ${at - 1}` : null}
+              nextTitle={total && at < total ? index.titles[at] || `Chapter ${at + 1}` : null}
+              onEdge={(dir) => (dir < 0 ? back() : forward())}
             />
           ) : (
             <div className="flex-1" />

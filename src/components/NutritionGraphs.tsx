@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Area, AreaChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Card, CardTitle } from "@/components/ui/card";
 import { ZoomableChart, useChartZoom } from "@/components/ZoomableChart";
@@ -14,10 +14,8 @@ import { MACRO_COLOR } from "@/components/MacroStrip";
 /**
  * What was actually eaten against what was aimed for.
  *
- * The target is drawn as a dashed reference line rather than a second series,
- * because it is a threshold and not a measurement: plotting it as a line
- * implies it varied day to day, and makes the eye compare two wiggles instead
- * of reading distance from a mark.
+ * No target or minimum line is drawn across it: the chart is the days
+ * themselves, and the hit rate below says how they measured up.
  *
  * Days with nothing logged are gaps, not zeros. A zero would read as a day of
  * fasting and would drag every average down — the same distinction the day
@@ -105,17 +103,15 @@ export function NutritionGraphs() {
 
   const fullY = useMemo(() => {
     const vs = data.map((d) => d.value).filter((v): v is number => typeof v === "number");
-    // The axis has to contain the TARGET as well as the data. Fitting to the
-    // data alone put a 3600 kcal target line off the top of a chart that maxed
-    // at 2300 — the line the whole card exists to show was invisible.
-    const hi = Math.max(target || 0, minimum, ...(vs.length ? vs : [0]));
+    // Fitted to the data: there are no target or minimum lines to make room for.
+    const hi = Math.max(...(vs.length ? vs : [0]));
     if (hi <= 0) return { min: 0, max: 1 };
     // Rounded up to a readable step. Multiplying by 1.08 gave axis labels like
     // "3888.0000000000005", which is a float artifact printed at the user.
     const headroom = hi * 1.08;
     const step = headroom > 1000 ? 100 : headroom > 100 ? 10 : 1;
     return { min: 0, max: Math.ceil(headroom / step) * step };
-  }, [data, target, minimum]);
+  }, [data]);
 
   const zoom = useChartZoom(fullX, fullY);
 
@@ -254,27 +250,6 @@ export function NutritionGraphs() {
                   labelFormatter={(t) => new Date(t as number).toLocaleDateString()}
                   formatter={(v) => [`${v} ${spec.unit}`, spec.label]}
                 />
-                {target > 0 && (
-                  // Dashed, because a target is a threshold rather than a
-                  // measurement — a solid line would read as a second series.
-                  <ReferenceLine
-                    y={target}
-                    stroke="var(--color-warn)"
-                    strokeDasharray="6 4"
-                    strokeWidth={1.5}
-                  />
-                )}
-                {minimum > 0 && (
-                  // Your floor, in the nutrient's own colour so it reads as
-                  // belonging to the line it bounds; the target stays amber.
-                  <ReferenceLine
-                    y={minimum}
-                    stroke={spec.color}
-                    strokeOpacity={0.8}
-                    strokeDasharray="2 4"
-                    strokeWidth={1.5}
-                  />
-                )}
                 <Area
                   type="monotone"
                   dataKey="value"

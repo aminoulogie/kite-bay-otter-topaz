@@ -23,7 +23,31 @@ public class RoutineActivityPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "update", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "end", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
     ]
+
+    /// What stands between a routine and the lock screen, checked on the phone.
+    /// The Live Activity is drawn by the widget extension, so if a sideloader
+    /// dropped the extension there is nothing to draw it with — the same cause
+    /// as a missing home-screen widget.
+    @objc func status(_ call: CAPPluginCall) {
+        var result: [String: Any] = ["extension": Self.extensionInstalled()]
+        if #available(iOS 16.2, *) {
+            result["activitiesEnabled"] = ActivityAuthorizationInfo().areActivitiesEnabled
+        } else {
+            result["activitiesEnabled"] = false
+        }
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            result["notifications"] = settings.authorizationStatus == .authorized
+                || settings.authorizationStatus == .provisional
+            call.resolve(result)
+        }
+    }
+
+    static func extensionInstalled() -> Bool {
+        guard let url = Bundle.main.builtInPlugInsURL?.appendingPathComponent("SomaWidgets.appex") else { return false }
+        return FileManager.default.fileExists(atPath: url.path)
+    }
 
     private static let notificationId = "soma.routine.step"
     private var askedForNotifications = false
@@ -67,6 +91,10 @@ public class RoutineActivityPlugin: CAPPlugin, CAPBridgedPlugin {
             if let activity = current {
                 await activity.update(content)
                 call.resolve(["ok": true, "live": true])
+                return
+            }
+            guard Self.extensionInstalled() else {
+                call.resolve(["ok": true, "live": false, "reason": "The widget extension was not installed (sideloader removed it)"])
                 return
             }
             guard ActivityAuthorizationInfo().areActivitiesEnabled else {

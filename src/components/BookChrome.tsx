@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Bookmark, Highlighter, List, Search, Star, Trash2, X } from "lucide-react";
 import { MIN_QUERY, findIn, tally, type Hit } from "@/lib/book-search";
 import { markChip, type BookMark } from "@/lib/marks";
@@ -464,9 +464,9 @@ export const ChapterRail = memo(function ChapterRail({
  * page exactly under the cursor, ticking once for every page that passes —
  * and wherever it comes to rest is where you land.
  *
- * The motion is the browser's own scrolling with snap points, not a hand-run
- * animation: momentum, deceleration and the final settle are the phone's
- * native feel for free, and they cannot drift from each other.
+ * The motion is run by hand rather than by native scrolling with snap points:
+ * native scrolling let a diagonal swipe drag the strip sideways and up, and
+ * could leave the page it reported off-centre from the one it showed.
  *
  * Each thumbnail is the real page, laid out at full size exactly as the
  * reader lays it out and scaled down — so its page breaks are the reader's
@@ -527,7 +527,7 @@ const PageThumb = memo(function PageThumb({
 });
 
 export const PageScrubber = memo(function PageScrubber({
-  theme, prefs, html, label, box, pages, page, onPick, onScrub,
+  theme, prefs, html, label, box, pages, page, onPick, onScrub, prevTitle, nextTitle, onEdge,
 }: {
   theme: ReturnType<typeof themeSpec>;
   prefs: ReaderPrefs;
@@ -538,179 +538,223 @@ export const PageScrubber = memo(function PageScrubber({
   page: number;
   onPick: (page: number) => void;
   onScrub?: (active: boolean) => void;
+  /** The chapters either side, shown as one card at each end of the strip. */
+  prevTitle?: string | null;
+  nextTitle?: string | null;
+  /** Landing on an end card: step into the chapter next door. */
+  onEdge?: (dir: -1 | 1) => void;
 }) {
-  const rail = useRef<HTMLDivElement>(null);
+  const strip = useRef<HTMLDivElement>(null);
   const pick = useRef(onPick);
   pick.current = onPick;
   const scrubbing = useRef(onScrub);
   scrubbing.current = onScrub;
+  const edge = useRef(onEdge);
+  edge.current = onEdge;
 
   const scale = box.h ? THUMB_H / box.h : 0.05;
   const cardW = Math.max(14, Math.round(box.w * scale));
-  const gapW = Math.max(3, Math.round(PAGE_GAP * scale));
+  const gapW = Math.max(4, Math.round(PAGE_GAP * scale));
   const stride = cardW + gapW;
 
-  // Room either side, so the first and last page can come to rest under the
-  // cursor like any other.
-  const [railW, setRailW] = useState(0);
-  useEffect(() => {
-    const el = rail.current;
-    if (!el) return;
-    const measure = () => setRailW(el.clientWidth);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  const pad = Math.max(0, railW / 2 - cardW / 2);
+  // Slots run from `lo` to `hi`: the chapter's pages, plus a card either end
+  // for the chapter before and after, so the roll carries on through the book.
+  const lo = prevTitle ? -1 : 0;
+  const hi = nextTitle ? pages : pages - 1;
+  const bounds = useRef({ lo, hi });
+  bounds.current = { lo, hi };
 
-  /** The page under the cursor right now, followed live while it moves. */
+  /**
+   * Where the strip is, in pages (fractional while it moves). Driven by hand
+   * rather than by native scrolling: the finger only ever moves it sideways —
+   * a diagonal swipe can no longer drag it up and down — and the page under
+   * the cursor is always exactly in the middle, whatever the pill's width.
+   */
+  const pos = useRef(page);
   const [under, setUnder] = useState(page);
   const underRef = useRef(page);
+  const drag = useRef<{ x: number; pos: number; id: number; samples: { t: number; x: number }[] } | null>(null);
+  const anim = useRef(0);
+  const preview = useRef(0);
 
-  /** Scrolls started by a finger, as opposed to the strip following a turn. */
-  const byHand = useRef(false);
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previewRaf = useRef(0);
-
-  const scrollToPage = (p: number, smooth: boolean) => {
-    const el = rail.current;
+  const paint = (p: number, ms = 0) => {
+    const el = strip.current;
     if (!el) return;
-    el.scrollTo({ left: p * stride, behavior: smooth ? "smooth" : "auto" });
+    el.style.transition = ms ? `transform ${ms}ms cubic-bezier(0.22, 1, 0.36, 1)` : "none";
+    el.style.transform = `translate3d(${-(cardW / 2 + p * stride)}px, 0, 0)`;
+  };
+
+  const mark = (p: number, live: boolean) => {
+    const n = Math.round(p);
+    if (n === underRef.current) return;
+    underRef.current = n;
+    setUnder(n);
+    if (!live) return;
+    // One detent for every page that passes under the cursor.
+    tapTick();
+    // The book follows the strip while it moves, a frame at a time.
+    cancelAnimationFrame(preview.current);
+    if (n >= 0 && n < pages) preview.current = requestAnimationFrame(() => pick.current(n));
   };
 
   // Follow the reader when the page changes from anywhere else — a turn, a
-  // search hit, a chapter jump — without treating it as a scrub.
-  useEffect(() => {
-    if (byHand.current) return;
+  // search hit, a chapter jump.
+  useLayoutEffect(() => {
+    if (drag.current) return;
+    cancelAnimationFrame(anim.current);
+    pos.current = page;
     underRef.current = page;
     setUnder(page);
-    scrollToPage(page, true);
+    paint(page, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, stride]);
+  }, [page, pages, stride]);
 
-  // First placement is instant: the pill should open already on your page.
-  useEffect(() => {
-    if (railW) scrollToPage(page, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railW]);
-
-  const settle = () => {
-    if (!byHand.current) return;
-    byHand.current = false;
-    const landed = underRef.current;
-    cancelAnimationFrame(previewRaf.current);
-    pick.current(landed);
-    scrubbing.current?.(false);
-  };
-
-  const onScroll = () => {
-    const el = rail.current;
-    if (!el || !stride) return;
-    const p = Math.max(0, Math.min(pages - 1, Math.round(el.scrollLeft / stride)));
-    if (p !== underRef.current) {
-      underRef.current = p;
-      setUnder(p);
-      if (byHand.current) {
-        // One detent per page that passes under the cursor.
-        tapTick();
-        // The book follows the strip while it moves, a frame at a time.
-        cancelAnimationFrame(previewRaf.current);
-        previewRaf.current = requestAnimationFrame(() => pick.current(underRef.current));
-      }
-    }
-    // Where scrollend is not supported, a pause in scrolling is the end.
-    if (settleTimer.current) clearTimeout(settleTimer.current);
-    settleTimer.current = setTimeout(() => {
-      settleTimer.current = null;
-      settle();
-    }, 140);
-  };
-
-  useEffect(() => {
-    const el = rail.current;
-    if (!el) return;
-    const end = () => {
-      if (settleTimer.current) clearTimeout(settleTimer.current);
-      settleTimer.current = null;
-      settle();
-    };
-    el.addEventListener("scrollend", end);
-    return () => {
-      el.removeEventListener("scrollend", end);
-      if (settleTimer.current) clearTimeout(settleTimer.current);
-      cancelAnimationFrame(previewRaf.current);
-    };
+  useEffect(() => () => {
+    cancelAnimationFrame(anim.current);
+    cancelAnimationFrame(preview.current);
   }, []);
+
+  /** Coast to a page, ticking for each one it passes, then land there. */
+  const coast = (target: number) => {
+    const from = pos.current;
+    const ms = Math.min(700, 180 + Math.abs(target - from) * 45);
+    const began = performance.now();
+    cancelAnimationFrame(anim.current);
+    const run = (now: number) => {
+      const k = Math.min(1, (now - began) / ms);
+      const e = 1 - (1 - k) ** 3;
+      pos.current = from + (target - from) * e;
+      paint(pos.current);
+      mark(pos.current, true);
+      if (k < 1) {
+        anim.current = requestAnimationFrame(run);
+        return;
+      }
+      pos.current = target;
+      cancelAnimationFrame(preview.current);
+      if (target < 0) edge.current?.(-1);
+      else if (target >= pages) edge.current?.(1);
+      else pick.current(target);
+      scrubbing.current?.(false);
+    };
+    anim.current = requestAnimationFrame(run);
+  };
 
   if (!box.w || pages < 1) return null;
 
   const from = Math.max(0, under - THUMB_WINDOW);
   const to = Math.min(pages - 1, under + THUMB_WINDOW);
+  const outline = theme.dark ? "rgba(235,235,245,0.45)" : "rgba(60,60,67,0.4)";
+
+  const endCard = (i: number, title: string, dir: -1 | 1) => (
+    <div
+      key={`edge${dir}`}
+      className="absolute top-0 flex flex-col items-center justify-center overflow-hidden rounded-[3px] px-0.5 text-center"
+      style={{
+        left: i * stride,
+        width: cardW,
+        height: THUMB_H,
+        background: `${theme.fg}10`,
+        color: theme.faint,
+        boxShadow: under === i ? `0 0 0 1.5px ${outline}` : `0 0 0 0.5px ${theme.fg}22`,
+      }}
+    >
+      <span className="text-[0.5rem] font-extrabold leading-none">{dir < 0 ? "‹" : "›"}</span>
+      <span className="mt-0.5 line-clamp-2 text-[0.34rem] font-bold leading-tight">{title}</span>
+    </div>
+  );
 
   return (
     <div className="pointer-events-auto min-w-0 flex-1">
-      <div className="rounded-full px-2 py-[5px]" style={readerGlass(theme)}>
-        <div className="relative">
-          {/* No cursor line: the page in the middle is picked out by its own
-              outline, which is all that is needed to say "this one". */}
+      <div className="rounded-full px-2 py-[7px]" style={readerGlass(theme)}>
+        <div
+          className="relative overflow-hidden"
+          // Horizontal only, and nothing else gets the gesture.
+          style={{ height: THUMB_H + 6, touchAction: "none" }}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            cancelAnimationFrame(anim.current);
+            (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+            drag.current = { x: e.clientX, pos: pos.current, id: e.pointerId, samples: [{ t: e.timeStamp, x: e.clientX }] };
+            scrubbing.current?.(true);
+          }}
+          onPointerMove={(e) => {
+            const d = drag.current;
+            if (!d || d.id !== e.pointerId) return;
+            const { lo: a, hi: b } = bounds.current;
+            let p = d.pos - (e.clientX - d.x) / stride;
+            // Past the ends it resists, like a rubber band, instead of stopping dead.
+            if (p < a) p = a - (a - p) * 0.3;
+            if (p > b) p = b + (p - b) * 0.3;
+            pos.current = p;
+            paint(p);
+            mark(Math.max(a, Math.min(b, p)), true);
+            d.samples.push({ t: e.timeStamp, x: e.clientX });
+            if (d.samples.length > 6) d.samples.shift();
+          }}
+          onPointerUp={(e) => {
+            const d = drag.current;
+            if (!d || d.id !== e.pointerId) return;
+            drag.current = null;
+            const first = d.samples[0]!;
+            const last = d.samples[d.samples.length - 1]!;
+            const dt = Math.max(1, last.t - first.t);
+            // Pages per ms, then thrown: a flick carries on for a few pages.
+            const v = e.timeStamp - last.t > 80 ? 0 : -(last.x - first.x) / dt / stride;
+            const { lo: a, hi: b } = bounds.current;
+            const moved = Math.abs(e.clientX - d.x) > 4;
+            // A tap on a card goes to that card.
+            let target = Math.round(pos.current + v * 220);
+            if (!moved) {
+              const box = e.currentTarget.getBoundingClientRect();
+              target = Math.round(pos.current + (e.clientX - (box.left + box.width / 2)) / stride);
+            }
+            coast(Math.max(a, Math.min(b, target)));
+          }}
+          onPointerCancel={() => {
+            if (!drag.current) return;
+            drag.current = null;
+            coast(Math.max(bounds.current.lo, Math.min(bounds.current.hi, Math.round(pos.current))));
+          }}
+        >
           <div
-            ref={rail}
-            className="overflow-x-auto overscroll-x-contain"
-            style={{ scrollbarWidth: "none", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}
-            onScroll={onScroll}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              byHand.current = true;
-              scrubbing.current?.(true);
-            }}
-            onTouchStart={() => {
-              byHand.current = true;
-            }}
-            // A touch that never scrolled still has to end the scrub, or the
-            // page stays dimmed behind the pill. A scroll that follows it
-            // replaces this timer with its own.
-            onPointerUp={() => {
-              if (settleTimer.current) return;
-              settleTimer.current = setTimeout(() => {
-                settleTimer.current = null;
-                settle();
-              }, 250);
-            }}
+            ref={strip}
+            className="absolute left-1/2 top-[3px] will-change-transform"
+            style={{ height: THUMB_H, width: stride * pages }}
           >
-            <div className="relative" style={{ height: THUMB_H, width: pad * 2 + stride * pages - gapW }}>
-              {Array.from({ length: pages }, (_, i) => {
-                const on = i === under;
-                const near = i >= from && i <= to;
-                return (
-                  <div
-                    key={i}
-                    className="absolute top-0 overflow-hidden rounded-[2px] transition-transform duration-150"
-                    style={{
-                      left: pad + i * stride,
-                      width: cardW,
-                      height: THUMB_H,
-                      background: theme.bg,
-                      scrollSnapAlign: "center",
-                      transform: on ? "scale(1.18)" : "none",
-                      zIndex: on ? 2 : 1,
-                      boxShadow: on ? `0 0 0 1.5px ${theme.fg}, 0 4px 12px rgba(0,0,0,0.45)` : `0 0 0 0.5px ${theme.fg}22`,
-                    }}
-                  >
-                    {near && (
-                      <PageThumb i={i} html={html} label={label} prefs={prefs} theme={theme} box={box} scale={scale} />
-                    )}
-                    {!on && (
-                      <span
-                        aria-hidden
-                        className="absolute inset-0"
-                        style={{ background: theme.dark ? "rgba(0,0,0,0.42)" : "rgba(255,255,255,0.36)" }}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+            {prevTitle && endCard(-1, prevTitle, -1)}
+            {Array.from({ length: pages }, (_, i) => {
+              const on = i === under;
+              const near = i >= from && i <= to;
+              return (
+                <div
+                  key={i}
+                  className="absolute top-0 overflow-hidden rounded-[3px]"
+                  style={{
+                    left: i * stride,
+                    width: cardW,
+                    height: THUMB_H,
+                    background: theme.bg,
+                    zIndex: on ? 2 : 1,
+                    // The page under the cursor gets a quiet grey contour all
+                    // the way round; the rest are dimmed.
+                    boxShadow: on ? `0 0 0 1.5px ${outline}` : `0 0 0 0.5px ${theme.fg}22`,
+                  }}
+                >
+                  {near && (
+                    <PageThumb i={i} html={html} label={label} prefs={prefs} theme={theme} box={box} scale={scale} />
+                  )}
+                  {!on && (
+                    <span
+                      aria-hidden
+                      className="absolute inset-0"
+                      style={{ background: theme.dark ? "rgba(0,0,0,0.42)" : "rgba(255,255,255,0.36)" }}
+                    />
+                  )}
+                </div>
+              );
+            })}
+            {nextTitle && endCard(pages, nextTitle, 1)}
           </div>
         </div>
       </div>

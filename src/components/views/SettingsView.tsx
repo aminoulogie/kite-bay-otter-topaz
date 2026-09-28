@@ -33,6 +33,7 @@ import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
 import { widgetStatus } from "@/lib/native/widget-bridge";
+import { lockScreenStatus, type LockScreenStatus } from "@/lib/native/routine-activity";
 import { forgetNativeVault, isNativeVault, pickNativeVault, storedNativeVault } from "@/lib/native/vault-folder";
 import { localPhotoKeys } from "@/lib/habit-photos";
 
@@ -87,8 +88,10 @@ export function SettingsView() {
     ),
   );
   const [widget, setWidget] = useState<{ shared: boolean; group: string } | null>(null);
+  const [lock, setLock] = useState<LockScreenStatus | null>(null);
   useEffect(() => {
     void widgetStatus().then(setWidget);
+    void lockScreenStatus().then(setLock);
   }, []);
   const [localBusy, setBusy] = useState(false);
   const [health, setHealth] = useState<StorageHealth | null>(null);
@@ -1015,6 +1018,28 @@ export function SettingsView() {
             </span>
           </div>
         )}
+        {lock && (
+          <>
+            <StatusRow
+              label="Widget extension"
+              ok={lock.extension}
+              good="Installed"
+              bad="Missing — Sideloadly dropped it"
+            />
+            <StatusRow
+              label="Live Activities"
+              ok={lock.activitiesEnabled}
+              good="Allowed"
+              bad="Off — Settings › SOMA › Live Activities"
+            />
+            <StatusRow
+              label="Timer alerts"
+              ok={lock.notifications}
+              good="Allowed"
+              bad="Off — Settings › SOMA › Notifications"
+            />
+          </>
+        )}
       </Card>
       </Sized>
 
@@ -1321,5 +1346,15 @@ function FoodImportCard() {
         </div>
       )}
     </Card>
+  );
+}
+
+/** One line of the phone's own answer to "why isn't it showing?". */
+function StatusRow({ label, ok, good, bad }: { label: string; ok: boolean; good: string; bad: string }) {
+  return (
+    <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+      <span className="shrink-0 text-muted">{label}</span>
+      <span className={cn("truncate font-bold", ok ? "text-emerald-400" : "text-warn")}>{ok ? good : bad}</span>
+    </div>
   );
 }

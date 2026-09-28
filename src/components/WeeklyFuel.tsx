@@ -82,7 +82,7 @@ export function WeeklyFuel() {
           value: week.loggedDays ? String(week.avg.cals) : null,
           unit: "kcal avg",
           sub: week.loggedDays ? `${week.onTarget}/${week.loggedDays} days on target · protein ${week.proteinHit}/${week.loggedDays}` : null,
-          chart: { values: rows.map((r) => (r.logged ? r.totals.cals : null)), target: goals.cals },
+          chart: { values: rows.map((r) => (r.logged ? r.totals.cals : null)) },
           empty: "Nothing logged this week",
           emptyShort: "No data",
         }}
@@ -109,9 +109,7 @@ export function WeeklyFuel() {
   const goal = settings.customGoals?.[picked] || latestGoal || goals[picked] || 0;
   const minimum = settings.nutrientMins?.[picked] ?? 0;
   const values = rows.map((r) => (r.logged ? r.totals[picked] : 0));
-  // The scale has to hold the target and the floor as well as the days, or a
-  // line the card exists to show sits off its top.
-  const top = Math.max(...values, goal, minimum, 1) * 1.08;
+  const top = Math.max(...values, 1) * 1.08;
   const hit = (v: number) =>
     minimum > 0
       ? v >= minimum
@@ -153,24 +151,9 @@ export function WeeklyFuel() {
         })}
       </div>
 
-      {/* Seven bars on a scale that includes the target and your minimum,
-          drawn as lines across them: solid on a day that made it, faded on
-          one that did not. */}
+      {/* Seven bars, no lines across them: a day that made it is solid, one
+          that did not is faded, and that says it without a ruler. */}
       <div className="relative flex h-24 gap-1.5">
-        {goal > 0 && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 z-10 border-t border-dashed border-warn"
-            style={{ bottom: `calc(${(goal / top) * 100}% * (96 - 18) / 96 + 18px)` }}
-          />
-        )}
-        {minimum > 0 && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 z-10 border-t-2 border-dotted"
-            style={{ borderColor: color, bottom: `calc(${(minimum / top) * 100}% * (96 - 18) / 96 + 18px)` }}
-          />
-        )}
         {rows.map((r, i) => {
           const v = values[i]!;
           return (

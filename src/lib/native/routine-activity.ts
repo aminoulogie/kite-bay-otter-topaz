@@ -9,7 +9,28 @@ import type { ActivityState } from "@/lib/routine-activity";
 const RoutineActivity = registerPlugin<{
   update(s: ActivityState): Promise<{ ok: boolean; live: boolean; reason?: string }>;
   end(): Promise<void>;
+  status(): Promise<{ extension: boolean; activitiesEnabled: boolean; notifications: boolean }>;
 }>("RoutineActivity");
+
+export interface LockScreenStatus {
+  extension: boolean;
+  activitiesEnabled: boolean;
+  notifications: boolean;
+}
+
+/** Why the lock screen timer would or would not show, asked of the phone. */
+export async function lockScreenStatus(): Promise<LockScreenStatus | null> {
+  if (Capacitor.getPlatform() !== "ios") return null;
+  try {
+    return await RoutineActivity.status();
+  } catch {
+    return null;
+  }
+}
+
+/** Set when the lock screen refused the routine, so the app can say why once. */
+let told = false;
+export let lastRefusal: string | null = null;
 
 let last = "";
 
@@ -19,7 +40,15 @@ export async function showRoutineActivity(state: ActivityState | null): Promise<
   if (key === last) return;
   last = key;
   try {
-    if (state) await RoutineActivity.update(state);
+    if (state) {
+      const r = await RoutineActivity.update(state);
+      lastRefusal = r.live ? null : (r.reason ?? "Live Activities are unavailable");
+      if (lastRefusal && !told) {
+        told = true;
+        const { toast } = await import("sonner");
+        toast.error(`Lock screen timer: ${lastRefusal}`);
+      }
+    }
     else await RoutineActivity.end();
   } catch {
     // A build without the plugin: the routine still runs in the app.
