@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   ChevronLeft, ChevronRight, Languages, Loader2, Minus, Plus, Rows3, X,
@@ -898,7 +898,10 @@ function EpubPages({
   // HTML is the same, only its layout changes, and re-parsing a chapter to
   // make the type one point bigger would blank the screen every tap.
   const opened = useRef(chapter);
-  useEffect(() => {
+  // Before paint, not after: a page curl can now finish INTO the next chapter,
+  // and with the markup swapped a frame late the old chapter's first page
+  // flashed up between the end of the fold and the new chapter arriving.
+  useLayoutEffect(() => {
     if (!ready) return;
     const part = archive.current?.chapter(chapter);
     // A stored offset belongs to ONE chapter — the one that was open when it
@@ -912,6 +915,19 @@ function EpubPages({
     setHtml(part?.html ?? "");
     setLabel(part?.title ?? "");
   }, [ready, chapter]);
+
+  // A chapter entered backwards opens on its LAST page, and that page is
+  // known here, before the first paint of the new markup: measured a couple
+  // of frames later (below), the chapter showed its first page and then
+  // jumped — which, at the end of a fold going back, is a visible flash.
+  useLayoutEffect(() => {
+    const el = column.current;
+    if (!el || !box.w || !landOnLast.current || !paged) return;
+    const count = pageCount(el.scrollWidth, box.w);
+    setPages(count);
+    setPage(count - 1);
+    // landOnLast stays set: the measuring pass below confirms it and clears it.
+  }, [html, box.w, paged]);
 
   // The page box. Measured rather than assumed, because it is the viewport
   // minus the margins and minus whatever the safe area is on this phone.
@@ -1129,9 +1145,28 @@ function EpubPages({
    * and is a great deal less work than keeping two chapters laid out at all
    * times for the sake of one page turn in forty.
    */
+  /**
+   * The chapters either side, for the page under a fold at a chapter's edge.
+   *
+   * A book opens on a run of one-page chapters — cover, title, copyright,
+   * contents — so a curl that stopped at every chapter boundary slid the
+   * first four or five turns of every book and only started curling once a
+   * real chapter began. The page underneath a chapter's last page is the next
+   * chapter's first, so the spare is simply given that chapter to show.
+   */
+  const neighbourParts = useMemo(() => {
+    if (!ready || prefs.turn !== "curl" || !archive.current) return { next: null, prev: null };
+    return {
+      next: chapter + 1 < chapters ? archive.current.chapter(chapter + 1) : null,
+      prev: chapter > 0 ? archive.current.chapter(chapter - 1) : null,
+    };
+  }, [ready, prefs.turn, chapter, chapters]);
+
   const canFold = useCallback(
-    (forward: boolean) => prefs.turn === "curl" && (forward ? page < pages - 1 : page > 0),
-    [prefs.turn, page, pages],
+    (forward: boolean) =>
+      prefs.turn === "curl" &&
+      (forward ? page < pages - 1 || !!neighbourParts.next : page > 0 || !!neighbourParts.prev),
+    [prefs.turn, page, pages, neighbourParts],
   );
 
   const curlRef = useRef(curl);
@@ -1174,6 +1209,16 @@ function EpubPages({
    */
   const held = curl ? curl.from : page;
   const neighbours = { next: held + 1, prev: held - 1 };
+  // Past either end of this chapter, the spare shows the chapter next door:
+  // its first page going forward, its last (page -1) going back.
+  const nextSpare =
+    neighbours.next < pages || !neighbourParts.next
+      ? { html, label, page: neighbours.next, same: true }
+      : { html: neighbourParts.next.html, label: neighbourParts.next.title, page: 0, same: false };
+  const prevSpare =
+    neighbours.prev >= 0 || !neighbourParts.prev
+      ? { html, label, page: neighbours.prev, same: true }
+      : { html: neighbourParts.prev.html, label: neighbourParts.prev.title, page: -1, same: false };
 
   /**
    * One frame of the fold, straight onto the DOM.
@@ -1520,23 +1565,23 @@ function EpubPages({
               frame of every turn — the one frame a gesture cannot afford. */}
           <Sheet
             innerRef={nextSheet}
-            html={html}
-            label={label}
+            html={nextSpare.html}
+            label={nextSpare.label}
             prefs={prefs}
             box={box}
-            page={neighbours.next}
+            page={nextSpare.page}
             style={UNDER_SHEET}
-            ink={ink}
+            ink={nextSpare.same ? ink : undefined}
           />
           <Sheet
             innerRef={prevSheet}
-            html={html}
-            label={label}
+            html={prevSpare.html}
+            label={prevSpare.label}
             prefs={prefs}
             box={box}
-            page={neighbours.prev}
+            page={prevSpare.page}
             style={UNDER_SHEET}
-            ink={ink}
+            ink={prevSpare.same ? ink : undefined}
           />
 
           {/* The flap: the part that has come up off the table, showing its
@@ -1576,11 +1621,11 @@ function EpubPages({
                   there is print on it and you cannot read it, which is what a
                   page held up to the light does. */}
               <Sheet
-                html={html}
-                label={label}
+                html={curl && !curl.forward && curl.from === 0 ? prevSpare.html : html}
+                label={curl && !curl.forward && curl.from === 0 ? prevSpare.label : label}
                 prefs={prefs}
                 box={box}
-                page={curl ? (curl.forward ? curl.from : curl.from - 1) : page}
+                page={curl ? (curl.forward ? curl.from : curl.from === 0 ? prevSpare.page : curl.from - 1) : page}
                 style={theme.dark ? BACK_SHEET_DARK : BACK_SHEET_LIGHT}
               />
               {/* The curve. A sheet lifted off a table is not flat, and a flat
@@ -1775,6 +1820,19 @@ const Sheet = memo(function Sheet({
 }) {
   const theme = themeSpec(prefs.theme);
   const markup = useMemo(() => ({ __html: html }), [html]);
+  // Page -1 is "the last page", for the chapter behind a fold going back:
+  // how many pages it has is only known once it has been laid out here.
+  const strip = useRef<HTMLDivElement>(null);
+  const [lastPage, setLastPage] = useState(0);
+  useEffect(() => {
+    if (page >= 0 || !box.w) return;
+    const raf = requestAnimationFrame(() => {
+      const el = strip.current;
+      if (el) setLastPage(Math.max(0, pageCount(el.scrollWidth, box.w) - 1));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [page, html, box.w, box.h, prefs.size, prefs.font, prefs.lineHeight]);
+  const shown = page < 0 ? lastPage : page;
   return (
     <div
       ref={innerRef}
@@ -1787,8 +1845,9 @@ const Sheet = memo(function Sheet({
       // printed on top of each other.
       style={{ background: theme.bg, ...style }}
     >
-      <InkLayer ink={ink} shift={-pageOffset(Math.max(0, page), box.w)} />
+      <InkLayer ink={ink} shift={-pageOffset(Math.max(0, shown), box.w)} />
       <div
+        ref={strip}
         className="soma-epub"
         style={{
           fontFamily: fontStack(prefs.font),
@@ -1799,7 +1858,7 @@ const Sheet = memo(function Sheet({
           columnWidth: `${box.w}px`,
           columnGap: `${PAGE_GAP}px`,
           columnFill: "auto",
-          transform: `translateX(${-pageOffset(Math.max(0, page), box.w)}px)`,
+          transform: `translateX(${-pageOffset(Math.max(0, shown), box.w)}px)`,
         }}
       >
         {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}

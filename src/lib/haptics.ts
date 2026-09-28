@@ -46,6 +46,26 @@ function buzz(pattern: Pattern): void {
 /** Selection: a tap that changed something. Deliberately very short. */
 export const tapLight = () => native({ impact: ImpactStyle.Light }) || buzz(8);
 
+/**
+ * A detent: the tick of a picker wheel passing each value. The lightest feel
+ * iOS has, made to be felt many times a second without becoming a buzz.
+ */
+export const tapTick = (): void => {
+  try {
+    if (Capacitor.isNativePlatform()) {
+      // selectionChanged does nothing on iOS unless a selection generator has
+      // been started first; starting one each tick is cheap and always ready.
+      void Haptics.selectionStart()
+        .then(() => Haptics.selectionChanged())
+        .catch(() => {});
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  buzz(4);
+};
+
 /** A set marked done. */
 export const tapMedium = () => native({ impact: ImpactStyle.Medium }) || buzz(14);
 
