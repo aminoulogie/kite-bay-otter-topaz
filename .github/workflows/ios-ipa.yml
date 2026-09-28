@@ -201,6 +201,39 @@ jobs:
           fi
           echo "Release: $(gh release view "$TAG" --json url -q .url)"
 
+      # The AltStore source: one JSON file at a URL that never changes, which
+      # AltStore reads to list SOMA and offer each new build as an update.
+      # Kept on a release of its own ("altstore"), marked prerelease so it is
+      # never shown as the latest version of the app.
+      #   https://github.com/<owner>/<repo>/releases/download/altstore/altstore.json
+      - name: Publish AltStore source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.ver.outputs.marketing }}
+          B: ${{ steps.ver.outputs.build }}
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download"
+          TAG=altstore
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "AltStore source" --prerelease \
+              --notes "Add this to AltStore › Sources: $BASE/$TAG/altstore.json"
+          fi
+          # The versions already listed, so older builds stay installable.
+          curl -fsSL "$BASE/$TAG/altstore.json" -o "$RUNNER_TEMP/previous.json" || true
+          cp ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png "$RUNNER_TEMP/icon.png"
+          python3 scripts/altstore_source.py \
+            --app "$RUNNER_TEMP/Payload/App.app" \
+            --ipa "$RUNNER_TEMP/SOMA-$V.ipa" \
+            --version "$V" --build "$B" \
+            --download "$BASE/ios-v$V/SOMA-$V.ipa" \
+            --icon "$BASE/$TAG/icon.png" \
+            --previous "$RUNNER_TEMP/previous.json" \
+            --entitlements ios/App/App/App.entitlements ios/App/SomaWidgets/SomaWidgets.entitlements \
+            --out "$RUNNER_TEMP/altstore.json"
+          gh release upload "$TAG" "$RUNNER_TEMP/altstore.json" "$RUNNER_TEMP/icon.png" --clobber
+          echo "AltStore source: $BASE/$TAG/altstore.json"
+
       - uses: actions/upload-artifact@v4
         with:
           name: SOMA-${{ steps.ver.outputs.marketing }}-ipa
