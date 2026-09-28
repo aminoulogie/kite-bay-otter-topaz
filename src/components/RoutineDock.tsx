@@ -69,7 +69,9 @@ function MiniPlayer({
   // card on any tab can still be scrolled out from under it.
   useEffect(() => {
     document.documentElement.style.setProperty("--player-h", "4.25rem");
-    return () => document.documentElement.style.removeProperty("--player-h");
+    return () => {
+      document.documentElement.style.removeProperty("--player-h");
+    };
   }, []);
 
   const R = 15;
