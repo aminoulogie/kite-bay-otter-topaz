@@ -50,7 +50,7 @@ const box = () =>
 export type LiveStatus =
   | { state: "off" }
   | { state: "checking" }
-  | { state: "current"; version: string }
+  | { state: "current"; version: string; at: number }
   | { state: "downloading"; version: string }
   | { state: "ready"; version: string; id: string }
   | { state: "reinstall"; version: string; nativeSince: string }
@@ -113,19 +113,23 @@ export function checkLive(force = false): Promise<LiveStatus> {
     if (status.state === "ready") return status;
     publish({ state: "checking" });
     try {
-      const res = await CapacitorHttp.get({
-        url: `${MANIFEST}?t=${Date.now()}`,
-        headers: { "Cache-Control": "no-cache" },
-        connectTimeout: 15000,
-        readTimeout: 15000,
-      });
+      // Patient, and twice: on some Wi-Fi the route to GitHub's download
+      // servers is slow enough that fifteen seconds timed out every check.
+      const get = () =>
+        CapacitorHttp.get({
+          url: `${MANIFEST}?t=${Date.now()}`,
+          headers: { "Cache-Control": "no-cache" },
+          connectTimeout: 45000,
+          readTimeout: 45000,
+        });
+      const res = await get().catch(() => get());
       const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
       const manifest = asManifest(data);
       if (!manifest) throw new Error("The update list could not be read.");
       const native = (await u.current()).native;
       const d: LiveDecision = decide(manifest, runningVersion(), native);
       if (d.kind === "current") {
-        publish({ state: "current", version: runningVersion() });
+        publish({ state: "current", version: runningVersion(), at: Date.now() });
       } else if (d.kind === "reinstall") {
         publish({ state: "reinstall", version: d.version, nativeSince: d.nativeSince });
       } else {

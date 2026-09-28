@@ -1054,7 +1054,7 @@ export function SettingsView() {
                   : live.state === "downloading"
                     ? `Downloading ${live.version}…`
                     : live.state === "current"
-                      ? "Up to date · check"
+                      ? `Up to date (checked ${new Date(live.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}) · check`
                       : live.state === "reinstall"
                         ? `${live.version} needs a reinstall from SideStore`
                         : `${live.message} · retry`}
