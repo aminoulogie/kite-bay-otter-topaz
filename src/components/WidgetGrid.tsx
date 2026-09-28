@@ -1,12 +1,19 @@
-import { Eye, EyeOff, Plus, RotateCcw, X } from "lucide-react";
+import { Eye, EyeOff, MoreHorizontal, Plus, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Children, createContext, isValidElement, useContext, useMemo, useState } from "react";
 import {
-  SIZE_SPECS, addSpacer, allowedSizes, hasDetailRoom, hasFullRoom, hidden as hiddenOf, isDefault,
-  isNatural, isSpacer, move, reconcile, removeWidget, resize, specFor, toggleHidden, visible, widgetDef,
-  type WidgetSize,
+  Children, Suspense, createContext, isValidElement, useContext, useMemo, useState,
+} from "react";
+import { createPortal } from "react-dom";
+import {
+  SIZE_SPECS, addSpacer, addWidget, allowedSizes, hasDetailRoom, hasFullRoom, hidden as hiddenOf, isBorrowed,
+  isDefault, isNatural, isSpacer, move, parseBorrowed, reconcile, removeWidget, resize, restyle,
+  specFor, toggleHidden, visible, widgetDef, type WidgetPlacement, type WidgetSize,
 } from "@/lib/dashboard-layout";
-import { Glance, GlanceOpenContext, isGlance, type GlanceSpec } from "@/components/Glance";
+import { Glance, GlanceOpenContext, GlanceStyleContext, isGlance, type GlanceSpec } from "@/components/Glance";
+import { WIDGET_SOURCES } from "@/components/widget-sources";
+import { WidgetStore } from "@/components/WidgetStore";
+import { WidgetStudio } from "@/components/WidgetStudio";
+import { boxStyle } from "@/lib/widget-style";
 import { useSoma } from "@/lib/store";
 import { useLongPressDrag } from "@/lib/use-long-press-drag";
 import { cn } from "@/lib/utils";
@@ -42,6 +49,67 @@ const SizeContext = createContext<WidgetSize>("2x4");
 
 export function useWidgetSize(): WidgetSize {
   return useContext(SizeContext);
+}
+
+/**
+ * Set around a page mounted only to lend one of its widgets to another page.
+ *
+ * The page's grid, seeing this, draws nothing of its own: it hands the one
+ * card over into `target` through a portal, so the card keeps every hook,
+ * store subscription and handler of the page it belongs to while appearing
+ * somewhere else. Sheets it opens go to `sheets`.
+ */
+interface Lend {
+  tab: string;
+  id: string;
+  size: WidgetSize;
+  target: HTMLElement;
+  sheets: HTMLElement;
+  open: (() => void) | null;
+}
+const LendContext = createContext<Lend | null>(null);
+
+/**
+ * A widget from another page, drawn by that page.
+ *
+ * The page is mounted out of sight and its grid passes the one card back
+ * (see LendContext). Nothing is copied, so the card is as live here as there.
+ */
+export function BorrowedWidget({
+  id, size, open,
+}: {
+  id: string;
+  size: WidgetSize;
+  open: (() => void) | null;
+}) {
+  const from = parseBorrowed(id);
+  const [target, setTarget] = useState<HTMLElement | null>(null);
+  const [sheets, setSheets] = useState<HTMLElement | null>(null);
+  const Source = from ? WIDGET_SOURCES[from.tab] : undefined;
+  if (!from || !Source) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border p-3 text-xs text-faint">
+        This widget is no longer available.
+      </div>
+    );
+  }
+  return (
+    <>
+      <div ref={setTarget} className="flex min-h-0 flex-1 flex-col" />
+      {/* Sheets the card opens go to the page body, not into this box: a
+          fixed sheet inside a nudged or clipped tile would open inside it. */}
+      {target && createPortal(<div ref={setSheets} className="soma-lend-sheets" />, document.body)}
+      {target && sheets && (
+        <LendContext.Provider value={{ tab: from.tab, id: from.id, size, target, sheets, open }}>
+          <div hidden aria-hidden>
+            <Suspense fallback={null}>
+              <Source />
+            </Suspense>
+          </div>
+        </LendContext.Provider>
+      )}
+    </>
+  );
 }
 
 /**
@@ -202,6 +270,7 @@ export function WidgetGrid({
    */
   innerRef?: React.Ref<HTMLDivElement>;
 }) {
+  const lend = useContext(LendContext);
   const layouts = useSoma((s) => s.layouts);
   const setLayout = useSoma((s) => s.setLayout);
   const resetLayout = useSoma((s) => s.resetLayout);
@@ -239,6 +308,10 @@ export function WidgetGrid({
 
   /** Which widget's size picker is open, if any. */
   const [picking, setPicking] = useState<string | null>(null);
+  /** Which widget is open in the studio (the three dots). */
+  const [styling, setStyling] = useState<string | null>(null);
+  /** The widget store, opened from the + in edit mode. */
+  const [store, setStore] = useState(false);
   /** A small widget tapped open: its whole card, in a sheet. */
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -254,6 +327,28 @@ export function WidgetGrid({
     if (!id || !anchor) return;
     setDashboard(move(layout, id, layout.findIndex((p) => p.id === anchor)));
   });
+
+  // Lending one card to another page: draw only that, over there.
+  if (lend) {
+    if (lend.tab !== tab || !nodes[lend.id]) return null;
+    // No style context of its own: the look is the borrowing page's, set
+    // around the BorrowedWidget and inherited through the portal.
+    return (
+      <>
+        {createPortal(
+          <SizeContext.Provider value={lend.size}>
+            <GlanceOpenContext.Provider value={lend.open}>{nodes[lend.id]}</GlanceOpenContext.Provider>
+          </SizeContext.Provider>,
+          lend.target,
+        )}
+        {createPortal(<>{extras}</>, lend.sheets)}
+      </>
+    );
+  }
+
+  /** A widget's face at a size: its own card, or a borrowed one drawn by its page. */
+  const faceOf = (p: WidgetPlacement, size: WidgetSize, open: (() => void) | null) =>
+    isBorrowed(p.id) ? <BorrowedWidget id={p.id} size={size} open={open} /> : nodes[p.id];
 
   return (
     <div ref={innerRef} className="pb-4">
@@ -275,8 +370,11 @@ export function WidgetGrid({
             <Button variant="primary" className="flex-1" onClick={() => setEditing(false)}>
               Done
             </Button>
+            <Button className="flex-1" onClick={() => setStore(true)}>
+              <Plus className="size-4" /> Widget
+            </Button>
             <Button className="flex-1" onClick={() => setDashboard(addSpacer(layout))}>
-              <Plus className="size-4" /> Spacing
+              Spacing
             </Button>
             {!isDefault(layout, tab) && (
               <Button onClick={resetDashboard} aria-label="Reset the layout">
@@ -337,10 +435,12 @@ export function WidgetGrid({
         {shown.map((p, i) => {
           const def = widgetDef(tab, p.id);
           const spacer = isSpacer(p.id);
-          const node = nodes[p.id];
+          const borrowed = isBorrowed(p.id);
+          const node = borrowed ? faceOf(p, p.size, editing ? null : () => setExpanded(p.id)) : nodes[p.id];
           // A spacer has no view behind it — being nothing IS the widget — so
           // the "this page does not draw that one" guard has to let it past.
           if (!node && !spacer) return null;
+          const look = p.style?.[p.size];
           // An invented widget has no registry entry to be named by, so it is
           // called what the view called it — which for an exercise card is the
           // heading already printed on its face.
@@ -378,7 +478,9 @@ export function WidgetGrid({
                     press. */}
                 <SizeContext.Provider value={p.size}>
                  <GlanceOpenContext.Provider value={editing ? null : () => setExpanded(p.id)}>
+                 <GlanceStyleContext.Provider value={look}>
                   <div
+                    style={boxStyle(look)}
                     className={cn(
                       // A spacer is deliberately empty, and the rule that
                       // collapses an empty widget keys off .soma-widget-box —
@@ -399,6 +501,7 @@ export function WidgetGrid({
                   >
                     {node}
                   </div>
+                 </GlanceStyleContext.Provider>
                  </GlanceOpenContext.Provider>
                 </SizeContext.Provider>
 
@@ -438,12 +541,22 @@ export function WidgetGrid({
                           "Off the page" is a list of widgets you might want
                           back, and a nameless blank in it is a puzzle. There
                           is always another gap a tap away. */}
-                      {spacer ? (
+                      {!spacer && (
+                        <button
+                          type="button"
+                          onClick={() => setStyling(p.id)}
+                          className="flex size-7 items-center justify-center rounded-full border border-border bg-surface-3 text-fg shadow-lg"
+                          aria-label={`Edit ${label}: sizes, colours, text and parts`}
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </button>
+                      )}
+                      {spacer || borrowed ? (
                         <button
                           type="button"
                           onClick={() => setDashboard(removeWidget(layout, p.id))}
                           className="flex size-7 items-center justify-center rounded-full border border-border bg-surface-3 text-fg shadow-lg"
-                          aria-label="Remove this spacing"
+                          aria-label={spacer ? "Remove this spacing" : `Remove ${label} from this page`}
                         >
                           <X className="size-3.5" />
                         </button>
@@ -476,16 +589,54 @@ export function WidgetGrid({
         />
       )}
 
-      {expanded && nodes[expanded] && (
+      {expanded && (nodes[expanded] || isBorrowed(expanded)) && (
         <WidgetSheet
           label={widgetDef(tab, expanded)?.label ?? expanded}
           onClose={() => setExpanded(null)}
         >
           <SizeContext.Provider value="3x4">
-            <GlanceOpenContext.Provider value={null}>{nodes[expanded]}</GlanceOpenContext.Provider>
+            <GlanceOpenContext.Provider value={null}>
+              {isBorrowed(expanded) ? <BorrowedWidget id={expanded} size="3x4" open={null} /> : nodes[expanded]}
+            </GlanceOpenContext.Provider>
           </SizeContext.Provider>
         </WidgetSheet>
       )}
+
+      {store && (
+        <WidgetStore
+          tab={tab}
+          layout={layout}
+          onAdd={(id) => setDashboard(addWidget(layout, tab, id))}
+          onClose={() => setStore(false)}
+        />
+      )}
+
+      {styling && (() => {
+        const p = layout.find((x) => x.id === styling);
+        if (!p) return null;
+        return (
+          <WidgetStudio
+            label={widgetDef(tab, p.id)?.label ?? p.id}
+            placement={p}
+            sizes={allowedSizes(tab, p.id)}
+            render={(size, look) => (
+              <SizeContext.Provider value={size}>
+                <GlanceOpenContext.Provider value={null}>
+                  <GlanceStyleContext.Provider value={look}>
+                    <div style={boxStyle(look)} className={cn("soma-widget-box h-full", isGlance(size) && !isNatural(tab, p.id) && "soma-widget-tile")}>
+                      {faceOf(p, size, null)}
+                    </div>
+                  </GlanceStyleContext.Provider>
+                </GlanceOpenContext.Provider>
+              </SizeContext.Provider>
+            )}
+            boxClass={(size) => boxFor(size, isNatural(tab, p.id))}
+            onSize={(size) => setDashboard(resize(layout, p.id, size, tab))}
+            onStyle={(size, st) => setDashboard(restyle(layout, p.id, size, st))}
+            onClose={() => setStyling(null)}
+          />
+        );
+      })()}
 
       {extras}
 

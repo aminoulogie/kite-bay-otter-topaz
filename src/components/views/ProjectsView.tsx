@@ -53,7 +53,7 @@ export function ProjectsView() {
   );
 }
 
-function ProjectsBoard() {
+export function ProjectsBoard() {
   const projects = useSoma((s) => s.projects);
   const addProject = useSoma((s) => s.addProject);
   const removeProject = useSoma((s) => s.removeProject);

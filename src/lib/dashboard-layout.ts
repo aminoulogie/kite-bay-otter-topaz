@@ -37,6 +37,8 @@
  * capping that would put its buttons somewhere you cannot reach them. So a
  * wide card can grow past its size, and a narrow one is clipped behind a fade.
  */
+import { cleanStyle, type WidgetStyle } from "./widget-style.ts";
+
 export type WidgetSize = "1x1" | "1x2" | "2x2" | "1x4" | "2x4" | "3x4" | "4x4";
 
 export interface SizeSpec {
@@ -148,6 +150,8 @@ export interface WidgetDef {
    * says less as it gets smaller (see components/Glance.tsx).
    */
   sizes?: WidgetSize[];
+  /** More words the widget store finds it by ("sleep" for the Body panel). */
+  keywords?: string;
 }
 
 /** Page furniture: bars and buttons that are as tall as they need to be, one row, full width. */
@@ -164,6 +168,8 @@ export interface WidgetPlacement {
   id: string;
   size: WidgetSize;
   hidden: boolean;
+  /** Colours, text and parts set by hand, per size (lib/widget-style.ts). */
+  style?: Partial<Record<WidgetSize, WidgetStyle>>;
 }
 
 /**
@@ -219,7 +225,7 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   // Next steps, not progress bars. Sits beside the to-do list because the two
   // answer the same question at different scales — what could I pick up now.
   { id: "projects", label: "Projects", size: "2x4" },
-  { id: "gap", label: "Log the gap", size: "2x4" },
+  { id: "gap", label: "Log the gap", size: "2x4", keywords: "sleep water food habits session quick" },
   { id: "correlate", label: "Across everything", size: "2x4" },
 ];
 
@@ -397,7 +403,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   body: [
     { id: "tabs", label: "Sleep / Measure / Supplements", size: "1x4", sizes: FURNITURE },
-    { id: "panel", label: "The panel", size: "2x4" },
+    { id: "panel", label: "Sleep", size: "2x4", keywords: "night bed rest debt tape measure supplements creatine body" },
   ],
   estimates: [
     { id: "weight", label: "Bodyweight", size: "2x4" },
@@ -492,7 +498,7 @@ function registeredElsewhere(tab: string, id: string): boolean {
 }
 
 export function isDynamic(tab: string, id: string): boolean {
-  return !isSpacer(id) && widgetDef(tab, id) === undefined;
+  return !isSpacer(id) && !isBorrowed(id) && widgetDef(tab, id) === undefined;
 }
 
 /** The default gap: one row tall, the full width of the page. */
@@ -501,6 +507,69 @@ export const SPACER_SIZE: WidgetSize = "1x4";
 /** Put a new gap at the end, for the user to drag where they want it. */
 export function addSpacer(layout: WidgetPlacement[]): WidgetPlacement[] {
   return [...layout, { id: nextSpacerId(layout), size: SPACER_SIZE, hidden: false }];
+}
+
+/**
+ * A widget brought in from another page: "from:nutrition-dash/water".
+ *
+ * Any widget can be put on any page from the widget store. It is not copied:
+ * the page it comes from draws it (see components/WidgetGrid.tsx), so it is
+ * the same live card in two places. Like a spacer it is not in this page's
+ * registry, and the prefix is what tells reconcile to keep it.
+ */
+export const BORROW_PREFIX = "from:";
+
+export function isBorrowed(id: string): boolean {
+  return id.startsWith(BORROW_PREFIX);
+}
+
+export function borrowedId(tab: string, id: string): string {
+  return `${BORROW_PREFIX}${tab}/${id}`;
+}
+
+/** Where a brought-in widget lives: its page and its id there. */
+export function parseBorrowed(id: string): { tab: string; id: string } | null {
+  if (!isBorrowed(id)) return null;
+  const rest = id.slice(BORROW_PREFIX.length);
+  const slash = rest.indexOf("/");
+  if (slash <= 0) return null;
+  const tab = rest.slice(0, slash);
+  const wid = rest.slice(slash + 1);
+  if (!wid || !widgetsFor(tab).some((w) => w.id === wid)) return null;
+  return { tab, id: wid };
+}
+
+/** Put a widget on the page, at the top where it can be seen and dragged into place. */
+export function addWidget(layout: WidgetPlacement[], tab: string, id: string): WidgetPlacement[] {
+  const cur = layout.find((p) => p.id === id);
+  if (cur) return [{ ...cur, hidden: false }, ...layout.filter((p) => p.id !== id)];
+  return [{ id, size: cleanSize(tab, id, undefined), hidden: false }, ...layout];
+}
+
+/** One size's style replaced; an empty style is dropped rather than stored. */
+export function restyle(
+  layout: WidgetPlacement[], id: string, size: WidgetSize, style: WidgetStyle | undefined,
+): WidgetPlacement[] {
+  return layout.map((p) => {
+    if (p.id !== id) return p;
+    const next = { ...(p.style ?? {}) };
+    const clean = cleanStyle(style);
+    if (clean) next[size] = clean;
+    else delete next[size];
+    const { style: _old, ...rest } = p;
+    return Object.keys(next).length ? { ...rest, style: next } : rest;
+  });
+}
+
+function cleanStyles(raw: unknown): WidgetPlacement["style"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Partial<Record<WidgetSize, WidgetStyle>> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const size = asSize(k);
+    const st = cleanStyle(v);
+    if (size && st) out[size] = st;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Gaps are removed rather than hidden — there is always another one. */
@@ -538,6 +607,8 @@ export function widgetsFor(tab: string): WidgetDef[] {
  * a single flat map would silently give one of them the other's rules.
  */
 export function widgetDef(tab: string, id: string): WidgetDef | undefined {
+  const from = parseBorrowed(id);
+  if (from) return widgetsFor(from.tab).find((w) => w.id === from.id);
   return widgetsFor(tab).find((w) => w.id === id) ?? BY_ID.get(id);
 }
 
@@ -616,17 +687,19 @@ export function reconcile(
     // A spacer is not in the registry and never will be — it is a gap the
     // user put there, and dropping it as "unknown" would quietly undo their
     // arrangement on every load.
-    if (!known.has(p.id) && !isSpacer(p.id) && !here.has(p.id)) continue;
+    if (!known.has(p.id) && !isSpacer(p.id) && !here.has(p.id) && !parseBorrowed(p.id)) continue;
     if (seen.has(p.id)) continue;
     seen.add(p.id);
-    if (!isSpacer(p.id)) found++;
+    if (!isSpacer(p.id) && !isBorrowed(p.id)) found++;
     // `span` is read too: layouts saved before the three sizes existed hold a
     // column count, and dropping them would reset everyone's page.
     const stored_ = (p as { size?: unknown; span?: unknown });
+    const style = cleanStyles((p as { style?: unknown }).style);
     out.push({
       id: p.id,
       size: cleanSize(tab, p.id, stored_.size ?? stored_.span),
       hidden: p.hidden === true,
+      ...(style ? { style } : {}),
     });
   }
 
@@ -765,6 +838,6 @@ export function isDefault(layout: WidgetPlacement[], tab = "dashboard"): boolean
   if (layout.length !== base.length) return false;
   return layout.every((p, i) => {
     const b = base[i]!;
-    return p.id === b.id && p.size === b.size && p.hidden === b.hidden;
+    return p.id === b.id && p.size === b.size && p.hidden === b.hidden && !p.style;
   });
 }

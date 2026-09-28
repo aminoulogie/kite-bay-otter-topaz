@@ -47,7 +47,7 @@ const KINDS = [
 
 type Kind = (typeof KINDS)[number]["id"];
 
-export function MindView() {
+export function MindView({ initialKind }: { initialKind?: string } = {}) {
   const mind = useSoma((s) => s.mind);
   const addMind = useSoma((s) => s.addMind);
   const removeMind = useSoma((s) => s.removeMind);
@@ -56,7 +56,7 @@ export function MindView() {
   const today = getLocalDateKey(new Date());
   // The sub-tab IS the kind. Reading covers books, and the shelf and the dial
   // live there too — the whole of reading in one place, which is the point.
-  const [kind, setKind] = useState<Kind>("book");
+  const [kind, setKind] = useState<Kind>(KINDS.some((k) => k.id === initialKind) ? (initialKind as Kind) : "book");
   const [title, setTitle] = useState("");
   const [count, setCount] = useState("");
   const [takeaway, setTakeaway] = useState("");

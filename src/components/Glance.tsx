@@ -1,7 +1,8 @@
-import { createContext, useContext } from "react";
+import { cloneElement, createContext, isValidElement, useContext } from "react";
 import { Check, ChevronRight, type LucideIcon } from "lucide-react";
 import type { WidgetSize } from "@/lib/dashboard-layout";
 import { cn } from "@/lib/utils";
+import type { PartId, WidgetStyle } from "@/lib/widget-style";
 
 /**
  * A widget at a small size: what it SAYS, not a crop of its full card.
@@ -80,6 +81,9 @@ export interface GlanceSpec {
   aria?: string;
 }
 
+/** Set by the grid: this widget's hand-set style at the size it is drawn. */
+export const GlanceStyleContext = createContext<WidgetStyle | undefined>(undefined);
+
 /** Set by the grid: opens this widget's full card in a sheet. */
 export const GlanceOpenContext = createContext<(() => void) | null>(null);
 
@@ -91,8 +95,34 @@ function fit(text: string, sizes: [number, number, number]): string {
 
 export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
   const open = useContext(GlanceOpenContext);
+  const style = useContext(GlanceStyleContext);
   const onClick = spec.onOpen ?? open ?? undefined;
-  const { icon: Icon, color, value, unit, sub, progress, done, lines, stats, visual } = spec;
+  const { icon: Icon, value, unit, sub, progress, done, lines, stats, visual } = spec;
+  const color = style?.color ?? spec.color;
+
+  /**
+   * One part of the tile, as the widget editor left it: moved, recoloured or
+   * taken off. Tagged with data-part so the editor can pick it up by hand.
+   */
+  const part = (id: PartId, node: React.ReactNode): React.ReactNode => {
+    if (node == null || node === false) return node;
+    const ps = style?.parts?.[id];
+    if (ps?.hidden) return null;
+    const css: React.CSSProperties = {};
+    if (ps?.dx || ps?.dy) css.transform = `translate(${ps.dx ?? 0}px, ${ps.dy ?? 0}px)`;
+    if (ps?.color) css.color = ps.color;
+    if (isValidElement<{ style?: React.CSSProperties }>(node) && typeof node.type === "string") {
+      return cloneElement(node as React.ReactElement<Record<string, unknown>>, {
+        "data-part": id,
+        style: { ...(node.props.style ?? {}), ...css },
+      });
+    }
+    return (
+      <div data-part={id} style={css}>
+        {node}
+      </div>
+    );
+  };
   const hasValue = value != null && value !== "";
   const listed = (lines ?? []).filter((l) => l.text);
   const empty = spec.empty ?? "Nothing yet";
@@ -107,7 +137,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
     </span>
   );
 
-  const head = (
+  const head = part("head",
     <div className="flex min-w-0 items-center gap-1.5 text-[0.58rem] font-bold uppercase leading-none tracking-wider text-faint">
       {Icon ? (
         <Icon aria-hidden className="size-3 shrink-0" style={color ? { color } : undefined} />
@@ -116,11 +146,11 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
       ) : null}
       <span className="min-w-0 truncate">{label}</span>
       {done && size !== "1x1" && <span className="ml-auto">{tick}</span>}
-    </div>
+    </div>,
   );
 
   const headline = (sizes: [number, number, number], emptyText = empty) =>
-    hasValue ? (
+    part("value", hasValue ? (
       <div
         className={cn("flex min-w-0 items-baseline gap-1 font-extrabold leading-none tabular", spec.valueClass)}
         style={{ fontSize: fit(value!, sizes) }}
@@ -133,9 +163,9 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
       </div>
     ) : (
       <div className="min-w-0 text-[0.72rem] font-semibold leading-snug text-muted line-clamp-2">{emptyText}</div>
-    );
+    ));
 
-  const bar =
+  const bar = part("bar",
     progress != null ? (
       <div className="h-1 w-full shrink-0 overflow-hidden rounded-full bg-surface-3">
         <div
@@ -143,7 +173,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
           style={{ width: `${Math.max(0, Math.min(1, progress)) * 100}%`, background: color ?? "var(--color-accent)" }}
         />
       </div>
-    ) : null;
+    ) : null);
 
   // A progress figure is drawn as a ring with the number inside, the shape a
   // small home-screen widget uses: it reads at a glance where a thin bar and
@@ -155,7 +185,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
     const c = 2 * Math.PI * r;
     const f = Math.max(0, Math.min(1, progress ?? 0));
     const text = hasValue ? value! : spec.emptyShort && spec.emptyShort.length <= 4 ? spec.emptyShort : "0";
-    return (
+    return part("visual",
       <div className="relative shrink-0" style={{ width: px, height: px }}>
         <svg viewBox={`0 0 ${px} ${px}`} className="absolute inset-0 -rotate-90" aria-hidden>
           <circle cx={px / 2} cy={px / 2} r={r} fill="none" stroke={tint} strokeOpacity={0.2} strokeWidth={w} />
@@ -188,7 +218,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
             </span>
           )}
         </div>
-      </div>
+      </div>,
     );
   };
   // Only a real figure gets a ring: an empty ring round a "0" says less than
@@ -196,7 +226,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
   const gaugeable = progress != null && hasValue && !visual && !stats;
 
   const list = (n: number, compact = false) =>
-    listed.length > 0 && (
+    listed.length > 0 && part("list",
       <ul className={cn("min-w-0", compact ? "space-y-0.5" : "space-y-1")}>
         {listed.slice(0, n).map((l, i) => (
           <li key={i} className="flex min-w-0 items-center gap-1.5 text-[0.7rem] leading-tight">
@@ -217,11 +247,11 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
           </li>
         ))}
         {listed.length > n && <li className="text-[0.6rem] font-bold text-faint">+{listed.length - n} more</li>}
-      </ul>
+      </ul>,
     );
 
   const statGrid = (cols: number, labelled: boolean, withOf = true) =>
-    stats && stats.length > 0 && (
+    stats && stats.length > 0 && part("list",
       <div className="grid min-w-0 gap-x-3 gap-y-1" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
         {stats.map((st) => (
           <div key={st.label} className="min-w-0">
@@ -234,7 +264,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
             </div>
           </div>
         ))}
-      </div>
+      </div>,
     );
 
   const spark = (h: number) => {
@@ -250,16 +280,17 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
     const y = (v: number) => h - 2 - ((v - lo) / span) * (h - 4);
     const d = pts.map((p, k) => `${k ? "L" : "M"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
     const last = pts[pts.length - 1]!;
-    return (
+    return part("chart",
       <svg viewBox={`0 0 ${W} ${h}`} preserveAspectRatio="none" className="w-full" style={{ height: h }} aria-hidden>
         {t != null && (
           <line x1={0} x2={W} y1={y(t)} y2={y(t)} stroke="currentColor" strokeOpacity={0.25} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
         )}
         <path d={`${d} L${x(last.i)},${h} L${x(pts[0]!.i)},${h} Z`} fill={tint} fillOpacity={0.14} />
         <path d={d} fill="none" stroke={tint} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-      </svg>
+      </svg>,
     );
   };
+  const pic = (px: number) => part("visual", <div>{visual!(px)}</div>);
   const charted = !!spec.chart && (spec.chart.values.filter((v) => v != null).length >= 2);
 
   // What a list-shaped widget says at 1x1: how many are still open.
@@ -275,17 +306,17 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
     );
   } else if (size === "1x1") {
     body = visual ? (
-      <div className="flex h-full items-center justify-center">{visual(58)}</div>
+      <div className="flex h-full items-center justify-center">{pic(58)}</div>
     ) : (
       <div className="flex h-full flex-col justify-between gap-1">
         {head}
         {hasValue ? (
           headline([1.45, 1.2, 0.95])
         ) : listed.length && listed.some((l) => l.done != null) ? (
-          <div className="flex items-baseline gap-1 font-extrabold leading-none tabular">
+          part("value", <div className="flex items-baseline gap-1 font-extrabold leading-none tabular">
             <span className="text-[1.45rem]">{stillOpen}</span>
             <span className="text-[0.62rem] font-bold text-faint">left</span>
-          </div>
+          </div>)
         ) : listed.length ? (
           // A list that is not a to-do list (recent foods, rules): its first
           // entry, which is the one the full card would show at the top.
@@ -302,14 +333,14 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
         {gauge(58, true)}
         <div className="flex min-w-0 flex-1 flex-col justify-center gap-1">
           {head}
-          {sub && <div className="line-clamp-2 text-[0.8rem] font-bold leading-snug tabular">{sub}</div>}
+          {sub && part("sub", <div className="line-clamp-2 text-[0.8rem] font-bold leading-snug tabular">{sub}</div>)}
         </div>
       </div>
     );
   } else if (size === "1x2") {
     body = (
       <div className="flex h-full min-w-0 items-center gap-3">
-        {visual && <div className="shrink-0">{visual(58)}</div>}
+        {visual && <div className="shrink-0">{pic(58)}</div>}
         <div className="flex h-full min-w-0 flex-1 flex-col justify-between gap-1">
           {!visual && head}
           {stats && visual ? (
@@ -319,7 +350,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
           ) : (
             list(1)
           )}
-          {!(stats && visual) && (charted ? <div className="text-fg">{spark(18)}</div> : bar ?? (sub ? <div className="truncate text-[0.62rem] tabular text-faint">{sub}</div> : null))}
+          {!(stats && visual) && (charted ? <div className="text-fg">{spark(18)}</div> : bar ?? (sub ? part("sub", <div className="truncate text-[0.62rem] tabular text-faint">{sub}</div>) : null))}
         </div>
       </div>
     );
@@ -329,20 +360,20 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
         {visual ? <div className="flex justify-center [&>div]:justify-center">{head}</div> : head}
         {visual ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5">
-            {visual(stats ? 92 : 112)}
+            {pic(stats ? 92 : 112)}
             {stats && <div className="w-full text-center">{statGrid(2, false)}</div>}
           </div>
         ) : charted ? (
           <>
             {headline([1.7, 1.55, 1.3])}
-            {sub && <div className="-mt-1 truncate text-[0.64rem] tabular text-faint">{sub}</div>}
+            {sub && part("sub", <div className="-mt-1 truncate text-[0.64rem] tabular text-faint">{sub}</div>)}
             <div className="mt-auto text-fg">{spark(64)}</div>
           </>
         ) : gaugeable && !listed.length ? (
           <>
             <div className="flex min-h-0 flex-1 items-center justify-center">{gauge(96, true)}</div>
             {sub ? (
-              <div className="truncate text-center text-[0.66rem] tabular text-faint">{sub}</div>
+              part("sub", <div className="truncate text-center text-[0.66rem] tabular text-faint">{sub}</div>)
             ) : (
               !hasValue && <div className="truncate text-center text-[0.66rem] text-faint">{empty}</div>
             )}
@@ -361,7 +392,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
           <>
             <div className="flex min-h-0 flex-1 items-center">{headline([2.6, 2.2, 1.7])}</div>
             <div className="space-y-1.5">
-              {sub && <div className="truncate text-[0.68rem] tabular text-faint">{sub}</div>}
+              {sub && part("sub", <div className="truncate text-[0.68rem] tabular text-faint">{sub}</div>)}
               {bar}
             </div>
           </>
@@ -371,7 +402,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
   } else {
     body = (
       <div className="flex h-full min-w-0 items-center gap-3">
-        {visual && <div className="shrink-0">{visual(60)}</div>}
+        {visual && <div className="shrink-0">{pic(60)}</div>}
         {gaugeable && gauge(56, false)}
         {stats && visual ? (
           <div className="min-w-0 flex-1">{statGrid(4, true, false)}</div>
@@ -380,7 +411,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
             <div className="flex min-w-0 max-w-[45%] shrink-0 flex-col justify-center gap-1.5">
               {head}
               {gaugeable ? (
-                sub && <div className="line-clamp-2 text-[0.85rem] font-bold leading-snug tabular">{sub}</div>
+                sub && part("sub", <div className="line-clamp-2 text-[0.85rem] font-bold leading-snug tabular">{sub}</div>)
               ) : hasValue || !listed.length ? (
                 headline([1.6, 1.5, 1.25])
               ) : null}
@@ -388,7 +419,7 @@ export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
             <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
               {hasValue || !listed.length ? (
                 <>
-                  {sub && !gaugeable && <div className="truncate text-[0.68rem] tabular text-muted">{sub}</div>}
+                  {sub && !gaugeable && part("sub", <div className="truncate text-[0.68rem] tabular text-muted">{sub}</div>)}
                   {charted && <div className="text-fg">{spark(28)}</div>}
                   {!gaugeable && !charted && bar}
                   {!sub && statGrid(2, true)}

@@ -63,8 +63,18 @@ export function TopTabs<T extends string>({
 
   // The selected tab is scrolled into view, or a bar wider than the screen can
   // leave the current one off the edge with nothing to say which is selected.
+  //
+  // By moving the bar's own scroll, not with scrollIntoView: that scrolls
+  // every scrollable ancestor too, the page included, so a tab bar mounting
+  // anywhere (a widget lent to another page) could jump the page under you.
   useEffect(() => {
-    refs.current[value]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const el = refs.current[value];
+    const bar = el?.parentElement;
+    if (!el || !bar) return;
+    const left = el.offsetLeft - 4;
+    const right = el.offsetLeft + el.offsetWidth + 4 - bar.clientWidth;
+    if (bar.scrollLeft > left) bar.scrollLeft = left;
+    else if (bar.scrollLeft < right) bar.scrollLeft = right;
   }, [value]);
 
   return (

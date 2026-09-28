@@ -989,3 +989,18 @@ select,
 @media (prefers-reduced-motion: reduce) {
   .soma-ring-grow { animation: none; }
 }
+
+/* A page mounted only to lend a widget elsewhere: its sheets and dialogs show,
+   anything else it would have drawn under the grid stays out of sight. */
+.soma-lend-sheets {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  visibility: hidden;
+  pointer-events: none;
+}
+.soma-lend-sheets .fixed,
+.soma-lend-sheets [role="dialog"] {
+  visibility: visible;
+  pointer-events: auto;
+}

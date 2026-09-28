@@ -61,7 +61,7 @@ export function InsightsView() {
   );
 }
 
-function OverviewPanel() {
+export function OverviewPanel() {
   const history = useSoma((s) => s.history);
   const settings = useSoma((s) => s.settings);
   const c = SomaIntelligenceEngine.computeConsistency(history, {
@@ -222,7 +222,7 @@ function OverviewPanel() {
   );
 }
 
-function StrengthPanel() {
+export function StrengthPanel() {
   const history = useSoma((s) => s.history);
   const names: string[] = SomaIntelligenceEngine.loggedExerciseNames(history);
   const [pick, setPick] = useState(names[0] || "");
@@ -308,7 +308,7 @@ function StrengthPanel() {
   );
 }
 
-function HeatmapPanel() {
+export function HeatmapPanel() {
   const history = useSoma((s) => s.history);
   const [view, setView] = useState<"front" | "back">("front");
   const [sel, setSel] = useState<string | null>("chest");

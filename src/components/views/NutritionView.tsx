@@ -57,8 +57,8 @@ const FUEL_TABS = [
   { id: "weight" as const, label: "Weight" },
 ];
 
-export function NutritionView() {
-  const [sub, setSub] = useState<"dash" | "week" | "log" | "weight">("dash");
+export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "week" | "log" | "weight" } = {}) {
+  const [sub, setSub] = useState<"dash" | "week" | "log" | "weight">(initialSub);
   const nutrition = useSoma((s) => s.nutrition);
   const history = useSoma((s) => s.history);
   const activeDate = useSoma((s) => s.activeDate);
