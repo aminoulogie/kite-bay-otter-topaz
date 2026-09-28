@@ -29,6 +29,7 @@ import type {
 } from "./types";
 import CUSTOM_FOOD_SEED from "./custom-foods-seed.json";
 import { correctCustomFoods } from "./food-corrections";
+import { liveIsUntouched, withRescue } from "./live-guard";
 import { sessionBurn } from "./training-burn";
 import {
   defaultProgram, loadActiveId, loadPrograms, resolveActiveProgram, saveActiveId,
@@ -655,14 +656,13 @@ export const useSoma = create<SomaStore>()(
           // exactly where this session belongs.
           saved = !!get().saveWorkout();
         }
-        const rescue =
-          !saved && !hasDone && live.exercises.length > 0 ? [JSON.stringify(live.exercises)] : [];
-
         set({ activeDate: today });
         get().ensureDay(today);
         // The new day has its own programmed split; carrying yesterday's label
-        // over was only ever a placeholder.
-        set({ live: { ...defaultLive(live.split, today), undoStack: rescue } });
+        // over was only ever a placeholder. Anything of the user's that was not
+        // saved rides over one Undo away.
+        const fresh = defaultLive(live.split, today);
+        set({ live: saved ? fresh : withRescue(fresh, live) });
         get().refreshScheduledDay();
         return { rolled: true, saved };
       },
@@ -697,7 +697,8 @@ export const useSoma = create<SomaStore>()(
         if (belongsTo !== today) {
           const hasWork = live.exercises.some((ex) => ex.sets.some((st) => st.done));
           if (!live.forDate && (live.finished || !hasWork)) {
-            live = defaultLive(live.split, today);
+            const fresh = defaultLive(live.split, today);
+            live = live.finished ? fresh : withRescue(fresh, live);
             set({ live });
           }
         }
@@ -996,9 +997,11 @@ export const useSoma = create<SomaStore>()(
           get().activeProgram(),
         );
         const live = get().live;
-        const untouched = !live.exercises.some((ex) => ex.sets.some((st) => st.done));
-        if ((untouched || force) && !live.finished) {
-          set({ live: defaultLive(proj.split) });
+        // "Untouched" is the sheet exactly as the app made it — not merely
+        // "no set ticked", which threw away sessions typed in and not yet
+        // ticked every time the app relaunched. See lib/live-guard.ts.
+        if ((liveIsUntouched(live) || force) && !live.finished) {
+          set({ live: withRescue(defaultLive(proj.split), live) });
           if (!proj.isRest) get().loadSplit(proj.split);
         }
       },
@@ -1800,6 +1803,7 @@ export const useSoma = create<SomaStore>()(
             // one for the other mid-session would make them disagree.
             split: name,
             exercises,
+            pristine: JSON.stringify(exercises),
             finished: null,
             startTime: Date.now(),
             firstSetAt: null,
@@ -1983,6 +1987,9 @@ export const useSoma = create<SomaStore>()(
       },
       snapshot: () => {
         const live = get().live;
+        // An empty sheet is not worth an Undo step: stepping back onto nothing
+        // only buries the step before it, which may be a rescued session.
+        if (!live.exercises.length) return;
         const undoStack = [...live.undoStack, JSON.stringify(live.exercises)].slice(-25);
         set({ live: { ...live, undoStack, redoStack: [] } });
       },
@@ -2102,7 +2109,7 @@ export const useSoma = create<SomaStore>()(
           get().activeProgram(),
         );
         set({
-          live: { ...defaultLive(split ?? proj.split), forDate: date },
+          live: { ...withRescue(defaultLive(split ?? proj.split), live), forDate: date },
           activeDate: date,
         });
         // Load that day's programmed exercises so backfilling is filling in
@@ -2312,7 +2319,7 @@ export const useSoma = create<SomaStore>()(
         const today = getLocalDateKey(new Date());
         const exercises = session.exercises.map((ex) => makeSessionEx(ex.name, db, get()));
         set({
-          live: { ...defaultLive(session.split, today), exercises },
+          live: { ...withRescue(defaultLive(session.split, today), live), exercises },
           activeDate: today,
         });
         return true;

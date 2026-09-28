@@ -318,6 +318,7 @@ export function defaultLive(split: string, date?: string) {
     firstSetAt: null,
     split,
     exercises: [] as SessionExercise[],
+    pristine: "[]" as string | undefined,
     undoStack: [] as string[],
     redoStack: [] as string[],
     finished: null,

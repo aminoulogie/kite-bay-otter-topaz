@@ -446,6 +446,12 @@ export interface LiveSession {
   forDate?: string;
   split: string;
   exercises: SessionExercise[];
+  /**
+   * The exercises exactly as the app loaded them from the programme. A sheet
+   * that still matches it is the app's to rebuild; one that does not has the
+   * user's work in it. See lib/live-guard.ts.
+   */
+  pristine?: string;
   undoStack: string[];
   redoStack: string[];
   finished: HistorySession | null;
