@@ -165,23 +165,22 @@ export function WorkoutView() {
 
   let totalVol = 0;
   let totalSets = 0;
-  let failSum = 0;
   for (const ex of live.exercises) {
     for (const s of ex.sets) {
       if (s.done && s.type === "normal") {
         totalSets++;
         totalVol += SomaIntelligenceEngine.calculateWorkVolume(Number(s.weight) || 0, Number(s.reps) || 0, ex.isBW);
-        failSum += s.failure || 3;
       }
     }
   }
-  const mins = Math.max(1, Math.round(elapsed / 60));
-  const cals = SomaIntelligenceEngine.calculateCaloriesBurned(
-    mins,
-    totalVol,
-    totalSets,
-    totalSets ? failSum / totalSets : 3,
-  );
+  // The same model the saved session is billed with (lib/training-burn.ts),
+  // so the number here is the number that lands in the day. The old formula
+  // charged a minute's floor for nothing, which read "20 kcal" before a
+  // single set.
+  const cals = sessionBurn(
+    { exercises: live.exercises, totalSets, durationFormatted: `${em}:${String(es).padStart(2, "0")}` },
+    bodyweight || undefined,
+  ).gross;
 
   // Live: it moves as sets are ticked and rated.
   const sessionRating = rateSession(live);
