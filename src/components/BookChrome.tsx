@@ -652,12 +652,8 @@ export const PageScrubber = memo(function PageScrubber({
     <div className="pointer-events-auto min-w-0 flex-1">
       <div className="rounded-full px-2 py-[5px]" style={readerGlass(theme)}>
         <div className="relative">
-          {/* The cursor: fixed at the centre. The strip moves under it. */}
-          <span
-            aria-hidden
-            className="pointer-events-none absolute bottom-0 top-0 left-1/2 z-10 w-[2px] -translate-x-1/2 rounded-full"
-            style={{ background: "var(--color-accent)" }}
-          />
+          {/* No cursor line: the page in the middle is picked out by its own
+              outline, which is all that is needed to say "this one". */}
           <div
             ref={rail}
             className="overflow-x-auto overscroll-x-contain"
@@ -698,7 +694,7 @@ export const PageScrubber = memo(function PageScrubber({
                       scrollSnapAlign: "center",
                       transform: on ? "scale(1.18)" : "none",
                       zIndex: on ? 2 : 1,
-                      boxShadow: on ? `0 0 0 2px ${theme.fg}, 0 4px 12px rgba(0,0,0,0.45)` : `0 0 0 0.5px ${theme.fg}22`,
+                      boxShadow: on ? `0 0 0 1.5px ${theme.fg}, 0 4px 12px rgba(0,0,0,0.45)` : `0 0 0 0.5px ${theme.fg}22`,
                     }}
                   >
                     {near && (
