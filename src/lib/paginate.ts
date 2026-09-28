@@ -170,10 +170,16 @@ export function bookProgress(
  */
 export function bookPages(
   lengths: readonly number[], chapter: number, page: number, pages: number,
+  /**
+   * Characters per page learnt from a chapter long enough to say. A short
+   * chapter (a copyright page, a dedication) is mostly white space, and
+   * measuring the book by it turned a 54-page book into "Page 3 of 314".
+   */
+  learnt?: number,
 ): { page: number; total: number } | null {
   const here = lengths[chapter] ?? 0;
   if (!lengths.length || here <= 0 || pages < 1) return null;
-  const perPage = Math.max(200, here / pages);
+  const perPage = Math.max(250, pages >= 3 || !learnt ? here / pages : learnt);
   const count = (i: number) => (i === chapter ? pages : Math.max(1, Math.ceil((lengths[i] ?? 0) / perPage)));
   let before = 0;
   for (let i = 0; i < chapter && i < lengths.length; i++) before += count(i);

@@ -113,12 +113,14 @@ export function BookReader({
   const [total, setTotal] = useState(book.pages ?? 0);
   /** Page within the current chapter, and the text the rail draws small. */
   const [spread, setSpread] = useState<{
+    /** Which chapter these pages are of: it can lag a jump by a frame. */
+    chapter: number;
     page: number;
     pages: number;
     html: string;
     label: string;
     box: { w: number; h: number };
-  }>({ page: 0, pages: 1, html: "", label: "", box: { w: 0, h: 0 } });
+  }>({ chapter: -1, page: 0, pages: 1, html: "", label: "", box: { w: 0, h: 0 } });
   /** The contents and the searchable book, published by the renderer. */
   const [index, setIndex] = useState<{ titles: string[]; textOf: (i: number) => string }>({
     titles: [],
@@ -311,7 +313,27 @@ export function BookReader({
     () => (epub ? index.titles.map((_, i) => index.textOf(i).length) : []),
     [epub, index],
   );
-  const pageOfBook = epub ? bookPages(lengths, at - 1, spread.page, spread.pages) : null;
+  // Characters per page, from the last chapter long enough to measure it.
+  // Forgotten when the type or the page changes, since that is what it measures.
+  const density = useRef<{ key: string; perPage: number } | null>(null);
+  const typeKey = `${prefs.font}|${prefs.size}|${prefs.lineHeight}|${spread.box.w}x${spread.box.h}`;
+  if (density.current?.key !== typeKey) density.current = null;
+  // Only pages that are really this chapter's: for a frame after a jump the
+  // counts are still the last chapter's, and measuring a two-line copyright
+  // page by a thirty-page chapter's count made the book six times longer.
+  const current = spread.chapter === at - 1;
+  const hereLen = lengths[at - 1] ?? 0;
+  // And never a density no page of text has: the renderer can report the
+  // new chapter a frame before its new page count, and 145 characters over
+  // 34 pages is a stale count, not a page.
+  if (epub && current && spread.pages >= 3 && hereLen / spread.pages >= 250) {
+    density.current = { key: typeKey, perPage: hereLen / spread.pages };
+  }
+  const shown = useRef<{ page: number; total: number } | null>(null);
+  if (epub && current && (spread.pages < 3 || hereLen / spread.pages >= 250 || !hereLen)) {
+    shown.current = bookPages(lengths, at - 1, spread.page, spread.pages, density.current?.perPage);
+  }
+  const pageOfBook = epub ? shown.current : null;
   const progress = pageOfBook
     ? pageOfBook.total > 1 ? (pageOfBook.page - 1) / (pageOfBook.total - 1) : 1
     : epub
@@ -750,6 +772,7 @@ function EpubPages({
    * box it is set in, and where you are in it.
    */
   onSpread: (s: {
+    chapter: number;
     page: number;
     pages: number;
     html: string;
@@ -1140,8 +1163,8 @@ function EpubPages({
   }, [page, pages, box.w, onAnchor]);
 
   useEffect(() => {
-    onSpread({ page, pages, html, label, box });
-  }, [page, pages, html, label, box, onSpread]);
+    onSpread({ chapter, page, pages, html, label, box });
+  }, [chapter, page, pages, html, label, box, onSpread]);
 
   /** Where the strip sits right now: the settled page, plus the finger. */
   const slide = -pageOffset(page, box.w) + (dragX ?? 0);

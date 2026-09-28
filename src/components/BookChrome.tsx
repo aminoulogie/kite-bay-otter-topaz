@@ -538,10 +538,10 @@ export const PageScrubber = memo(function PageScrubber({
   page: number;
   onPick: (page: number) => void;
   onScrub?: (active: boolean) => void;
-  /** The chapters either side, shown as one card at each end of the strip. */
+  /** The chapters either side, if any: pulling past an end goes to them. */
   prevTitle?: string | null;
   nextTitle?: string | null;
-  /** Landing on an end card: step into the chapter next door. */
+  /** Pulled past an end: step into the chapter next door. */
   onEdge?: (dir: -1 | 1) => void;
 }) {
   const strip = useRef<HTMLDivElement>(null);
@@ -557,12 +557,15 @@ export const PageScrubber = memo(function PageScrubber({
   const gapW = Math.max(4, Math.round(PAGE_GAP * scale));
   const stride = cardW + gapW;
 
-  // Slots run from `lo` to `hi`: the chapter's pages, plus a card either end
-  // for the chapter before and after, so the roll carries on through the book.
-  const lo = prevTitle ? -1 : 0;
-  const hi = nextTitle ? pages : pages - 1;
+  // The strip holds this chapter's pages and nothing else. Pulling it past
+  // either end — further than the rubber band gives — steps into the chapter
+  // next door, where there is one; there are no cards for them on the strip.
+  const lo = 0;
+  const hi = pages - 1;
   const bounds = useRef({ lo, hi });
   bounds.current = { lo, hi };
+  const hasPrev = !!prevTitle;
+  const hasNext = !!nextTitle;
 
   /**
    * Where the strip is, in pages (fractional while it moves). Driven by hand
@@ -632,9 +635,7 @@ export const PageScrubber = memo(function PageScrubber({
       }
       pos.current = target;
       cancelAnimationFrame(preview.current);
-      if (target < 0) edge.current?.(-1);
-      else if (target >= pages) edge.current?.(1);
-      else pick.current(target);
+      pick.current(target);
       scrubbing.current?.(false);
     };
     anim.current = requestAnimationFrame(run);
@@ -645,24 +646,6 @@ export const PageScrubber = memo(function PageScrubber({
   const from = Math.max(0, under - THUMB_WINDOW);
   const to = Math.min(pages - 1, under + THUMB_WINDOW);
   const outline = theme.dark ? "rgba(235,235,245,0.45)" : "rgba(60,60,67,0.4)";
-
-  const endCard = (i: number, title: string, dir: -1 | 1) => (
-    <div
-      key={`edge${dir}`}
-      className="absolute top-0 flex flex-col items-center justify-center overflow-hidden rounded-[3px] px-0.5 text-center"
-      style={{
-        left: i * stride,
-        width: cardW,
-        height: THUMB_H,
-        background: `${theme.fg}10`,
-        color: theme.faint,
-        boxShadow: under === i ? `0 0 0 1.5px ${outline}` : `0 0 0 0.5px ${theme.fg}22`,
-      }}
-    >
-      <span className="text-[0.5rem] font-extrabold leading-none">{dir < 0 ? "‹" : "›"}</span>
-      <span className="mt-0.5 line-clamp-2 text-[0.34rem] font-bold leading-tight">{title}</span>
-    </div>
-  );
 
   return (
     <div className="pointer-events-auto min-w-0 flex-1">
@@ -684,8 +667,8 @@ export const PageScrubber = memo(function PageScrubber({
             const { lo: a, hi: b } = bounds.current;
             let p = d.pos - (e.clientX - d.x) / stride;
             // Past the ends it resists, like a rubber band, instead of stopping dead.
-            if (p < a) p = a - (a - p) * 0.3;
-            if (p > b) p = b + (p - b) * 0.3;
+            if (p < a) p = a - (a - p) * 0.45;
+            if (p > b) p = b + (p - b) * 0.45;
             pos.current = p;
             paint(p);
             mark(Math.max(a, Math.min(b, p)), true);
@@ -702,6 +685,25 @@ export const PageScrubber = memo(function PageScrubber({
             // Pages per ms, then thrown: a flick carries on for a few pages.
             const v = e.timeStamp - last.t > 80 ? 0 : -(last.x - first.x) / dt / stride;
             const { lo: a, hi: b } = bounds.current;
+            // Pulled well past the first or last page: the chapter next door.
+            if (pos.current < a - 0.6 && hasPrev) {
+              // Spring back without landing on a page here: the turn below
+              // puts the strip on the new chapter's page.
+              pos.current = a;
+              paint(a, 220);
+              scrubbing.current?.(false);
+              edge.current?.(-1);
+              return;
+            }
+            if (pos.current > b + 0.6 && hasNext) {
+              // Spring back without landing on a page here: the turn below
+              // puts the strip on the new chapter's page.
+              pos.current = b;
+              paint(b, 220);
+              scrubbing.current?.(false);
+              edge.current?.(1);
+              return;
+            }
             const moved = Math.abs(e.clientX - d.x) > 4;
             // A tap on a card goes to that card.
             let target = Math.round(pos.current + v * 220);
@@ -722,7 +724,6 @@ export const PageScrubber = memo(function PageScrubber({
             className="absolute left-1/2 top-[3px] will-change-transform"
             style={{ height: THUMB_H, width: stride * pages }}
           >
-            {prevTitle && endCard(-1, prevTitle, -1)}
             {Array.from({ length: pages }, (_, i) => {
               const on = i === under;
               const near = i >= from && i <= to;
@@ -754,7 +755,6 @@ export const PageScrubber = memo(function PageScrubber({
                 </div>
               );
             })}
-            {nextTitle && endCard(pages, nextTitle, 1)}
           </div>
         </div>
       </div>
