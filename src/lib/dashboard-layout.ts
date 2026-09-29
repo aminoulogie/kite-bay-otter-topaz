@@ -268,6 +268,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "summary", label: "This month", size: "2x4" },
     { id: "add", label: "Add an entry", size: "2x4" },
     { id: "grocery", label: "Shopping list", size: "2x4" },
+    { id: "pantry", label: "In the cupboard", size: "2x4" },
     { id: "entries", label: "Entries", size: "2x4" },
     { id: "categories", label: "Categories", size: "2x4" },
   ],
