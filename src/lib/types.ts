@@ -343,6 +343,17 @@ export interface Settings {
   currency?: string;
   /** Monthly spending budget. Unset means the Money tab reports without judging. */
   monthlyBudget?: number;
+  /**
+   * A real balance, checked against a bank or a wallet, and the day it was
+   * checked. Everything logged from that day forward is added or subtracted
+   * on top of it — "how much do I actually have" is the thing the ledger
+   * could not answer on its own, because a month's net is a flow, not a
+   * balance, and most days nobody has logged literally every dollar that
+   * ever passed through their hands. Re-checking it later moves the anchor
+   * forward, so a correction never double-counts what already happened.
+   */
+  moneyBalance?: number;
+  moneyBalanceDate?: string;
   /** Spending categories. Unset means the shipped defaults. */
   spendCategories?: string[];
   /**

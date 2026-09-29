@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  DEFAULT_CATEGORIES, budgetState, categoriesFor, costPerSession, daysInMonth, inMonth,
-  monthOf, shiftMonth, totals,
+  DEFAULT_CATEGORIES, budgetState, categoriesFor, costPerSession, currentBalance, daysInMonth, inMonth,
+  inWeek, monthOf, shiftMonth, shiftWeek, totals, weekStartOf,
 } from "./money.ts";
 import type { LedgerEntry } from "./types.ts";
 
@@ -126,6 +126,47 @@ test("with nothing configured, the defaults are offered", () => {
 
 test("a configured list replaces the defaults", () => {
   assert.deepEqual(categoriesFor(["Taxi", "Coffee"], []), ["Taxi", "Coffee"]);
+});
+
+test("no balance ever set reports null, not zero", () => {
+  assert.equal(currentBalance([e({ id: "1" })], undefined, undefined), null);
+  assert.equal(currentBalance([], 0, undefined), null, "an anchor date is still required");
+});
+
+test("balance is the anchor plus everything logged from that day on", () => {
+  const entries = [
+    e({ id: "1", date: "2026-09-01", kind: "income", amount: 1000 }),
+    e({ id: "2", date: "2026-09-02", amount: 200 }),
+    // Before the anchor — already accounted for in the typed-in figure.
+    e({ id: "3", date: "2026-08-31", kind: "income", amount: 5000 }),
+  ];
+  assert.equal(currentBalance(entries, 3000, "2026-09-01"), 3800);
+});
+
+test("the anchor day itself counts, not just the days after it", () => {
+  const entries = [e({ id: "1", date: "2026-09-05", amount: 100 })];
+  assert.equal(currentBalance(entries, 500, "2026-09-05"), 400);
+});
+
+test("a week starts on Monday", () => {
+  assert.equal(weekStartOf("2026-09-05"), "2026-08-31", "the Saturday's week started the Monday before");
+  assert.equal(weekStartOf("2026-08-31"), "2026-08-31", "a Monday is its own week's start");
+  assert.equal(weekStartOf("2026-09-06"), "2026-08-31", "Sunday closes the week it started, not a new one");
+});
+
+test("walking a week back crosses the month boundary correctly", () => {
+  assert.equal(shiftWeek("2026-09-07", -1), "2026-08-31");
+  assert.equal(shiftWeek("2026-08-31", 1), "2026-09-07");
+});
+
+test("a week holds Monday through Sunday, nothing from the week either side", () => {
+  const entries = [
+    e({ id: "sun-before", date: "2026-08-30" }),
+    e({ id: "mon", date: "2026-08-31" }),
+    e({ id: "sun", date: "2026-09-06" }),
+    e({ id: "mon-after", date: "2026-09-07" }),
+  ];
+  assert.deepEqual(inWeek(entries, "2026-08-31").map((x) => x.id), ["mon", "sun"]);
 });
 
 test("removing a category does not orphan the entries filed under it", () => {

@@ -7,9 +7,10 @@ import { GroceryCard, PantryCard } from "@/components/GroceryCard";
 import { Input } from "@/components/ui/input";
 import { SwipeRow } from "@/components/SwipeRow";
 import {
-  budgetState, categoriesFor, costPerSession, daysInMonth, inMonth, monthOf, shiftMonth, totals,
+  budgetState, categoriesFor, costPerSession, currentBalance, daysInMonth, inMonth, inWeek,
+  monthOf, shiftMonth, shiftWeek, totals, weekStartOf,
 } from "@/lib/money";
-import { getLocalDateKey } from "@/lib/soma";
+import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { RowEditSheet } from "@/components/RowEditSheet";
 import { numOf, textOf } from "@/lib/row-edit";
 import { TopTabs } from "@/components/TopTabs";
@@ -65,6 +66,7 @@ function SpendingView() {
 
   const today = getLocalDateKey(new Date());
   const [month, setMonth] = useState(() => monthOf(today));
+  const [week, setWeek] = useState(() => weekStartOf(today));
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState<string>("Food");
   const [newCategory, setNewCategory] = useState("");
@@ -72,6 +74,8 @@ function SpendingView() {
   const [note, setNote] = useState("");
   const [swiped, setSwiped] = useState<string | null>(null);
   const [editing, setEditing] = useState<LedgerEntry | null>(null);
+  const [editingBalance, setEditingBalance] = useState(false);
+  const [balanceDraft, setBalanceDraft] = useState("");
 
   const categories = useMemo(
     () => categoriesFor(settings.spendCategories, ledger),
@@ -83,6 +87,16 @@ function SpendingView() {
     [ledger, month],
   );
   const t = useMemo(() => totals(rows), [rows]);
+  // The whole ledger, not just this month — a balance is carried forward
+  // from whenever it was last checked, regardless of which month the rest
+  // of this screen happens to be browsing.
+  const balance = currentBalance(ledger, settings.moneyBalance, settings.moneyBalanceDate);
+  const weekRows = useMemo(
+    () => inWeek(ledger, week).sort((a, b) => (a.date < b.date ? 1 : -1)),
+    [ledger, week],
+  );
+  const weekEnd = getLocalDateKey(addDays(parseLocalDateKey(week), 6));
+  const isThisWeek = week === weekStartOf(today);
   const sessions = useMemo(
     () => Object.keys(history).filter((d) => monthOf(d) === month).length,
     [history, month],
@@ -117,6 +131,18 @@ function SpendingView() {
     if (monthOf(today) !== month) setMonth(monthOf(today));
   };
 
+  const commitBalance = () => {
+    const n = Number(String(balanceDraft).replace(",", "."));
+    setEditingBalance(false);
+    if (!Number.isFinite(n)) return;
+    // The anchor moves to today every time this is set, including a
+    // correction: an entry logged earlier today under the OLD anchor is
+    // already folded into the number being typed in right now, and keeping
+    // the old anchor would count it a second time going forward.
+    patchSettings({ moneyBalance: n, moneyBalanceDate: today });
+    toast.success("Balance set");
+  };
+
   const del = (entry: LedgerEntry) => {
     const index = ledger.findIndex((x) => x.id === entry.id);
     removeLedger(entry.id);
@@ -129,23 +155,30 @@ function SpendingView() {
   // Glances have a few characters, not a ledger line: 12,480 → "12.5K".
   const compactMoney = (n: number) =>
     n.toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 });
+  const formatShort = (date: string) =>
+    parseLocalDateKey(date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
   return (
     <WidgetGrid tab="money">
       <Sized key="summary" glance={() => ({
-          label: new Date(`${month}-01T12:00:00`).toLocaleDateString(undefined, { month: "long" }),
-          short: "Spent",
-          value: compactMoney(t.spend),
+          label: balance != null
+            ? "Balance"
+            : new Date(`${month}-01T12:00:00`).toLocaleDateString(undefined, { month: "long" }),
+          short: balance != null ? "Balance" : "Spent",
+          value: balance != null ? compactMoney(balance) : compactMoney(t.spend),
           unit: currency,
-          valueClass: budget && budget.used > 1 ? "text-danger" : undefined,
-          progress: budget ? budget.used : null,
-          color: budget ? (budget.used > 1 ? "var(--color-danger)" : budget.aheadOfPace ? "var(--color-warn)" : undefined) : undefined,
-          sub: budget
-            ? budget.left < 0
-              ? `${compactMoney(Math.abs(budget.left))} over budget`
-              : `${compactMoney(budget.left)} left of ${compactMoney(budget.budget)}`
-            : `in ${compactMoney(t.income)} · net ${compactMoney(t.net)}`,
+          valueClass: balance == null && budget && budget.used > 1 ? "text-danger" : undefined,
+          progress: balance == null && budget ? budget.used : null,
+          color: balance == null && budget ? (budget.used > 1 ? "var(--color-danger)" : budget.aheadOfPace ? "var(--color-warn)" : undefined) : undefined,
+          sub: balance != null
+            ? `spent ${compactMoney(t.spend)} this month`
+            : budget
+              ? budget.left < 0
+                ? `${compactMoney(Math.abs(budget.left))} over budget`
+                : `${compactMoney(budget.left)} left of ${compactMoney(budget.budget)}`
+              : `in ${compactMoney(t.income)} · net ${compactMoney(t.net)}`,
           stats: [
+            ...(balance != null ? [{ label: "Balance", value: compactMoney(balance) }] : []),
             { label: "Spent", value: compactMoney(t.spend) },
             { label: "In", value: compactMoney(t.income) },
             { label: "Net", value: compactMoney(t.net), color: t.net < 0 ? "var(--color-danger)" : "var(--color-accent-text)" },
@@ -153,6 +186,50 @@ function SpendingView() {
           ],
         })}>
       <Card>
+        <button
+          type="button"
+          className="mb-3 flex w-full items-center justify-between rounded-xl border border-accent-line bg-accent-soft px-3 py-2.5 text-left"
+          onClick={() => {
+            setBalanceDraft(balance != null ? String(balance) : "");
+            setEditingBalance(true);
+          }}
+        >
+          <span className="min-w-0">
+            <span className="block text-[0.58rem] font-bold uppercase tracking-wider text-faint">
+              Balance
+            </span>
+            <span className="block truncate font-display text-xl font-extrabold tabular">
+              {balance != null ? money(balance) : "Not set"}
+            </span>
+            {settings.moneyBalanceDate && (
+              <span className="block text-[0.65rem] text-faint">as of {settings.moneyBalanceDate}</span>
+            )}
+          </span>
+          <span className="shrink-0 text-[0.65rem] font-bold text-accent-text">
+            {balance != null ? "Update" : "Set it"}
+          </span>
+        </button>
+
+        {editingBalance && (
+          <div className="mb-3 flex gap-2">
+            <Input
+              autoFocus
+              type="text"
+              inputMode="decimal"
+              placeholder={`Balance in ${currency}`}
+              value={balanceDraft}
+              onChange={(e) => setBalanceDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitBalance();
+                if (e.key === "Escape") setEditingBalance(false);
+              }}
+            />
+            <Button variant="primary" onClick={commitBalance}>
+              Set
+            </Button>
+          </div>
+        )}
+
         <div className="mb-3 flex items-center justify-between">
           <button type="button" aria-label="Previous month" onClick={() => setMonth(shiftMonth(month, -1))}>
             <ChevronLeft className="size-5 text-muted" />
@@ -340,23 +417,48 @@ function SpendingView() {
       )}
 
       <Sized key="entries" glance={() => ({
-          label: "Entries",
-          value: String(rows.length),
-          unit: "this month",
-          lines: rows.map((r) => ({
+          label: "This week",
+          value: String(weekRows.length),
+          unit: "entries",
+          lines: weekRows.map((r) => ({
             text: r.kind === "income" ? `Income${r.note ? ` · ${r.note}` : ""}` : `${r.category}${r.note ? ` · ${r.note}` : ""}`,
             value: `${r.kind === "income" ? "+" : "−"}${compactMoney(Math.abs(r.amount))}`,
           })),
-          empty: "Nothing logged this month",
+          empty: "Nothing logged this week",
           emptyShort: "None yet",
         })}>
       <Card>
-        <CardTitle>{rows.length} entries</CardTitle>
-        {rows.length === 0 ? (
-          <p className="py-3 text-center text-xs text-faint">Nothing logged this month.</p>
+        <div className="mb-3 flex items-center justify-between">
+          <button type="button" aria-label="Previous week" onClick={() => setWeek(shiftWeek(week, -1))}>
+            <ChevronLeft className="size-5 text-muted" />
+          </button>
+          <button
+            type="button"
+            className="text-center"
+            onClick={() => !isThisWeek && setWeek(weekStartOf(today))}
+          >
+            <div className="font-display text-sm font-extrabold">
+              {isThisWeek ? "This week" : `${formatShort(week)} – ${formatShort(weekEnd)}`}
+            </div>
+            {!isThisWeek && <div className="text-[0.6rem] font-bold text-accent-text">Back to this week</div>}
+          </button>
+          <button
+            type="button"
+            aria-label="Next week"
+            // Nothing has been spent in the future, so there is nowhere to go.
+            disabled={isThisWeek}
+            onClick={() => setWeek(shiftWeek(week, 1))}
+            className="disabled:opacity-30"
+          >
+            <ChevronRight className="size-5 text-muted" />
+          </button>
+        </div>
+        <CardTitle>{weekRows.length} entries</CardTitle>
+        {weekRows.length === 0 ? (
+          <p className="py-3 text-center text-xs text-faint">Nothing logged this week.</p>
         ) : (
           <div className="space-y-1.5">
-            {rows.map((r) => (
+            {weekRows.map((r) => (
               <SwipeRow
                 key={r.id}
                 id={r.id}

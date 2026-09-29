@@ -6,6 +6,7 @@
  * "what did this month cost" is a second answer waiting to disagree.
  */
 
+import { addDays, getLocalDateKey, parseLocalDateKey } from "./soma/dates.ts";
 import type { LedgerEntry } from "./types.ts";
 
 /**
@@ -166,4 +167,57 @@ export function budgetState(
 export function daysInMonth(month: string): number {
   const [y, m] = month.split("-").map(Number);
   return new Date(y ?? 2000, m ?? 1, 0).getDate();
+}
+
+// ------------------------------------------------------------------ balance --
+
+/**
+ * What is actually left, not what moved this month.
+ *
+ * A month's net answers "did I come out ahead in September" — a flow. This
+ * answers "how much do I have right now" — a balance, which needs a starting
+ * point the ledger cannot supply on its own, because nobody logs literally
+ * every dollar that ever passed through their hands. Null with no anchor set,
+ * so the view can tell "zero, on purpose" from "never told me".
+ */
+export function currentBalance(
+  entries: LedgerEntry[],
+  base: number | undefined,
+  baseDate: string | undefined,
+): number | null {
+  if (base == null || !baseDate) return null;
+  let bal = base;
+  for (const e of entries) {
+    if (e.date < baseDate) continue;
+    bal += e.kind === "income" ? Math.abs(Number(e.amount) || 0) : -Math.abs(Number(e.amount) || 0);
+  }
+  return Math.round(bal * 100) / 100;
+}
+
+// -------------------------------------------------------------------- weeks --
+
+/**
+ * The Monday a date's week starts on, as a YYYY-MM-DD key.
+ *
+ * Entries default to this week rather than this month for the same reason a
+ * ledger stops being readable past about a dozen lines: a month of daily
+ * coffee runs is a wall of text by the 20th, and "what did I spend since
+ * Monday" is the question actually worth a glance most days. Older weeks are
+ * one tap back, same as older months already were.
+ */
+export function weekStartOf(date: string): string {
+  const d = parseLocalDateKey(date);
+  // getDay() is 0 for Sunday; shift so Monday starts the week.
+  const offset = (d.getDay() + 6) % 7;
+  return getLocalDateKey(addDays(d, -offset));
+}
+
+/** A week-start key shifted by n weeks, so the picker can walk backwards. */
+export function shiftWeek(weekStart: string, by: number): string {
+  return getLocalDateKey(addDays(parseLocalDateKey(weekStart), by * 7));
+}
+
+export function inWeek(entries: LedgerEntry[], weekStart: string): LedgerEntry[] {
+  const end = getLocalDateKey(addDays(parseLocalDateKey(weekStart), 6));
+  return entries.filter((e) => e.date >= weekStart && e.date <= end);
 }
