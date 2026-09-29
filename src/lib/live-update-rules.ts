@@ -15,6 +15,8 @@ export interface LiveManifest {
   version: string;
   /** Where its zip is. */
   url: string;
+  /** The same zip elsewhere, tried in turn if the first is slow or down. */
+  mirrors?: string[];
   /** The oldest installed build this layer runs on. */
   nativeSince: string;
   /** When it was built, ISO. */
@@ -44,7 +46,14 @@ export function asManifest(raw: unknown): LiveManifest | null {
   const r = raw as Partial<LiveManifest>;
   if (typeof r.version !== "string" || typeof r.url !== "string" || typeof r.nativeSince !== "string") return null;
   if (!/^https:\/\//.test(r.url)) return null;
-  return { version: r.version, url: r.url, nativeSince: r.nativeSince, date: typeof r.date === "string" ? r.date : undefined };
+  const mirrors = Array.isArray(r.mirrors) ? r.mirrors.filter((m): m is string => typeof m === "string" && /^https:\/\//.test(m)) : [];
+  return {
+    version: r.version,
+    url: r.url,
+    mirrors,
+    nativeSince: r.nativeSince,
+    date: typeof r.date === "string" ? r.date : undefined,
+  };
 }
 
 /**

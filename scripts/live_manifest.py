@@ -53,6 +53,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", required=True)
     ap.add_argument("--url", required=True, help="the web layer zip's public URL")
+    ap.add_argument("--mirror", action="append", default=[], help="another URL for the same zip; tried in turn")
     ap.add_argument("--previous", help="live.json as last published, if any")
     ap.add_argument("--root", default=".")
     ap.add_argument("--out", required=True)
@@ -72,6 +73,7 @@ def main() -> None:
     manifest = {
         "version": a.version,
         "url": a.url,
+        "mirrors": a.mirror,
         "nativeSince": since,
         "nativeHash": fingerprint,
         "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

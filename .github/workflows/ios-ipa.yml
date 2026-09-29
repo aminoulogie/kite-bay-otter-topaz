@@ -234,10 +234,18 @@ jobs:
           gh release upload "$TAG" "$RUNNER_TEMP/altstore.json" "$RUNNER_TEMP/icon.png" --clobber
           echo "AltStore source: $BASE/$TAG/altstore.json"
 
-      # Live updates: the web layer as a zip on this build's release, and
-      # live.json beside the AltStore source saying which installed builds it
-      # runs on (scripts/live_manifest.py). The app reads live.json on launch
-      # and downloads the zip when it fits — see src/lib/native/live-update.ts.
+      # Live updates: the web layer as a zip, and live.json saying which
+      # installed builds it runs on (scripts/live_manifest.py). The app reads
+      # live.json on launch and downloads the zip when it fits — see
+      # src/lib/native/live-update.ts.
+      #
+      # Served three ways, because on some networks GitHub's release-download
+      # servers crawl: from a `live` branch through jsDelivr's CDN (fast
+      # nearly everywhere), the same branch through raw.githubusercontent.com,
+      # and the release assets as before. The branch holds only the newest
+      # layer and is replaced on every build, so it never grows. The zip is
+      # addressed by commit, so no cache can hand out a stale one; live.json
+      # is purged from jsDelivr after each push.
       - name: Publish live update
         env:
           GH_TOKEN: ${{ github.token }}
@@ -245,16 +253,37 @@ jobs:
         run: |
           set -euo pipefail
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download"
-          ZIP="$RUNNER_TEMP/SOMA-web-$V.zip"
+          NAME="SOMA-web-$V.zip"
+          ZIP="$RUNNER_TEMP/$NAME"
           (cd .vercel/output/static && zip -qr "$ZIP" .)
           gh release upload "ios-v$V" "$ZIP" --clobber
           curl -fsSL "$BASE/altstore/live.json" -o "$RUNNER_TEMP/live-previous.json" || true
+
+          LIVE="$RUNNER_TEMP/live-branch"
+          mkdir -p "$LIVE" && cd "$LIVE"
+          git init -q && git checkout -q -b live
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp "$ZIP" .
+          git add "$NAME" && git commit -qm "SOMA web layer $V"
+          SHA=$(git rev-parse HEAD)
+          cd "$GITHUB_WORKSPACE"
+
           python3 scripts/live_manifest.py \
             --version "$V" \
-            --url "$BASE/ios-v$V/SOMA-web-$V.zip" \
+            --url "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${SHA}/$NAME" \
+            --mirror "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${SHA}/$NAME" \
+            --mirror "$BASE/ios-v$V/$NAME" \
             --previous "$RUNNER_TEMP/live-previous.json" \
             --out "$RUNNER_TEMP/live.json"
+
+          cp "$RUNNER_TEMP/live.json" "$LIVE/live.json"
+          cd "$LIVE"
+          git add live.json && git commit -qm "live.json for $V"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" live
+          cd "$GITHUB_WORKSPACE"
           gh release upload altstore "$RUNNER_TEMP/live.json" --clobber
+          curl -fsS "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@live/live.json" >/dev/null || true
 
       - uses: actions/upload-artifact@v4
         with:

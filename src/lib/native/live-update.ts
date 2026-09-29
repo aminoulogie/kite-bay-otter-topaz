@@ -1,5 +1,5 @@
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
-import { asManifest, decide, type LiveDecision } from "@/lib/live-update-rules";
+import { asManifest, compareVersions, decide, type LiveDecision, type LiveManifest } from "@/lib/live-update-rules";
 
 /**
  * Live updates: a new web layer, downloaded while the app is installed.
@@ -20,8 +20,18 @@ import { asManifest, decide, type LiveDecision } from "@/lib/live-update-rules";
  * back on the next launch, so a broken update cannot lock the app.
  */
 
-const MANIFEST =
-  "https://github.com/aminoulogie/kite-bay-otter-topaz/releases/download/altstore/live.json";
+/**
+ * Where live.json is published, asked all at once: the newest answer wins.
+ * jsDelivr's CDN and raw.githubusercontent.com serve the `live` branch;
+ * the release asset is the original. On some Wi-Fi GitHub's release-download
+ * servers crawl while the CDN is instant, so no one of them is relied on.
+ */
+const REPO = "aminoulogie/kite-bay-otter-topaz";
+const MANIFESTS = [
+  `https://cdn.jsdelivr.net/gh/${REPO}@live/live.json`,
+  `https://raw.githubusercontent.com/${REPO}/live/live.json`,
+  `https://github.com/${REPO}/releases/download/altstore/live.json`,
+];
 /** Checked at most this often when coming back to the app. */
 const EVERY_MS = 30 * 60_000;
 
@@ -99,6 +109,28 @@ export async function liveReady(): Promise<void> {
   }
 }
 
+/** Every manifest source at once, each with its own timeout; the newest that answers. */
+async function newestManifest(): Promise<LiveManifest | null> {
+  const answers = await Promise.allSettled(
+    MANIFESTS.map(async (url) => {
+      const res = await CapacitorHttp.get({
+        url: `${url}?t=${Date.now()}`,
+        headers: { "Cache-Control": "no-cache" },
+        connectTimeout: 30000,
+        readTimeout: 30000,
+      });
+      if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`);
+      return asManifest(typeof res.data === "string" ? JSON.parse(res.data) : res.data);
+    }),
+  );
+  let best: LiveManifest | null = null;
+  for (const a of answers) {
+    if (a.status !== "fulfilled" || !a.value) continue;
+    if (!best || compareVersions(a.value.version, best.version) > 0) best = a.value;
+  }
+  return best;
+}
+
 /** Look for a newer layer and download it if it fits. Returns where things stand. */
 export function checkLive(force = false): Promise<LiveStatus> {
   if (running) return running;
@@ -113,19 +145,8 @@ export function checkLive(force = false): Promise<LiveStatus> {
     if (status.state === "ready") return status;
     publish({ state: "checking" });
     try {
-      // Patient, and twice: on some Wi-Fi the route to GitHub's download
-      // servers is slow enough that fifteen seconds timed out every check.
-      const get = () =>
-        CapacitorHttp.get({
-          url: `${MANIFEST}?t=${Date.now()}`,
-          headers: { "Cache-Control": "no-cache" },
-          connectTimeout: 45000,
-          readTimeout: 45000,
-        });
-      const res = await get().catch(() => get());
-      const data = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
-      const manifest = asManifest(data);
-      if (!manifest) throw new Error("The update list could not be read.");
+      const manifest = await newestManifest();
+      if (!manifest) throw new Error("No update server answered — try mobile data.");
       const native = (await u.current()).native;
       const d: LiveDecision = decide(manifest, runningVersion(), native);
       if (d.kind === "current") {
@@ -136,7 +157,18 @@ export function checkLive(force = false): Promise<LiveStatus> {
         // Already downloaded on an earlier check: just queue it again.
         const have = (await u.list()).bundles.find((b) => b.version === d.version && b.status !== "error");
         publish({ state: "downloading", version: d.version });
-        const bundle = have ?? (await u.download({ url: d.url, version: d.version }));
+        // The first address that delivers, in the manifest's order.
+        let bundle = have;
+        let lastErr: unknown = null;
+        for (const url of have ? [] : [d.url, ...(manifest.mirrors ?? [])]) {
+          try {
+            bundle = await u.download({ url, version: d.version });
+            break;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        if (!bundle) throw lastErr instanceof Error ? lastErr : new Error("The update did not download.");
         // Applied the next time the app is opened from scratch or comes back
         // from the background — never in the middle of something.
         await u.next({ id: bundle.id });
