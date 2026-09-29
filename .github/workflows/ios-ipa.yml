@@ -265,7 +265,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           cp "$ZIP" .
-          git add "$NAME" && git commit -qm "SOMA web layer $V"
+          # The app itself rides along, so AltStore installs come off the CDN
+          # too (below) instead of GitHub's slow release downloads.
+          cp "$RUNNER_TEMP/SOMA-$V.ipa" .
+          git add "$NAME" "SOMA-$V.ipa" && git commit -qm "SOMA $V: app and web layer"
           SHA=$(git rev-parse HEAD)
           cd "$GITHUB_WORKSPACE"
 
@@ -285,6 +288,18 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           gh release upload altstore "$RUNNER_TEMP/live.json" --clobber
           curl -fsS "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@live/live.json" >/dev/null || true
+
+          # The AltStore source again, now pointing at the CDN copy of the app.
+          python3 scripts/altstore_source.py \
+            --app "$RUNNER_TEMP/Payload/App.app" \
+            --ipa "$RUNNER_TEMP/SOMA-$V.ipa" \
+            --version "$V" --build "${{ steps.ver.outputs.build }}" \
+            --download "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${SHA}/SOMA-$V.ipa" \
+            --icon "$BASE/altstore/icon.png" \
+            --previous "$RUNNER_TEMP/previous.json" \
+            --entitlements ios/App/App/App.entitlements ios/App/SomaWidgets/SomaWidgets.entitlements \
+            --out "$RUNNER_TEMP/altstore.json"
+          gh release upload altstore "$RUNNER_TEMP/altstore.json" --clobber
 
       - uses: actions/upload-artifact@v4
         with:
