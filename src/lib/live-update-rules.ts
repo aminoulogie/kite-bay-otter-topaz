@@ -17,6 +17,8 @@ export interface LiveManifest {
   url: string;
   /** The same zip elsewhere, tried in turn if the first is slow or down. */
   mirrors?: string[];
+  /** SHA-256 of the zip, hex. The updater will not download without it. */
+  checksum?: string;
   /** The oldest installed build this layer runs on. */
   nativeSince: string;
   /** When it was built, ISO. */
@@ -25,7 +27,7 @@ export interface LiveManifest {
 
 export type LiveDecision =
   | { kind: "current" }
-  | { kind: "update"; version: string; url: string }
+  | { kind: "update"; version: string; url: string; checksum: string }
   | { kind: "reinstall"; version: string; nativeSince: string };
 
 /** "0.0.150" against "0.0.99", part by part; -1, 0 or 1. Non-numbers count as 0. */
@@ -51,6 +53,7 @@ export function asManifest(raw: unknown): LiveManifest | null {
     version: r.version,
     url: r.url,
     mirrors,
+    checksum: typeof r.checksum === "string" && /^[0-9a-f]{64}$/i.test(r.checksum) ? r.checksum.toLowerCase() : undefined,
     nativeSince: r.nativeSince,
     date: typeof r.date === "string" ? r.date : undefined,
   };
@@ -62,8 +65,10 @@ export function asManifest(raw: unknown): LiveManifest | null {
  */
 export function decide(manifest: LiveManifest, running: string, native: string): LiveDecision {
   if (compareVersions(manifest.version, running) <= 0) return { kind: "current" };
+  // Without a checksum the updater refuses the download; nothing to offer.
+  if (!manifest.checksum) return { kind: "current" };
   if (compareVersions(native, manifest.nativeSince) < 0) {
     return { kind: "reinstall", version: manifest.version, nativeSince: manifest.nativeSince };
   }
-  return { kind: "update", version: manifest.version, url: manifest.url };
+  return { kind: "update", version: manifest.version, url: manifest.url, checksum: manifest.checksum };
 }

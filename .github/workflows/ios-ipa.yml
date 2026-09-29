@@ -271,6 +271,7 @@ jobs:
 
           python3 scripts/live_manifest.py \
             --version "$V" \
+            --zip "$ZIP" \
             --url "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${SHA}/$NAME" \
             --mirror "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${SHA}/$NAME" \
             --mirror "$BASE/ios-v$V/$NAME" \

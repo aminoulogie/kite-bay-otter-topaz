@@ -49,11 +49,20 @@ def native_fingerprint(root: str) -> str:
     return h.hexdigest()
 
 
+def zip_checksum(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--version", required=True)
     ap.add_argument("--url", required=True, help="the web layer zip's public URL")
     ap.add_argument("--mirror", action="append", default=[], help="another URL for the same zip; tried in turn")
+    ap.add_argument("--zip", required=True, help="the web layer zip itself, for its checksum")
     ap.add_argument("--previous", help="live.json as last published, if any")
     ap.add_argument("--root", default=".")
     ap.add_argument("--out", required=True)
@@ -74,6 +83,8 @@ def main() -> None:
         "version": a.version,
         "url": a.url,
         "mirrors": a.mirror,
+        # The updater refuses a download without one: SHA-256 of the zip, hex.
+        "checksum": zip_checksum(a.zip),
         "nativeSince": since,
         "nativeHash": fingerprint,
         "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

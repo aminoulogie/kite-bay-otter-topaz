@@ -1043,7 +1043,12 @@ export function SettingsView() {
             ) : (
               <button
                 type="button"
-                onClick={() => void checkLive(true)}
+                onClick={() => {
+                  // The line is cut short on a phone; the whole message goes
+                  // in a toast so an error can actually be read.
+                  if (live.state === "error") toast.error(live.message, { duration: 12000 });
+                  void checkLive(true);
+                }}
                 className={cn(
                   "truncate font-bold",
                   live.state === "reinstall" || live.state === "error" ? "text-warn" : "text-emerald-400",

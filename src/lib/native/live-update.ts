@@ -162,7 +162,7 @@ export function checkLive(force = false): Promise<LiveStatus> {
         let lastErr: unknown = null;
         for (const url of have ? [] : [d.url, ...(manifest.mirrors ?? [])]) {
           try {
-            bundle = await u.download({ url, version: d.version });
+            bundle = await u.download({ url, version: d.version, checksum: d.checksum });
             break;
           } catch (err) {
             lastErr = err;
