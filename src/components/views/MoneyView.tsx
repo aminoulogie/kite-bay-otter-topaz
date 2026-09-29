@@ -236,7 +236,7 @@ function SpendingView() {
 
       <GroceryCard key="grocery" money={money} />
 
-      <PantryCard />
+      <PantryCard key="pantry" />
 
       <Sized key="add" glance={{ label: "Add an entry", short: "Add", icon: Plus, empty: "Tap to log a spend or income", emptyShort: "Add" }}>
       <Card>
