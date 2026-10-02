@@ -37,7 +37,7 @@ export function HealthCard() {
   // SOMA writes its own logged sleep to Health, so Health can hand it back.
   // Said plainly, so a night SOMA sent is not mistaken for one Health measured.
   const synced = useSoma((s) => s.settings.healthSynced?.[`sleep:${getLocalDateKey(new Date())}`]);
-  const sleepFromSoma = sleep != null && synced != null && Math.abs(Number(synced) - sleep) < 0.15;
+  const sleepFromSoma = sleep != null && synced != null && Math.abs(parseFloat(synced) - sleep) < 0.15;
   const hr = day?.restingHR != null ? Math.round(day.restingHR) : null;
 
   const rows = [

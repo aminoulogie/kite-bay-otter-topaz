@@ -208,6 +208,9 @@ export interface FoodItem {
 
 export interface SleepLog {
   hours: number;
+  /** When the night started and ended (ms), if it was clocked rather than typed. */
+  start?: number;
+  end?: number;
   /**
    * 1-5, and genuinely optional.
    *
@@ -378,6 +381,8 @@ export interface Settings {
   moneyHidden?: boolean;
   /** Two-way Apple Health sync, switched on by connecting. */
   healthSync?: boolean;
+  /** "Going to sleep" was tapped at this moment (ms) and "I'm up" not yet. */
+  sleepStart?: number;
   /**
    * What was last sent to (or taken from) Health, per item —
    * "workout:2026-10-02" → a signature of the session. A change in the

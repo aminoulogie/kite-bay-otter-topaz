@@ -52,10 +52,14 @@ export function planHealthSync(input: {
     const hours = d.sleep?.hours;
     if (hours && hours > 0 && hours < 20) {
       const key = `sleep:${date}`;
-      const sig = String(hours);
+      // A clocked night carries its real times; a typed one is filed as
+      // ending at WAKE_HOUR.
+      const clocked = d.sleep?.start && d.sleep?.end ? { start: d.sleep.start, end: d.sleep.end } : null;
+      const sig = clocked ? `${hours}@${clocked.start}` : String(hours);
       if (input.synced[key] !== sig) {
-        const end = at(date, WAKE_HOUR);
-        out.push({ key, sig, kind: "sleep", id: `soma-sleep-${date}`, start: end - hours * 3_600_000, end });
+        const end = clocked?.end ?? at(date, WAKE_HOUR);
+        const start = clocked?.start ?? end - hours * 3_600_000;
+        out.push({ key, sig, kind: "sleep", id: `soma-sleep-${date}`, start, end });
       }
     }
     const kg = d.bodyWeight;

@@ -9,6 +9,7 @@ import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
 import { CheckInButton } from "@/components/EveningCheckIn";
 import { HealthCard } from "@/components/HealthCard";
+import { SleepClockButton } from "@/components/SleepClockButton";
 import { HabitRings } from "@/components/HabitRings";
 import { ActivityRings } from "@/components/ActivityRings";
 import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
@@ -246,6 +247,7 @@ export function DashboardView() {
     <>
     {/* Above the grid rather than a widget in it: a new widget joins a saved
         layout at the very end, where an evening prompt would never be seen. */}
+    <SleepClockButton />
     <CheckInButton isTrainingDay={trainingDay} score={score} lines={lines} />
     <WidgetGrid tab="dashboard">
       {/* Not wrapped in a div: the grid stretches a widget's own root to fill

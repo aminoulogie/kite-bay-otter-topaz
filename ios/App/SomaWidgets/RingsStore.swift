@@ -101,3 +101,67 @@ struct RingsSnapshot: Codable {
     let rings: [Ring]
     let week: [Day]
 }
+
+/**
+ * The sleep clock: "going to sleep" and "I'm up", tapped on the widget or in
+ * the app, kept in the shared container so both sides see the same state.
+ *
+ * The widget cannot reach SOMA's data (it lives in the web view), so a tap
+ * there only records the moment. The app takes the recorded taps the next
+ * time it opens and turns them into a logged night.
+ */
+enum SleepStore {
+    private static let fileName = "sleep.json"
+
+    struct Event: Codable {
+        /// "sleep" or "wake".
+        let kind: String
+        /// Milliseconds since 1970, the same clock JavaScript uses.
+        let at: Double
+    }
+
+    struct State: Codable {
+        /// When the current night started, or nil while awake.
+        var asleepSince: Double?
+        /// Taps the app has not taken yet.
+        var events: [Event]
+    }
+
+    private static var fileURL: URL? {
+        guard let id = RingsStore.groupID,
+              let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id)
+        else { return nil }
+        return dir.appendingPathComponent(fileName)
+    }
+
+    static func read() -> State {
+        guard let url = fileURL, let data = try? Data(contentsOf: url),
+              let state = try? JSONDecoder().decode(State.self, from: data)
+        else { return State(asleepSince: nil, events: []) }
+        return state
+    }
+
+    @discardableResult
+    static func write(_ state: State) -> Bool {
+        guard let url = fileURL, let data = try? JSONEncoder().encode(state) else { return false }
+        return (try? data.write(to: url, options: .atomic)) != nil
+    }
+
+    static func nowMs() -> Double { Date().timeIntervalSince1970 * 1000 }
+
+    /// The widget's one button: asleep if awake, awake if asleep.
+    @discardableResult
+    static func toggle() -> State {
+        var s = read()
+        let now = nowMs()
+        if s.asleepSince == nil {
+            s.asleepSince = now
+            s.events.append(Event(kind: "sleep", at: now))
+        } else {
+            s.asleepSince = nil
+            s.events.append(Event(kind: "wake", at: now))
+        }
+        write(s)
+        return s
+    }
+}

@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -303,10 +304,124 @@ struct RingsWidget: Widget {
     }
 }
 
+// MARK: - Sleep clock
+
+/// The widget's button. Runs in the widget itself — the app does not open.
+struct ToggleSleepIntent: AppIntent {
+    static var title: LocalizedStringResource = "Going to sleep / I'm up"
+    static var description = IntentDescription("Starts or ends tonight's sleep in SOMA.")
+
+    func perform() async throws -> some IntentResult {
+        SleepStore.toggle()
+        return .result()
+    }
+}
+
+struct SleepEntry: TimelineEntry {
+    let date: Date
+    let asleepSince: Date?
+}
+
+struct SleepProvider: TimelineProvider {
+    private func entry() -> SleepEntry {
+        let s = SleepStore.read()
+        return SleepEntry(date: Date(), asleepSince: s.asleepSince.map { Date(timeIntervalSince1970: $0 / 1000) })
+    }
+    func placeholder(in context: Context) -> SleepEntry { SleepEntry(date: Date(), asleepSince: nil) }
+    func getSnapshot(in context: Context, completion: @escaping (SleepEntry) -> Void) { completion(entry()) }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<SleepEntry>) -> Void) {
+        // Redrawn when the button is pressed or the app changes the state.
+        completion(Timeline(entries: [entry()], policy: .never))
+    }
+}
+
+struct SleepWidgetView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: SleepEntry
+
+    private var asleep: Bool { entry.asleepSince != nil }
+    private var icon: String { asleep ? "sun.max.fill" : "moon.zzz.fill" }
+    private var action: String { asleep ? "I'm up" : "Going to sleep" }
+    private var tint: Color { asleep ? Color(red: 1, green: 0.8, blue: 0.3) : Color(red: 0.55, green: 0.52, blue: 1) }
+
+    var body: some View {
+        switch family {
+        case .accessoryCircular:
+            Button(intent: ToggleSleepIntent()) {
+                ZStack {
+                    AccessoryWidgetBackground()
+                    Image(systemName: icon).font(.title2)
+                }
+            }
+            .buttonStyle(.plain)
+        case .accessoryRectangular:
+            Button(intent: ToggleSleepIntent()) {
+                HStack(spacing: 6) {
+                    Image(systemName: icon).font(.title3)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(action).font(.headline)
+                        if let since = entry.asleepSince {
+                            Text("since \(since, style: .time)").font(.caption)
+                        } else {
+                            Text("tap at bedtime").font(.caption)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+        default:
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: asleep ? "moon.fill" : "bed.double.fill").foregroundColor(tint)
+                    Text("Sleep").font(.caption.bold()).foregroundColor(.gray)
+                    Spacer()
+                }
+                if let since = entry.asleepSince {
+                    Text("Asleep since").font(.caption2).foregroundColor(.gray)
+                    Text(since, style: .time).font(.title3.bold()).foregroundColor(.white)
+                    Text(since, style: .relative).font(.caption2).foregroundColor(.gray)
+                } else {
+                    Text("Tap when you go to bed, and again when you wake up.")
+                        .font(.caption2).foregroundColor(.gray)
+                }
+                Spacer(minLength: 0)
+                Button(intent: ToggleSleepIntent()) {
+                    HStack {
+                        Image(systemName: icon)
+                        Text(action).font(.caption.bold())
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(tint.opacity(0.25))
+                    .foregroundColor(tint)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+struct SleepWidget: Widget {
+    let kind = "SomaSleep"
+
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: SleepProvider()) { entry in
+            SleepWidgetView(entry: entry)
+                .containerBackground(for: .widget) { Color.black }
+        }
+        .configurationDisplayName("Sleep")
+        .description("Tap at bedtime and when you wake. SOMA logs the night.")
+        .supportedFamilies([.systemSmall, .accessoryCircular, .accessoryRectangular])
+    }
+}
+
 @main
 struct SomaWidgetsBundle: WidgetBundle {
     var body: some Widget {
         RingsWidget()
+        SleepWidget()
         RoutineLiveActivity()
     }
 }

@@ -20,7 +20,30 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "setRings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "takeSleep", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setSleep", returnType: CAPPluginReturnPromise),
     ]
+
+    /// The sleep widget's taps since the app last looked, and its state.
+    /// The taps are cleared as they are handed over, so each is logged once.
+    @objc func takeSleep(_ call: CAPPluginCall) {
+        var s = SleepStore.read()
+        let events = s.events.map { ["kind": $0.kind, "at": $0.at] as [String: Any] }
+        s.events = []
+        SleepStore.write(s)
+        var out: [String: Any] = ["events": events]
+        if let since = s.asleepSince { out["asleepSince"] = since }
+        call.resolve(out)
+    }
+
+    /// The app pressed the button itself: tell the widget, so both agree.
+    @objc func setSleep(_ call: CAPPluginCall) {
+        var s = SleepStore.read()
+        s.asleepSince = call.getDouble("asleepSince")
+        SleepStore.write(s)
+        WidgetCenter.shared.reloadTimelines(ofKind: "SomaSleep")
+        call.resolve(["ok": true])
+    }
 
     /// Whether the widget can be reached at all, and through which group —
     /// shown in Setup → About, so a failed install says so plainly.
