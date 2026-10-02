@@ -587,12 +587,54 @@ const somaStorage: PersistStorage<unknown> = {
     }
   },
   setItem: (_name, value) => {
-    localStorage.setItem(PERSIST_KEY, JSON.stringify(value));
+    pendingSave = value;
+    if (saveTimer === null) saveTimer = setTimeout(flushSave, SAVE_EVERY_MS);
   },
   removeItem: () => {
+    pendingSave = null;
+    if (saveTimer !== null) clearTimeout(saveTimer);
+    saveTimer = null;
     localStorage.removeItem(PERSIST_KEY);
   },
 };
+
+/**
+ * Saving, batched.
+ *
+ * Every change to the store used to re-encode the WHOLE of it — months of
+ * history, every food day, every scan — and write it to localStorage before
+ * the screen could update. A keystroke in a set's weight field is a change to
+ * the store, so typing paid for that full encode on every letter, and paid
+ * more the longer the app had been used. That was the lag in every field.
+ *
+ * Now the latest state is held and written once things go quiet for a
+ * moment. The moment the app is hidden — switched away from, locked, closed —
+ * whatever is pending is written at once, so nothing typed can be lost to the
+ * delay.
+ */
+const SAVE_EVERY_MS = 300;
+let pendingSave: unknown = null;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function flushSave(): void {
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = null;
+  if (pendingSave === null) return;
+  const value = pendingSave;
+  pendingSave = null;
+  try {
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(value));
+  } catch {
+    // Full or blocked: the same outcome the direct write had.
+  }
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushSave);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushSave();
+  });
+}
+/** Write any pending save now — before a backup is read, for one. */
+export const flushStore = flushSave;
 
 export const useSoma = create<SomaStore>()(
   persist(

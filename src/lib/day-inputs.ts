@@ -64,10 +64,15 @@ export interface BuildDayInputsArgs {
   phase?: Phase;
   /** Every habit, for the day's weighted habit score. */
   habits?: Habit[];
+  /** True when the programme had this day down for training. */
+  isTrainingDay?: boolean;
+  /** The first day any workout was logged — skips before it are not counted. */
+  firstSession?: string | null;
 }
 
 export function buildDayInputs({
   date, session, previous, nutrition, isRestDay, bodyweightKg = 0, hunger, phase, habits,
+  isTrainingDay, firstSession,
 }: BuildDayInputsArgs): DayInputs {
   const hs = habits ? habitDayScore(habits, date) : null;
   const day = nutrition[date];
@@ -78,6 +83,7 @@ export function buildDayInputs({
     session,
     previous,
     isRestDay,
+    missedWorkout: !session && !isRestDay && !!isTrainingDay && !!firstSession && date >= firstSession,
     protein:
       logged && day?.goals?.protein ? { grams: totals.p, target: day.goals.protein } : null,
     calories: logged && day?.goals?.cals ? { kcal: totals.cals, target: day.goals.cals } : null,

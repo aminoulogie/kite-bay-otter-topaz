@@ -115,3 +115,11 @@ test("progression rewards holding or beating the last session", () => {
       worse.lines.find((l) => l.id === "progression")!.earned!,
   );
 });
+
+test("a skipped planned training day scores the workout 0, a rest day leaves it out", () => {
+  const skipped = scoreDay({ missedWorkout: true, sleepHours: 8 });
+  assert.equal(skipped.lines.find((l) => l.id === "workout")?.earned, 0);
+  assert.equal(skipped.tracked, 40 + 13);
+  const rest = scoreDay({ missedWorkout: true, isRestDay: true, sleepHours: 8 });
+  assert.equal(rest.lines.find((l) => l.id === "workout")?.earned, null);
+});

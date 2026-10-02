@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Camera, Trash2 } from "lucide-react";
+import { Camera, ChevronDown, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { parseDecimal } from "@/components/ui/decimal-input";
 import { MoneySheet, MoneyTile } from "@/components/money/money-ui";
@@ -187,18 +187,22 @@ export function EntrySheet({
         className="mb-4 h-11 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm outline-none"
       />
 
-      <div className="mb-4 grid grid-cols-2 gap-2">
-        <div>
+      {/* One per row: iOS gives a date field a fixed minimum width, and two
+          side by side on a phone ran into each other. */}
+      <div className="mb-4 space-y-3">
+        <div className="min-w-0">
           <Label>Date</Label>
           <input
             type="date"
             value={date}
             onChange={(e) => e.target.value && setDate(e.target.value)}
-            className="h-11 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm outline-none"
+            className="block h-11 w-full min-w-0 appearance-none rounded-xl border border-border bg-surface-2 px-3 text-left text-sm outline-none"
           />
         </div>
-        <div>
+        <div className="min-w-0">
           <Label>Account</Label>
+          <div className="relative">
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
           <select
             value={accountId}
             onChange={(e) => {
@@ -206,7 +210,7 @@ export function EntrySheet({
               const a = accounts.find((x) => x.id === e.target.value);
               if (a && !entry) setCurrency(a.currency);
             }}
-            className="h-11 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm outline-none"
+            className="block h-11 w-full min-w-0 appearance-none rounded-xl border border-border bg-surface-2 px-3 text-sm outline-none"
           >
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
@@ -214,6 +218,7 @@ export function EntrySheet({
               </option>
             ))}
           </select>
+          </div>
         </div>
       </div>
 

@@ -74,6 +74,22 @@ export function useKeyboardInset(): void {
       const el = document.activeElement;
       if (!isField(el)) return;
       const rect = el.getBoundingClientRect();
+      // Inside a sheet: put the field in the MIDDLE of what is visible of the
+      // sheet, not merely clear of the keys. A field revealed by the minimum
+      // sat jammed against the keyboard or the sheet's top edge, with the
+      // labels and buttons around it cut off.
+      const sheet = el.closest<HTMLElement>(".soma-expand");
+      if (sheet && sheet.scrollHeight > sheet.clientHeight + 4) {
+        const box = sheet.getBoundingClientRect();
+        const bottom = Math.min(box.bottom, keyboardTopFrom(viewport, window.innerHeight));
+        const mid = (Math.max(box.top, 0) + bottom) / 2;
+        const delta = (rect.top + rect.bottom) / 2 - mid;
+        if (Math.abs(delta) > 12) {
+          const smooth = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+          sheet.scrollBy({ top: delta, behavior: smooth ? "smooth" : "auto" });
+        }
+        return;
+      }
       const lift = liftFor(
         rect.top,
         rect.bottom,

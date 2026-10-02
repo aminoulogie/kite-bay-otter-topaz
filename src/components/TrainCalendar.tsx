@@ -116,6 +116,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
    * Future days are skipped — a day that has not happened cannot be scored,
    * and showing 0 for tomorrow would read as a failure rather than as nothing.
    */
+  const firstSession = useMemo(() => Object.keys(history).sort()[0] ?? null, [history]);
   const scores = useMemo(() => {
     const out = new Map<string, number>();
     for (const date of cells) {
@@ -135,6 +136,8 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           // A rest day with no session is not a missed workout. Without this
           // every programmed rest day scored as a failure to train.
           isRestDay: !session && (!!restDays[date] || projected.isRest || isRestSplit(projected.split)),
+          isTrainingDay: !projected.isRest && !isRestSplit(projected.split),
+          firstSession,
           bodyweightKg: bodyweightOn(nutrition, date),
         hunger,
         phase: settings.phase,
@@ -145,7 +148,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
       if (s.tracked > 0) out.set(date, s.score);
     }
     return out;
-  }, [cells, sessionsByDate, nutrition, today, history, settings.scheduleOverrides, program, restDays, habits]);
+  }, [cells, sessionsByDate, nutrition, today, history, settings.scheduleOverrides, program, restDays, habits, firstSession]);
 
   const shift = (delta: number) =>
     setCursor((c) => {
@@ -365,6 +368,15 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
               ).split,
             ))
           }
+          isTrainingDay={(() => {
+            const p = SomaIntelligenceEngine.getProgramProjectedDay(
+              new Date(selected + "T12:00:00"),
+              settings.scheduleOverrides,
+              program,
+            );
+            return !p.isRest && !isRestSplit(p.split);
+          })()}
+          firstSession={firstSession}
           nutrition={nutrition}
           onBackToToday={() => setSelected(today)}
           onMoved={(to) => setSelected(to)}
@@ -482,13 +494,15 @@ function DayEverything({ date, input }: { date: string; input: DayMarksInput }) 
 }
 
 function DayCard({
-  date, isToday, session, previous, isRestDay, nutrition, onBackToToday, onMoved, onClosePanel,
+  date, isToday, session, previous, isRestDay, isTrainingDay, firstSession, nutrition, onBackToToday, onMoved, onClosePanel,
 }: {
   date: string;
   isToday: boolean;
   session: HistorySession | null;
   previous: HistorySession | null;
   isRestDay: boolean;
+  isTrainingDay: boolean;
+  firstSession: string | null;
   nutrition: Record<string, NutritionDay>;
   onBackToToday: () => void;
   onMoved: (to: string) => void;
@@ -544,13 +558,15 @@ function DayCard({
           previous,
           nutrition,
           isRestDay,
+          isTrainingDay,
+          firstSession,
           bodyweightKg: bodyweightOn(nutrition, date),
           hunger,
           phase: settings.phase,
         habits,
         }),
       ),
-    [date, session, previous, nutrition, isRestDay, hunger, settings.phase, habits],
+    [date, session, previous, nutrition, isRestDay, isTrainingDay, firstSession, hunger, settings.phase, habits],
   );
 
   return (

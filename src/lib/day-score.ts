@@ -68,6 +68,11 @@ export interface DayInputs {
   /** A rest day is not a missed workout, so the workout share is not counted. */
   isRestDay?: boolean;
   /**
+   * A planned training day with no session and no saved rest: the workout is
+   * scored 0 rather than left out, so skipping costs what it should.
+   */
+  missedWorkout?: boolean;
+  /**
    * How well the pre-workout window was fuelled, 0-1, or null when nothing was
    * logged under it. Null on a rest day too — there was no session to fuel.
    */
@@ -103,6 +108,17 @@ function ratio(actual: number, target: number): number {
 function workoutLines(inp: DayInputs): ScoreLine[] {
   const s = inp.session;
   if (!s) {
+    if (inp.missedWorkout && !inp.isRestDay) {
+      return [
+        {
+          id: "workout",
+          label: "Workout",
+          earned: 0,
+          possible: SCORE_WEIGHTS.workout,
+          detail: "skipped — a planned training day",
+        },
+      ];
+    }
     return [
       {
         id: "workout",

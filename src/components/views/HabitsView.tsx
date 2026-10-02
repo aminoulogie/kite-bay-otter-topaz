@@ -21,6 +21,7 @@ import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { useSoma } from "@/lib/store";
+import { tapLight, tapMedium } from "@/lib/haptics";
 import { COEF_LABELS, KEEP_AT, coefOf, habitConsistency, habitDayScore, habitStreak, type HabitDayScore } from "@/lib/habit-score";
 import { cn } from "@/lib/utils";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
@@ -41,7 +42,6 @@ export function HabitsView() {
   const activeDate = useSoma((s) => s.activeDate);
 
   const [tab, setTab] = useState<HabitTab>("today");
-  const [name, setName] = useState("");
   const doneToday = habits.filter((h) => h.history[activeDate]).length;
   const habitLines = habits.map((h) => ({ text: h.name, done: !!h.history[activeDate], color: h.color }));
   const today = getLocalDateKey(new Date());
@@ -131,23 +131,7 @@ export function HabitsView() {
       <Sized key="new" glance={{ label: "New habit", short: "New", empty: "Tap to add a habit", emptyShort: "Add" }}>
       <Card>
         <CardTitle>New habit</CardTitle>
-        <div className="flex gap-2">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Walk 8k steps"
-          />
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (!name.trim()) return;
-              addHabit({ name: name.trim(), desc: "", color: "#d3fd50", goalDaysPerWeek: 7 });
-              setName("");
-            }}
-          >
-            Add
-          </Button>
-        </div>
+        <NewHabitField onAdd={(n) => addHabit({ name: n, desc: "", color: "#d3fd50", goalDaysPerWeek: 7 })} />
         {/* The two checklists everyone writes out by hand, and both are exactly
             what steps are for. One tap rather than six. */}
         <div className="mt-3 flex flex-wrap gap-1.5">
@@ -417,7 +401,11 @@ function TodayPanel() {
                 <button
                   type="button"
                   disabled={!canChange(done, activeDate)}
-                  onClick={() => toggleHabit(h.id)}
+                  onClick={() => {
+                    toggleHabit(h.id);
+                    if (!done) tapMedium();
+                    else tapLight();
+                  }}
                   className={cn(
                     "flex size-11 items-center justify-center rounded-full border transition-transform active:scale-90 disabled:opacity-40",
                     done
@@ -670,4 +658,30 @@ function needFor(day: HabitDayScore): string {
     names.push(r.name);
   }
   return names.join(", ");
+}
+
+/**
+ * The name box, with its own state. Held up in HabitsView it redrew every
+ * habit card and heatmap on each letter typed.
+ */
+function NewHabitField({ onAdd }: { onAdd: (name: string) => void }) {
+  const [name, setName] = useState("");
+  const add = () => {
+    if (!name.trim()) return;
+    onAdd(name.trim());
+    setName("");
+  };
+  return (
+    <div className="flex gap-2">
+      <Input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && add()}
+        placeholder="e.g. Walk 8k steps"
+      />
+      <Button variant="primary" onClick={add}>
+        Add
+      </Button>
+    </div>
+  );
 }

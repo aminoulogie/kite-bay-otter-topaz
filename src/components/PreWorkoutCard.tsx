@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { PortionSheet } from "@/components/PortionSheet";
 import {
@@ -23,7 +23,11 @@ import { useWidgetSize } from "@/components/WidgetGrid";
  * Targets scale with bodyweight, because a fixed gram figure is wrong for
  * everyone except whoever it was written for.
  */
-export function PreWorkoutCard() {
+/**
+ * Memoised: it sits on the Fuel page beside the food search, and without
+ * this every letter typed there redrew it too.
+ */
+export const PreWorkoutCard = memo(function PreWorkoutCard() {
   const nutrition = useSoma((s) => s.nutrition);
   const activeDate = useSoma((s) => s.activeDate);
   const customFoods = useSoma((s) => s.customFoods);
@@ -218,7 +222,7 @@ export function PreWorkoutCard() {
       )}
     </Card>
   );
-}
+});
 
 /**
  * A target as a bar rather than a pair of numbers.

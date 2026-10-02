@@ -16,8 +16,9 @@ import { ratingTone } from "@/lib/stimulus";
 import { scoreDay } from "@/lib/day-score";
 import { MIN_PAIRS, shortfall, strongestFinding, type Series } from "@/lib/correlate";
 import { totalWaterMl } from "@/lib/hydration";
-import { getLocalDateKey } from "@/lib/soma";
-import { useSoma } from "@/lib/store";
+import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
+import { useActiveProgram, useSoma } from "@/lib/store";
+import { isRestSplit } from "@/lib/programs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -124,9 +125,17 @@ export function DashboardView() {
   const settings = useSoma((s) => s.settings);
   const restDays = useSoma((s) => s.restDays);
   const habits = useSoma((s) => s.habits);
+  const program = useActiveProgram();
 
   const today = getLocalDateKey(new Date());
   const date = activeDate || today;
+
+  const projected = SomaIntelligenceEngine.getProgramProjectedDay(
+    new Date(date + "T12:00:00"),
+    settings.scheduleOverrides,
+    program,
+  );
+  const trainingDay = !projected.isRest && !isRestSplit(projected.split);
 
   const { score, lines } = useMemo(() => {
     return scoreDay(
@@ -135,15 +144,18 @@ export function DashboardView() {
         session: history[date] ?? null,
         previous: previousSameSplit(history, date),
         nutrition,
-        // A rest day you saved is rest, not a missed workout.
-        isRestDay: !history[date] && !!restDays[date],
+        // A rest day you saved, or one the programme planned, is rest — not
+        // a missed workout. A planned training day with nothing logged is.
+        isRestDay: !history[date] && (!!restDays[date] || !trainingDay),
+        isTrainingDay: trainingDay,
+        firstSession: Object.keys(history).sort()[0] ?? null,
         bodyweightKg: bodyweightOn(nutrition, date),
         hunger,
         phase: settings.phase,
         habits,
       }),
     );
-  }, [history, nutrition, date, hunger, settings.phase, restDays, habits]);
+  }, [history, nutrition, date, hunger, settings.phase, restDays, habits, trainingDay]);
 
   /**
    * The five things worth comparing, each as a date-keyed series.

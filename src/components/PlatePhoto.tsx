@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Camera, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -24,7 +24,11 @@ const PLATE_ID = "plate";
  * them, and it reuses the photo store the habits and measurements already use
  * — which means it is in the backup from the day it ships.
  */
-export function PlatePhoto({ date }: { date: string }) {
+/**
+ * Memoised: it sits on the Fuel page beside the food search, and without
+ * this every letter typed there redrew it too.
+ */
+export const PlatePhoto = memo(function PlatePhoto({ date }: { date: string }) {
   const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -134,4 +138,4 @@ export function PlatePhoto({ date }: { date: string }) {
       )}
     </Card>
   );
-}
+});

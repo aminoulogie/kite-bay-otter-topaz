@@ -36,7 +36,29 @@ export function useLiquidGlass() {
     if (typeof window === "undefined") return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-    const root = document.documentElement;
+    // Written on the backdrop itself, NOT the root. A custom property on
+    // <html> is inherited by every element in the app, so each write made the
+    // browser restyle all ~2,300 of them — every frame the phone moved, which
+    // in a hand is always. That was the lag in typing, scrolling, everything.
+    // Only .soma-ambient reads these, so only it gets them.
+    let layers: HTMLElement[] = [];
+    const targets = () => {
+      if (!layers.length || !layers[0]!.isConnected) {
+        layers = Array.from(document.querySelectorAll<HTMLElement>(".soma-ambient"));
+      }
+      return layers;
+    };
+    let lastTx = "";
+    let lastTy = "";
+    const write = (tx: string, ty: string) => {
+      if (tx === lastTx && ty === lastTy) return;
+      lastTx = tx;
+      lastTy = ty;
+      for (const el of targets()) {
+        el.style.setProperty("--glass-tx", tx);
+        el.style.setProperty("--glass-ty", ty);
+      }
+    };
     let targetX = 0;
     let targetY = 0;
     let x = 0;
@@ -51,8 +73,7 @@ export function useLiquidGlass() {
       x += (targetX - x) * 0.09;
       y += (targetY - y) * 0.09;
       const settled = Math.abs(targetX - x) < 0.001 && Math.abs(targetY - y) < 0.001;
-      root.style.setProperty("--glass-tx", (settled ? targetX : x).toFixed(3));
-      root.style.setProperty("--glass-ty", (settled ? targetY : y).toFixed(3));
+      write((settled ? targetX : x).toFixed(2), (settled ? targetY : y).toFixed(2));
       if (settled) {
         running = false;
       } else {
@@ -61,8 +82,12 @@ export function useLiquidGlass() {
     };
 
     const aim = (nx: number, ny: number) => {
-      targetX = clamp(nx, -1, 1);
-      targetY = clamp(ny, -1, 1);
+      const tx = clamp(nx, -1, 1);
+      const ty = clamp(ny, -1, 1);
+      // A hand is never still: without a dead band the loop never parked.
+      if (Math.abs(tx - targetX) < 0.02 && Math.abs(ty - targetY) < 0.02) return;
+      targetX = tx;
+      targetY = ty;
       if (!running) {
         running = true;
         raf = requestAnimationFrame(frame);
@@ -134,8 +159,10 @@ export function useLiquidGlass() {
       window.removeEventListener("pointerout", onPointerOut);
       window.removeEventListener("deviceorientation", onOrientation);
       cancelAnimationFrame(raf);
-      root.style.removeProperty("--glass-tx");
-      root.style.removeProperty("--glass-ty");
+      for (const el of targets()) {
+        el.style.removeProperty("--glass-tx");
+        el.style.removeProperty("--glass-ty");
+      }
     };
   }, []);
 }

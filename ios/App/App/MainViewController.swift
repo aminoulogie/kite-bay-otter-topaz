@@ -1,6 +1,7 @@
 import AudioToolbox
 import AVFoundation
 import Capacitor
+import CoreHaptics
 import UIKit
 import WebKit
 
@@ -75,7 +76,61 @@ public class TickPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "tick", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "prepare", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "diagnose", returnType: CAPPluginReturnPromise),
     ]
+
+    /**
+     * Core Haptics: the engine games use, a different road to the Taptic
+     * Engine from UIFeedbackGenerator. Kept and restarted rather than built
+     * per tap, which is what makes a quick run of ticks come out at all.
+     */
+    private var engine: CHHapticEngine?
+    private var engineError = ""
+
+    private func coreTap(_ intensity: Float, _ sharpness: Float) throws {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else {
+            throw NSError(domain: "Tick", code: 1, userInfo: [NSLocalizedDescriptionKey: "This iPhone reports no haptics hardware"])
+        }
+        if engine == nil {
+            let e = try CHHapticEngine()
+            e.playsHapticsOnly = true
+            e.isAutoShutdownEnabled = true
+            e.resetHandler = { [weak self] in
+                _ = try? self?.engine?.start()
+            }
+            e.stoppedHandler = { [weak self] reason in
+                self?.engineError = "stopped (\(reason.rawValue))"
+            }
+            engine = e
+        }
+        try engine?.start()
+        let event = CHHapticEvent(
+            eventType: .hapticTransient,
+            parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness),
+            ],
+            relativeTime: 0
+        )
+        let pattern = try CHHapticPattern(events: [event], parameters: [])
+        try engine?.makePlayer(with: pattern).start(atTime: CHHapticTimeImmediate)
+    }
+
+    /** What this phone says about haptics, for the Settings diagnosis. */
+    @objc func diagnose(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let session = AVAudioSession.sharedInstance()
+            call.resolve([
+                "supportsHaptics": CHHapticEngine.capabilitiesForHardware().supportsHaptics,
+                "lowPower": ProcessInfo.processInfo.isLowPowerModeEnabled,
+                "category": session.category.rawValue,
+                "otherAudio": session.isOtherAudioPlaying,
+                "hapticsDuringRecording": session.allowHapticsAndSystemSoundsDuringRecording,
+                "engineError": self.engineError,
+                "ios": UIDevice.current.systemVersion,
+            ])
+        }
+    }
 
     private lazy var light = UIImpactFeedbackGenerator(style: .light)
     private lazy var medium = UIImpactFeedbackGenerator(style: .medium)
@@ -91,8 +146,29 @@ public class TickPlugin: CAPPlugin, CAPBridgedPlugin {
 
     @objc func tick(_ call: CAPPluginCall) {
         let style = call.getString("style") ?? "light"
+        let intensity = Float(call.getDouble("intensity") ?? 0.7)
+        if style == "core" {
+            DispatchQueue.main.async {
+                do {
+                    try self.coreTap(intensity, 0.55)
+                    call.resolve()
+                } catch {
+                    self.engineError = error.localizedDescription
+                    call.reject(error.localizedDescription)
+                }
+            }
+            return
+        }
         DispatchQueue.main.async {
             switch style {
+            case "vibrate":
+                // The full, old-style vibration. Not a tap — about half a
+                // second — so it is kept for alarms and confirmations. It
+                // goes through the ring/silent vibration settings rather than
+                // System Haptics.
+                AudioServicesPlayAlertSound(SystemSoundID(kSystemSoundID_Vibrate))
+            case "system-strong":
+                AudioServicesPlaySystemSound(1520)
             case "selection":
                 self.selection.selectionChanged()
                 self.selection.prepare()

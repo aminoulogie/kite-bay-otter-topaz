@@ -34,7 +34,7 @@ import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
 import { widgetStatus } from "@/lib/native/widget-bridge";
-import { testHaptics, tickWay } from "@/lib/haptics";
+import { ALL_WAYS, WAY_NAMES, diagnoseHaptics, testHaptics, tickWay } from "@/lib/haptics";
 import { lockScreenStatus, type LockScreenStatus } from "@/lib/native/routine-activity";
 import {
   applyLiveNow, checkLive, liveStatus, nativeVersion, onLiveStatus, type LiveStatus,
@@ -1165,8 +1165,8 @@ export function SettingsView() {
             />
             <div className="mt-1 flex items-center justify-between gap-3 text-xs">
               <span className="shrink-0 text-muted">Vibration test</span>
-              <span className="flex gap-1.5">
-                {(["tick", "plugin", "system"] as const).map((w) => (
+              <span className="flex flex-wrap justify-end gap-1.5">
+                {ALL_WAYS.map((w) => (
                   <button
                     key={w}
                     type="button"
@@ -1181,11 +1181,23 @@ export function SettingsView() {
                       way === w ? "border-accent bg-accent/15 text-accent-text" : "border-border bg-surface-2",
                     )}
                   >
-                    {w === "tick" ? "Tick" : w === "plugin" ? "Standard" : "System"}
+                    {WAY_NAMES[w]}
                   </button>
                 ))}
               </span>
             </div>
+            <p className="mt-1 text-[0.65rem] leading-snug text-faint">
+              Tap each one; the one you feel is what the whole app uses. Feel
+              none? Check Settings › Sounds &amp; Haptics › System Haptics (on)
+              and Haptics (Always Play), and Accessibility › Touch › Vibration.
+            </p>
+            <button
+              type="button"
+              onClick={() => void diagnoseHaptics().then((m) => toast(m, { duration: 12000 }))}
+              className="mt-1.5 self-start rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs font-bold"
+            >
+              Diagnose vibration
+            </button>
             <StatusRow
               label="Timer alerts"
               ok={lock.notifications}
