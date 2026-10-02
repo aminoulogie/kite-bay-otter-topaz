@@ -14,6 +14,7 @@ import type {
   FoodItem,
   Habit,
   HabitStep,
+  HabitAuto,
   HabitRamp,
   ScreenTimeDay,
   HistorySession,
@@ -395,6 +396,8 @@ export interface SomaStore {
   setHabitSeconds: (id: string, seconds: number | null) => void;
   /** How much the habit counts in the habit score, 1-5. */
   setHabitCoef: (id: string, coef: number) => void;
+  /** Tick it automatically when today's data meets the rule; null turns it off. */
+  setHabitAuto: (id: string, auto: HabitAuto | null) => void;
   removeHabit: (id: string) => void;
   /**
    * Put a deleted habit back where it was, history and all.
@@ -1858,6 +1861,10 @@ export const useSoma = create<SomaStore>()(
               ? { ...h, seconds: seconds == null ? undefined : clampStep(seconds) }
               : h,
           ),
+        }),
+      setHabitAuto: (id, auto) =>
+        set({
+          habits: get().habits.map((h) => (h.id === id ? { ...h, auto: auto ?? undefined } : h)),
         }),
       setHabitCoef: (id, coef) =>
         set({

@@ -20,7 +20,7 @@ import { hungerOn, hungerPenalty, type HungerEntry, type Phase } from "./hunger.
  */
 
 /** A day counts as having eaten only if something was actually logged. */
-function foodTotals(day: NutritionDay | undefined) {
+export function foodTotals(day: NutritionDay | undefined) {
   const items = day?.items ?? [];
   return items.reduce(
     (t, i) => ({ cals: t.cals + (i.cals || 0), p: t.p + (i.p || 0) }),

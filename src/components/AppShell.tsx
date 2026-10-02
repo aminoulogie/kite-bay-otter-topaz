@@ -4,6 +4,7 @@ import { Toaster, toast } from "sonner";
 import { CalcBar } from "@/components/CalcBar";
 import { startHealthSync } from "@/lib/native/health-sync";
 import { startSleepClock } from "@/lib/native/sleep-clock-sync";
+import { startHabitAuto } from "@/lib/native/habit-auto-run";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
 import { NUTRITION_KEEP_FROM } from "@/lib/seed";
@@ -192,6 +193,7 @@ export function AppShell() {
   useLiquidGlass();
   useEffect(() => startHealthSync(), []);
   useEffect(() => startSleepClock(), []);
+  useEffect(() => startHabitAuto(), []);
 
   // Everything in this app lives on this one device, so the backup file is the
   // only copy that survives losing it. Burying the one control that writes it

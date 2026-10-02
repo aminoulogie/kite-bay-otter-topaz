@@ -310,7 +310,24 @@ export interface Habit {
   coef?: number;
   /** The day it was added, so the days before it are not scored as misses. */
   since?: string;
+  /** Tick it automatically when today's data says it is done. lib/habit-auto.ts. */
+  auto?: HabitAuto;
 }
+
+export type HabitAuto =
+  | { kind: "workout" }
+  | { kind: "protein" }
+  | { kind: "water" }
+  | { kind: "calories"; within: number }
+  | { kind: "creatine" }
+  | { kind: "sleep"; hours: number }
+  | { kind: "bedtime"; before: string }
+  | { kind: "steps"; min: number }
+  | { kind: "activeKcal"; min: number }
+  | { kind: "reading"; minutes: number }
+  | { kind: "mind"; mindKind: "book" | "research" | "language" | "idea" }
+  | { kind: "screen"; under: number }
+  | { kind: "underBudget" }
 
 export type { ScreenApp, ScreenTimeDay } from "./screen-time";
 export type { RampAdvance, RampUnit } from "./habit-ramp";

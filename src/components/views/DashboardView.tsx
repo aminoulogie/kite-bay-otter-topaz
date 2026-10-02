@@ -9,6 +9,7 @@ import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
 import { CheckInButton } from "@/components/EveningCheckIn";
 import { HealthCard } from "@/components/HealthCard";
+import { WeekReviewCard } from "@/components/WeekReviewCard";
 import { SleepClockButton } from "@/components/SleepClockButton";
 import { HabitRings } from "@/components/HabitRings";
 import { ActivityRings } from "@/components/ActivityRings";
@@ -257,6 +258,7 @@ export function DashboardView() {
       <ActivityRings key="rings" />
       <HealthCard key="health" />
       <ScoreCard key="score" score={score} lines={lines} />
+      <WeekReviewCard key="week" />
 
       {/* The ticked ones are done — that is the whole point of a tile, and it
           is why only CONFIRMED food counts towards them. */}

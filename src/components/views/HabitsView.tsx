@@ -22,6 +22,7 @@ import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { useSoma } from "@/lib/store";
 import { tapLight, tapMedium } from "@/lib/haptics";
+import { describeAuto, suggestAuto } from "@/lib/habit-auto";
 import { COEF_LABELS, KEEP_AT, coefOf, habitConsistency, habitDayScore, habitStreak, type HabitDayScore } from "@/lib/habit-score";
 import { cn } from "@/lib/utils";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
@@ -90,6 +91,7 @@ export function HabitsView() {
         glance={{ label: "The habits", short: "Today", lines: habitLines, empty: "No habits yet", emptyShort: "None" }}
       >
       <div className="space-y-3">
+      {tab === "today" && <AutoSuggest />}
       {tab === "today" && <TodayPanel />}
 
       {tab === "month" && (
@@ -216,6 +218,7 @@ function TodayPanel() {
   const removeHabit = useSoma((s) => s.removeHabit);
   const setHabitSeconds = useSoma((s) => s.setHabitSeconds);
   const setHabitCoef = useSoma((s) => s.setHabitCoef);
+  const setHabitAuto = useSoma((s) => s.setHabitAuto);
   const restoreHabit = useSoma((s) => s.restoreHabit);
   const activeDate = useSoma((s) => s.activeDate);
   const today = parseLocalDateKey(activeDate);
@@ -370,6 +373,11 @@ function TodayPanel() {
                   >
                     ×{coefOf(h)}
                   </span>
+                  {h.auto && (
+                    <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[0.62rem] font-extrabold text-accent-text">
+                      ⚡ {describeAuto(h.auto)}
+                    </span>
+                  )}
                   {streak > 0 && <Badge tone="accent">{streak} day streak</Badge>}
                   <span className="text-[0.7rem] text-faint">
                     {weekDone}/{h.goalDaysPerWeek} this week
@@ -519,6 +527,7 @@ function TodayPanel() {
           onSaveRamp={(next: HabitRamp | null) => setHabitRamp(setupFor.id, next)}
           onSaveSeconds={(next) => setHabitSeconds(setupFor.id, next)}
           onSaveCoef={(next) => setHabitCoef(setupFor.id, next)}
+          onSaveAuto={(next) => setHabitAuto(setupFor.id, next)}
         />
       )}
 
@@ -683,5 +692,41 @@ function NewHabitField({ onAdd }: { onAdd: (name: string) => void }) {
         Add
       </Button>
     </div>
+  );
+}
+
+/**
+ * Habits whose names say what SOMA already measures — "Train", "Hit
+ * protein", "Hydrate" — offered their rule in one tap.
+ */
+function AutoSuggest() {
+  const habits = useSoma((s) => s.habits);
+  const setHabitAuto = useSoma((s) => s.setHabitAuto);
+  const offers = habits
+    .filter((h) => !h.auto)
+    .map((h) => ({ h, rule: suggestAuto(h.name) }))
+    .filter((o): o is { h: Habit; rule: NonNullable<ReturnType<typeof suggestAuto>> } => !!o.rule);
+  if (!offers.length) return null;
+  return (
+    <Card className="border-accent/30 bg-accent/5">
+      <div className="text-sm font-extrabold">⚡ {offers.length} {offers.length === 1 ? "habit" : "habits"} can tick themselves</div>
+      <ul className="mt-1.5 space-y-0.5 text-xs text-muted">
+        {offers.map(({ h, rule }) => (
+          <li key={h.id}>
+            <b className="text-fg">{h.name}</b> — when {describeAuto(rule).toLowerCase()}
+          </li>
+        ))}
+      </ul>
+      <Button
+        variant="primary"
+        className="mt-3 w-full"
+        onClick={() => {
+          for (const { h, rule } of offers) setHabitAuto(h.id, rule);
+          toast.success("Done — they tick themselves from now on");
+        }}
+      >
+        Turn on
+      </Button>
+    </Card>
   );
 }

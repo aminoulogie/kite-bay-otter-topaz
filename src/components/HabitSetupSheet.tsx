@@ -8,6 +8,8 @@ import { TIME_STEPS, convertRamp, formatAmount, isBuild, totalRungs, type RampAd
 import { getLocalDateKey } from "@/lib/soma";
 import { cn } from "@/lib/utils";
 import { COEF_LABELS, coefOf } from "@/lib/habit-score";
+import { AUTO_LABELS, suggestAuto } from "@/lib/habit-auto";
+import type { HabitAuto } from "@/lib/types";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
 
 type Shape = "simple" | "checklist" | "ramp";
@@ -34,7 +36,7 @@ function shapeOf(habit: Habit): Shape {
  * to that question and no way to choose between them.
  */
 export function HabitSetupSheet({
-  habit, onClose, onSaveSteps, onSaveRamp, onSaveSeconds, onSaveCoef,
+  habit, onClose, onSaveSteps, onSaveRamp, onSaveSeconds, onSaveCoef, onSaveAuto,
 }: {
   habit: Habit;
   onClose: () => void;
@@ -46,6 +48,8 @@ export function HabitSetupSheet({
   onSaveSeconds: (seconds: number | null) => void;
   /** How much it counts in the habit score, 1-5. Written at once, like the time. */
   onSaveCoef: (coef: number) => void;
+  /** Its automatic rule, or null for none. Written at once. */
+  onSaveAuto: (auto: HabitAuto | null) => void;
 }) {
   const [shape, setShape] = useState<Shape>(() => shapeOf(habit));
   const [draft, setDraft] = useState<HabitStep[]>(() =>
@@ -105,6 +109,8 @@ export function HabitSetupSheet({
             <X className="size-5 text-muted" />
           </button>
         </div>
+
+        <AutoRule habit={habit} onSave={onSaveAuto} />
 
         {/* How much it matters: its coefficient in the day's habit score,
             like a subject's in a school average. */}
@@ -393,5 +399,76 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {label}
       <span className="mt-1 block">{children}</span>
     </label>
+  );
+}
+
+/** A default for each rule's number, so picking a rule is one tap. */
+function withDefaults(kind: HabitAuto["kind"]): HabitAuto {
+  switch (kind) {
+    case "calories": return { kind, within: 10 };
+    case "sleep": return { kind, hours: 7 };
+    case "bedtime": return { kind, before: "23:30" };
+    case "steps": return { kind, min: 8000 };
+    case "activeKcal": return { kind, min: 400 };
+    case "reading": return { kind, minutes: 20 };
+    case "mind": return { kind, mindKind: "idea" };
+    case "screen": return { kind, under: 180 };
+    default: return { kind } as HabitAuto;
+  }
+}
+
+/**
+ * "Tick automatically when…": the rule this habit is ticked by, and its
+ * number. Written straight away, like the time and the importance.
+ */
+function AutoRule({ habit, onSave }: { habit: Habit; onSave: (a: HabitAuto | null) => void }) {
+  const rule = habit.auto ?? null;
+  const suggested = !rule ? suggestAuto(habit.name) : null;
+  const num = (v: string) => {
+    const n = Number(v.replace(",", "."));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const field = "h-9 w-24 rounded-xl border border-border bg-surface-2 px-2 text-center text-sm font-bold";
+  return (
+    <div className="mb-3">
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">Tick automatically when</span>
+        {suggested && (
+          <button type="button" onClick={() => onSave(suggested)} className="text-[0.65rem] font-bold text-accent-text underline">
+            Suggest: {AUTO_LABELS[suggested.kind]}
+          </button>
+        )}
+      </div>
+      <select
+        value={rule?.kind ?? ""}
+        onChange={(e) => onSave(e.target.value ? withDefaults(e.target.value as HabitAuto["kind"]) : null)}
+        className="h-10 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm font-semibold"
+      >
+        <option value="">Never — I tick it myself</option>
+        {(Object.keys(AUTO_LABELS) as HabitAuto["kind"][]).map((k) => (
+          <option key={k} value={k}>{AUTO_LABELS[k]}</option>
+        ))}
+      </select>
+      {rule && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+          {rule.kind === "sleep" && (<><input inputMode="decimal" defaultValue={rule.hours} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, hours: n }); }} /> hours or more</>)}
+          {rule.kind === "steps" && (<><input inputMode="numeric" defaultValue={rule.min} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, min: Math.round(n) }); }} /> steps</>)}
+          {rule.kind === "activeKcal" && (<><input inputMode="numeric" defaultValue={rule.min} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, min: Math.round(n) }); }} /> active kcal</>)}
+          {rule.kind === "reading" && (<><input inputMode="numeric" defaultValue={rule.minutes} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, minutes: Math.round(n) }); }} /> minutes of reading</>)}
+          {rule.kind === "calories" && (<>within <input inputMode="numeric" defaultValue={rule.within} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, within: n }); }} /> % of target</>)}
+          {rule.kind === "screen" && (<>under <input inputMode="numeric" defaultValue={rule.under} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, under: Math.round(n) }); }} /> minutes</>)}
+          {rule.kind === "bedtime" && (<>tapped "Going to sleep" before <input type="time" defaultValue={rule.before} className={field} onChange={(e) => e.target.value && onSave({ ...rule, before: e.target.value })} /></>)}
+          {rule.kind === "mind" && (
+            <select value={rule.mindKind} onChange={(e) => onSave({ ...rule, mindKind: e.target.value as "idea" })} className={field + " w-32"}>
+              <option value="idea">an idea</option>
+              <option value="book">reading</option>
+              <option value="language">a language drill</option>
+              <option value="research">research</option>
+            </select>
+          )}
+          {(rule.kind === "steps" || rule.kind === "activeKcal") && <span className="w-full text-[0.65rem] text-faint">Needs Apple Health connected (Settings).</span>}
+        </div>
+      )}
+    </div>
   );
 }

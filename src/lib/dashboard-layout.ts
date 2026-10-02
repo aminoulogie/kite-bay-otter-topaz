@@ -214,6 +214,8 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   // Steps, active energy, sleep and resting heart rate from Apple Health.
   { id: "health", label: "Apple Health", size: "2x4", keywords: "steps sleep heart rate fitness" },
   { id: "score", label: "Today's score", size: "2x4" },
+  // What cost the last seven days most — the weekly review.
+  { id: "week", label: "The week", size: "2x4", keywords: "weekly review pulled down" },
   { id: "cals", label: "Calories", size: "2x2" },
   { id: "protein", label: "Protein", size: "2x2" },
   { id: "carbs", label: "Carbs", size: "2x2" },
