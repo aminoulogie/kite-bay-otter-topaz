@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, BrainCircuit, CalendarDays, Check, Clock, CornerDownLeft, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Search, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { CalcBar } from "@/components/CalcBar";
+import { startHealthSync } from "@/lib/native/health-sync";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
 import { NUTRITION_KEEP_FROM } from "@/lib/seed";
@@ -188,6 +189,7 @@ export function AppShell() {
   // The tilt parallax behind every glass surface. One hook, root-level CSS
   // vars, two composited layers — see lib/use-liquid-glass.ts.
   useLiquidGlass();
+  useEffect(() => startHealthSync(), []);
 
   // Everything in this app lives on this one device, so the backup file is the
   // only copy that survives losing it. Burying the one control that writes it

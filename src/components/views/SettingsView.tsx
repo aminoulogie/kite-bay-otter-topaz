@@ -38,6 +38,7 @@ import { widgetStatus } from "@/lib/native/widget-bridge";
 import { ALL_WAYS, WAY_NAMES, diagnoseHaptics, testHaptics, tickWay } from "@/lib/haptics";
 import { lockScreenStatus, type LockScreenStatus } from "@/lib/native/routine-activity";
 import { connectHealth, healthDay, type HealthDay } from "@/lib/native/health";
+import { syncHealthNow } from "@/lib/native/health-sync";
 import {
   applyLiveNow, checkLive, liveStatus, nativeVersion, onLiveStatus, type LiveStatus,
 } from "@/lib/native/live-update";
@@ -1549,6 +1550,8 @@ function HealthCard() {
   const logSleep = useSoma((s) => s.logSleep);
   const logWeight = useSoma((s) => s.logWeight);
   const setActiveDate = useSoma((s) => s.setActiveDate);
+  const settings = useSoma((s) => s.settings);
+  const patchSettings = useSoma((s) => s.patchSettings);
   const [day, setDay] = useState<HealthDay | null>(null);
   const [busy, setBusy] = useState(false);
   /** What the last Connect said, kept on screen rather than in a toast. */
@@ -1583,10 +1586,37 @@ function HealthCard() {
     <Card>
       <CardTitle>Apple Health</CardTitle>
       <p className="mb-3 text-xs text-muted">
-        Reads steps, active energy, sleep and weight. Nothing is written to Health and nothing leaves the phone.
+        Both ways: workouts, sleep and weight you log here go to Health (workouts show in Fitness), and
+        today's sleep and weight from Health fill in here when missing. Nothing leaves the phone.
       </p>
+      {settings.healthSync && (
+        <div className="mb-3 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2 text-xs">
+          <span className="font-bold text-accent-text">Sync is on</span>
+          <span className="flex gap-3">
+            <button type="button" className="font-bold underline" onClick={() => void syncHealthNow().then((n) => toast(n ? `Synced ${n}` : "Already in sync"))}>
+              Sync now
+            </button>
+            <button type="button" className="font-bold text-muted underline" onClick={() => patchSettings({ healthSync: false })}>
+              Turn off
+            </button>
+          </span>
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
-        <Button onClick={() => void connectHealth().then(setStatus)}>Connect</Button>
+        <Button
+          onClick={() =>
+            void connectHealth().then((m) => {
+              setStatus(m);
+              // Connecting is the opt-in: sync runs from here on.
+              if (m.startsWith("Asked")) {
+                patchSettings({ healthSync: true });
+                void syncHealthNow().then((n) => n && toast.success(`Synced ${n} with Apple Health`));
+              }
+            })
+          }
+        >
+          {settings.healthSync ? "Reconnect" : "Connect"}
+        </Button>
         <Button onClick={() => void read()} disabled={busy}>{busy ? "Reading…" : "Read today"}</Button>
         {day && <Button variant="primary" onClick={fill}>Fill today</Button>}
       </div>

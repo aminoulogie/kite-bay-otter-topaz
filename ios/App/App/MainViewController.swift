@@ -244,7 +244,20 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "available", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "connect", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "day", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "canWrite", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveWorkout", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveSleep", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "saveWeight", returnType: CAPPluginReturnPromise),
     ]
+
+    /** What SOMA writes: the workout, its energy, the night, the weigh-in. */
+    private var writeTypes: Set<HKSampleType> {
+        var types = Set<HKSampleType>([HKObjectType.workoutType()])
+        if let t = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) { types.insert(t) }
+        if let t = HKObjectType.quantityType(forIdentifier: .bodyMass) { types.insert(t) }
+        if let t = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(t) }
+        return types
+    }
 
     private let store = HKHealthStore()
 
@@ -254,6 +267,8 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         if let t = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) { types.insert(t) }
         if let t = HKObjectType.quantityType(forIdentifier: .bodyMass) { types.insert(t) }
         if let t = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(t) }
+        if let t = HKObjectType.quantityType(forIdentifier: .restingHeartRate) { types.insert(t) }
+        types.insert(HKObjectType.workoutType())
         return types
     }
 
@@ -266,7 +281,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             call.resolve(["ok": false, "error": "Health data is not available on this device"])
             return
         }
-        store.requestAuthorization(toShare: nil, read: readTypes) { ok, error in
+        store.requestAuthorization(toShare: writeTypes, read: readTypes) { ok, error in
             call.resolve(["ok": ok, "error": error?.localizedDescription ?? ""])
         }
     }
@@ -327,6 +342,20 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             store.execute(query)
         }
 
+        // Resting heart rate: the day's latest reading.
+        if let rhr = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) {
+            group.enter()
+            let newest = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(sampleType: rhr, predicate: dayRange, limit: 1, sortDescriptors: [newest]) { _, samples, error in
+                fail(error)
+                if let sample = samples?.first as? HKQuantitySample {
+                    put("restingHR", sample.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())))
+                }
+                group.leave()
+            }
+            store.execute(query)
+        }
+
         // Last night: asleep time between 6pm the evening before and noon.
         // Watch and phone often both record the same night, so the asleep
         // intervals are merged rather than added.
@@ -367,6 +396,105 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
             if !errors.isEmpty { result["errors"] = errors }
             lock.unlock()
             call.resolve(result)
+        }
+    }
+
+    /** Which of SOMA's write permissions were granted (sharing status is not private). */
+    @objc func canWrite(_ call: CAPPluginCall) {
+        func ok(_ t: HKObjectType?) -> Bool {
+            guard let t = t else { return false }
+            return store.authorizationStatus(for: t) == .sharingAuthorized
+        }
+        call.resolve([
+            "workouts": ok(HKObjectType.workoutType()),
+            "energy": ok(HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)),
+            "sleep": ok(HKObjectType.categoryType(forIdentifier: .sleepAnalysis)),
+            "weight": ok(HKObjectType.quantityType(forIdentifier: .bodyMass)),
+        ])
+    }
+
+    /**
+     * Save `samples`, first deleting whatever SOMA saved before under the same
+     * id — so editing a session or a night replaces it in Health instead of
+     * adding a second copy.
+     */
+    private func replace(_ type: HKSampleType, id: String, with samples: [HKSample], then: @escaping (Bool, Error?) -> Void) {
+        let mine = HKQuery.predicateForObjects(withMetadataKey: HKMetadataKeyExternalUUID, allowedValues: [id])
+        store.deleteObjects(of: type, predicate: mine) { _, _, _ in
+            if samples.isEmpty {
+                then(true, nil)
+                return
+            }
+            self.store.save(samples) { ok, error in then(ok, error) }
+        }
+    }
+
+    private func date(_ call: CAPPluginCall, _ key: String) -> Date? {
+        guard let ms = call.getDouble(key) else { return nil }
+        return Date(timeIntervalSince1970: ms / 1000)
+    }
+
+    /** A strength session, as a workout Fitness lists, with its calories. */
+    @objc func saveWorkout(_ call: CAPPluginCall) {
+        guard let id = call.getString("id"), let start = date(call, "start"), let end = date(call, "end"), end > start else {
+            call.reject("id, start and end are needed")
+            return
+        }
+        let kcal = call.getDouble("kcal") ?? 0
+        let title = call.getString("title") ?? "Strength"
+        let energy = kcal > 0 ? HKQuantity(unit: .kilocalorie(), doubleValue: kcal) : nil
+        let workout = HKWorkout(
+            activityType: .traditionalStrengthTraining,
+            start: start,
+            end: end,
+            duration: end.timeIntervalSince(start),
+            totalEnergyBurned: energy,
+            totalDistance: nil,
+            metadata: [HKMetadataKeyExternalUUID: id, HKMetadataKeyWorkoutBrandName: title]
+        )
+        replace(HKObjectType.workoutType(), id: id, with: [workout]) { ok, error in
+            guard ok, let energy = energy,
+                  let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else {
+                call.resolve(["ok": ok, "error": error?.localizedDescription ?? ""])
+                return
+            }
+            // The energy as its own sample, tied to the workout, which is what
+            // the Move ring and Fitness's calorie totals count.
+            let sample = HKQuantitySample(type: type, quantity: energy, start: start, end: end,
+                                          metadata: [HKMetadataKeyExternalUUID: id + "-kcal"])
+            self.replace(type, id: id + "-kcal", with: []) { _, _ in
+                self.store.add([sample], to: workout) { ok2, error2 in
+                    call.resolve(["ok": ok2, "error": error2?.localizedDescription ?? ""])
+                }
+            }
+        }
+    }
+
+    /** One night asleep, from start to end. */
+    @objc func saveSleep(_ call: CAPPluginCall) {
+        guard let id = call.getString("id"), let start = date(call, "start"), let end = date(call, "end"), end > start,
+              let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else {
+            call.reject("id, start and end are needed")
+            return
+        }
+        // 1 is "asleep" (unspecified stage) — SOMA knows the hours, not the stages.
+        let sample = HKCategorySample(type: type, value: 1, start: start, end: end,
+                                      metadata: [HKMetadataKeyExternalUUID: id])
+        replace(type, id: id, with: [sample]) { ok, error in
+            call.resolve(["ok": ok, "error": error?.localizedDescription ?? ""])
+        }
+    }
+
+    @objc func saveWeight(_ call: CAPPluginCall) {
+        guard let id = call.getString("id"), let at = date(call, "at"), let kg = call.getDouble("kg"), kg > 0,
+              let type = HKQuantityType.quantityType(forIdentifier: .bodyMass) else {
+            call.reject("id, at and kg are needed")
+            return
+        }
+        let sample = HKQuantitySample(type: type, quantity: HKQuantity(unit: .gramUnit(with: .kilo), doubleValue: kg),
+                                      start: at, end: at, metadata: [HKMetadataKeyExternalUUID: id])
+        replace(type, id: id, with: [sample]) { ok, error in
+            call.resolve(["ok": ok, "error": error?.localizedDescription ?? ""])
         }
     }
 }

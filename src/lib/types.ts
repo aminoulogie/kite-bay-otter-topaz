@@ -376,6 +376,14 @@ export interface Settings {
   savingsGoals?: SavingsGoal[];
   /** Amounts hidden behind the eye on the Money dashboard. */
   moneyHidden?: boolean;
+  /** Two-way Apple Health sync, switched on by connecting. */
+  healthSync?: boolean;
+  /**
+   * What was last sent to (or taken from) Health, per item —
+   * "workout:2026-10-02" → a signature of the session. A change in the
+   * signature is what triggers a re-send; a match means it is already there.
+   */
+  healthSynced?: Record<string, string>;
   /**
    * The trading account balance, in dollars.
    *

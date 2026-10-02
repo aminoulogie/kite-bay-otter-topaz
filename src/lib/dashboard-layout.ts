@@ -211,6 +211,8 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   // to say.
   { id: "brief", label: "Coach brief", size: "1x4" },
   { id: "rings", label: "Activity rings", size: "2x4" },
+  // Steps, active energy, sleep and resting heart rate from Apple Health.
+  { id: "health", label: "Apple Health", size: "2x4", keywords: "steps sleep heart rate fitness" },
   { id: "score", label: "Today's score", size: "2x4" },
   { id: "cals", label: "Calories", size: "2x2" },
   { id: "protein", label: "Protein", size: "2x2" },

@@ -8,6 +8,7 @@ import { ProjectsCard } from "@/components/ProjectsCard";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
 import { CheckInButton } from "@/components/EveningCheckIn";
+import { HealthCard } from "@/components/HealthCard";
 import { HabitRings } from "@/components/HabitRings";
 import { ActivityRings } from "@/components/ActivityRings";
 import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
@@ -250,6 +251,7 @@ export function DashboardView() {
           card, leaving the card floating in a taller empty cell. */}
       <CoachBrief key="brief" horizon="today" />
       <ActivityRings key="rings" />
+      <HealthCard key="health" />
       <ScoreCard key="score" score={score} lines={lines} />
 
       {/* The ticked ones are done — that is the whole point of a tile, and it
