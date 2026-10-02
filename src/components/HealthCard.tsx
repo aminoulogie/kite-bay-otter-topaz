@@ -34,12 +34,16 @@ export function HealthCard() {
   const steps = day?.steps != null ? Math.round(day.steps) : null;
   const kcal = day?.activeKcal != null ? Math.round(day.activeKcal) : null;
   const sleep = day?.sleepHours != null ? Math.round(day.sleepHours * 10) / 10 : null;
+  // SOMA writes its own logged sleep to Health, so Health can hand it back.
+  // Said plainly, so a night SOMA sent is not mistaken for one Health measured.
+  const synced = useSoma((s) => s.settings.healthSynced?.[`sleep:${getLocalDateKey(new Date())}`]);
+  const sleepFromSoma = sleep != null && synced != null && Math.abs(Number(synced) - sleep) < 0.15;
   const hr = day?.restingHR != null ? Math.round(day.restingHR) : null;
 
   const rows = [
     { icon: Footprints, color: "#30d158", label: "Steps", value: steps?.toLocaleString() ?? "—" },
     { icon: Flame, color: "#ff375f", label: "Active", value: kcal != null ? `${kcal} kcal` : "—" },
-    { icon: Moon, color: "#5e5ce6", label: "Sleep (Health)", value: sleep != null ? `${sleep} h` : "—" },
+    { icon: Moon, color: "#5e5ce6", label: sleepFromSoma ? "Sleep (your log)" : "Sleep (Health)", value: sleep != null ? `${sleep} h` : "—" },
     { icon: HeartPulse, color: "#ff453a", label: "Resting HR", value: hr != null ? `${hr} bpm` : "—" },
   ];
 
