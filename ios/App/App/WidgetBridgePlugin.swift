@@ -41,7 +41,9 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         var s = SleepStore.read()
         s.asleepSince = call.getDouble("asleepSince")
         SleepStore.write(s)
-        WidgetCenter.shared.reloadTimelines(ofKind: "SomaSleep")
+        if #available(iOS 14.0, *) {
+            WidgetCenter.shared.reloadTimelines(ofKind: "SomaSleep")
+        }
         call.resolve(["ok": true])
     }
 
