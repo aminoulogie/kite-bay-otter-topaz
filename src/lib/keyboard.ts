@@ -106,4 +106,4 @@ export const FIELD_SELECTOR =
  * anything placed at the bottom of the visual viewport sits behind it — the
  * calc bar's + − × ÷ did. Room is left for it on the iPhone.
  */
-export const IOS_ACCESSORY_H = 56;
+export const IOS_ACCESSORY_H = 46;
