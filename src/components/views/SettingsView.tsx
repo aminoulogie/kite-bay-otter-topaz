@@ -1245,7 +1245,7 @@ export function SettingsView() {
       <p className="px-1 text-center text-[0.7rem] text-faint">
         SOMA Smart Coach · converted from the Obsidian suite · data never leaves this device
       </p>
-      <Badge className="mx-auto flex w-fit">v5.1</Badge>
+      <Badge className="mx-auto flex w-fit">v5.2 · live</Badge>
     </WidgetGrid>
   );
 }
