@@ -138,6 +138,8 @@ export function DashboardView() {
     program,
   );
   const trainingDay = !projected.isRest && !isRestSplit(projected.split);
+  /** A rest day — planned by the programme or saved — with nothing lifted. */
+  const resting = !history[date] && (!!restDays[date] || !trainingDay);
 
   const { score, lines } = useMemo(() => {
     return scoreDay(
@@ -269,11 +271,11 @@ export function DashboardView() {
             week={waterWeek} goal={waterGoal / 1000}
             onClick={() => setTab("nutrition")} />
       <Tile key="session" icon={Dumbbell} color="#bf5af2" label="Session"
-            value={lifts.length ? String(lifts.length) : null}
-            unit={lifts.length === 1 ? "lift" : "lifts"}
-            sub={session ? "done today" : lifts.length ? "in progress" : null}
+            value={lifts.length ? String(lifts.length) : resting ? "Recovery" : null}
+            unit={lifts.length ? (lifts.length === 1 ? "lift" : "lifts") : ""}
+            sub={session ? "done today" : lifts.length ? "in progress" : restDays[date] ? "rest day saved" : resting ? "planned rest day" : null}
             lines={lifts.map((n) => ({ text: n }))}
-            empty="No session yet"
+            empty={trainingDay ? `${projected.split} — not started` : "No session yet"}
             onClick={() => setTab("workout")} />
       <HabitRings key="habits" />
 

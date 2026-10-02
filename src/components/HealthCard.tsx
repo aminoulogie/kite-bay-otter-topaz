@@ -39,7 +39,7 @@ export function HealthCard() {
   const rows = [
     { icon: Footprints, color: "#30d158", label: "Steps", value: steps?.toLocaleString() ?? "—" },
     { icon: Flame, color: "#ff375f", label: "Active", value: kcal != null ? `${kcal} kcal` : "—" },
-    { icon: Moon, color: "#5e5ce6", label: "Sleep", value: sleep != null ? `${sleep} h` : "—" },
+    { icon: Moon, color: "#5e5ce6", label: "Sleep (Health)", value: sleep != null ? `${sleep} h` : "—" },
     { icon: HeartPulse, color: "#ff453a", label: "Resting HR", value: hr != null ? `${hr} bpm` : "—" },
   ];
 
@@ -59,6 +59,7 @@ export function HealthCard() {
         <div className="mb-3 flex items-center gap-2">
           <HeartPulse className="size-4 text-[#ff375f]" />
           <span className="font-display text-sm font-extrabold">Apple Health · today</span>
+          <span className="ml-auto text-[0.6rem] text-faint">as Health recorded it</span>
         </div>
         {connected ? (
           <div className="grid grid-cols-2 gap-2">

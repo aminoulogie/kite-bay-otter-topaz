@@ -8,9 +8,9 @@ import { useSoma } from "@/lib/store";
  * Apple Health, both ways, while the app is open.
  *
  * Out: a saved workout, a night's sleep and a weigh-in go to Health (and so to
- * Fitness, whose history lists workouts from Health). In: today's sleep and
- * weight come from Health when SOMA has none, which is how a night the watch
- * recorded fills itself in.
+ * Fitness, whose history lists workouts from Health). In: today's weight from
+ * a smart scale fills in when SOMA has none; sleep is only offered, never
+ * copied in by itself.
  *
  * Only the last two weeks are ever sent, so connecting does not pour years of
  * old sessions into Health. Everything sent is remembered by signature in
@@ -35,11 +35,10 @@ async function importFromHealth(): Promise<Record<string, string>> {
   const logged = s.nutrition[today];
   const marked: Record<string, string> = {};
   const patch: { sleep?: { hours: number }; bodyWeight?: number } = {};
-  if (day.sleepHours && day.sleepHours > 1 && logged?.sleep?.hours == null) {
-    const hours = Math.round(day.sleepHours * 10) / 10;
-    patch.sleep = { hours };
-    marked[`sleep:${today}`] = String(hours);
-  }
+  // Sleep is NOT copied in silently: what Health holds may come from a watch,
+  // another app or the phone guessing, and a night you never logged turning
+  // up as logged read as the app inventing it. It is offered instead — the
+  // evening check-in shows "use 9 h from Apple Health" as one tap.
   if (day.weightKg && day.weightDate === today && !logged?.bodyWeight) {
     const kg = Math.round(day.weightKg * 10) / 10;
     patch.bodyWeight = kg;

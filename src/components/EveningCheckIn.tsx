@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, Dumbbell, Moon, Pill, Scale, Utensils, X } from "lucide-react";
 import { toast } from "sonner";
 import { MoneySheet } from "@/components/money/money-ui";
@@ -6,6 +6,7 @@ import { parseDecimal } from "@/components/ui/decimal-input";
 import { CHECKIN_FROM_HOUR, checkinFor, openCount } from "@/lib/checkin";
 import { tapLight, tapMedium, tapSuccess } from "@/lib/haptics";
 import { getLocalDateKey } from "@/lib/soma";
+import { healthDay } from "@/lib/native/health";
 import { useSoma } from "@/lib/store";
 import type { ScoreLine } from "@/lib/day-score";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,19 @@ export function EveningCheckIn({
   const day = nutrition[today];
 
   const [sleepDraft, setSleepDraft] = useState("");
+  /** Last night as Apple Health recorded it, offered rather than copied in. */
+  const [healthSleep, setHealthSleep] = useState<number | null>(null);
+  const healthOn = useSoma((s) => !!s.settings.healthSync);
+  useEffect(() => {
+    if (!healthOn) return;
+    let alive = true;
+    void healthDay(today).then((d) => {
+      if (alive && d?.sleepHours && d.sleepHours > 1) setHealthSleep(Math.round(d.sleepHours * 10) / 10);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [healthOn, today]);
   const [weightDraft, setWeightDraft] = useState("");
 
   // Every action below writes to the active date; make sure that is today.
@@ -132,6 +146,11 @@ export function EveningCheckIn({
         <Row icon={Moon} color="#5e5ce6" title="Sleep last night" done={!state.sleep}
           value={day?.sleep?.hours != null ? `${day.sleep.hours} h` : undefined}>
           <div className="flex flex-wrap gap-1.5">
+            {healthSleep != null && day?.sleep?.hours == null && (
+              <Chip onClick={() => saveSleep(healthSleep)}>
+                <span className="text-[#ff375f]">♥</span> {healthSleep}h from Apple Health
+              </Chip>
+            )}
             {[5, 6, 7, 7.5, 8, 9].map((h) => (
               <Chip key={h} onClick={() => saveSleep(h)}>{h}h</Chip>
             ))}
