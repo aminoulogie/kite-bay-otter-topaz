@@ -294,17 +294,29 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "month", label: "This month", size: "2x4" },
     { id: "year", label: "This year", size: "2x4" },
   ],
-  // Money is two pages behind one tab: what you spend, and what you trade.
-  // The spending page keeps the bare "money" key rather than gaining a suffix,
-  // because every layout already saved is stored under it and renaming the
-  // page would reset the arrangement of everyone who had ever tidied it.
-  money: [
-    { id: "summary", label: "This month", size: "2x4" },
-    { id: "add", label: "Add an entry", size: "2x4" },
-    { id: "grocery", label: "Shopping list", size: "2x4" },
-    { id: "pantry", label: "In the cupboard", size: "2x4" },
-    { id: "entries", label: "Entries", size: "2x4" },
-    { id: "categories", label: "Categories", size: "2x4" },
+  // Money is six pages behind one tab, laid out like a money app: accounts,
+  // every transaction, budgets, where it went, savings goals, and trading.
+  "money-dash": [
+    { id: "accounts", label: "Accounts", size: "2x4" },
+    { id: "actions", label: "Add / Budgets / Insights", size: "1x4", sizes: FURNITURE },
+    { id: "budget", label: "This month's budget", size: "2x4" },
+    { id: "recent", label: "Recent transactions", size: "2x4" },
+  ],
+  "money-tx": [
+    { id: "filters", label: "Filters", size: "1x4", sizes: FURNITURE },
+    { id: "list", label: "Transactions", size: "2x4" },
+  ],
+  "money-budgets": [
+    { id: "total", label: "Monthly budget", size: "2x4" },
+    { id: "categories", label: "By category", size: "2x4" },
+  ],
+  "money-insights": [
+    { id: "month", label: "The month", size: "1x4", sizes: FURNITURE },
+    { id: "donut", label: "Where it went", size: "2x4" },
+    { id: "daily", label: "Day by day", size: "2x4" },
+  ],
+  "money-goals": [
+    { id: "goals", label: "Savings goals", size: "2x4" },
   ],
   "money-trade": [
     { id: "account", label: "The account", size: "2x4" },
@@ -352,6 +364,10 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "meal", label: "Meal builder", size: "2x4" },
     { id: "programs", label: "Day programmes", size: "2x4" },
     { id: "preworkout", label: "Pre-workout", size: "2x4" },
+    // The shopping list and the cupboard came over from Money: they are the
+    // food loop's stock, and stock is a Fuel question before a money one.
+    { id: "grocery", label: "Shopping list", size: "2x4" },
+    { id: "pantry", label: "In the cupboard", size: "2x4" },
   ],
   "nutrition-week": [
     { id: "weekly", label: "The last seven days", size: "2x4" },
@@ -417,6 +433,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "phase", label: "Phase", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "goal", label: "Training goal", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "appearance", label: "Appearance", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "money", label: "Money", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "training", label: "Training", size: "2x4" },
     { id: "nutrition", label: "Nutrition", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "routines", label: "Routines", size: "2x4" },

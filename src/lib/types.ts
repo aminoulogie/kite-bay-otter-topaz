@@ -356,6 +356,19 @@ export interface Settings {
   moneyBalanceDate?: string;
   /** Spending categories. Unset means the shipped defaults. */
   spendCategories?: string[];
+  /** Money accounts; unset means one Main account built from moneyBalance. */
+  moneyAccounts?: MoneyAccount[];
+  /** Categories with their icons and colours; unset means the defaults. */
+  moneyCategories?: MoneyCategory[];
+  /** Monthly budget per spending category, in the base currency. */
+  categoryBudgets?: Record<string, number>;
+  /** How many dinars one euro and one dollar are worth, for totals. */
+  moneyRates?: Partial<Record<"EUR" | "USD", number>>;
+  /** The Money tab's own colours. */
+  moneyColors?: Partial<Record<"card" | "income" | "expense", string>>;
+  savingsGoals?: SavingsGoal[];
+  /** Amounts hidden behind the eye on the Money dashboard. */
+  moneyHidden?: boolean;
   /**
    * The trading account balance, in dollars.
    *
@@ -500,10 +513,55 @@ export interface LedgerEntry {
   /** Local date key, the same shape every other log uses. */
   date: string;
   /** Negative amounts are not allowed; the kind carries the direction. */
-  kind: "spend" | "income";
+  /**
+   * "save" is money put towards a savings goal: it leaves the account like a
+   * spend but is not spending, so budgets and the spending charts skip it.
+   */
+  kind: "spend" | "income" | "save";
   amount: number;
   category: string;
   note?: string;
+  /** Which account it moved in; none means the Main account (older entries). */
+  accountId?: string;
+  /** What it was paid in; none means the base currency. */
+  currency?: MoneyCurrency;
+  /** The savings goal a "save" entry went to. */
+  goalId?: string;
+  /** A receipt photo is stored for this entry (habit-photos store, key receipt:<id>). */
+  photo?: boolean;
+}
+
+export type MoneyCurrency = "DZD" | "EUR" | "USD";
+
+export interface MoneyAccount {
+  id: string;
+  name: string;
+  kind: "cash" | "bank" | "card" | "savings";
+  currency: MoneyCurrency;
+  /** What it held on `openingDate`; entries from that day on move it. */
+  opening: number;
+  openingDate: string;
+  color: string;
+}
+
+export interface MoneyCategory {
+  name: string;
+  /** A lucide icon name from lib/money-ui.ts. */
+  icon: string;
+  color: string;
+  kind: "spend" | "income";
+}
+
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  /** In the base currency. */
+  target: number;
+  createdAt: number;
+  /** The counted goal it shows as in Projects › Goals. */
+  lifeGoalId?: string;
 }
 
 export interface TodoItem {

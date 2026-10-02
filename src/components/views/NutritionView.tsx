@@ -19,6 +19,8 @@ import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
 import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
 import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { GroceryCard, PantryCard } from "@/components/GroceryCard";
+import { formatMoney } from "@/lib/money-model";
 import { Glance, isGlance } from "@/components/Glance";
 import { TopTabs } from "@/components/TopTabs";
 import { WeeklyFuel } from "@/components/WeeklyFuel";
@@ -773,6 +775,10 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
       <MealPrograms key="programs" />
 
       <PreWorkoutCard key="preworkout" />
+
+      <GroceryCard key="grocery" money={(n) => formatMoney(n, "DZD")} />
+
+      <PantryCard key="pantry" />
 
       {/* The diary and its hint move as one: a "swipe left to delete" note
           parked three cards above the rows it describes explains nothing. */}

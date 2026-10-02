@@ -7,7 +7,28 @@
  */
 
 import { addDays, getLocalDateKey, parseLocalDateKey } from "./soma/dates.ts";
-import type { LedgerEntry } from "./types.ts";
+import type { LedgerEntry, MoneyCurrency } from "./types.ts";
+
+/** Dinars per euro and per dollar. */
+export type Rates = Partial<Record<"EUR" | "USD", number>>;
+
+export const BASE: MoneyCurrency = "DZD";
+/** Used until rates are set in Settings; editable, never fetched. */
+export const DEFAULT_RATES: Record<"EUR" | "USD", number> = { EUR: 150, USD: 135 };
+
+/** An amount in some currency, in dinars. */
+export function toBase(amount: number, currency: MoneyCurrency | undefined, rates?: Rates): number {
+  if (!currency || currency === "DZD") return amount;
+  const r = rates?.[currency] ?? DEFAULT_RATES[currency];
+  return amount * (r > 0 ? r : DEFAULT_RATES[currency]);
+}
+
+/** Dinars, in another currency. */
+export function fromBase(amount: number, currency: MoneyCurrency, rates?: Rates): number {
+  if (currency === "DZD") return amount;
+  const r = rates?.[currency] ?? DEFAULT_RATES[currency];
+  return amount / (r > 0 ? r : DEFAULT_RATES[currency]);
+}
 
 /**
  * The categories to start from.
@@ -36,7 +57,7 @@ export function categoriesFor(custom: string[] | undefined, entries: LedgerEntry
   const extra: string[] = [];
   for (const e of entries) {
     const c = (e.category || "").trim();
-    if (!c || e.kind === "income" || seen.has(c)) continue;
+    if (!c || e.kind !== "spend" || seen.has(c)) continue;
     seen.add(c);
     extra.push(c);
   }
@@ -66,12 +87,14 @@ export interface MonthTotals {
  * Amounts are stored positive with the direction in `kind`, so nothing here
  * has to guess whether a negative number means a refund or a typo.
  */
-export function totals(entries: LedgerEntry[]): MonthTotals {
+export function totals(entries: LedgerEntry[], rates?: Rates): MonthTotals {
   let spend = 0;
   let income = 0;
   const cats = new Map<string, number>();
   for (const e of entries) {
-    const amount = Math.abs(Number(e.amount) || 0);
+    // Money put towards a savings goal is not spending.
+    if (e.kind === "save") continue;
+    const amount = toBase(Math.abs(Number(e.amount) || 0), e.currency, rates);
     if (e.kind === "income") {
       income += amount;
       continue;

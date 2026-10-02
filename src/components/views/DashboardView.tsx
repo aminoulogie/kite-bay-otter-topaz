@@ -163,7 +163,7 @@ export function DashboardView() {
 
     const spend = new Map<string, number>();
     for (const e of ledger) {
-      if (e.kind === "income") continue;
+      if (e.kind !== "spend") continue;
       spend.set(e.date, (spend.get(e.date) ?? 0) + Math.abs(Number(e.amount) || 0));
     }
 

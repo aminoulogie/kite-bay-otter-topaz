@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { ExercisesView } from "@/components/views/ExercisesView";
 import { ExerciseIcon } from "@/components/ExerciseIcon";
-import { DecimalInput } from "@/components/ui/decimal-input";
+import { DecimalInput, parseDecimal } from "@/components/ui/decimal-input";
+import { colorsOf, ratesOf } from "@/lib/money-model";
 import { Input } from "@/components/ui/input";
 import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
 import {
@@ -367,6 +368,63 @@ export function SettingsView() {
           />
           <span className="text-xs text-muted">Or pick any colour</span>
         </div>
+      </Card>
+      </Sized>
+
+      <Sized key="money" glance={() => {
+        const r = ratesOf(settings);
+        return { label: "Money", short: "Rates", value: `€1 = ${r.EUR} DA`, sub: `$1 = ${r.USD} DA` };
+      }}>
+      <Card>
+        <CardTitle>Money</CardTitle>
+        <div className="mb-2 text-xs font-bold text-muted">Exchange rates, in dinars</div>
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          {(["EUR", "USD"] as const).map((c) => (
+            <label key={c} className="flex h-11 items-center gap-2 rounded-xl border border-border bg-surface-2 px-3">
+              <span className="text-sm font-bold">{c === "EUR" ? "€1" : "$1"} =</span>
+              <input
+                key={`${c}-${ratesOf(settings)[c]}`}
+                inputMode="decimal"
+                defaultValue={String(ratesOf(settings)[c])}
+                onBlur={(e) => {
+                  const n = parseDecimal(e.target.value);
+                  if (n == null || n <= 0) return;
+                  patchSettings({ moneyRates: { ...ratesOf(settings), [c]: n } });
+                }}
+                className="w-full min-w-0 bg-transparent text-right text-sm font-bold tabular outline-none"
+                aria-label={`${c} rate`}
+              />
+              <span className="text-xs text-muted">DA</span>
+            </label>
+          ))}
+        </div>
+        <div className="mb-2 text-xs font-bold text-muted">Colours</div>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            ["card", "Balance card"],
+            ["income", "Income"],
+            ["expense", "Expense"],
+          ] as const).map(([k, label]) => (
+            <label key={k} className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-surface-2 p-2">
+              <input
+                type="color"
+                value={colorsOf(settings)[k]}
+                onChange={(e) => patchSettings({ moneyColors: { ...settings.moneyColors, [k]: e.target.value } })}
+                className="h-9 w-full cursor-pointer rounded-lg border border-border bg-transparent"
+              />
+              <span className="text-[0.7rem] font-bold">{label}</span>
+            </label>
+          ))}
+        </div>
+        {settings.moneyColors && (
+          <button
+            type="button"
+            onClick={() => patchSettings({ moneyColors: undefined })}
+            className="mt-3 text-xs font-bold text-muted underline"
+          >
+            Back to the default colours
+          </button>
+        )}
       </Card>
       </Sized>
 

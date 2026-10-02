@@ -18,6 +18,7 @@ const v = <T,>(load: () => Promise<T>, pick: (m: T) => ComponentType) =>
 
 const views = () => import("@/components/views/NutritionView");
 const mind = () => import("@/components/views/MindView");
+const money = () => import("@/components/views/MoneyView");
 const insights = () => import("@/components/views/InsightsView");
 
 export const WIDGET_SOURCES: Record<string, Source> = {
@@ -25,7 +26,11 @@ export const WIDGET_SOURCES: Record<string, Source> = {
   time: v(() => import("@/components/views/TimeView"), (m) => m.TimeView),
   body: v(() => import("@/components/views/BodyView"), (m) => m.BodyView),
   workout: v(() => import("@/components/views/WorkoutView"), (m) => m.WorkoutView),
-  money: v(() => import("@/components/views/MoneyView"), (m) => m.MoneyView),
+  "money-dash": v(money, (m) => () => <m.MoneyView initialPage="dash" />),
+  "money-tx": v(money, (m) => () => <m.MoneyView initialPage="tx" />),
+  "money-budgets": v(money, (m) => () => <m.MoneyView initialPage="budgets" />),
+  "money-insights": v(money, (m) => () => <m.MoneyView initialPage="insights" />),
+  "money-goals": v(money, (m) => () => <m.MoneyView initialPage="goals" />),
   "money-trade": v(() => import("@/components/views/TradingView"), (m) => m.TradingView),
   looks: v(() => import("@/components/views/LooksView"), (m) => m.LooksView),
   habits: v(() => import("@/components/views/HabitsView"), (m) => m.HabitsView),
@@ -52,7 +57,11 @@ export const PAGE_NAMES: Record<string, string> = {
   time: "Time",
   body: "Body",
   workout: "Train",
-  money: "Money",
+  "money-dash": "Money · Dashboard",
+  "money-tx": "Money · Transactions",
+  "money-budgets": "Money · Budgets",
+  "money-insights": "Money · Insights",
+  "money-goals": "Money · Goals",
   "money-trade": "Money · Trading",
   looks: "Looks",
   habits: "Habits",
