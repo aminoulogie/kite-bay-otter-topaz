@@ -16,6 +16,9 @@ import { formatResult, isExpression, resolve } from "@/lib/calc";
  * that held 70 is 137.
  */
 
+/** The bar's own height, so it can be placed by its top edge. */
+const BAR_H = 48;
+
 const OPS = [
   { label: "+", text: "+" },
   { label: "−", text: "-" },
@@ -43,7 +46,8 @@ const setValue = (el: HTMLInputElement, v: string) => {
 export function CalcBar() {
   const [field, setField] = useState<HTMLInputElement | null>(null);
   const [text, setText] = useState("");
-  const [bottom, setBottom] = useState(0);
+  /** Top edge in layout pixels: just above the keys, wherever iOS panned to. */
+  const [top, setTop] = useState<number | null>(null);
   /** What each field held when it was focused — the base for "+67". */
   const bases = useRef(new WeakMap<HTMLInputElement, string>());
 
@@ -100,7 +104,7 @@ export function CalcBar() {
   useEffect(() => {
     const vv = window.visualViewport;
     if (!field || !vv) return;
-    const place = () => setBottom(Math.max(0, window.innerHeight - (vv.height + vv.offsetTop)));
+    const place = () => setTop(Math.round(vv.offsetTop + vv.height - BAR_H));
     place();
     vv.addEventListener("resize", place);
     vv.addEventListener("scroll", place);
@@ -126,7 +130,7 @@ export function CalcBar() {
   return (
     <div
       className="fixed inset-x-0 z-[90] flex items-center gap-1.5 border-t border-border bg-surface/95 px-2 py-1.5 backdrop-blur"
-      style={{ bottom }}
+      style={top == null ? { bottom: 0, height: BAR_H } : { top, height: BAR_H }}
       // Pressing a key here must not take focus from the field.
       onPointerDown={(e) => e.preventDefault()}
       onMouseDown={(e) => e.preventDefault()}

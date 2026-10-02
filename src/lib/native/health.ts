@@ -38,9 +38,15 @@ export async function connectHealth(): Promise<string> {
   if (!onPhone()) return "Only on the iPhone app";
   try {
     const r = await Health.connect();
-    return r.ok ? "Asked — Apple Health's permission screen was shown" : `Not connected: ${r.error || "unknown"}`;
+    if (r.ok) return "Asked. If no permission screen appeared, this install has no HealthKit access.";
+    // The usual one on a sideloaded build: the signer dropped the entitlement.
+    if (/entitlement/i.test(r.error)) return `HealthKit was removed when the app was signed (${r.error}).`;
+    return `Not connected: ${r.error || "unknown"}`;
   } catch (err) {
-    return err instanceof Error ? `Failed: ${err.message}` : "Failed";
+    const msg = err instanceof Error ? err.message : String(err);
+    return /not implemented|unimplemented/i.test(msg)
+      ? "This install has no Health plugin — it is an older build."
+      : `Failed: ${msg}`;
   }
 }
 

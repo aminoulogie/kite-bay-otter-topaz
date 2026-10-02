@@ -103,8 +103,32 @@ export function useKeyboardInset(): void {
       else window.scrollBy(how);
     };
 
+    // Where the VISIBLE part of the screen is while the keys are up. iOS
+    // pans the page up to show the field, so the visible area starts
+    // `offsetTop` down the layout viewport. Sheets are pinned to these two
+    // values — ending at the keys alone left them as tall as the whole screen
+    // minus the keys, and the pan pushed their top (title, close button, the
+    // Expense/Income switch) off the top of the screen.
+    let lastTop = -1;
+    let lastH = -1;
+    const pin = (open: boolean) => {
+      const top = open && viewport ? Math.round(viewport.offsetTop) : 0;
+      const h = open && viewport ? Math.round(viewport.height) : 0;
+      if (top === lastTop && h === lastH) return;
+      lastTop = top;
+      lastH = h;
+      if (open) {
+        root.style.setProperty("--vv-top", `${top}px`);
+        root.style.setProperty("--vvh", `${h}px`);
+      } else {
+        root.style.removeProperty("--vv-top");
+        root.style.removeProperty("--vvh");
+      }
+    };
+
     const measure = () => {
       const next = insetFrom(viewport, window.innerHeight);
+      pin(next > 0);
       if (next === inset) return;
       inset = next;
       root.style.setProperty("--kb", `${next}px`);
@@ -163,6 +187,8 @@ export function useKeyboardInset(): void {
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("focusout", onFocusOut);
       root.style.removeProperty("--kb");
+      root.style.removeProperty("--vv-top");
+      root.style.removeProperty("--vvh");
       root.classList.remove("soma-kb");
     };
   }, []);

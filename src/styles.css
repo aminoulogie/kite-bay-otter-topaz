@@ -574,6 +574,16 @@ summary {
   padding-bottom: 12px;
 }
 
+/* With the keys up, an overlay covers exactly the visible part of the screen
+   — from where iOS has panned the page to, down to the top of the keys — and
+   its sheet is never taller than that. */
+.soma-kb [class~="fixed"][class~="inset-0"] {
+  top: var(--vv-top, 0px);
+}
+.soma-kb [class~="fixed"][class~="inset-0"] > .soma-expand {
+  max-height: calc(var(--vvh, 100dvh) - 12px);
+}
+
 /* The dock is behind the keyboard and cannot be tapped; leaving it there only
    adds a fixed element for the browser to fight with while it scrolls. */
 .soma-kb .soma-dock {

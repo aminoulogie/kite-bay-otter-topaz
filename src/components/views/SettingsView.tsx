@@ -1551,6 +1551,8 @@ function HealthCard() {
   const setActiveDate = useSoma((s) => s.setActiveDate);
   const [day, setDay] = useState<HealthDay | null>(null);
   const [busy, setBusy] = useState(false);
+  /** What the last Connect said, kept on screen rather than in a toast. */
+  const [status, setStatus] = useState("");
   const today = getLocalDateKey(new Date());
   const logged = nutrition[today];
 
@@ -1584,10 +1586,13 @@ function HealthCard() {
         Reads steps, active energy, sleep and weight. Nothing is written to Health and nothing leaves the phone.
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button onClick={() => void connectHealth().then((m) => toast(m, { duration: 8000 }))}>Connect</Button>
+        <Button onClick={() => void connectHealth().then(setStatus)}>Connect</Button>
         <Button onClick={() => void read()} disabled={busy}>{busy ? "Reading…" : "Read today"}</Button>
         {day && <Button variant="primary" onClick={fill}>Fill today</Button>}
       </div>
+      {status && (
+        <p className="mt-2 rounded-xl bg-surface-2 px-3 py-2 text-[0.72rem] font-semibold">{status}</p>
+      )}
       {day && (
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
           {[
