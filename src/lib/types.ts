@@ -300,6 +300,13 @@ export interface Habit {
    * a day that came to nothing, and the two must never be collapsed.
    */
   amountLog?: Record<string, number>;
+  /**
+   * How much the habit matters, 1-5, like a subject's coefficient in a school
+   * average. Absent means 2. See lib/habit-score.ts.
+   */
+  coef?: number;
+  /** The day it was added, so the days before it are not scored as misses. */
+  since?: string;
 }
 
 export type { ScreenApp, ScreenTimeDay } from "./screen-time";

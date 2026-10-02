@@ -388,6 +388,8 @@ export interface SomaStore {
   addHabit: (h: Omit<Habit, "id" | "history">) => void;
   /** Roughly how long the habit takes, for building routines out of habits. */
   setHabitSeconds: (id: string, seconds: number | null) => void;
+  /** How much the habit counts in the habit score, 1-5. */
+  setHabitCoef: (id: string, coef: number) => void;
   removeHabit: (id: string) => void;
   /**
    * Put a deleted habit back where it was, history and all.
@@ -1779,7 +1781,12 @@ export const useSoma = create<SomaStore>()(
         set({
           habits: [
             ...get().habits,
-            { ...h, id: `habit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, history: {} },
+            {
+              since: getLocalDateKey(new Date()),
+              ...h,
+              id: `habit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              history: {},
+            },
           ],
         });
       },
@@ -1789,6 +1796,12 @@ export const useSoma = create<SomaStore>()(
             h.id === id
               ? { ...h, seconds: seconds == null ? undefined : clampStep(seconds) }
               : h,
+          ),
+        }),
+      setHabitCoef: (id, coef) =>
+        set({
+          habits: get().habits.map((h) =>
+            h.id === id ? { ...h, coef: Math.max(1, Math.min(5, Math.round(coef))) } : h,
           ),
         }),
       removeHabit: (id) => set({ habits: get().habits.filter((h) => h.id !== id) }),

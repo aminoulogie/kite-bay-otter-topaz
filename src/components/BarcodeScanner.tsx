@@ -227,6 +227,7 @@ export function BarcodeScanner({
         <div className="flex gap-2">
           <Input
             inputMode="numeric"
+            data-no-calc
             placeholder="Or type the barcode"
             value={manual}
             onChange={(e) => setManual(e.target.value)}

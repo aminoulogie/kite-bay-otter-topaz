@@ -26,6 +26,12 @@ export const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"in
   ({ className, type, onChange, inputMode, ...props }, ref) => {
     const numeric = type === "number";
     const { step: _step, min: _min, max: _max, ...rest } = props;
+    /**
+     * A sum being typed ("78+87"). Held here, not handed on: a parent storing
+     * Number(value) would save NaN on the "+". The CalcBar replaces it with the
+     * answer on Enter or blur, and that number goes through as usual.
+     */
+    const [sum, setSum] = React.useState<string | null>(null);
 
     return (
       <input
@@ -51,6 +57,11 @@ export const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"in
                   e.target.value = fixed;
                   if (at !== null) e.target.setSelectionRange(at, at);
                 }
+                if (/[+*/×÷()]|.-/.test(fixed)) {
+                  setSum(fixed);
+                  return;
+                }
+                setSum(null);
                 onChange(e);
               }
             : onChange
@@ -60,6 +71,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"in
           className,
         )}
         {...(numeric ? rest : props)}
+        {...(numeric && sum != null ? { value: sum } : {})}
       />
     );
   },

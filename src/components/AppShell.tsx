@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, BrainCircuit, CalendarDays, Check, Clock, CornerDownLeft, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Search, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
+import { CalcBar } from "@/components/CalcBar";
 import { DateDrawer } from "@/components/DateDrawer";
 import { getLocalDateKey } from "@/lib/soma";
 import { NUTRITION_KEEP_FROM } from "@/lib/seed";
@@ -719,6 +720,7 @@ export function AppShell() {
       {/* Below the header, not over it: at the very top a toast sat on the
           status bar and covered the header's own buttons, so the Undo in it
           and the Edit/Calendar under it fought for the same spot. */}
+      <CalcBar />
       <Toaster
         position="top-center"
         theme={settings.theme === "light" ? "light" : "dark"}

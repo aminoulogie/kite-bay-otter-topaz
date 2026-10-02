@@ -81,7 +81,10 @@ export const DecimalInput = forwardRef<HTMLInputElement, DecimalInputProps>(func
         // Keep only what can belong to a number, so the field cannot hold
         // letters, but allow a trailing separator while it is being typed —
         // stripping it would make "12," impossible to extend to "12,5".
-        const pattern = allowNegative ? /[^0-9.,-]/g : /[^0-9.,]/g;
+        // Operators and brackets too: a sum typed here is worked out by the
+        // CalcBar on Enter or blur, and only the answer reaches the parent.
+        void allowNegative;
+        const pattern = /[^0-9.,+\-*/×÷() ]/g;
         const filtered = raw.replace(pattern, "");
         setDraft(filtered);
         onValueChange(parseDecimal(filtered), filtered);

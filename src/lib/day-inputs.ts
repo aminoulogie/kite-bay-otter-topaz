@@ -1,7 +1,8 @@
 import { checkPreWorkout, preTargets, PRE_WINDOWS } from "./preworkout.ts";
 import { totalWaterMl } from "./hydration.ts";
 import type { DayInputs } from "./day-score.ts";
-import type { HistorySession, NutritionDay } from "./types.ts";
+import type { Habit, HistorySession, NutritionDay } from "./types.ts";
+import { habitDayScore } from "./habit-score.ts";
 import { hungerOn, hungerPenalty, type HungerEntry, type Phase } from "./hunger.ts";
 
 /**
@@ -61,11 +62,14 @@ export interface BuildDayInputsArgs {
   /** Hunger logged on this day, and how you are eating. */
   hunger?: HungerEntry[];
   phase?: Phase;
+  /** Every habit, for the day's weighted habit score. */
+  habits?: Habit[];
 }
 
 export function buildDayInputs({
-  date, session, previous, nutrition, isRestDay, bodyweightKg = 0, hunger, phase,
+  date, session, previous, nutrition, isRestDay, bodyweightKg = 0, hunger, phase, habits,
 }: BuildDayInputsArgs): DayInputs {
+  const hs = habits ? habitDayScore(habits, date) : null;
   const day = nutrition[date];
   const logged = (day?.items?.length ?? 0) > 0;
   const totals = foodTotals(day);
@@ -80,6 +84,9 @@ export function buildDayInputs({
     sleepHours: day?.sleep?.hours ?? null,
     creatineG: day?.creatine ?? null,
     preworkout: isRestDay ? null : preworkoutShare(day, bodyweightKg),
+    habits: hs && hs.score != null
+      ? { score: hs.score, done: hs.rows.filter((r) => r.done).length, due: hs.rows.length }
+      : null,
     // Computed here so every screen reading a day score gets the same
     // deduction — the calendar square and the day card disagreeing about a
     // score is a bug this file already exists to prevent.

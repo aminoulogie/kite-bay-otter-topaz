@@ -12,8 +12,9 @@ test("only today can be ticked", () => {
   assert.equal(canTickOn("2026-09-29", NOW), false);
 });
 
-test("a done day can always be cleared, a missed one stays missed", () => {
-  assert.equal(canChange(true, "2026-09-20", NOW), true);
+test("a past day is read-only, done or missed; today can go either way", () => {
+  assert.equal(canChange(true, "2026-09-20", NOW), false);
+  assert.equal(canChange(true, "2026-09-28", NOW), true);
   assert.equal(canChange(false, "2026-09-20", NOW), false);
   assert.equal(canChange(false, "2026-09-28", NOW), true);
 });

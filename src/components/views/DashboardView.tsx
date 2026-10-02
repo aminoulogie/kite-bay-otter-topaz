@@ -123,6 +123,7 @@ export function DashboardView() {
   const hunger = useSoma((s) => s.hunger);
   const settings = useSoma((s) => s.settings);
   const restDays = useSoma((s) => s.restDays);
+  const habits = useSoma((s) => s.habits);
 
   const today = getLocalDateKey(new Date());
   const date = activeDate || today;
@@ -139,9 +140,10 @@ export function DashboardView() {
         bodyweightKg: bodyweightOn(nutrition, date),
         hunger,
         phase: settings.phase,
+        habits,
       }),
     );
-  }, [history, nutrition, date, hunger, settings.phase, restDays]);
+  }, [history, nutrition, date, hunger, settings.phase, restDays, habits]);
 
   /**
    * The five things worth comparing, each as a date-keyed series.

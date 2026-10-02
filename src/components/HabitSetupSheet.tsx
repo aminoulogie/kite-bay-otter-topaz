@@ -7,6 +7,7 @@ import { MAX_TARGET, newStepId, targetOf } from "@/lib/habit-steps";
 import { TIME_STEPS, convertRamp, formatAmount, isBuild, totalRungs, type RampAdvance, type RampUnit } from "@/lib/habit-ramp";
 import { getLocalDateKey } from "@/lib/soma";
 import { cn } from "@/lib/utils";
+import { COEF_LABELS, coefOf } from "@/lib/habit-score";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
 
 type Shape = "simple" | "checklist" | "ramp";
@@ -33,7 +34,7 @@ function shapeOf(habit: Habit): Shape {
  * to that question and no way to choose between them.
  */
 export function HabitSetupSheet({
-  habit, onClose, onSaveSteps, onSaveRamp, onSaveSeconds,
+  habit, onClose, onSaveSteps, onSaveRamp, onSaveSeconds, onSaveCoef,
 }: {
   habit: Habit;
   onClose: () => void;
@@ -43,6 +44,8 @@ export function HabitSetupSheet({
       nothing to validate, so holding it until Save would only be a way to
       lose it. */
   onSaveSeconds: (seconds: number | null) => void;
+  /** How much it counts in the habit score, 1-5. Written at once, like the time. */
+  onSaveCoef: (coef: number) => void;
 }) {
   const [shape, setShape] = useState<Shape>(() => shapeOf(habit));
   const [draft, setDraft] = useState<HabitStep[]>(() =>
@@ -101,6 +104,34 @@ export function HabitSetupSheet({
           <button type="button" onClick={onClose} aria-label="Close">
             <X className="size-5 text-muted" />
           </button>
+        </div>
+
+        {/* How much it matters: its coefficient in the day's habit score,
+            like a subject's in a school average. */}
+        <div className="mb-3">
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+              Importance
+            </span>
+            <span className="text-[0.62rem] text-faint">{COEF_LABELS[coefOf(habit)]} · coefficient {coefOf(habit)}</span>
+          </div>
+          <div className="grid grid-cols-5 gap-1.5">
+            {[1, 2, 3, 4, 5].map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => onSaveCoef(c)}
+                className={cn(
+                  "h-9 rounded-xl border text-sm font-extrabold tabular",
+                  coefOf(habit) === c
+                    ? "border-accent bg-accent text-accent-ink"
+                    : "border-border bg-surface-2 text-muted",
+                )}
+              >
+                ×{c}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* How long it takes, which is not a target and is never scored.

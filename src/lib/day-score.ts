@@ -33,6 +33,12 @@ export const SCORE_WEIGHTS = {
    * session, in a way that the day's total macros do not capture.
    */
   preworkout: 8,
+  /**
+   * The habits, as their weighted average (lib/habit-score.ts). On top of the
+   * hundred rather than taken from it: the score is a share of what was
+   * tracked, so a day with no habits counted reads exactly as it did.
+   */
+  habits: 15,
 } as const;
 
 /** How the workout's 40 is split. Sums to SCORE_WEIGHTS.workout. */
@@ -66,6 +72,8 @@ export interface DayInputs {
    * logged under it. Null on a rest day too — there was no session to fuel.
    */
   preworkout?: number | null;
+  /** The day's weighted habit score, 0-100, or null when no habit counted. */
+  habits?: { score: number; done: number; due: number } | null;
 }
 
 export interface ScoreLine {
@@ -223,6 +231,14 @@ export function scoreDay(inp: DayInputs): DayScore {
         : inp.isRestDay
           ? "rest day"
           : "not logged",
+  });
+
+  lines.push({
+    id: "habits",
+    label: "Habits",
+    earned: inp.habits ? Math.round((inp.habits.score / 100) * SCORE_WEIGHTS.habits * 10) / 10 : null,
+    possible: SCORE_WEIGHTS.habits,
+    detail: inp.habits ? `${inp.habits.score}% weighted · ${inp.habits.done}/${inp.habits.due} done` : "none due",
   });
 
   lines.push({

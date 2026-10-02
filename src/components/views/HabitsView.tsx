@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { canChange, canTickOn } from "@/lib/habit-lock";
 import { CalendarDays, Camera, Check, ListChecks, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { useSoma } from "@/lib/store";
+import { COEF_LABELS, KEEP_AT, coefOf, habitConsistency, habitDayScore, habitStreak, type HabitDayScore } from "@/lib/habit-score";
 import { cn } from "@/lib/utils";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
 
@@ -43,24 +44,41 @@ export function HabitsView() {
   const [name, setName] = useState("");
   const doneToday = habits.filter((h) => h.history[activeDate]).length;
   const habitLines = habits.map((h) => ({ text: h.name, done: !!h.history[activeDate], color: h.color }));
+  const today = getLocalDateKey(new Date());
+  const day = useMemo(() => habitDayScore(habits, activeDate), [habits, activeDate]);
+  const streak = useMemo(() => habitStreak(habits, today), [habits, today]);
+  const consistency = useMemo(() => habitConsistency(habits, today), [habits, today]);
+  const kept = day.score != null && day.score >= KEEP_AT;
 
   return (
     <WidgetGrid tab="habits">
       <Sized key="header" glance={{
           label: "Consistency",
           short: "Habits",
-          value: `${doneToday}/${habits.length}`,
-          sub: habits.length === doneToday && habits.length ? "all done today" : `${habits.length - doneToday} to go today`,
-          progress: habits.length ? doneToday / habits.length : null,
-          done: habits.length > 0 && doneToday === habits.length,
+          value: day.score != null ? `${day.score}%` : `${doneToday}/${habits.length}`,
+          sub: `${streak} day streak · ${consistency ?? "–"}% over 30 days`,
+          progress: day.score != null ? day.score / 100 : null,
+          done: kept,
           lines: habitLines,
           empty: "No habits yet",
         }}>
       <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <Badge tone="accent">Habits · {activeDate}</Badge>
         <h1 className="mt-2 font-display text-xl font-extrabold tracking-tight">Consistency</h1>
-        <p className="mt-1 text-xs text-muted">
-          {habits.length} tracked · {habits.filter((h) => h.history[activeDate]).length} done today
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <Stat
+            label={activeDate === today ? "Today" : "That day"}
+            value={day.score != null ? `${day.score}%` : "–"}
+            tone={day.score == null ? undefined : kept ? "good" : "warn"}
+          />
+          <Stat label="Streak" value={`${streak}d`} sub={`days ≥ ${KEEP_AT}%`} />
+          <Stat label="30 days" value={consistency != null ? `${consistency}%` : "–"} sub="average" />
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          {doneToday}/{habits.length} done · weighted by importance
+          {day.score != null && !kept && activeDate === today
+            ? ` · ${needFor(day)} more to keep the streak`
+            : ""}
         </p>
       </Card>
       </Sized>
@@ -88,7 +106,7 @@ export function HabitsView() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="truncate font-display text-sm font-bold">{h.name}</h3>
-                  <p className="text-[0.7rem] text-faint">Tap a pixel to toggle</p>
+                  <p className="text-[0.7rem] text-faint">Only today can be changed</p>
                 </div>
               </div>
               <MonthMatrix habit={h} onToggle={(d) => toggleHabit(h.id, d)} />
@@ -213,6 +231,7 @@ function TodayPanel() {
   const logHabitAmount = useSoma((s) => s.logHabitAmount);
   const removeHabit = useSoma((s) => s.removeHabit);
   const setHabitSeconds = useSoma((s) => s.setHabitSeconds);
+  const setHabitCoef = useSoma((s) => s.setHabitCoef);
   const restoreHabit = useSoma((s) => s.restoreHabit);
   const activeDate = useSoma((s) => s.activeDate);
   const today = parseLocalDateKey(activeDate);
@@ -361,6 +380,12 @@ function TodayPanel() {
                   />
                 </button>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <span
+                    className="rounded-full border border-border px-1.5 py-0.5 text-[0.62rem] font-extrabold tabular text-muted"
+                    title={COEF_LABELS[coefOf(h)]}
+                  >
+                    ×{coefOf(h)}
+                  </span>
                   {streak > 0 && <Badge tone="accent">{streak} day streak</Badge>}
                   <span className="text-[0.7rem] text-faint">
                     {weekDone}/{h.goalDaysPerWeek} this week
@@ -505,6 +530,7 @@ function TodayPanel() {
           onSaveSteps={(next: HabitStep[]) => setHabitSteps(setupFor.id, next)}
           onSaveRamp={(next: HabitRamp | null) => setHabitRamp(setupFor.id, next)}
           onSaveSeconds={(next) => setHabitSeconds(setupFor.id, next)}
+          onSaveCoef={(next) => setHabitCoef(setupFor.id, next)}
         />
       )}
 
@@ -613,4 +639,35 @@ function RampRow({
       </div>
     </div>
   );
+}
+
+function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "warn" }) {
+  return (
+    <div className="rounded-2xl bg-surface-2/70 px-3 py-2">
+      <div className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">{label}</div>
+      <div
+        className={cn(
+          "font-display text-xl font-extrabold tabular",
+          tone === "good" && "text-accent",
+          tone === "warn" && "text-warn",
+        )}
+      >
+        {value}
+      </div>
+      {sub && <div className="text-[0.62rem] text-faint">{sub}</div>}
+    </div>
+  );
+}
+
+/** The unticked habits, heaviest first, that would carry today past the bar. */
+function needFor(day: HabitDayScore): string {
+  const open = day.rows.filter((r) => !r.done).sort((a, b) => b.coef - a.coef);
+  let earned = day.earned;
+  const names: string[] = [];
+  for (const r of open) {
+    if (day.possible && (earned / day.possible) * 100 >= KEEP_AT) break;
+    earned += r.coef;
+    names.push(r.name);
+  }
+  return names.join(", ");
 }

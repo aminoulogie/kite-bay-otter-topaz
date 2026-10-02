@@ -20,8 +20,10 @@ test("the workout weights sum to the workout share", () => {
   assert.equal(sum, SCORE_WEIGHTS.workout, "the four parts must add up to 40");
 });
 
-test("all weights sum to 100", () => {
-  assert.equal(Object.values(SCORE_WEIGHTS).reduce((a, b) => a + b, 0), 100);
+test("the original weights sum to 100, with habits on top", () => {
+  const { habits, ...rest } = SCORE_WEIGHTS;
+  assert.equal(Object.values(rest).reduce((a, b) => a + b, 0), 100);
+  assert.equal(habits, 15);
 });
 
 test("unlogged food is not logged, not zero", () => {

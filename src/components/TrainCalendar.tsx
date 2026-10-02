@@ -138,13 +138,14 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           bodyweightKg: bodyweightOn(nutrition, date),
         hunger,
         phase: settings.phase,
+        habits,
         }),
       );
       // Nothing tracked at all is not a zero-scoring day, it is an unscored one.
       if (s.tracked > 0) out.set(date, s.score);
     }
     return out;
-  }, [cells, sessionsByDate, nutrition, today, history, settings.scheduleOverrides, program, restDays]);
+  }, [cells, sessionsByDate, nutrition, today, history, settings.scheduleOverrides, program, restDays, habits]);
 
   const shift = (delta: number) =>
     setCursor((c) => {
@@ -493,6 +494,7 @@ function DayCard({
   // which is the point: the card and the square disagreeing about one day is
   // the bug that file was written to end.
   const hunger = useSoma((s) => s.hunger);
+  const habits = useSoma((s) => s.habits);
   const settings = useSoma((s) => s.settings);
   const [renaming, setRenaming] = useState(false);
   const [splitDraft, setSplitDraft] = useState("");
@@ -537,9 +539,10 @@ function DayCard({
           bodyweightKg: bodyweightOn(nutrition, date),
           hunger,
           phase: settings.phase,
+        habits,
         }),
       ),
-    [date, session, previous, nutrition, isRestDay, hunger, settings.phase],
+    [date, session, previous, nutrition, isRestDay, hunger, settings.phase, habits],
   );
 
   return (
