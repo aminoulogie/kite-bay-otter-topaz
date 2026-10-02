@@ -49,6 +49,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   // "previous / next month".
   const swipeRef = useSwipeToClose(onClose, "right", open);
   const history = useSoma((s) => s.history);
+  const restDays = useSoma((s) => s.restDays);
   const habits = useSoma((s) => s.habits);
   const nutrition = useSoma((s) => s.nutrition);
   const ledger = useSoma((s) => s.ledger);
@@ -133,7 +134,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           nutrition,
           // A rest day with no session is not a missed workout. Without this
           // every programmed rest day scored as a failure to train.
-          isRestDay: !session && (projected.isRest || isRestSplit(projected.split)),
+          isRestDay: !session && (!!restDays[date] || projected.isRest || isRestSplit(projected.split)),
           bodyweightKg: bodyweightOn(nutrition, date),
         hunger,
         phase: settings.phase,
@@ -143,7 +144,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
       if (s.tracked > 0) out.set(date, s.score);
     }
     return out;
-  }, [cells, sessionsByDate, nutrition, today, history, settings.scheduleOverrides, program]);
+  }, [cells, sessionsByDate, nutrition, today, history, settings.scheduleOverrides, program, restDays]);
 
   const shift = (delta: number) =>
     setCursor((c) => {
@@ -349,13 +350,13 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           previous={previousSameSplit(history, selected)}
           isRestDay={
             !sessionsByDate.get(selected) &&
-            isRestSplit(
+            (!!restDays[selected] || isRestSplit(
               SomaIntelligenceEngine.getProgramProjectedDay(
                 new Date(selected + "T12:00:00"),
                 settings.scheduleOverrides,
                 program,
               ).split,
-            )
+            ))
           }
           nutrition={nutrition}
           onBackToToday={() => setSelected(today)}

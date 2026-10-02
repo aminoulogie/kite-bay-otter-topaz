@@ -122,6 +122,7 @@ export function DashboardView() {
   const mind = useSoma((s) => s.mind);
   const hunger = useSoma((s) => s.hunger);
   const settings = useSoma((s) => s.settings);
+  const restDays = useSoma((s) => s.restDays);
 
   const today = getLocalDateKey(new Date());
   const date = activeDate || today;
@@ -133,12 +134,14 @@ export function DashboardView() {
         session: history[date] ?? null,
         previous: previousSameSplit(history, date),
         nutrition,
+        // A rest day you saved is rest, not a missed workout.
+        isRestDay: !history[date] && !!restDays[date],
         bodyweightKg: bodyweightOn(nutrition, date),
         hunger,
         phase: settings.phase,
       }),
     );
-  }, [history, nutrition, date, hunger, settings.phase]);
+  }, [history, nutrition, date, hunger, settings.phase, restDays]);
 
   /**
    * The five things worth comparing, each as a date-keyed series.

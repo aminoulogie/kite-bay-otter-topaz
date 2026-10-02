@@ -25,6 +25,7 @@ import { currentDebt } from "@/lib/sleep-debt";
 import { rateExerciseInstance, rateSession, rateSet, ratingTone } from "@/lib/stimulus";
 import { tapMedium, tapSuccess } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
+import { isRestSplit } from "@/lib/programs";
 import { sessionBurn } from "@/lib/training-burn";
 import { latestWeight } from "@/lib/rings";
 import type { SessionExercise } from "@/lib/types";
@@ -80,6 +81,7 @@ export function WorkoutView() {
   const startRest = useSoma((s) => s.startRest);
   const clearRest = useSoma((s) => s.clearRest);
   const saveWorkout = useSoma((s) => s.saveWorkout);
+  const logRestDay = useSoma((s) => s.logRestDay);
   const resetLive = useSoma((s) => s.resetLive);
   const resumeFinished = useSoma((s) => s.resumeFinished);
   const allExercises = useSoma((s) => s.allExercises);
@@ -540,9 +542,23 @@ export function WorkoutView() {
             ) {
               return;
             }
+            const day = live.forDate ?? todayKey;
+            const anyDone = live.exercises.some((ex) => ex.sets.some((x) => x.done && x.type !== "warmup"));
+            // A rest and recovery day has no sets to tick, and that is the
+            // point of it: saving one records the rest, not an empty workout.
+            if (!anyDone && (isRestSplit(live.split) || (live.exercises.length === 0 && proj.isRest))) {
+              logRestDay(day, true);
+              toast.success(`Rest day logged for ${day}`, {
+                action: { label: "Undo", onClick: () => logRestDay(day, false) },
+              });
+              return;
+            }
             const saved = saveWorkout();
             if (!saved) toast.error("Tick at least one working set first");
-            else toast.success(`Session saved to ${live.forDate ?? todayKey}`);
+            else {
+              logRestDay(day, false);
+              toast.success(`Session saved to ${day}`);
+            }
           }}
         >
           Save log

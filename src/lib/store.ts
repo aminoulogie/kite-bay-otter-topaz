@@ -448,6 +448,14 @@ export interface SomaStore {
   dayNotes: Record<string, string>;
   setDayNote: (date: string, note: string) => void;
   /**
+   * Days saved as rest and recovery, with when. Kept apart from history on
+   * purpose: everything that counts sessions — streaks, weekly frequency,
+   * volume, progression — reads history, and an empty session there would
+   * count as a workout that never happened.
+   */
+  restDays: Record<string, number>;
+  logRestDay: (date: string, on: boolean) => void;
+  /**
    * Face and posture scans, analysis and all.
    *
    * In the main store rather than a side key, so they are in the backup by
@@ -592,6 +600,7 @@ export const useSoma = create<SomaStore>()(
       customFoods: [],
       logOverrides: {},
       dayNotes: {},
+      restDays: {},
       hunger: [],
       scans: [],
       ledger: [],
@@ -2421,6 +2430,12 @@ export const useSoma = create<SomaStore>()(
         else delete next[date];
         set({ dayNotes: next });
       },
+      logRestDay: (date, on) => {
+        const next = { ...get().restDays };
+        if (on) next[date] = Date.now();
+        else delete next[date];
+        set({ restDays: next });
+      },
       logHunger: (level, note) => {
         set({
           hunger: [
@@ -2506,6 +2521,7 @@ export const useSoma = create<SomaStore>()(
             customFoods: get().customFoods,
             logOverrides: get().logOverrides,
             dayNotes: get().dayNotes,
+            restDays: get().restDays,
             hunger: get().hunger,
             scans: get().scans,
             ledger: get().ledger,
@@ -2560,6 +2576,7 @@ export const useSoma = create<SomaStore>()(
               customFoods: data.customFoods || [],
               logOverrides: data.logOverrides || {},
               dayNotes: data.dayNotes || {},
+              restDays: data.restDays || {},
               hunger: data.hunger || [],
               scans: data.scans || [],
               ledger: data.ledger || [],
@@ -2656,6 +2673,7 @@ export const useSoma = create<SomaStore>()(
             // rest of the restore follows.
             // Incoming notes fill gaps; a note on the device is the newer edit.
             dayNotes: { ...(data.dayNotes || {}), ...cur.dayNotes },
+            restDays: { ...(data.restDays || {}), ...cur.restDays },
             // Keyed on the timestamp, which is unique per entry.
             hunger: (() => {
               const seen = new Set(cur.hunger.map((h) => h.at));
@@ -2784,6 +2802,7 @@ export const useSoma = create<SomaStore>()(
         customFoods: s.customFoods,
         logOverrides: s.logOverrides,
         dayNotes: s.dayNotes,
+        restDays: s.restDays,
         hunger: s.hunger,
         scans: s.scans,
         ledger: s.ledger,
