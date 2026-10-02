@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { formatResult, isExpression, resolve } from "@/lib/calc";
+import { IOS_ACCESSORY_H } from "@/lib/keyboard";
 
 /**
  * Arithmetic in every number field in the app.
@@ -104,7 +106,12 @@ export function CalcBar() {
   useEffect(() => {
     const vv = window.visualViewport;
     if (!field || !vv) return;
-    const place = () => setTop(Math.round(vv.offsetTop + vv.height - BAR_H));
+    const strip = Capacitor.getPlatform() === "ios" ? IOS_ACCESSORY_H : 0;
+    // Only lift clear of iOS's strip while a keyboard is actually up.
+    const place = () => {
+      const up = window.innerHeight - (vv.height + vv.offsetTop) > 90;
+      setTop(Math.round(vv.offsetTop + vv.height - BAR_H - (up ? strip : 0)));
+    };
     place();
     vv.addEventListener("resize", place);
     vv.addEventListener("scroll", place);

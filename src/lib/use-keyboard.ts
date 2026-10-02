@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { FIELD_SELECTOR, insetFrom, keyboardTopFrom, liftFor } from "@/lib/keyboard";
+import { FIELD_SELECTOR, IOS_ACCESSORY_H, insetFrom, keyboardTopFrom, liftFor } from "@/lib/keyboard";
+import { Capacitor } from "@capacitor/core";
 
 /**
  * Keep the keyboard out of the way of whatever is being typed into.
@@ -113,7 +114,8 @@ export function useKeyboardInset(): void {
     let lastH = -1;
     const pin = (open: boolean) => {
       const top = open && viewport ? Math.round(viewport.offsetTop) : 0;
-      const h = open && viewport ? Math.round(viewport.height) : 0;
+      const strip = Capacitor.getPlatform() === "ios" ? IOS_ACCESSORY_H : 0;
+      const h = open && viewport ? Math.round(viewport.height) - strip : 0;
       if (top === lastTop && h === lastH) return;
       lastTop = top;
       lastH = h;
