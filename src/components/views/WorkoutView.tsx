@@ -82,6 +82,9 @@ export function WorkoutView() {
   const clearRest = useSoma((s) => s.clearRest);
   const saveWorkout = useSoma((s) => s.saveWorkout);
   const logRestDay = useSoma((s) => s.logRestDay);
+  const restDays = useSoma((s) => s.restDays);
+  /** "Train anyway" on a saved rest day: show the session for this visit. */
+  const [restDismissed, setRestDismissed] = useState(false);
   const resetLive = useSoma((s) => s.resetLive);
   const resumeFinished = useSoma((s) => s.resumeFinished);
   const allExercises = useSoma((s) => s.allExercises);
@@ -309,6 +312,41 @@ export function WorkoutView() {
             </Button>
           </Card>
         )}
+      </div>
+    );
+  }
+
+  // A rest day that was saved looks saved, the way a session does — not like
+  // an empty workout still waiting to be started.
+  const restDay = live.forDate ?? todayKey;
+  const restSaved = !!restDays[restDay] && !live.finished && !restDismissed &&
+    !live.exercises.some((ex) => ex.sets.some((x) => x.done));
+  if (restSaved) {
+    return (
+      <div className="space-y-3 pb-4">
+        <div className="py-4 text-center">
+          <Badge tone="accent">Rest day saved</Badge>
+          <h2 className="mt-2 font-display text-2xl font-extrabold tracking-tight">Recovery</h2>
+          <p className="mt-1 text-sm text-muted">{live.split} · {restDay}</p>
+        </div>
+        <Card className="text-sm text-muted">
+          Logged as rest, not as a missed workout. It doesn't count toward
+          sessions or volume, and the day score leaves the workout out.
+        </Card>
+        <div className="flex gap-2">
+          <Button className="flex-1" onClick={() => setRestDismissed(true)}>
+            Train anyway
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              logRestDay(restDay, false);
+              toast.success("Rest day removed");
+            }}
+          >
+            Undo rest day
+          </Button>
+        </div>
       </div>
     );
   }

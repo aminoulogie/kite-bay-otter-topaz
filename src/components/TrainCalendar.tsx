@@ -308,6 +308,9 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
                   />
                 </span>
                 {isEnd && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-amber-400" aria-label="Membership ends" />}
+                {restDays[date] && (
+                  <span className="absolute left-1 top-1 size-1.5 rounded-full bg-sky-400" aria-label="Rest day saved" />
+                )}
                 {score != null && !isEnd && (
                   <span className="sr-only">score {score}</span>
                 )}
@@ -327,6 +330,9 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           ))}
           <span className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-amber-400" /> membership ends
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-sky-400" /> rest day
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded bg-surface-2" /> membership active
@@ -490,6 +496,8 @@ function DayCard({
 }) {
   const [photo, setPhoto] = useState<string | null>(null);
   const renameSession = useSoma((s) => s.renameSession);
+  const restDays = useSoma((s) => s.restDays);
+  const logRestDay = useSoma((s) => s.logRestDay);
   // Read here as well as in the grid above. Both feed the SAME buildDayInputs,
   // which is the point: the card and the square disagreeing about one day is
   // the bug that file was written to end.
@@ -642,6 +650,20 @@ function DayCard({
                 );
               })}
             </ul>
+          </div>
+        ) : restDays[date] ? (
+          <div className="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-sky-400/40 bg-sky-400/10 p-3">
+            <div>
+              <div className="text-[0.7rem] font-bold uppercase tracking-wide text-sky-300">Rest day saved</div>
+              <div className="text-[0.65rem] text-faint">Recovery — not counted as a missed workout</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => logRestDay(date, false)}
+              className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[0.65rem] font-bold text-muted"
+            >
+              Undo
+            </button>
           </div>
         ) : (
           <p className="mb-3 rounded-2xl border border-border bg-surface-2 p-3 text-[0.72rem] text-muted">
