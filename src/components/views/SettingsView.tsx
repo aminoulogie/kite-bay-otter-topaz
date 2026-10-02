@@ -8,7 +8,7 @@ import { ExerciseIcon } from "@/components/ExerciseIcon";
 import { DecimalInput, parseDecimal } from "@/components/ui/decimal-input";
 import { colorsOf, ratesOf } from "@/lib/money-model";
 import { Input } from "@/components/ui/input";
-import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
+import { ACCENT_PRESETS, SomaIntelligenceEngine, getLocalDateKey, normalizeAccent } from "@/lib/soma";
 import {
   buildBackup, parseBackup, restoreExercisePhotos, restorePhotos, restoreScanImages, saveBackupFile,
   type BackupSummary,
@@ -18,6 +18,7 @@ import {
   storageHealth, type StorageHealth,
 } from "@/lib/storage-health";
 import { ProgramBuilder } from "@/components/ProgramBuilder";
+import { BuildSplitSheet } from "@/components/BuildSplitSheet";
 import {
   getStoredVaultFolder, pickVaultFolder, forgetVaultFolder, readVaultFile, readVaultPhotos,
   stripPhotosForVault, supportsVaultFolder, writeVaultFile, writeVaultPhotos,
@@ -36,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { widgetStatus } from "@/lib/native/widget-bridge";
 import { ALL_WAYS, WAY_NAMES, diagnoseHaptics, testHaptics, tickWay } from "@/lib/haptics";
 import { lockScreenStatus, type LockScreenStatus } from "@/lib/native/routine-activity";
+import { connectHealth, healthDay, type HealthDay } from "@/lib/native/health";
 import {
   applyLiveNow, checkLive, liveStatus, nativeVersion, onLiveStatus, type LiveStatus,
 } from "@/lib/native/live-update";
@@ -95,6 +97,7 @@ export function SettingsView() {
   const [widget, setWidget] = useState<{ shared: boolean; group: string } | null>(null);
   const [lock, setLock] = useState<LockScreenStatus | null>(null);
   const [way, setWay] = useState(tickWay());
+  const [buildingSplit, setBuildingSplit] = useState(false);
   const [live, setLive] = useState<LiveStatus>(liveStatus());
   const [installed, setInstalled] = useState<string | null>(null);
   useEffect(() => {
@@ -426,6 +429,10 @@ export function SettingsView() {
           </button>
         )}
       </Card>
+      </Sized>
+
+      <Sized key="health" glance={{ label: "Apple Health", short: "Health", empty: "Read sleep, steps and weight", emptyShort: "Connect" }}>
+      <HealthCard />
       </Sized>
 
       <Sized key="training" glance={{ label: "Training", short: "Units", value: settings.unit ?? "kg", sub: "weight unit" }}>
@@ -910,6 +917,14 @@ export function SettingsView() {
       <Sized key="programme" glance={{ label: "Training programme", short: "Programme", value: activeProgram.name, sub: activeProgram.kind === "week" ? "fixed weekdays" : `${activeProgram.days.length}-day cycle` }}>
       <Card>
         <CardTitle>Training programme</CardTitle>
+        <button
+          type="button"
+          onClick={() => setBuildingSplit(true)}
+          className="mb-3 w-full rounded-xl border border-accent/40 bg-accent/10 py-2.5 text-xs font-extrabold text-accent-text"
+        >
+          Build my split from my logged workouts
+        </button>
+        {buildingSplit && <BuildSplitSheet onClose={() => setBuildingSplit(false)} />}
         <p className="mb-3 text-xs text-muted">
           Currently on <b className="text-fg">{activeProgram.name}</b> —{" "}
           {activeProgram.kind === "week"
@@ -1522,5 +1537,77 @@ function StatusRow({ label, ok, good, bad }: { label: string; ok: boolean; good:
       <span className="shrink-0 text-muted">{label}</span>
       <span className={cn("truncate font-bold", ok ? "text-emerald-400" : "text-warn")}>{ok ? good : bad}</span>
     </div>
+  );
+}
+
+/**
+ * Apple Health: ask once, then read today's numbers and fill the gaps.
+ * Read-only — nothing is ever written to Health.
+ */
+function HealthCard() {
+  const nutrition = useSoma((s) => s.nutrition);
+  const logSleep = useSoma((s) => s.logSleep);
+  const logWeight = useSoma((s) => s.logWeight);
+  const setActiveDate = useSoma((s) => s.setActiveDate);
+  const [day, setDay] = useState<HealthDay | null>(null);
+  const [busy, setBusy] = useState(false);
+  const today = getLocalDateKey(new Date());
+  const logged = nutrition[today];
+
+  const read = async () => {
+    setBusy(true);
+    const d = await healthDay(today);
+    setBusy(false);
+    setDay(d);
+    if (!d) toast.error("Apple Health did not answer — is this the new install?");
+    else if (d.errors?.length) toast.error(d.errors[0]!);
+  };
+  const fill = () => {
+    if (!day) return;
+    if (useSoma.getState().activeDate !== today) setActiveDate(today);
+    const done: string[] = [];
+    if (day.sleepHours && logged?.sleep?.hours == null) {
+      logSleep(Math.round(day.sleepHours * 10) / 10);
+      done.push("sleep");
+    }
+    if (day.weightKg && day.weightDate === today && !logged?.bodyWeight) {
+      logWeight(Math.round(day.weightKg * 10) / 10);
+      done.push("weight");
+    }
+    toast.success(done.length ? `Filled today's ${done.join(" and ")}` : "Nothing to fill — today already has it");
+  };
+
+  return (
+    <Card>
+      <CardTitle>Apple Health</CardTitle>
+      <p className="mb-3 text-xs text-muted">
+        Reads steps, active energy, sleep and weight. Nothing is written to Health and nothing leaves the phone.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => void connectHealth().then((m) => toast(m, { duration: 8000 }))}>Connect</Button>
+        <Button onClick={() => void read()} disabled={busy}>{busy ? "Reading…" : "Read today"}</Button>
+        {day && <Button variant="primary" onClick={fill}>Fill today</Button>}
+      </div>
+      {day && (
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          {[
+            ["Steps", day.steps != null ? Math.round(day.steps).toLocaleString() : "—"],
+            ["Active", day.activeKcal != null ? `${Math.round(day.activeKcal)} kcal` : "—"],
+            ["Sleep", day.sleepHours != null ? `${day.sleepHours.toFixed(1)} h` : "—"],
+            ["Weight", day.weightKg != null ? `${day.weightKg.toFixed(1)} kg${day.weightDate !== today ? ` (${day.weightDate})` : ""}` : "—"],
+          ].map(([k, v]) => (
+            <div key={k} className="rounded-xl bg-surface-2 px-3 py-2">
+              <div className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">{k}</div>
+              <div className="font-bold tabular">{v}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {day && Object.keys(day).length === 0 && (
+        <p className="mt-2 text-[0.7rem] text-faint">
+          Empty — either nothing is in Health for today, or access was refused (Settings › Health › Data Access &amp; Devices › SOMA).
+        </p>
+      )}
+    </Card>
   );
 }

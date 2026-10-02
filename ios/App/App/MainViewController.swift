@@ -2,6 +2,7 @@ import AudioToolbox
 import AVFoundation
 import Capacitor
 import CoreHaptics
+import HealthKit
 import UIKit
 import WebKit
 
@@ -56,6 +57,7 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(VaultFolderPlugin())
         bridge?.registerPluginInstance(RoutineActivityPlugin())
         bridge?.registerPluginInstance(TickPlugin())
+        bridge?.registerPluginInstance(HealthPlugin())
     }
 }
 
@@ -222,6 +224,149 @@ public class TorchPlugin: CAPPlugin, CAPBridgedPlugin {
             } catch {
                 call.resolve(["ok": false, "on": false, "error": error.localizedDescription])
             }
+        }
+    }
+}
+
+/**
+ * Apple Health, read-only: steps, active energy, sleep and weight for a day.
+ *
+ * Nothing is written to Health. iOS never says whether reading was refused —
+ * a refused read just comes back empty — so "connected" means the permission
+ * sheet was shown, and empty values mean either nothing logged or no access.
+ * JS: Health.available() / Health.connect() / Health.day({ date: "YYYY-MM-DD" })
+ */
+@objc(HealthPlugin)
+public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "HealthPlugin"
+    public let jsName = "Health"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "available", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "connect", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "day", returnType: CAPPluginReturnPromise),
+    ]
+
+    private let store = HKHealthStore()
+
+    private var readTypes: Set<HKObjectType> {
+        var types = Set<HKObjectType>()
+        if let t = HKObjectType.quantityType(forIdentifier: .stepCount) { types.insert(t) }
+        if let t = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) { types.insert(t) }
+        if let t = HKObjectType.quantityType(forIdentifier: .bodyMass) { types.insert(t) }
+        if let t = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(t) }
+        return types
+    }
+
+    @objc func available(_ call: CAPPluginCall) {
+        call.resolve(["available": HKHealthStore.isHealthDataAvailable()])
+    }
+
+    @objc func connect(_ call: CAPPluginCall) {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            call.resolve(["ok": false, "error": "Health data is not available on this device"])
+            return
+        }
+        store.requestAuthorization(toShare: nil, read: readTypes) { ok, error in
+            call.resolve(["ok": ok, "error": error?.localizedDescription ?? ""])
+        }
+    }
+
+    @objc func day(_ call: CAPPluginCall) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        guard let dateString = call.getString("date"), let start = formatter.date(from: dateString) else {
+            call.reject("A date like 2026-10-02 is needed")
+            return
+        }
+        let calendar = Calendar.current
+        let end = calendar.date(byAdding: .day, value: 1, to: start) ?? start
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var out: [String: Any] = [:]
+        var errors: [String] = []
+        func put(_ key: String, _ value: Any?) {
+            lock.lock()
+            if let value = value { out[key] = value }
+            lock.unlock()
+        }
+        func fail(_ error: Error?) {
+            guard let error = error else { return }
+            lock.lock()
+            errors.append(error.localizedDescription)
+            lock.unlock()
+        }
+
+        let dayRange = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        func sum(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit, _ key: String) {
+            guard let type = HKQuantityType.quantityType(forIdentifier: id) else { return }
+            group.enter()
+            let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: dayRange, options: .cumulativeSum) { _, stats, error in
+                fail(error)
+                put(key, stats?.sumQuantity()?.doubleValue(for: unit))
+                group.leave()
+            }
+            store.execute(query)
+        }
+        sum(.stepCount, HKUnit.count(), "steps")
+        sum(.activeEnergyBurned, HKUnit.kilocalorie(), "activeKcal")
+
+        // The latest weigh-in on or before the day.
+        if let mass = HKQuantityType.quantityType(forIdentifier: .bodyMass) {
+            group.enter()
+            let upTo = HKQuery.predicateForSamples(withStart: nil, end: end, options: [])
+            let newest = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(sampleType: mass, predicate: upTo, limit: 1, sortDescriptors: [newest]) { _, samples, error in
+                fail(error)
+                if let sample = samples?.first as? HKQuantitySample {
+                    put("weightKg", sample.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo)))
+                    put("weightDate", formatter.string(from: sample.endDate))
+                }
+                group.leave()
+            }
+            store.execute(query)
+        }
+
+        // Last night: asleep time between 6pm the evening before and noon.
+        // Watch and phone often both record the same night, so the asleep
+        // intervals are merged rather than added.
+        if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+            group.enter()
+            let from = calendar.date(byAdding: .hour, value: -6, to: start) ?? start
+            let to = calendar.date(byAdding: .hour, value: 12, to: start) ?? end
+            let night = HKQuery.predicateForSamples(withStart: from, end: to, options: [])
+            let query = HKSampleQuery(sampleType: sleep, predicate: night, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                fail(error)
+                // 1 asleep, 3 core, 4 deep, 5 REM; 0 in bed and 2 awake are not sleep.
+                let asleep: Set<Int> = [1, 3, 4, 5]
+                let spans = (samples as? [HKCategorySample] ?? [])
+                    .filter { asleep.contains($0.value) }
+                    .map { (max($0.startDate, from), min($0.endDate, to)) }
+                    .filter { $0.0 < $0.1 }
+                    .sorted { $0.0 < $1.0 }
+                var total: TimeInterval = 0
+                var current: (Date, Date)?
+                for span in spans {
+                    if let c = current, span.0 <= c.1 {
+                        current = (c.0, max(c.1, span.1))
+                    } else {
+                        if let c = current { total += c.1.timeIntervalSince(c.0) }
+                        current = span
+                    }
+                }
+                if let c = current { total += c.1.timeIntervalSince(c.0) }
+                if total > 0 { put("sleepHours", total / 3600) }
+                group.leave()
+            }
+            store.execute(query)
+        }
+
+        group.notify(queue: .main) {
+            lock.lock()
+            var result = out
+            if !errors.isEmpty { result["errors"] = errors }
+            lock.unlock()
+            call.resolve(result)
         }
     }
 }
