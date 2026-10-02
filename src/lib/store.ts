@@ -93,7 +93,7 @@ import { HOME_TAB } from "./tab-order";
 import type { ScanRecord } from "./aether/scan-store";
 import type { HungerEntry } from "./hunger";
 import {
-  deduct, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
+  deduct, giveBack, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
 } from "./pantry";
 import { deloadSetCount, feederRamp } from "./autoregulate";
 import { cleanDue } from "./due";
@@ -358,6 +358,11 @@ export interface SomaStore {
   planFood: (item: FoodItem, date?: string) => void;
   /** Move a planned item into the day's real intake. */
   confirmPlanned: (idx: number, date?: string) => void;
+  /**
+   * The reverse of confirmPlanned: an eaten item goes back to the plan
+   * (grayed, uncounted) and its portion back into the cupboard.
+   */
+  unconfirmFood: (idx: number, date?: string) => void;
   /** Everything still on the plan, eaten at once. */
   confirmAllPlanned: (date?: string) => void;
   removePlanned: (idx: number, date?: string) => void;
@@ -1157,6 +1162,20 @@ export const useSoma = create<SomaStore>()(
           planned: day.planned!.filter((_, i) => i !== idx),
         });
         get().takeFromPantry(item, k);
+      },
+      unconfirmFood: (idx, date) => {
+        const k = date ?? get().activeDate;
+        const day = get().nutrition[k];
+        const item = day?.items?.[idx];
+        if (!day || !item) return;
+        // One patch, for the same reason as confirmPlanned.
+        get().patchDay(k, {
+          items: day.items.filter((_, i) => i !== idx),
+          planned: [...(day.planned ?? []), item],
+        });
+        set({
+          pantry: giveBack(get().pantry, item.name, Number(item.serving) || 0, String(item.unit ?? ""), k),
+        });
       },
       confirmAllPlanned: (date) => {
         const k = date ?? get().activeDate;

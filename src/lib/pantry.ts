@@ -166,6 +166,27 @@ export function deduct(
   };
 }
 
+/**
+ * Put a portion back: the mirror of deduct, for food that turned out not to
+ * be eaten after all. Only into stock that already exists in the same unit —
+ * it never invents a cupboard item.
+ */
+export function giveBack(
+  pantry: PantryItem[],
+  name: string,
+  qty: number,
+  unit: string,
+  today?: string,
+): PantryItem[] {
+  const list = pantry ?? [];
+  const amount = Number(qty) || 0;
+  const item = findStock(list, name);
+  if (!item || amount <= 0 || !unitsAgree(item.unit, unit)) return list;
+  const out = [...list];
+  out[list.indexOf(item)] = { ...item, qty: (Number(item.qty) || 0) + amount, updated: today ?? item.updated };
+  return out;
+}
+
 export function isLow(item: PantryItem): boolean {
   return (Number(item.qty) || 0) <= (Number(item.low) || 0);
 }

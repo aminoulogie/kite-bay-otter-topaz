@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { Check, Pencil, Trash2 } from "lucide-react";
+import { Check, Clock, Pencil, Trash2 } from "lucide-react";
 import {
   CONFIRM_PX, REVEAL_PX, REVEAL_TWO_PX, decideLock, decideRelease, offsetFor, type Lock,
 } from "@/lib/use-swipe-action";
@@ -45,6 +45,7 @@ export function SwipeRow({
   editLabel = "Edit",
   onConfirm,
   confirmLabel = "Confirm",
+  confirmTone = "accent",
   disabled,
   children,
 }: {
@@ -58,6 +59,11 @@ export function SwipeRow({
   /** Present on rows that can be swiped right. Absent leaves that side inert. */
   onConfirm?: () => void;
   confirmLabel?: string;
+  /**
+   * How the swipe-right badge looks: the accent tick for "it happened", or a
+   * gray clock for "not yet" — sending an eaten food back to the plan.
+   */
+  confirmTone?: "accent" | "muted";
   /** True while the row is held for a drag, so the two gestures never overlap. */
   disabled?: boolean;
   children: React.ReactNode;
@@ -214,9 +220,14 @@ export function SwipeRow({
             ref={tick}
             aria-label={confirmLabel}
             style={{ opacity: 0, transform: "scale(0.6)", willChange: "transform, opacity" }}
-            className="ml-2 grid size-11 shrink-0 place-items-center rounded-full bg-accent text-accent-ink shadow-lg"
+            className={cn(
+              "ml-2 grid size-11 shrink-0 place-items-center rounded-full shadow-lg",
+              confirmTone === "muted" ? "bg-surface-3 text-muted" : "bg-accent text-accent-ink",
+            )}
           >
-            <Check className="size-[1.15rem]" strokeWidth={2.6} />
+            {confirmTone === "muted"
+              ? <Clock className="size-[1.15rem]" strokeWidth={2.4} />
+              : <Check className="size-[1.15rem]" strokeWidth={2.6} />}
           </div>
         </div>
       )}

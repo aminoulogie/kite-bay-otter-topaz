@@ -70,6 +70,7 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
   const restoreFood = useSoma((s) => s.restoreFood);
   const planFood = useSoma((s) => s.planFood);
   const confirmPlanned = useSoma((s) => s.confirmPlanned);
+  const unconfirmFood = useSoma((s) => s.unconfirmFood);
   const confirmAllPlanned = useSoma((s) => s.confirmAllPlanned);
   const removePlanned = useSoma((s) => s.removePlanned);
   const restorePlanned = useSoma((s) => s.restorePlanned);
@@ -803,7 +804,7 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
       {/* The gesture is invisible without this. */}
       {items.length > 0 && (
         <p className="px-1 text-[0.62rem] leading-snug text-faint">
-          Tap a food to edit it. Swipe left to delete. Press and hold, then drag it onto
+          Tap a food to edit it. Swipe left to delete, right to gray it out (not eaten yet) — a gray one swipes right to count it. Press and hold, then drag it onto
           another meal to move it there.
         </p>
       )}
@@ -904,6 +905,24 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
                     // While a row is held for a drag it belongs to that
                     // gesture; two meanings for one finger is one too many.
                     disabled={mealDrag.dragging !== null}
+                    // Swipe right: not eaten after all. It goes gray, back
+                    // to the plan, out of every total — and a swipe right on
+                    // the gray row counts it again.
+                    confirmTone="muted"
+                    confirmLabel={`Not eaten yet: ${it.name}`}
+                    onConfirm={() => {
+                      unconfirmFood(idx, activeDate);
+                      toast.success(`${it.name} grayed out — swipe right to count it`, {
+                        action: {
+                          label: "Undo",
+                          onClick: () => {
+                            const plan = useSoma.getState().nutrition[activeDate]?.planned ?? [];
+                            const at = plan.lastIndexOf(it);
+                            if (at >= 0) confirmPlanned(at, activeDate);
+                          },
+                        },
+                      });
+                    }}
                     onEdit={() => setPortion({ item: it, meal: m, mode: "edit", idx })}
                     onDelete={() => deleteFood(idx, it)}
                   >

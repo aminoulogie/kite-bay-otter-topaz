@@ -167,3 +167,12 @@ test("eating the library's name deducts from the cupboard's name", () => {
   assert.equal(r.deducted, 200);
   assert.equal(r.pantry[0]!.qty, 800);
 });
+
+test("giveBack puts an uneaten portion back, only into matching stock", async () => {
+  const { giveBack } = await import("./pantry.ts");
+  const pantry = [{ id: "r", name: "Rice", qty: 100, unit: "g", low: 50 }] as never[];
+  const out = giveBack(pantry, "rice", 70, "g") as unknown as { qty: number }[];
+  assert.equal(out[0]!.qty, 170);
+  assert.equal(giveBack(pantry, "rice", 70, "ml"), pantry);
+  assert.equal(giveBack(pantry, "bread", 70, "g"), pantry);
+});
