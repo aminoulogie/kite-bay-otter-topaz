@@ -1018,3 +1018,17 @@ select,
 [class~="fixed"][class~="inset-0"][class~="bg-bg"] {
   box-shadow: 0 100vh 0 0 var(--color-bg);
 }
+
+/* iOS date and time fields: with the native look turned off, Safari draws the
+   value at the top of the box and centres it horizontally. Put it where every
+   other field's text is — vertically centred, left-aligned. */
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+  min-height: 1.4em;
+}
+input[type="date"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit {
+  padding: 0;
+}

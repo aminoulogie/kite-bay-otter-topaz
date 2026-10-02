@@ -196,7 +196,7 @@ export function EntrySheet({
             type="date"
             value={date}
             onChange={(e) => e.target.value && setDate(e.target.value)}
-            className="block h-11 w-full min-w-0 appearance-none rounded-xl border border-border bg-surface-2 px-3 text-left text-sm outline-none"
+            className="block h-11 w-full min-w-0 appearance-none rounded-xl border border-border bg-surface-2 px-3 py-0 text-left text-sm leading-[2.75rem] outline-none"
           />
         </div>
         <div className="min-w-0">
@@ -210,7 +210,7 @@ export function EntrySheet({
               const a = accounts.find((x) => x.id === e.target.value);
               if (a && !entry) setCurrency(a.currency);
             }}
-            className="block h-11 w-full min-w-0 appearance-none rounded-xl border border-border bg-surface-2 px-3 text-sm outline-none"
+            className="block h-11 w-full min-w-0 appearance-none truncate rounded-xl border border-border bg-surface-2 py-0 pl-3 pr-9 text-sm leading-[2.75rem] outline-none"
           >
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
