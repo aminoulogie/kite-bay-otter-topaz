@@ -7,6 +7,7 @@ import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
 import { ProjectsCard } from "@/components/ProjectsCard";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
+import { CheckInButton } from "@/components/EveningCheckIn";
 import { HabitRings } from "@/components/HabitRings";
 import { ActivityRings } from "@/components/ActivityRings";
 import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
@@ -239,6 +240,10 @@ export function DashboardView() {
   // Each widget carries the id the layout arranges as its KEY. The page is
   // then just its widgets, in whatever order the user put them.
   return (
+    <>
+    {/* Above the grid rather than a widget in it: a new widget joins a saved
+        layout at the very end, where an evening prompt would never be seen. */}
+    <CheckInButton isTrainingDay={trainingDay} score={score} lines={lines} />
     <WidgetGrid tab="dashboard">
       {/* Not wrapped in a div: the grid stretches a widget's own root to fill
           the box it was given, and a bare wrapper would stretch instead of the
@@ -303,6 +308,7 @@ export function DashboardView() {
       </Card>
       </Correlate>
     </WidgetGrid>
+    </>
   );
 }
 
