@@ -262,7 +262,9 @@ extension View {
     func somaGlass(_ radius: CGFloat, tint: Color? = nil, interactive: Bool = false) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
-            self.glassEffect(Glass.regular.tint(tint).interactive(interactive),
+            // Untinted on purpose: the glass takes its colour from what is
+            // behind it, never from a wash painted on top.
+            self.glassEffect(Glass.regular.interactive(interactive),
                              in: RoundedRectangle(cornerRadius: radius, style: .continuous))
         } else {
             self.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -520,12 +522,7 @@ struct HabitCardView: View {
             .buttonStyle(.plain)
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(LinearGradient(colors: [c.opacity(0.09), Color(uiColor: .secondarySystemBackground).opacity(0.6)],
-                                     startPoint: .top, endPoint: .bottom))
-        )
-        .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Color.primary.opacity(0.06)))
+        .somaGlass(26)
     }
 }
 
@@ -587,7 +584,8 @@ struct HabitsListView: View {
                                 } label: {
                                     Text(c).font(.subheadline.weight(.semibold))
                                         .padding(.horizontal, 16).padding(.vertical, 9)
-                                        .foregroundStyle(filter == c ? Color.black : Color.primary)
+                                        .foregroundStyle(filter == c ? Color.primary : Color.secondary)
+                                        .fontWeight(filter == c ? .heavy : .semibold)
                                 }
                                 .buttonStyle(.plain)
                                 .somaGlass(18, tint: filter == c ? Color(somaHex: d.accent) : nil, interactive: true)

@@ -421,7 +421,7 @@ struct ExtraBanner: View {
         } label: {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(c.opacity(0.22))
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary.opacity(0.08))
                     if let img = model.icon(spec.icon) {
                         Image(uiImage: img).resizable().scaledToFit().frame(width: 20, height: 20).foregroundStyle(c)
                     }
@@ -433,13 +433,13 @@ struct ExtraBanner: View {
                 }
                 Spacer(minLength: 0)
                 if let v = spec.value {
-                    Text(v).font(.title3.weight(.heavy)).monospacedDigit().foregroundStyle(c)
+                    Text(v).font(.title3.weight(.heavy)).monospacedDigit()
                 }
             }
             .padding(12)
         }
         .buttonStyle(PressStyle())
-        .somaGlass(22, tint: c.opacity(0.18), interactive: true)
+        .somaGlass(22, interactive: true)
     }
 }
 
@@ -479,19 +479,14 @@ struct HomeRoot: View {
     }
 }
 
-/// The dark ambient field the glass sits on: soft colour pools, never flat.
+/// What the glass sits on: the app's plain dark background, nothing more.
+/// Liquid Glass reads the content behind it; it is not a colour scheme.
 @available(iOS 16.0, *)
 struct HomeBackdrop: View {
     let accent: Color
 
     var body: some View {
-        ZStack {
-            Color(red: 0.043, green: 0.047, blue: 0.063)
-            RadialGradient(colors: [accent.opacity(0.22), .clear], center: UnitPoint(x: 0.15, y: 0.08), startRadius: 10, endRadius: 360)
-            RadialGradient(colors: [Color(red: 0.37, green: 0.36, blue: 0.9).opacity(0.22), .clear], center: UnitPoint(x: 0.95, y: 0.4), startRadius: 10, endRadius: 380)
-            RadialGradient(colors: [Color(red: 1, green: 0.22, blue: 0.37).opacity(0.14), .clear], center: UnitPoint(x: 0.1, y: 0.85), startRadius: 10, endRadius: 340)
-        }
-        .ignoresSafeArea()
+        Color(red: 0.043, green: 0.047, blue: 0.063).ignoresSafeArea()
     }
 }
 

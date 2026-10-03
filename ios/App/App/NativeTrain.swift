@@ -191,7 +191,8 @@ struct GlassButton: View {
                 if !title.isEmpty { Text(title) }
             }
             .font(.subheadline.weight(.bold))
-            .foregroundStyle(prominent ? Color.black : Color.primary)
+            .foregroundStyle(Color.primary)
+            .fontWeight(prominent ? .heavy : .bold)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 11)
             .padding(.horizontal, 12)

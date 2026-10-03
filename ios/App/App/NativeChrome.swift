@@ -200,6 +200,12 @@ final class ChromeWindow: UIWindow {
             v = cur.superview
         }
         if v == nil { return hit } // outside the chrome: a presented sheet
+        // Only transparent containers were hit (the top bar's full-screen
+        // layer). A native page underneath takes the touch before the web.
+        for root in chrome.nativeRoots.reversed()
+            where !root.isHidden && root.alpha > 0.01 && root.isUserInteractionEnabled {
+            if let h = root.hitTest(root.convert(point, from: self), with: event) { return h }
+        }
         return web.hitTest(web.convert(point, from: self), with: event) ?? web
     }
 }
