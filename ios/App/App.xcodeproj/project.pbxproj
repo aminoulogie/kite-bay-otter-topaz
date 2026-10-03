@@ -14,6 +14,7 @@
 		5C0A11E2AA00000000000001 /* NativeChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0A11E2AA00000000000002 /* NativeChrome.swift */; };
 		5C0A11E2AA00000000000003 /* NativeHabits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0A11E2AA00000000000004 /* NativeHabits.swift */; };
 		5C0A11E2AA00000000000005 /* NativeHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0A11E2AA00000000000006 /* NativeHome.swift */; };
+		5C0A11E2AA00000000000007 /* NativeTrain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0A11E2AA00000000000008 /* NativeTrain.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		35C21827D3B9C0787E7BBF27 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F5354F15091797E66F6A0BA /* WidgetKit.framework */; };
 		386D9E88B0D43740B6CFE2C5 /* RingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F0F56CA8FE985E51A8E816 /* RingsStore.swift */; };
@@ -66,6 +67,7 @@
 		5C0A11E2AA00000000000002 /* NativeChrome.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeChrome.swift; sourceTree = "<group>"; };
 		5C0A11E2AA00000000000004 /* NativeHabits.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeHabits.swift; sourceTree = "<group>"; };
 		5C0A11E2AA00000000000006 /* NativeHome.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeHome.swift; sourceTree = "<group>"; };
+		5C0A11E2AA00000000000008 /* NativeTrain.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeTrain.swift; sourceTree = "<group>"; };
 		2CA7BC2EF8931B4D76F2775C /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		353BAEC7490F31CC41429890 /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
@@ -164,6 +166,7 @@
 				5C0A11E2AA00000000000002 /* NativeChrome.swift */,
 				5C0A11E2AA00000000000004 /* NativeHabits.swift */,
 				5C0A11E2AA00000000000006 /* NativeHome.swift */,
+				5C0A11E2AA00000000000008 /* NativeTrain.swift */,
 				353BAEC7490F31CC41429890 /* App.entitlements */,
 				72FF2C4EA18CD8C2D759B4A6 /* VaultFolderPlugin.swift */,
 				1A14EA3591B930C8DBDECD60 /* RoutineActivityPlugin.swift */,
@@ -352,6 +355,7 @@
 				5C0A11E2AA00000000000001 /* NativeChrome.swift in Sources */,
 				5C0A11E2AA00000000000003 /* NativeHabits.swift in Sources */,
 				5C0A11E2AA00000000000005 /* NativeHome.swift in Sources */,
+				5C0A11E2AA00000000000007 /* NativeTrain.swift in Sources */,
 				B862E6E77BCE4327AA3A4244 /* RingsStore.swift in Sources */,
 				116A3E096488CB5135DC4220 /* VaultFolderPlugin.swift in Sources */,
 				11E1C23AAC1224C4C39EC4C3 /* RoutineActivityPlugin.swift in Sources */,

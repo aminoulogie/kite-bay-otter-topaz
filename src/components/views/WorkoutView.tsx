@@ -29,6 +29,7 @@ import { isRestSplit } from "@/lib/programs";
 import { sessionBurn } from "@/lib/training-burn";
 import { latestWeight } from "@/lib/rings";
 import type { SessionExercise } from "@/lib/types";
+import { nativeTrainEnabled, publishTrain, toneHex, type TrainHandler } from "@/lib/native/train-native";
 
 const SUPERSET_COLOR: Record<string, string> = {
   A: "var(--color-accent)",
@@ -92,6 +93,16 @@ export function WorkoutView() {
   const setActiveDate = useSoma((s) => s.setActiveDate);
   const setLiveDate = useSoma((s) => s.setLiveDate);
   const rootRef = useRef<HTMLDivElement>(null);
+  // The native Train page's snapshot and handlers, rebuilt every render in
+  // the live-session branch and published after commit (train-native.ts).
+  const nativeRef = useRef<{ payload: object | null; handlers: Record<string, TrainHandler> }>({ payload: null, handlers: {} });
+  nativeRef.current = { payload: null, handlers: {} };
+  useEffect(() => {
+    publishTrain(nativeRef.current.payload, nativeRef.current.handlers);
+  });
+  useEffect(() => () => publishTrain(null, {}), []);
+  // Arranging the page is done on the web grid, so the native page steps aside.
+  const editingLayout = useSoma((s) => s.editingDashboard);
   const routines = routinesFn();
 
   const [now, setNow] = useState(Date.now());
@@ -398,6 +409,225 @@ export function WorkoutView() {
 
   const answered = day.readiness?.soreness !== undefined;
 
+  /** Save the session — or, on a rest day with nothing ticked, the rest. */
+  const doSave = (confirmed = false) => {
+    const clash = live.forDate ? history[live.forDate] : null;
+    if (
+      clash &&
+      !confirmed &&
+      !confirm(
+        `${live.forDate} already has ${clash.split} logged. Saving replaces it. Continue?`,
+      )
+    ) {
+      return;
+    }
+    const day = live.forDate ?? todayKey;
+    const anyDone = live.exercises.some((ex) => ex.sets.some((x) => x.done && x.type !== "warmup"));
+    // A rest and recovery day has no sets to tick, and that is the
+    // point of it: saving one records the rest, not an empty workout.
+    if (!anyDone && (isRestSplit(live.split) || (live.exercises.length === 0 && proj.isRest))) {
+      logRestDay(day, true);
+      toast.success(`Rest day logged for ${day}`, {
+        action: { label: "Undo", onClick: () => logRestDay(day, false) },
+      });
+      return;
+    }
+    const saved = saveWorkout();
+    if (!saved) toast.error("Tick at least one working set first");
+    else {
+      logRestDay(day, false);
+      toast.success(`Session saved to ${day}`);
+    }
+  };
+
+  /** What one exercise card shows: last time, the smart target, swaps. */
+  const calcFor = (ex: SessionExercise) => {
+    const last = useSoma.getState().lastPerformance(ex.name);
+    // The whole of the previous session for this lift, set by set. Excludes
+    // the day being logged so an edited or backfilled session cannot end up
+    // comparing against itself.
+    // The date this session will be FILED under, which is forDate when
+    // backfilling, otherwise the day it was opened. Getting this wrong makes
+    // an edited session its own history and offers you back what you just
+    // typed as though it were last week.
+    const lastTime = lastTimeFor(history, ex.name, live.forDate ?? live.date ?? todayKey);
+    const keys = ex.targetKeys || [];
+    const muscleR = keys.length
+      ? Math.min(...keys.map((k) => readinessMap[k]?.recovery ?? 100))
+      : null;
+    const subj = SomaIntelligenceEngine.computeSubjectiveReadiness({
+      sleepHours: day.sleep?.hours ?? null,
+      sleepQuality: day.sleep?.quality ?? null,
+      soreness: day.readiness?.soreness ?? null,
+      stress: day.readiness?.stress ?? null,
+    });
+    const target = SomaIntelligenceEngine.computeAutoregulatedTarget(last, {
+      isBW: ex.isBW,
+      readiness: readinessWithSleepDebt(
+        SomaIntelligenceEngine.blendReadiness(muscleR, subj),
+        sleepDebt,
+      ),
+      isDeload: !!proj.isDeload,
+      unit: settings.unit,
+      trend: SomaIntelligenceEngine.computeVolumeTrend(history, ex.name),
+      overMrv: keys.some((k) => overMrvLabels.has(k)),
+    });
+    const color = SUPERSET_COLOR[ex.supersetGroup] || "";
+    const alts =
+      target.diffTier === "Under-recovered"
+        ? SomaIntelligenceEngine.suggestAlternatives(
+            ex,
+            db,
+            Object.fromEntries(Object.entries(readinessMap).map(([k, v]) => [k, v.recovery])),
+          )
+        : [];
+    return { last, lastTime, target, color, alts };
+  };
+
+
+  if (nativeTrainEnabled()) {
+    const num = (v: unknown) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    nativeRef.current = {
+      payload: {
+        visible: !editingLayout,
+        unit: settings.unit,
+        split: live.split,
+        badge: live.forDate ? `Logging ${live.forDate}` : `Scheduled · ${activeDate}`,
+        phase: `${proj.phase} · ${proj.repScheme}`,
+        phaseBadge: proj.phaseBadge,
+        deload: !!proj.isDeload,
+        logAs: live.forDate ?? todayKey,
+        today: todayKey,
+        clash: live.forDate && history[live.forDate]
+          ? `${live.forDate} already has ${history[live.forDate]!.split} logged. Saving replaces it.`
+          : null,
+        firstSetAt: live.firstSetAt ?? null,
+        stats: [
+          { label: "Est. burn", value: `${cals} kcal`, hint: null, color: null },
+          { label: `Volume (${settings.unit})`, value: totalVol.toLocaleString(), hint: null, color: null },
+          { label: "Sets done", value: String(totalSets), hint: null, color: null },
+          {
+            label: "Session score",
+            value: sessionRating.score == null ? "–" : String(sessionRating.score),
+            hint: sessionRating.score == null ? "rate a set" : `${sessionRating.ratedSets}/${sessionRating.workingSets} sets rated`,
+            color: toneHex(sessionRating.score),
+          },
+        ],
+        rest: { endsAt: live.restEndsAt ?? null, total: live.restTotal ?? 0 },
+        readiness: !answered && !live.readinessDismissed
+          ? {
+              note: day.sleep?.hours
+                ? `${day.sleep.hours}h sleep already logged this morning.`
+                : "No sleep logged yet — it feeds into autoregulation.",
+              soreness,
+              stress,
+            }
+          : null,
+        routines: Object.keys(routines).map((name) => ({ name, count: routines[name]?.length || 0 })),
+        library: db.map((ex) => ({ name: ex.name, sub: `${ex.subTarget ?? ex.muscle ?? ""} · ${ex.tier ?? ""}` })),
+        exercises: live.exercises.map((ex, exIdx) => {
+          const { lastTime, target, color, alts } = calcFor(ex);
+          const r = rateExerciseInstance(ex);
+          const badges: { text: string; tone: string }[] = [];
+          if (ex.supersetGroup) badges.push({ text: `Superset ${ex.supersetGroup}`, tone: "accent" });
+          if (ex.isBW) badges.push({ text: "Bodyweight", tone: "good" });
+          if (ex.subTarget) badges.push({ text: ex.subTarget, tone: "muted" });
+          if (ex.isAxial) badges.push({ text: "Axial", tone: "danger" });
+          const tier = String(target.diffTier);
+          return {
+            idx: exIdx,
+            name: `${exIdx + 1}. ${ex.name}`,
+            supersetColor: color || null,
+            badges,
+            rating: r.score == null ? null : { score: r.score, sub: `${r.ratedSets}/${r.workingSets} rated`, color: toneHex(r.score) },
+            target: {
+              text: `Smart target · ${ex.isBW && target.weight === 0 ? "Bodyweight" : `${target.weight} ${settings.unit}`} × ${target.reps}`,
+              note: target.note ?? "",
+              auto: target.autoNote ?? null,
+              tier,
+              tone: tier === "Under-recovered" || tier === "Deload" ? "danger" : tier === "Stalled" || tier.startsWith("Hold") ? "warn" : "accent",
+            },
+            last: lastTime ? `Last ${agoLabel(lastTime.date, todayKey)} · ${summarise(lastTime)}` : null,
+            alts: alts.map((a: { name: string; readiness: number; note: string }) => ({ name: a.name, note: `${a.readiness}% · ${a.note}` })),
+            pump: ex.pump ?? null,
+            canFeeder: ex.sets.some((x) => x.type === "normal" && num(x.weight) > 0),
+            sets: ex.sets.map((st, sIdx) => {
+              const workingNo = ex.sets.slice(0, sIdx + 1).filter((x) => x.type === "normal").length;
+              const label =
+                st.type === "warmup" ? "W" : st.type === "dropset" ? "D" : st.type === "feeder" ? "F" : st.type === "stretch" ? "S" : String(workingNo);
+              const score = rateSet(st).score;
+              return {
+                label,
+                type: st.type ?? "normal",
+                weight: st.weight === "" || st.weight == null ? "" : String(st.weight),
+                reps: st.reps === "" || st.reps == null ? "" : String(st.reps),
+                feederQuick: st.type === "feeder" && st.rpe == null,
+                rate:
+                  st.rpe != null
+                    ? rpeLabel(st.rpe)
+                    : st.closeness
+                      ? rpeLabel(rpeFromQuality({ closeness: st.closeness, limiter: st.limiter }))
+                      : null,
+                failure: isGenuineFailure(st),
+                limiter: !!st.limiter,
+                grip: st.grip ? `${st.grip.width[0]!.toUpperCase()}·${st.grip.orientation.slice(0, 3)}` : null,
+                score,
+                scoreColor: toneHex(score),
+                done: !!st.done,
+              };
+            }),
+          };
+        }),
+      },
+      handlers: {
+        weight: (a) => updateSet(Number(a.ex), Number(a.set), { weight: a.value === "" ? "" : num(a.value) }),
+        reps: (a) => updateSet(Number(a.ex), Number(a.set), { reps: a.value === "" ? "" : num(a.value) }),
+        cycleType: (a) => cycleSetType(Number(a.ex), Number(a.set)),
+        grip: (a) => cycleGrip(Number(a.ex), Number(a.set)),
+        check: (a) => {
+          const ex = live.exercises[Number(a.ex)];
+          if (ex) onCheck(ex, Number(a.ex), Number(a.set), !!a.done);
+        },
+        rate: (a) => setRating({ exIdx: Number(a.ex), sIdx: Number(a.set) }),
+        feeder: (a) => quickRateFeeder(Number(a.ex), Number(a.set), num(a.rpe)),
+        removeSet: (a) => removeSet(Number(a.ex), Number(a.set)),
+        addSet: (a) => addSet(Number(a.ex), a.kind === "dropset" ? "dropset" : undefined),
+        feederRamp: (a) => {
+          const ex = live.exercises[Number(a.ex)];
+          const idx = ex ? ex.sets.findIndex((x) => x.type === "normal" && num(x.weight) > 0) : -1;
+          if (idx >= 0) insertFeederRamp(Number(a.ex), idx);
+        },
+        pump: (a) => {
+          const ex = live.exercises[Number(a.ex)];
+          const n = Number(a.n) as 1 | 2 | 3;
+          if (ex) updateExercise(Number(a.ex), { pump: ex.pump === n ? undefined : n });
+        },
+        removeExercise: (a) => removeExercise(Number(a.ex)),
+        superset: (a) => cycleSuperset(Number(a.ex)),
+        swap: (a) => swapExercise(Number(a.ex), String(a.name)),
+        add: (a) => addExercise(String(a.name)),
+        loadSplit: (a) => loadSplit(String(a.name)),
+        custom: () => setCustomOpen(true),
+        save: (a) => doSave(!!a.confirmed),
+        undo: () => undo(),
+        redo: () => redo(),
+        rest: (a) => startRest(num(a.sec)),
+        stopRest: () => clearRest(),
+        logAs: (a) => {
+          if (a.date) setLiveDate(String(a.date));
+        },
+        readiness: (a) => {
+          logReadiness(num(a.soreness), num(a.stress));
+          toast.success("Readiness saved");
+        },
+        skipReadiness: () => useSoma.setState({ live: { ...live, readinessDismissed: true } }),
+      },
+    };
+  }
+
   return (
     // The confetti burst needs a box to fire inside, and the grid is now that
     // box — so the ref moves onto the wrapper rather than being dropped.
@@ -570,34 +800,7 @@ export function WorkoutView() {
         <Button
           variant="primary"
           className="flex-1"
-          onClick={() => {
-            const clash = live.forDate ? history[live.forDate] : null;
-            if (
-              clash &&
-              !confirm(
-                `${live.forDate} already has ${clash.split} logged. Saving replaces it. Continue?`,
-              )
-            ) {
-              return;
-            }
-            const day = live.forDate ?? todayKey;
-            const anyDone = live.exercises.some((ex) => ex.sets.some((x) => x.done && x.type !== "warmup"));
-            // A rest and recovery day has no sets to tick, and that is the
-            // point of it: saving one records the rest, not an empty workout.
-            if (!anyDone && (isRestSplit(live.split) || (live.exercises.length === 0 && proj.isRest))) {
-              logRestDay(day, true);
-              toast.success(`Rest day logged for ${day}`, {
-                action: { label: "Undo", onClick: () => logRestDay(day, false) },
-              });
-              return;
-            }
-            const saved = saveWorkout();
-            if (!saved) toast.error("Tick at least one working set first");
-            else {
-              logRestDay(day, false);
-              toast.success(`Session saved to ${day}`);
-            }
-          }}
+          onClick={() => doSave()}
         >
           Save log
         </Button>
@@ -720,45 +923,7 @@ export function WorkoutView() {
       )}
 
       {live.exercises.map((ex, exIdx) => {
-        const last = useSoma.getState().lastPerformance(ex.name);
-        // The whole of the previous session for this lift, set by set. Excludes
-        // the day being logged so an edited or backfilled session cannot end up
-        // comparing against itself.
-        // The date this session will be FILED under, which is forDate when
-        // backfilling, otherwise the day it was opened. Getting this wrong makes
-        // an edited session its own history and offers you back what you just
-        // typed as though it were last week.
-        const lastTime = lastTimeFor(history, ex.name, live.forDate ?? live.date ?? todayKey);
-        const keys = ex.targetKeys || [];
-        const muscleR = keys.length
-          ? Math.min(...keys.map((k) => readinessMap[k]?.recovery ?? 100))
-          : null;
-        const subj = SomaIntelligenceEngine.computeSubjectiveReadiness({
-          sleepHours: day.sleep?.hours ?? null,
-          sleepQuality: day.sleep?.quality ?? null,
-          soreness: day.readiness?.soreness ?? null,
-          stress: day.readiness?.stress ?? null,
-        });
-        const target = SomaIntelligenceEngine.computeAutoregulatedTarget(last, {
-          isBW: ex.isBW,
-          readiness: readinessWithSleepDebt(
-            SomaIntelligenceEngine.blendReadiness(muscleR, subj),
-            sleepDebt,
-          ),
-          isDeload: !!proj.isDeload,
-          unit: settings.unit,
-          trend: SomaIntelligenceEngine.computeVolumeTrend(history, ex.name),
-          overMrv: keys.some((k) => overMrvLabels.has(k)),
-        });
-        const color = SUPERSET_COLOR[ex.supersetGroup] || "";
-        const alts =
-          target.diffTier === "Under-recovered"
-            ? SomaIntelligenceEngine.suggestAlternatives(
-                ex,
-                db,
-                Object.fromEntries(Object.entries(readinessMap).map(([k, v]) => [k, v.recovery])),
-              )
-            : [];
+        const { lastTime, target, color, alts } = calcFor(ex);
 
         return (
           <Card

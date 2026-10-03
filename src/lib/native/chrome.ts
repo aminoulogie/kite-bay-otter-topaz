@@ -1,6 +1,7 @@
 import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
+import { toast } from "sonner";
 
 /**
  * The native Liquid Glass bars (ios/App/App/NativeChrome.swift).
@@ -30,6 +31,8 @@ export type ChromeAction =
   | { type: "insets"; top: number; bottom: number; safeTop?: number; safeBottom?: number }
   | { type: "habitsOpen"; open: boolean }
   | { type: "home"; op: "open"; id: string }
+  | { type: "train"; op: string; [k: string]: unknown }
+  | { type: "toastAction"; id: string }
   | HabitAction;
 
 /** What the native Habits panel asks the page to do. */
@@ -47,8 +50,10 @@ export type HabitAction = {
 };
 
 interface NativeChromePlugin {
-  ready(): Promise<{ active: boolean; habits?: boolean; home?: boolean }>;
+  ready(): Promise<{ active: boolean; habits?: boolean; home?: boolean; train?: boolean }>;
   setHome(o: { json: string }): Promise<void>;
+  setTrain(o: { json: string }): Promise<void>;
+  toast(o: { id: string; text: string; kind: string; action: string | null }): Promise<void>;
   setHabits(o: { json: string }): Promise<void>;
   openHabits(o: { open: boolean }): Promise<void>;
   setState(s: ChromeState): Promise<void>;
@@ -62,14 +67,38 @@ const NativeChrome = registerPlugin<NativeChromePlugin>("NativeChrome");
 export const chromeAvailable = (): boolean =>
   Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("NativeChrome");
 
-export async function chromeReady(): Promise<{ active: boolean; habits: boolean; home: boolean }> {
-  if (!chromeAvailable()) return { active: false, habits: false, home: false };
+export async function chromeReady(): Promise<{ active: boolean; habits: boolean; home: boolean; train: boolean }> {
+  if (!chromeAvailable()) return { active: false, habits: false, home: false, train: false };
   try {
     const r = await NativeChrome.ready();
-    return { active: !!r.active, habits: !!r.habits, home: !!r.home };
+    return { active: !!r.active, habits: !!r.habits, home: !!r.home, train: !!r.train };
   } catch {
-    return { active: false, habits: false, home: false };
+    return { active: false, habits: false, home: false, train: false };
   }
+}
+
+let lastTrain = "";
+export function chromeSetTrain(json: string): void {
+  if (json === lastTrain) return;
+  lastTrain = json;
+  void NativeChrome.setTrain({ json }).catch(() => {});
+}
+
+/**
+ * Toasts drawn natively. The web toaster lives in the web view, which the
+ * native pages cover, so every toast is mirrored as a native glass banner.
+ * An action (Undo) is kept here and run when the banner's button is tapped.
+ */
+const toastActions = new Map<string, () => void>();
+let toastSeq = 0;
+export function chromeToast(text: string, kind: string, action?: { label: string; onClick: () => void }): void {
+  const id = `t${++toastSeq}`;
+  if (action) toastActions.set(id, action.onClick);
+  void NativeChrome.toast({ id, text, kind, action: action?.label ?? null }).catch(() => {});
+}
+export function runToastAction(id: string): void {
+  toastActions.get(id)?.();
+  toastActions.delete(id);
 }
 
 let lastHome = "";
@@ -189,4 +218,27 @@ export async function chromeSetTabs(
     tabs.map(async (t) => ({ id: t.id, title: t.label, icon: await iconPng(t.icon).catch(() => "") })),
   );
   await NativeChrome.setTabs({ tabs: out }).catch(() => {});
+}
+
+/** Mirror every web toast as a native banner (once, when native chrome is up). */
+let toastsInstalled = false;
+export function installNativeToasts(): void {
+  if (toastsInstalled) return;
+  toastsInstalled = true;
+  type Opts = { action?: { label: string; onClick: () => void } } | undefined;
+  const t = toast as unknown as Record<string, (msg: unknown, opts?: Opts) => unknown>;
+  for (const kind of ["success", "error", "info", "warning", "message"]) {
+    const orig = t[kind];
+    if (typeof orig !== "function") continue;
+    t[kind] = (msg: unknown, opts?: Opts) => {
+      // Text toasts go native only: the web toaster sits under the native
+      // pages, and showing both would double up on the web ones.
+      if (typeof msg === "string") {
+        const action = opts?.action && typeof opts.action === "object" && "onClick" in opts.action ? opts.action : undefined;
+        chromeToast(msg, kind, action);
+        return msg;
+      }
+      return orig.call(toast, msg, opts);
+    };
+  }
 }

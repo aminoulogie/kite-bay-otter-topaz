@@ -10,7 +10,8 @@ import { HabitsPanel } from "@/components/habits/HabitsPanel";
 import { NativeHabitsBridge, runHabitAction } from "@/components/habits/NativeHabitsBridge";
 import { NativeHomeBridge, openHomeWidget } from "@/components/NativeHomeBridge";
 import { DateNav } from "@/components/DateNav";
-import { chromeAvailable, chromeListen, chromeReady, chromeSetState, chromeSetTabs, watchOverlays } from "@/lib/native/chrome";
+import { chromeAvailable, chromeListen, chromeReady, chromeSetState, chromeSetTabs, installNativeToasts, runToastAction, watchOverlays } from "@/lib/native/chrome";
+import { runTrainAction, setNativeTrainEnabled } from "@/lib/native/train-native";
 import { dateLabel, shiftDate } from "@/lib/date-label";
 import { ScreenTimeImport } from "@/components/ScreenTimeImport";
 import { getLocalDateKey } from "@/lib/soma";
@@ -420,6 +421,14 @@ export function AppShell() {
         case "home":
           openHomeWidget(a.id);
           break;
+        case "train": {
+          const { op, ...args } = a;
+          runTrainAction(op, args);
+          break;
+        }
+        case "toastAction":
+          runToastAction(a.id);
+          break;
         case "insets": {
           const root = document.documentElement;
           root.style.setProperty("--chrome-top", `${Math.round(a.top)}px`);
@@ -437,6 +446,8 @@ export function AppShell() {
       if (!alive || !r.active) return;
       setNativeHabits(r.habits);
       setNativeHome(r.home);
+      setNativeTrainEnabled(r.train);
+      installNativeToasts();
       document.documentElement.classList.add("soma-native-chrome");
       setNativeChrome(true);
       void chromeSetTabs(TABS);
