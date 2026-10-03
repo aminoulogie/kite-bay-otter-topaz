@@ -25,7 +25,6 @@ export const TAB_ORDER: TabId[] = [
   "dashboard",
   "workout",
   "nutrition",
-  "habits",
   "time",
   "insights",
   "settings",
@@ -42,6 +41,8 @@ export const TAB_ORDER: TabId[] = [
 export const FOLDED_INTO: Partial<Record<TabId, TabId>> = {
   body: "insights",
   estimates: "insights",
+  // The left side panel now, opened by swiping in from the left edge.
+  habits: "dashboard",
 };
 
 /** The tab to actually show for a stored one. */

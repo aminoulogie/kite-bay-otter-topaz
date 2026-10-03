@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, BrainCircuit, CalendarDays, Check, Clock, CornerDownLeft, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Search, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
+import { Activity, BrainCircuit, CalendarDays, Check, Clock, CornerDownLeft, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, Pencil, Search, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { CalcBar } from "@/components/CalcBar";
 import { startHealthSync } from "@/lib/native/health-sync";
 import { startSleepClock } from "@/lib/native/sleep-clock-sync";
 import { startHabitAuto } from "@/lib/native/habit-auto-run";
 import { startFocusGym } from "@/lib/native/focus-gym";
-import { DateDrawer } from "@/components/DateDrawer";
+import { HabitsPanel } from "@/components/habits/HabitsPanel";
+import { DateNav } from "@/components/DateNav";
 import { getLocalDateKey } from "@/lib/soma";
 import { NUTRITION_KEEP_FROM } from "@/lib/seed";
 import { requestPersistence } from "@/lib/storage-health";
@@ -17,7 +18,6 @@ import { useKeyboardInset } from "@/lib/use-keyboard";
 import { useLiquidGlass } from "@/lib/use-liquid-glass";
 import { useBackupDownload } from "@/lib/use-backup";
 import { BodyView } from "@/components/views/BodyView";
-import { HabitsView } from "@/components/views/HabitsView";
 import { InsightsView } from "@/components/views/InsightsView";
 import { NutritionView } from "@/components/views/NutritionView";
 import { EstimatesView } from "@/components/views/EstimatesView";
@@ -205,8 +205,10 @@ export function AppShell() {
   const { busy: savingBackup, download: saveBackup } = useBackupDownload();
 
   const [ready, setReady] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const openDrawer = useCallback(() => setDrawerOpen(true), []);
+  // Swiping in from the left edge opens Habits.
+  const drawerOpen = useSoma((s) => s.habitsOpen);
+  const setHabitsOpen = useSoma((s) => s.setHabitsOpen);
+  const openDrawer = useCallback(() => setHabitsOpen(true), [setHabitsOpen]);
   useEdgeSwipe(openDrawer, ready && !drawerOpen);
 
   const hydrated = useSoma((s) => s.hydrated);
@@ -547,10 +549,10 @@ export function AppShell() {
           <button
             type="button"
             onClick={openDrawer}
-            aria-label="Open logged days"
+            aria-label="Open habits"
             className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2 text-muted"
           >
-            <PanelLeft className="size-4" />
+            <Target className="size-4" />
           </button>
           {/* The rail carries the lockup on a desktop, so the header says where
               you are instead of repeating the app's own name at you. */}
@@ -566,11 +568,7 @@ export function AppShell() {
               screen has already said the rest. */}
           {/* shrink-0: four characters have no sensible truncation, and the
               flex row was clipping the last one by a pixel on a 360px phone. */}
-          <div className="min-w-0 lg:hidden">
-            <div className="truncate font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
-              SOMA
-            </div>
-          </div>
+          <DateNav />
           <TabJump tab={tab} setTab={setTab} />
         </div>
         {/* Was a static "Local" badge, which said something the user already
@@ -586,14 +584,14 @@ export function AppShell() {
               onClick={() => setEditingDashboard(!editingDashboard)}
               aria-label={editingDashboard ? "Finish editing the layout" : "Edit the layout"}
               className={cn(
-                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-wider",
+                "flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-full border px-2 sm:px-3 text-[0.65rem] font-bold uppercase tracking-wider",
                 editingDashboard
                   ? "border-accent bg-accent text-accent-ink"
                   : "border-border bg-surface-2 text-muted active:bg-surface-3",
               )}
             >
               {editingDashboard ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
-              {editingDashboard ? "Done" : "Edit"}
+              {editingDashboard ? "Done" : <span className="hidden sm:inline">Edit</span>}
             </button>
           )}
           {/* Icon only. The header already carries two labelled controls and a
@@ -627,10 +625,11 @@ export function AppShell() {
             type="button"
             onClick={() => setCalendarOpen(true)}
             aria-label="Open training calendar"
-            className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-muted active:bg-surface-3"
+            className="flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-full border border-border bg-surface-2 px-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted active:bg-surface-3 sm:px-3"
           >
             <CalendarDays className="size-3.5" />
-            Calendar
+            {/* The date sits in the header now, so on a phone this is an icon. */}
+            <span className="hidden sm:inline">Calendar</span>
           </button>
         </div>
       </header>
@@ -651,7 +650,7 @@ export function AppShell() {
         </button>
       )}
 
-      <DateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <HabitsPanel />
 
       {/* A running routine: full screen, or shrunk to a player above the
           dock that follows you across tabs. */}
@@ -665,7 +664,6 @@ export function AppShell() {
         {tab === "looks" && <LooksView />}
         {tab === "workout" && <WorkoutView />}
         {tab === "nutrition" && <NutritionView />}
-        {tab === "habits" && <HabitsView />}
         {tab === "time" && <TimeView />}
         {tab === "body" && <BodyView />}
         {tab === "insights" && <InsightsView />}

@@ -312,6 +312,14 @@ export interface Habit {
   since?: string;
   /** Tick it automatically when today's data says it is done. lib/habit-auto.ts. */
   auto?: HabitAuto;
+  /** Free-text notes on the habit, newest first. */
+  notes?: HabitNote[];
+}
+
+export interface HabitNote {
+  id: string;
+  date: string;
+  text: string;
 }
 
 export type HabitAuto =

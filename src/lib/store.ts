@@ -399,6 +399,11 @@ export interface SomaStore {
   /** Tick it automatically when today's data meets the rule; null turns it off. */
   setHabitAuto: (id: string, auto: HabitAuto | null) => void;
   removeHabit: (id: string) => void;
+  addHabitNote: (id: string, text: string) => void;
+  removeHabitNote: (id: string, noteId: string) => void;
+  /** The habits side panel. Not persisted: it is where you are, not data. */
+  habitsOpen: boolean;
+  setHabitsOpen: (open: boolean) => void;
   /**
    * Put a deleted habit back where it was, history and all.
    *
@@ -1108,7 +1113,12 @@ export const useSoma = create<SomaStore>()(
       // Leaving a page leaves its edit mode. Coming back a day later to find
       // every card wearing a dashed border reads as a bug — and an edit mode
       // that survived a tab change would be editing the wrong page's layout.
-      setTab: (tab) => set({ tab: resolveTab(tab), editingDashboard: false }),
+      // Habits is a side panel now rather than a tab: everything that still
+      // asks for the tab (the Home rings, the coach) opens the panel instead.
+      setTab: (tab) =>
+        tab === "habits"
+          ? set({ habitsOpen: true })
+          : set({ tab: resolveTab(tab), editingDashboard: false, habitsOpen: false }),
       setActiveDate: (d) => set({ activeDate: d }),
       /**
        * Change a setting, and let the open days follow it.
@@ -1873,6 +1883,26 @@ export const useSoma = create<SomaStore>()(
           ),
         }),
       removeHabit: (id) => set({ habits: get().habits.filter((h) => h.id !== id) }),
+      addHabitNote: (id, text) => {
+        const t = text.trim();
+        if (!t) return;
+        const note = {
+          id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          date: getLocalDateKey(new Date()),
+          text: t,
+        };
+        set({
+          habits: get().habits.map((h) => (h.id === id ? { ...h, notes: [note, ...(h.notes ?? [])] } : h)),
+        });
+      },
+      removeHabitNote: (id, noteId) =>
+        set({
+          habits: get().habits.map((h) =>
+            h.id === id ? { ...h, notes: (h.notes ?? []).filter((n) => n.id !== noteId) } : h,
+          ),
+        }),
+      habitsOpen: false,
+      setHabitsOpen: (open) => set({ habitsOpen: open }),
       restoreHabit: (idx, habit) =>
         set((st) => {
           if (st.habits.some((h) => h.id === habit.id)) return {};

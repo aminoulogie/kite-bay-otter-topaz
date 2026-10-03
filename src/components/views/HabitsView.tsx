@@ -25,6 +25,7 @@ import { tapLight, tapMedium } from "@/lib/haptics";
 import { describeAuto, suggestAuto } from "@/lib/habit-auto";
 import { COEF_LABELS, KEEP_AT, coefOf, habitConsistency, habitDayScore, habitStreak, type HabitDayScore } from "@/lib/habit-score";
 import { cn } from "@/lib/utils";
+import { nextHabitColor } from "@/lib/habit-colors";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
 
 type HabitTab = "today" | "month" | "year";
@@ -38,7 +39,6 @@ const TABS: { id: HabitTab; label: string }[] = [
 export function HabitsView() {
   const habits = useSoma((s) => s.habits);
   const toggleHabit = useSoma((s) => s.toggleHabit);
-  const addHabit = useSoma((s) => s.addHabit);
   const removeHabit = useSoma((s) => s.removeHabit);
   const activeDate = useSoma((s) => s.activeDate);
 
@@ -133,59 +133,7 @@ export function HabitsView() {
       <Sized key="new" glance={{ label: "New habit", short: "New", empty: "Tap to add a habit", emptyShort: "Add" }}>
       <Card>
         <CardTitle>New habit</CardTitle>
-        <NewHabitField onAdd={(n) => addHabit({ name: n, desc: "", color: "#d3fd50", goalDaysPerWeek: 7 })} />
-        {/* The two checklists everyone writes out by hand, and both are exactly
-            what steps are for. One tap rather than six. */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {STEP_PRESETS.filter(
-            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
-          ).map((t) => (
-            <button
-              key={t.name}
-              type="button"
-              onClick={() => {
-                addHabit({
-                  name: t.name,
-                  desc: t.desc,
-                  color: t.color,
-                  goalDaysPerWeek: 7,
-                  steps: t.steps.map((x) => ({ ...x, id: newStepId() })),
-                });
-                toast.success(`Added ${t.name} with ${t.steps.length} steps`);
-              }}
-              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
-            >
-              <ListChecks className="size-3.5" style={{ color: t.color }} />
-              {t.name}
-            </button>
-          ))}
-          {RAMP_PRESETS.filter(
-            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
-          ).map((t) => (
-            <button
-              key={t.name}
-              type="button"
-              onClick={() => {
-                addHabit({
-                  name: t.name,
-                  desc: t.desc,
-                  color: t.color,
-                  goalDaysPerWeek: 7,
-                  ramp: { ...t.ramp, from: activeDate },
-                });
-                toast.success(`${t.name}: ${t.desc.toLowerCase()}`);
-              }}
-              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
-            >
-              {t.ramp.target >= t.ramp.start ? (
-                <TrendingUp className="size-3.5" style={{ color: t.color }} />
-              ) : (
-                <TrendingDown className="size-3.5" style={{ color: t.color }} />
-              )}
-              {t.name}
-            </button>
-          ))}
-        </div>
+        <NewHabitBody />
 
         {habits.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -558,7 +506,7 @@ function TodayPanel() {
  * buttons add rather than set: you log minutes as they happen, not once at
  * midnight when you are trying to remember.
  */
-function RampRow({
+export function RampRow({
   habit, ramp, state, onLog,
 }: {
   habit: Habit;
@@ -638,7 +586,7 @@ function RampRow({
   );
 }
 
-function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "warn" }) {
+export function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "warn" }) {
   return (
     <div className="rounded-2xl bg-surface-2/70 px-3 py-2">
       <div className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">{label}</div>
@@ -657,7 +605,7 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub?:
 }
 
 /** The unticked habits, heaviest first, that would carry today past the bar. */
-function needFor(day: HabitDayScore): string {
+export function needFor(day: HabitDayScore): string {
   const open = day.rows.filter((r) => !r.done).sort((a, b) => b.coef - a.coef);
   let earned = day.earned;
   const names: string[] = [];
@@ -673,7 +621,7 @@ function needFor(day: HabitDayScore): string {
  * The name box, with its own state. Held up in HabitsView it redrew every
  * habit card and heatmap on each letter typed.
  */
-function NewHabitField({ onAdd }: { onAdd: (name: string) => void }) {
+export function NewHabitField({ onAdd }: { onAdd: (name: string) => void }) {
   const [name, setName] = useState("");
   const add = () => {
     if (!name.trim()) return;
@@ -699,7 +647,7 @@ function NewHabitField({ onAdd }: { onAdd: (name: string) => void }) {
  * Habits whose names say what SOMA already measures — "Train", "Hit
  * protein", "Hydrate" — offered their rule in one tap.
  */
-function AutoSuggest() {
+export function AutoSuggest() {
   const habits = useSoma((s) => s.habits);
   const setHabitAuto = useSoma((s) => s.setHabitAuto);
   const offers = habits
@@ -728,5 +676,77 @@ function AutoSuggest() {
         Turn on
       </Button>
     </Card>
+  );
+}
+
+/** The name box plus the one-tap checklist and ramp presets. */
+export function NewHabitBody({ onAdded }: { onAdded?: () => void }) {
+  const habits = useSoma((s) => s.habits);
+  const addHabit = useSoma((s) => s.addHabit);
+  const activeDate = useSoma((s) => s.activeDate);
+  return (
+    <>
+        <NewHabitField
+          onAdd={(n) => {
+            addHabit({ name: n, desc: "", color: nextHabitColor(habits), goalDaysPerWeek: 7 });
+            onAdded?.();
+          }}
+        />
+        {/* The two checklists everyone writes out by hand, and both are exactly
+            what steps are for. One tap rather than six. */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {STEP_PRESETS.filter(
+            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
+          ).map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              onClick={() => {
+                addHabit({
+                  name: t.name,
+                  desc: t.desc,
+                  color: t.color,
+                  goalDaysPerWeek: 7,
+                  steps: t.steps.map((x) => ({ ...x, id: newStepId() })),
+                });
+                toast.success(`Added ${t.name} with ${t.steps.length} steps`);
+                onAdded?.();
+              }}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
+            >
+              <ListChecks className="size-3.5" style={{ color: t.color }} />
+              {t.name}
+            </button>
+          ))}
+          {RAMP_PRESETS.filter(
+            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
+          ).map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              onClick={() => {
+                addHabit({
+                  name: t.name,
+                  desc: t.desc,
+                  color: t.color,
+                  goalDaysPerWeek: 7,
+                  ramp: { ...t.ramp, from: activeDate },
+                });
+                toast.success(`${t.name}: ${t.desc.toLowerCase()}`);
+                onAdded?.();
+              }}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
+            >
+              {t.ramp.target >= t.ramp.start ? (
+                <TrendingUp className="size-3.5" style={{ color: t.color }} />
+              ) : (
+                <TrendingDown className="size-3.5" style={{ color: t.color }} />
+              )}
+              {t.name}
+            </button>
+          ))}
+        </div>
+
+    </>
   );
 }
