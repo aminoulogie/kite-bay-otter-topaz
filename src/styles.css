@@ -1055,6 +1055,21 @@ html.soma-native-chrome .soma-viewing-banner {
 html.soma-native-chrome .soma-main {
   padding-top: calc(max(var(--chrome-top, 0px), var(--safe-top,env(safe-area-inset-top))) + 0.75rem) !important;
 }
+/* iOS's scroll edge effect: content scrolling up fades and blurs out under
+   the top bar instead of running into it. */
+html.soma-native-chrome body::after {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: calc(max(var(--chrome-top, 0px), var(--safe-top,env(safe-area-inset-top))) + 1rem);
+  pointer-events: none;
+  z-index: 40;
+  background: linear-gradient(var(--color-bg) 45%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  -webkit-mask-image: linear-gradient(#000 55%, transparent);
+  mask-image: linear-gradient(#000 55%, transparent);
+}
 html.soma-native-chrome .soma-page {
   padding-bottom: calc(max(var(--chrome-bottom, 0px), var(--safe-bottom,env(safe-area-inset-bottom))) + var(--player-h, 0px) + 0.75rem) !important;
 }

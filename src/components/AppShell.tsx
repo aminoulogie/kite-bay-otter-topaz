@@ -782,7 +782,10 @@ export function AppShell() {
 
       {nativeHabits ? <NativeHabitsBridge /> : <HabitsPanel />}
       {nativeFuel && <NativeFuelBridge visibleNow={tab === "nutrition" && !editingDashboard} />}
-      {(nativeHome || (import.meta.env.DEV && window.location.search.includes("homeprobe"))) && <NativeHomeBridge visibleNow={tab === "dashboard" && !editingDashboard} />}
+      {/* The native Home is off: it could only draw each widget's small summary,
+          so big cards lost their content and some widgets went missing. Home
+          stays on the real widgets until each one has a native face of its own. */}
+      {nativeHome && import.meta.env.DEV && window.location.search.includes("homeprobe") && <NativeHomeBridge visibleNow={tab === "dashboard" && !editingDashboard} />}
       <ScreenTimeImport />
 
       {/* A running routine: full screen, or shrunk to a player above the
