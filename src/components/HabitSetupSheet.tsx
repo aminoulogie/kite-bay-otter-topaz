@@ -413,6 +413,8 @@ function withDefaults(kind: HabitAuto["kind"]): HabitAuto {
     case "reading": return { kind, minutes: 20 };
     case "mind": return { kind, mindKind: "idea" };
     case "screen": return { kind, under: 180 };
+    case "mindful": return { kind, minutes: 10 };
+    case "focus": return { kind, minutes: 90 };
     default: return { kind } as HabitAuto;
   }
 }
@@ -466,7 +468,9 @@ function AutoRule({ habit, onSave }: { habit: Habit; onSave: (a: HabitAuto | nul
               <option value="research">research</option>
             </select>
           )}
-          {(rule.kind === "steps" || rule.kind === "activeKcal") && <span className="w-full text-[0.65rem] text-faint">Needs Apple Health connected (Settings).</span>}
+          {rule.kind === "mindful" && (<><input inputMode="numeric" defaultValue={rule.minutes} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, minutes: Math.round(n) }); }} /> mindful minutes</>)}
+          {rule.kind === "focus" && (<><input inputMode="numeric" defaultValue={rule.minutes} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, minutes: Math.round(n) }); }} /> minutes in Focus <span className="w-full text-[0.65rem] text-faint">Set up in Settings › Automations.</span></>)}
+          {(rule.kind === "steps" || rule.kind === "activeKcal" || rule.kind === "mindful") && <span className="w-full text-[0.65rem] text-faint">Needs Apple Health connected (Settings).</span>}
         </div>
       )}
     </div>

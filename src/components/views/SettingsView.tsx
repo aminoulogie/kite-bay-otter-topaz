@@ -39,6 +39,7 @@ import { ALL_WAYS, WAY_NAMES, diagnoseHaptics, testHaptics, tickWay } from "@/li
 import { lockScreenStatus, type LockScreenStatus } from "@/lib/native/routine-activity";
 import { connectHealth, healthDay, type HealthDay } from "@/lib/native/health";
 import { syncHealthNow } from "@/lib/native/health-sync";
+import { clearGym, gymStatus, setGymHere } from "@/lib/native/focus-gym";
 import {
   applyLiveNow, checkLive, liveStatus, nativeVersion, onLiveStatus, type LiveStatus,
 } from "@/lib/native/live-update";
@@ -430,6 +431,10 @@ export function SettingsView() {
           </button>
         )}
       </Card>
+      </Sized>
+
+      <Sized key="automations" glance={{ label: "Automations", short: "Auto", empty: "Gym arrival, Deep Work focus", emptyShort: "Set up" }}>
+      <AutomationsCard />
       </Sized>
 
       <Sized key="health" glance={{ label: "Apple Health", short: "Health", empty: "Read sleep, steps and weight", emptyShort: "Connect" }}>
@@ -1643,6 +1648,83 @@ function HealthCard() {
           Empty — either nothing is in Health for today, or access was refused (Settings › Health › Data Access &amp; Devices › SOMA).
         </p>
       )}
+    </Card>
+  );
+}
+
+/**
+ * The things that happen without a tap: the gym region and the Deep Work
+ * focus. Each says plainly what it needs from iOS, since both are switched on
+ * outside the app.
+ */
+function AutomationsCard() {
+  const [gym, setGym] = useState<{ set: boolean; always: boolean } | null>(null);
+  const [msg, setMsg] = useState("");
+  const focusToday = useSoma((s) => s.settings.focusByDay?.[getLocalDateKey(new Date())] ?? 0);
+  const focusOn = useSoma((s) => !!s.settings.focusActiveSince);
+  useEffect(() => {
+    void gymStatus().then(setGym);
+  }, []);
+  return (
+    <Card>
+      <CardTitle>Automations</CardTitle>
+
+      <div className="mb-1 text-sm font-bold">Arriving at the gym</div>
+      <p className="mb-2 text-xs text-muted">
+        Stand in your gym and tap the button once. From then on, arriving there sends a nudge and opens
+        Train on today's session.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          onClick={() =>
+            void setGymHere().then((m) => {
+              setMsg(m);
+              void gymStatus().then(setGym);
+            })
+          }
+        >
+          {gym?.set ? "Move gym to here" : "I'm at my gym — save it"}
+        </Button>
+        {gym?.set && (
+          <Button
+            onClick={() =>
+              void clearGym().then(() => {
+                setMsg("Gym removed");
+                void gymStatus().then(setGym);
+              })
+            }
+          >
+            Remove
+          </Button>
+        )}
+      </div>
+      <p className="mt-1.5 text-[0.7rem] text-faint">
+        {gym == null
+          ? "Needs the latest install."
+          : gym.set
+            ? gym.always
+              ? "Gym saved · watching for arrivals"
+              : "Gym saved · set Location to Always for arrivals while SOMA is closed"
+            : "No gym saved yet"}
+      </p>
+      {msg && <p className="mt-1 rounded-xl bg-surface-2 px-3 py-2 text-[0.72rem] font-semibold">{msg}</p>}
+
+      <div className="mb-1 mt-4 text-sm font-bold">Deep work with a Focus</div>
+      <ol className="list-decimal space-y-0.5 pl-4 text-xs text-muted">
+        <li>iPhone Settings › Focus › pick or make a "Deep Work" focus</li>
+        <li>Scroll to Focus Filters › Add Filter › SOMA</li>
+        <li>Turn on "Count as deep work"</li>
+      </ol>
+      <p className="mt-1.5 text-[0.7rem] text-faint">
+        Time in that focus counts here, and a habit set to "Deep Work focus for…" ticks itself.
+        {` Today: ${focusToday} min${focusOn ? " · focus on now" : ""}.`}
+      </p>
+
+      <div className="mb-1 mt-4 text-sm font-bold">Mindful minutes</div>
+      <p className="text-xs text-muted">
+        Read from Apple Health (Mindfulness, Breathe, or any meditation app). Give a habit the "Mindful
+        minutes" rule.
+      </p>
     </Card>
   );
 }

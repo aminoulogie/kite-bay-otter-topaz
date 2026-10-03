@@ -22,7 +22,9 @@ export interface AutoContext {
   mind: MindEntry[];
   screen?: ScreenTimeDay;
   /** Apple Health today, when connected. */
-  health?: { steps?: number; activeKcal?: number } | null;
+  health?: { steps?: number; activeKcal?: number; mindfulMin?: number } | null;
+  /** Minutes in the Deep Work focus today, including a session still running. */
+  focusMin?: number;
   /** When "Going to sleep" was tapped for the night that ended today (ms). */
   bedtimeMs?: number | null;
   /** Spent today vs. the daily share of the monthly budget, if one is set. */
@@ -43,6 +45,8 @@ export const AUTO_LABELS: Record<HabitAuto["kind"], string> = {
   mind: "Logged in Mind",
   screen: "Screen time under…",
   underBudget: "Spent under the daily budget",
+  mindful: "Mindful minutes (Apple Health)",
+  focus: "Deep Work focus for…",
 };
 
 /** Whether the rule's condition is met today. */
@@ -91,6 +95,10 @@ export function autoDone(rule: HabitAuto, c: AutoContext): boolean {
       return c.screen != null && c.screen.total > 0 && c.screen.total <= rule.under;
     case "underBudget":
       return !!c.spend && c.spend.dailyBudget > 0 && c.spend.spent <= c.spend.dailyBudget;
+    case "mindful":
+      return (c.health?.mindfulMin ?? 0) >= rule.minutes;
+    case "focus":
+      return (c.focusMin ?? 0) >= rule.minutes;
   }
 }
 
@@ -106,6 +114,8 @@ export function suggestAuto(name: string): HabitAuto | null {
   if (/\bsteps?\b|walk/.test(n)) return { kind: "steps", min: 8000 };
   if (/\bread/.test(n)) return { kind: "reading", minutes: 20 };
   if (/sleep/.test(n)) return { kind: "sleep", hours: 7 };
+  if (/deep work|focus/.test(n)) return { kind: "focus", minutes: 90 };
+  if (/meditat|mindful|breath/.test(n)) return { kind: "mindful", minutes: 10 };
   return null;
 }
 
@@ -120,6 +130,8 @@ export function describeAuto(rule: HabitAuto): string {
     case "calories": return `Calories within ${rule.within}%`;
     case "screen": return `Screen under ${rule.under} min`;
     case "mind": return `Logged ${rule.mindKind} in Mind`;
+    case "mindful": return `${rule.minutes} mindful min`;
+    case "focus": return `${rule.minutes} min in Focus`;
     default: return AUTO_LABELS[rule.kind];
   }
 }

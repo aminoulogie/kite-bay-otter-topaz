@@ -328,6 +328,8 @@ export type HabitAuto =
   | { kind: "mind"; mindKind: "book" | "research" | "language" | "idea" }
   | { kind: "screen"; under: number }
   | { kind: "underBudget" }
+  | { kind: "mindful"; minutes: number }
+  | { kind: "focus"; minutes: number }
 
 export type { ScreenApp, ScreenTimeDay } from "./screen-time";
 export type { RampAdvance, RampUnit } from "./habit-ramp";
@@ -400,6 +402,10 @@ export interface Settings {
   healthSync?: boolean;
   /** "Going to sleep" was tapped at this moment (ms) and "I'm up" not yet. */
   sleepStart?: number;
+  /** Minutes in the Deep Work focus, per day (from the Focus filter). */
+  focusByDay?: Record<string, number>;
+  /** When the Deep Work focus turned on, while it is on (ms). */
+  focusActiveSince?: number;
   /**
    * What was last sent to (or taken from) Health, per item —
    * "workout:2026-10-02" → a signature of the session. A change in the

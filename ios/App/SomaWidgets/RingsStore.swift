@@ -165,3 +165,64 @@ enum SleepStore {
         return s
     }
 }
+
+/**
+ * Focus sessions and gym arrivals, written by the app's background parts
+ * (the Focus filter, the gym region) and taken by the web layer on open.
+ */
+enum FocusStore {
+    private static let fileName = "focus.json"
+
+    struct Session: Codable {
+        let start: Double
+        let end: Double
+    }
+
+    struct State: Codable {
+        /// When the Deep Work focus turned on, or nil while it is off.
+        var activeSince: Double?
+        /// Finished sessions the app has not taken yet.
+        var sessions: [Session]
+        /// Last gym arrival (ms), until the app takes it.
+        var gymArrivedAt: Double?
+    }
+
+    private static var fileURL: URL? {
+        guard let id = RingsStore.groupID,
+              let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id)
+        else { return nil }
+        return dir.appendingPathComponent(fileName)
+    }
+
+    static func read() -> State {
+        guard let url = fileURL, let data = try? Data(contentsOf: url),
+              let state = try? JSONDecoder().decode(State.self, from: data)
+        else { return State(activeSince: nil, sessions: [], gymArrivedAt: nil) }
+        return state
+    }
+
+    @discardableResult
+    static func write(_ state: State) -> Bool {
+        guard let url = fileURL, let data = try? JSONEncoder().encode(state) else { return false }
+        return (try? data.write(to: url, options: .atomic)) != nil
+    }
+
+    static func nowMs() -> Double { Date().timeIntervalSince1970 * 1000 }
+
+    static func focus(on: Bool) {
+        var s = read()
+        if on {
+            if s.activeSince == nil { s.activeSince = nowMs() }
+        } else if let start = s.activeSince {
+            s.sessions.append(Session(start: start, end: nowMs()))
+            s.activeSince = nil
+        }
+        write(s)
+    }
+
+    static func arrivedAtGym() {
+        var s = read()
+        s.gymArrivedAt = nowMs()
+        write(s)
+    }
+}

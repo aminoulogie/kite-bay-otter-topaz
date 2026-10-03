@@ -1,5 +1,8 @@
+import AppIntents
 import AudioToolbox
 import AVFoundation
+import CoreLocation
+import UserNotifications
 import Capacitor
 import CoreHaptics
 import HealthKit
@@ -58,6 +61,7 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(RoutineActivityPlugin())
         bridge?.registerPluginInstance(TickPlugin())
         bridge?.registerPluginInstance(HealthPlugin())
+        bridge?.registerPluginInstance(GymPlugin())
     }
 }
 
@@ -269,6 +273,7 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
         if let t = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.insert(t) }
         if let t = HKObjectType.quantityType(forIdentifier: .restingHeartRate) { types.insert(t) }
         types.insert(HKObjectType.workoutType())
+        if let t = HKObjectType.categoryType(forIdentifier: .mindfulSession) { types.insert(t) }
         return types
     }
 
@@ -337,6 +342,18 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                     put("weightKg", sample.quantity.doubleValue(for: HKUnit.gramUnit(with: .kilo)))
                     put("weightDate", formatter.string(from: sample.endDate))
                 }
+                group.leave()
+            }
+            store.execute(query)
+        }
+
+        // Mindful minutes: every session that started today.
+        if let mindful = HKObjectType.categoryType(forIdentifier: .mindfulSession) {
+            group.enter()
+            let query = HKSampleQuery(sampleType: mindful, predicate: dayRange, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                fail(error)
+                let seconds = (samples ?? []).reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+                if seconds > 0 { put("mindfulMin", seconds / 60) }
                 group.leave()
             }
             store.execute(query)
@@ -495,6 +512,168 @@ public class HealthPlugin: CAPPlugin, CAPBridgedPlugin {
                                       start: at, end: at, metadata: [HKMetadataKeyExternalUUID: id])
         replace(type, id: id, with: [sample]) { ok, error in
             call.resolve(["ok": ok, "error": error?.localizedDescription ?? ""])
+        }
+    }
+}
+
+
+// MARK: - Deep work through a Focus
+
+/**
+ * A Focus filter: Settings › Focus › (a focus) › Add Filter › SOMA, and turn
+ * "Count as deep work" on. iOS runs this when that Focus turns on — with the
+ * value set — and again when it turns off, with the value back at its default
+ * (off). That pair is a session, kept in the shared container until SOMA
+ * takes it and counts the minutes.
+ */
+@available(iOS 16.0, *)
+struct SomaFocusFilter: SetFocusFilterIntent {
+    static var title: LocalizedStringResource = "SOMA"
+    static var description: IntentDescription? = IntentDescription("Count the time this Focus is on as deep work in SOMA.")
+
+    @Parameter(title: "Count as deep work", default: false)
+    var deepWork: Bool
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: deepWork ? "Counts as deep work" : "Not counted")
+    }
+
+    func perform() async throws -> some IntentResult {
+        FocusStore.focus(on: deepWork)
+        return .result()
+    }
+}
+
+// MARK: - Gym arrival
+
+/**
+ * Watches one place — your gym — and, on arrival, records it and posts a
+ * notification. Created at launch (AppDelegate) so that iOS, which relaunches
+ * the app in the background for a region event, finds the delegate waiting.
+ */
+final class GymMonitor: NSObject, CLLocationManagerDelegate {
+    static let shared = GymMonitor()
+    static let regionId = "soma-gym"
+    let manager = CLLocationManager()
+    private var pending: ((CLLocation?, String?) -> Void)?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+    }
+
+    var gym: CLCircularRegion? {
+        manager.monitoredRegions.first { $0.identifier == Self.regionId } as? CLCircularRegion
+    }
+
+    var always: Bool { CLLocationManager.authorizationStatus() == .authorizedAlways }
+
+    /// Make where the phone is now the gym.
+    func setHere(_ done: @escaping (CLLocation?, String?) -> Void) {
+        pending = done
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        switch CLLocationManager.authorizationStatus() {
+        case .notDetermined:
+            manager.requestAlwaysAuthorization()
+        case .denied, .restricted:
+            pending = nil
+            done(nil, "Location is off for SOMA — Settings › SOMA › Location › Always")
+        case .authorizedWhenInUse:
+            manager.requestAlwaysAuthorization()
+            manager.requestLocation()
+        default:
+            manager.requestLocation()
+        }
+    }
+
+    func clear() {
+        for r in manager.monitoredRegions where r.identifier == Self.regionId {
+            manager.stopMonitoring(for: r)
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
+        guard let done = pending else { return }
+        switch status {
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.requestLocation()
+        case .denied, .restricted:
+            pending = nil
+            done(nil, "Location was not allowed")
+        default:
+            break
+        }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let done = pending, let here = locations.last else { return }
+        pending = nil
+        clear()
+        let region = CLCircularRegion(center: here.coordinate, radius: 150, identifier: Self.regionId)
+        region.notifyOnEntry = true
+        region.notifyOnExit = false
+        manager.startMonitoring(for: region)
+        done(here, nil)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        guard let done = pending else { return }
+        pending = nil
+        done(nil, error.localizedDescription)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
+        guard region.identifier == Self.regionId else { return }
+        FocusStore.arrivedAtGym()
+        let content = UNMutableNotificationContent()
+        content.title = "At the gym 💪"
+        content.body = "Open SOMA — today's session is ready."
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: "soma-gym-arrival", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    }
+}
+
+/// JS: Gym.setHere() / Gym.clear() / Gym.status()
+@objc(GymPlugin)
+public class GymPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "GymPlugin"
+    public let jsName = "Gym"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "setHere", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
+    ]
+
+    @objc func setHere(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            GymMonitor.shared.setHere { here, error in
+                if let here = here {
+                    call.resolve(["ok": true, "lat": here.coordinate.latitude, "lon": here.coordinate.longitude,
+                                  "always": GymMonitor.shared.always])
+                } else {
+                    call.resolve(["ok": false, "error": error ?? "No location"])
+                }
+            }
+        }
+    }
+
+    @objc func clear(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            GymMonitor.shared.clear()
+            call.resolve(["ok": true])
+        }
+    }
+
+    @objc func status(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            let gym = GymMonitor.shared.gym
+            var out: [String: Any] = ["set": gym != nil, "always": GymMonitor.shared.always]
+            if let gym = gym {
+                out["lat"] = gym.center.latitude
+                out["lon"] = gym.center.longitude
+            }
+            call.resolve(out)
         }
     }
 }

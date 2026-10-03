@@ -14,6 +14,7 @@ export interface HealthDay {
   weightKg?: number;
   weightDate?: string;
   restingHR?: number;
+  mindfulMin?: number;
   errors?: string[];
 }
 

@@ -22,7 +22,22 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "status", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "takeSleep", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setSleep", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "takeFocus", returnType: CAPPluginReturnPromise),
     ]
+
+    /// Finished Focus sessions and a gym arrival, handed over once.
+    @objc func takeFocus(_ call: CAPPluginCall) {
+        var s = FocusStore.read()
+        var out: [String: Any] = [
+            "sessions": s.sessions.map { ["start": $0.start, "end": $0.end] },
+        ]
+        if let since = s.activeSince { out["activeSince"] = since }
+        if let at = s.gymArrivedAt { out["gymArrivedAt"] = at }
+        s.sessions = []
+        s.gymArrivedAt = nil
+        FocusStore.write(s)
+        call.resolve(out)
+    }
 
     /// The sleep widget's taps since the app last looked, and its state.
     /// The taps are cleared as they are handed over, so each is logged once.

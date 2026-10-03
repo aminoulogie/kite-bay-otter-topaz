@@ -37,5 +37,12 @@ test("names suggest rules", () => {
   assert.deepEqual(suggestAuto("Hit protein"), { kind: "protein" });
   assert.deepEqual(suggestAuto("Hydrate"), { kind: "water" });
   assert.deepEqual(suggestAuto("Walk 8k steps"), { kind: "steps", min: 8000 });
-  assert.equal(suggestAuto("Deep work"), null);
+  assert.deepEqual(suggestAuto("Deep work"), { kind: "focus", minutes: 90 });
+  assert.equal(suggestAuto("Call mum"), null);
+});
+
+test("focus and mindful minutes", () => {
+  assert.equal(autoDone({ kind: "focus", minutes: 90 }, ctx({ focusMin: 95 })), true);
+  assert.equal(autoDone({ kind: "focus", minutes: 90 }, ctx({ focusMin: 30 })), false);
+  assert.equal(autoDone({ kind: "mindful", minutes: 10 }, ctx({ health: { mindfulMin: 12 } })), true);
 });

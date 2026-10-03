@@ -41,6 +41,10 @@
 	<string>SOMA reads your steps, active energy, sleep and weight from Apple Health so you don't have to type them. Nothing leaves your phone.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>SOMA does not write to Apple Health.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SOMA uses your location once, to remember where your gym is.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SOMA notices when you arrive at your gym so today's session is ready. It only watches that one place, and your location never leaves the phone.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SOMA uses the camera to photograph habits and to take face, posture and hair scans. Photos stay on your device.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

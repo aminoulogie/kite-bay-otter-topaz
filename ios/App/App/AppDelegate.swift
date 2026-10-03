@@ -14,6 +14,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         if #available(iOS 13.0, *) {
             try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(true)
         }
+        // The gym region's delegate, in place before iOS delivers an arrival
+        // to a background relaunch.
+        _ = GymMonitor.shared
         return true
     }
 

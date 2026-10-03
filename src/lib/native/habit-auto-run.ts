@@ -13,15 +13,15 @@ import { useSoma } from "@/lib/store";
  * minutes for the Apple Health ones. A habit whose rule is met is ticked, with
  * a toast saying so, so nothing ticks itself unseen.
  */
-let health: { steps?: number; activeKcal?: number; at: number } | null = null;
+let health: { steps?: number; activeKcal?: number; mindfulMin?: number; at: number } | null = null;
 
 const needsHealth = () =>
-  useSoma.getState().habits.some((h) => h.auto?.kind === "steps" || h.auto?.kind === "activeKcal");
+  useSoma.getState().habits.some((h) => h.auto?.kind === "steps" || h.auto?.kind === "activeKcal" || h.auto?.kind === "mindful");
 
 async function refreshHealth(): Promise<void> {
   if (!useSoma.getState().settings.healthSync || !needsHealth()) return;
   const d = await healthDay(getLocalDateKey(new Date()));
-  if (d) health = { steps: d.steps, activeKcal: d.activeKcal, at: Date.now() };
+  if (d) health = { steps: d.steps, activeKcal: d.activeKcal, mindfulMin: d.mindfulMin, at: Date.now() };
 }
 
 function contextFor(date: string): AutoContext {
@@ -42,6 +42,9 @@ function contextFor(date: string): AutoContext {
     health: health && Date.now() - health.at < 30 * 60_000 ? health : null,
     bedtimeMs: day?.sleep?.start ?? null,
     spend: monthly > 0 ? { spent, dailyBudget: monthly / daysInMonth } : null,
+    focusMin:
+      (s.settings.focusByDay?.[date] ?? 0) +
+      (s.settings.focusActiveSince ? Math.max(0, (Date.now() - s.settings.focusActiveSince) / 60_000) : 0),
   };
 }
 
@@ -74,7 +77,8 @@ export function startHabitAuto(): () => void {
       now.mind !== prev.mind ||
       now.screenTime !== prev.screenTime ||
       now.ledger !== prev.ledger ||
-      now.habits !== prev.habits
+      now.habits !== prev.habits ||
+      now.settings.focusByDay !== prev.settings.focusByDay
     ) soon();
   });
   const tickHealth = () => void refreshHealth().then(soon);
