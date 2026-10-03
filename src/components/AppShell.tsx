@@ -12,6 +12,8 @@ import { NativeHomeBridge, openHomeWidget } from "@/components/NativeHomeBridge"
 import { DateNav } from "@/components/DateNav";
 import { chromeAvailable, chromeListen, chromeReady, chromeSetState, chromeSetTabs, installNativeToasts, runToastAction, watchOverlays } from "@/lib/native/chrome";
 import { runTrainAction, setNativeTrainEnabled } from "@/lib/native/train-native";
+import { runFuelAction, setNativeFuelEnabled } from "@/lib/native/fuel-native";
+import { NativeFuelBridge, openFuelCard } from "@/components/NativeFuelBridge";
 import { dateLabel, shiftDate } from "@/lib/date-label";
 import { ScreenTimeImport } from "@/components/ScreenTimeImport";
 import { getLocalDateKey } from "@/lib/soma";
@@ -381,6 +383,7 @@ export function AppShell() {
   const [nativeChrome, setNativeChrome] = useState(false);
   const [nativeHabits, setNativeHabits] = useState(false);
   const [nativeHome, setNativeHome] = useState(false);
+  const [nativeFuel, setNativeFuel] = useState(false);
   useEffect(() => {
     if (!ready || !chromeAvailable()) return;
     let alive = true;
@@ -426,6 +429,14 @@ export function AppShell() {
           runTrainAction(op, args);
           break;
         }
+        case "fuel": {
+          const { op, ...args } = a;
+          runFuelAction(op, args);
+          break;
+        }
+        case "fuelCard":
+          openFuelCard(a.id);
+          break;
         case "toastAction":
           runToastAction(a.id);
           break;
@@ -447,6 +458,8 @@ export function AppShell() {
       setNativeHabits(r.habits);
       setNativeHome(r.home);
       setNativeTrainEnabled(r.train);
+      setNativeFuelEnabled(r.fuel);
+      setNativeFuel(r.fuel);
       installNativeToasts();
       document.documentElement.classList.add("soma-native-chrome");
       setNativeChrome(true);
@@ -768,6 +781,7 @@ export function AppShell() {
       )}
 
       {nativeHabits ? <NativeHabitsBridge /> : <HabitsPanel />}
+      {nativeFuel && <NativeFuelBridge visibleNow={tab === "nutrition" && !editingDashboard} />}
       {(nativeHome || (import.meta.env.DEV && window.location.search.includes("homeprobe"))) && <NativeHomeBridge visibleNow={tab === "dashboard" && !editingDashboard} />}
       <ScreenTimeImport />
 

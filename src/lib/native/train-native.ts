@@ -13,9 +13,17 @@ export type TrainHandler = (args: Record<string, unknown>) => void;
 
 let handlers: Record<string, TrainHandler> = {};
 let enabled = false;
+let repaint: (() => void) | null = null;
+
+/** The page on screen registers how to re-render itself, so turning the
+ * native page on publishes straight away rather than at the next change. */
+export function registerRepaint(fn: (() => void) | null): void {
+  repaint = fn;
+}
 
 export function setNativeTrainEnabled(on: boolean): void {
   enabled = on;
+  if (on) repaint?.();
 }
 
 export function nativeTrainEnabled(): boolean {

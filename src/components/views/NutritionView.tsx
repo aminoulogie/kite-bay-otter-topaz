@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Droplet, NotebookPen, Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
@@ -18,7 +18,8 @@ import { Progress } from "@/components/ui/progress";
 import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
 import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
-import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { Sized, WidgetCollectContext, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { nativeFuelEnabled, publishFuel, registerRepaint, type FuelHandler } from "@/lib/native/fuel-native";
 import { GroceryCard, PantryCard } from "@/components/GroceryCard";
 import { formatMoney } from "@/lib/money-model";
 import { Glance, isGlance } from "@/components/Glance";
@@ -63,6 +64,22 @@ const formatDZD = (n: number) => formatMoney(n, "DZD");
 
 export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "week" | "log" | "weight" } = {}) {
   const [sub, setSub] = useState<"dash" | "week" | "log" | "weight">(initialSub);
+  // The native Fuel page (fuel-native.ts): only the instance on screen
+  // publishes, never the out-of-sight copy the glance collector renders.
+  const collecting = useContext(WidgetCollectContext) != null;
+  const nativeRef = useRef<{ snap: object | null; handlers: Record<string, FuelHandler> }>({ snap: null, handlers: {} });
+  useEffect(() => {
+    if (!collecting) publishFuel(nativeRef.current.snap, nativeRef.current.handlers);
+  });
+  useEffect(() => () => {
+    if (!collecting) publishFuel(null, {});
+  }, [collecting]);
+  const [, repaintFuel] = useState(0);
+  useEffect(() => {
+    if (collecting) return;
+    registerRepaint(() => repaintFuel((n) => n + 1));
+    return () => registerRepaint(null);
+  }, [collecting]);
   const nutrition = useSoma((s) => s.nutrition);
   const history = useSoma((s) => s.history);
   const activeDate = useSoma((s) => s.activeDate);
@@ -276,6 +293,156 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
   const fromFood = foodWaterMl(day);
   const water = totalWaterMl(day);
   const waterPct = Math.min(100, Math.round((water / (goals.water || 3500)) * 100));
+
+  if (nativeFuelEnabled() && !collecting) {
+    const amount = (it: FoodItem) => `${it.serving ?? ""}${it.unit ?? "g"}`;
+    nativeRef.current = {
+      snap: {
+        sub,
+        subs: FUEL_TABS.map((t) => ({ id: t.id, label: t.label })),
+        meals: MEALS,
+        meal,
+        planMode,
+        planDate,
+        planDates: nextDates(activeDate, 7).map((d) => ({
+          date: d,
+          label: d === activeDate ? "Today" : new Date(`${d}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" }),
+          count: nutrition[d]?.planned?.length ?? 0,
+        })),
+        target: {
+          eaten: Math.round(totals.cals),
+          goal: goalCals,
+          planned: Math.round(plannedTotals.cals),
+          maintenance: tdee && tdee.ok ? `Measured maintenance ${maintenance} kcal (${tdee.confidence})` : `Formula maintenance ${maintenance} kcal`,
+          burn: burnDetail.net > 0 ? (eatsBack ? `+${burn} from training` : `${burnDetail.net} trained, not added`) : null,
+          macros: [
+            { label: "Protein", used: Math.round(totals.p), goal: goals.protein, color: MACRO_COLOR.p },
+            { label: "Carbs", used: Math.round(totals.c), goal: goals.carbs, color: MACRO_COLOR.c },
+            { label: "Fat", used: Math.round(totals.f), goal: goals.fat, color: MACRO_COLOR.f },
+          ],
+          fiber: Math.round(totals.fiber),
+        },
+        water: { ml: water, goal: goals.water || 3500, fromFood },
+        recents: recents.map((r) => ({ name: r.name, amount: `${r.item.serving}${r.item.unit}`, cals: Math.round(r.item.cals) })),
+        library: library.map((f) => ({ name: f.name, cals: Math.round(f.cals), p: Math.round(f.p) })),
+        diary: MEALS.map((m) => {
+          const group = items.map((it, idx) => ({ it, idx })).filter(({ it }) => (it.meal || "Snacks") === m);
+          const plannedGroup = planned.map((it, idx) => ({ it, idx })).filter(({ it }) => (it.meal || "Snacks") === m);
+          return {
+            meal: m,
+            cals: Math.round(group.reduce((a, g) => a + g.it.cals, 0)),
+            p: Math.round(group.reduce((a, g) => a + g.it.p, 0)),
+            planned: Math.round(plannedGroup.reduce((a, g) => a + g.it.cals, 0)),
+            items: group.map(({ it, idx }) => ({ idx, name: it.name, amount: amount(it), cals: Math.round(it.cals), p: Math.round(it.p), c: Math.round(it.c), f: Math.round(it.f) })),
+            plannedItems: plannedGroup.map(({ it, idx }) => ({ idx, name: it.name, amount: amount(it), cals: Math.round(it.cals), p: Math.round(it.p), c: Math.round(it.c), f: Math.round(it.f) })),
+          };
+        }),
+        goalsLine: `Goals: ${goals.cals} kcal · P ${goals.protein} · C ${goals.carbs} · F ${goals.fat}`,
+      },
+      handlers: {
+        sub: (a) => setSub(a.sub as typeof sub),
+        meal: (a) => setMeal(String(a.meal)),
+        planMode: (a) => setPlanMode(!!a.on),
+        planDate: (a) => setPlanDate(String(a.date)),
+        water: (a) => addWater(Number(a.ml) || 0),
+        waterReset: () => {
+          setWater(0);
+          toast.success(fromFood > 0 ? `Reset — ${fromFood} ml from drinks stays, remove those in the meal list` : "Water reset");
+        },
+        burn: () => setBurnOpen(true),
+        pick: (a) => {
+          const f = library.find((x) => x.name === a.name);
+          if (f) openPortion(f as FoodItem);
+        },
+        recent: (a) => {
+          const r = recents.find((x) => x.name === a.name);
+          if (r) setPortion({ item: r.item, meal, mode: "add" });
+        },
+        editLibrary: (a) => {
+          const f = library.find((x) => x.name === a.name);
+          if (f) setEditingFood(f as FoodItem);
+        },
+        quickAdd: () => setQuickAdd(true),
+        scan: () => setScanning(true),
+        createFood: (a) => {
+          const name = String(a.name ?? "").trim();
+          if (!name) {
+            toast.error("Give the food a name.");
+            return;
+          }
+          const n = (k: string) => Math.max(0, Number(a[k]) || 0);
+          const waterPct = Math.min(100, n("waterPct"));
+          const food: FoodItem = {
+            name,
+            serving: 100,
+            unit: waterPct >= 80 ? "ml" : "g",
+            cals: n("cals"), p: n("p"), c: n("c"), f: n("f"),
+            fiber: 0, sodium: 0, potassium: 0, calcium: 0, iron: 0, magnesium: 0, zinc: 0,
+            meal,
+            waterPct: waterPct || undefined,
+            per100: { cals: n("cals"), p: n("p"), c: n("c"), f: n("f"), fiber: 0 },
+          };
+          if (!addCustomFood(food)) {
+            toast.error(`"${name}" is already in your library.`);
+            return;
+          }
+          toast.success(`Saved ${name}`);
+          setPortion({ mode: "add", meal, item: food });
+        },
+        edit: (a) => {
+          const idx = Number(a.idx);
+          if (a.planned) {
+            const it = planned[idx];
+            if (it) setPortion({ item: it, meal: it.meal || "Snacks", mode: "edit", idx, planned: true });
+          } else {
+            const it = items[idx];
+            if (it) setPortion({ item: it, meal: it.meal || "Snacks", mode: "edit", idx });
+          }
+        },
+        delete: (a) => {
+          const idx = Number(a.idx);
+          const it = items[idx];
+          if (it) deleteFood(idx, it);
+        },
+        gray: (a) => {
+          const idx = Number(a.idx);
+          const it = items[idx];
+          if (!it) return;
+          unconfirmFood(idx, activeDate);
+          toast.success(`${it.name} grayed out — swipe right to count it`, {
+            action: {
+              label: "Undo",
+              onClick: () => {
+                const plan = useSoma.getState().nutrition[activeDate]?.planned ?? [];
+                const at = plan.lastIndexOf(it);
+                if (at >= 0) confirmPlanned(at, activeDate);
+              },
+            },
+          });
+        },
+        confirm: (a) => {
+          const idx = Number(a.idx);
+          const it = planned[idx];
+          if (!it) return;
+          confirmPlanned(idx, planTarget);
+          toast.success(`${it.name} counted`);
+        },
+        unplan: (a) => {
+          const idx = Number(a.idx);
+          const it = planned[idx];
+          if (!it) return;
+          removePlanned(idx, planTarget);
+          toast.success(`${it.name} off the plan`, {
+            action: { label: "Undo", onClick: () => restorePlanned(idx, it, planTarget) },
+          });
+        },
+        move: (a) => {
+          moveFoodToMeal(Number(a.idx), String(a.meal));
+          toast.success(`Moved to ${a.meal}`);
+        },
+      },
+    };
+  }
 
   return (
     <>

@@ -76,6 +76,8 @@ final class HomeModel: ObservableObject {
     @Published var top: CGFloat = 100
     @Published var bottom: CGFloat = 90
     var send: ([String: Any]) -> Void = { _ in }
+    /// The action a card tap sends: "home" on Home, "fuelCard" on Fuel.
+    var cardEvent = "home"
     private var iconCache: [String: UIImage] = [:]
 
     func icon(_ uri: String) -> UIImage? {
@@ -91,7 +93,7 @@ final class HomeModel: ObservableObject {
 
     func open(_ id: String) {
         haptic()
-        send(["type": "home", "op": "open", "id": id])
+        send(["type": cardEvent, "op": "open", "id": id])
     }
 }
 

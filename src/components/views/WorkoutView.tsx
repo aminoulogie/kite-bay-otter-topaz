@@ -29,7 +29,7 @@ import { isRestSplit } from "@/lib/programs";
 import { sessionBurn } from "@/lib/training-burn";
 import { latestWeight } from "@/lib/rings";
 import type { SessionExercise } from "@/lib/types";
-import { nativeTrainEnabled, publishTrain, toneHex, type TrainHandler } from "@/lib/native/train-native";
+import { nativeTrainEnabled, publishTrain, registerRepaint as registerTrainRepaint, toneHex, type TrainHandler } from "@/lib/native/train-native";
 
 const SUPERSET_COLOR: Record<string, string> = {
   A: "var(--color-accent)",
@@ -101,6 +101,11 @@ export function WorkoutView() {
     publishTrain(nativeRef.current.payload, nativeRef.current.handlers);
   });
   useEffect(() => () => publishTrain(null, {}), []);
+  const [, repaintTrain] = useState(0);
+  useEffect(() => {
+    registerTrainRepaint(() => repaintTrain((n) => n + 1));
+    return () => registerTrainRepaint(null);
+  }, []);
   // Arranging the page is done on the web grid, so the native page steps aside.
   const editingLayout = useSoma((s) => s.editingDashboard);
   const routines = routinesFn();

@@ -32,6 +32,8 @@ export type ChromeAction =
   | { type: "habitsOpen"; open: boolean }
   | { type: "home"; op: "open"; id: string }
   | { type: "train"; op: string; [k: string]: unknown }
+  | { type: "fuel"; op: string; [k: string]: unknown }
+  | { type: "fuelCard"; id: string }
   | { type: "toastAction"; id: string }
   | HabitAction;
 
@@ -50,9 +52,10 @@ export type HabitAction = {
 };
 
 interface NativeChromePlugin {
-  ready(): Promise<{ active: boolean; habits?: boolean; home?: boolean; train?: boolean }>;
+  ready(): Promise<{ active: boolean; habits?: boolean; home?: boolean; train?: boolean; fuel?: boolean }>;
   setHome(o: { json: string }): Promise<void>;
   setTrain(o: { json: string }): Promise<void>;
+  setFuel(o: { json: string }): Promise<void>;
   toast(o: { id: string; text: string; kind: string; action: string | null }): Promise<void>;
   setHabits(o: { json: string }): Promise<void>;
   openHabits(o: { open: boolean }): Promise<void>;
@@ -67,14 +70,21 @@ const NativeChrome = registerPlugin<NativeChromePlugin>("NativeChrome");
 export const chromeAvailable = (): boolean =>
   Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("NativeChrome");
 
-export async function chromeReady(): Promise<{ active: boolean; habits: boolean; home: boolean; train: boolean }> {
-  if (!chromeAvailable()) return { active: false, habits: false, home: false, train: false };
+export async function chromeReady(): Promise<{ active: boolean; habits: boolean; home: boolean; train: boolean; fuel: boolean }> {
+  if (!chromeAvailable()) return { active: false, habits: false, home: false, train: false, fuel: false };
   try {
     const r = await NativeChrome.ready();
-    return { active: !!r.active, habits: !!r.habits, home: !!r.home, train: !!r.train };
+    return { active: !!r.active, habits: !!r.habits, home: !!r.home, train: !!r.train, fuel: !!r.fuel };
   } catch {
-    return { active: false, habits: false, home: false, train: false };
+    return { active: false, habits: false, home: false, train: false, fuel: false };
   }
+}
+
+let lastFuel = "";
+export function chromeSetFuel(json: string): void {
+  if (json === lastFuel) return;
+  lastFuel = json;
+  void NativeChrome.setFuel({ json }).catch(() => {});
 }
 
 let lastTrain = "";

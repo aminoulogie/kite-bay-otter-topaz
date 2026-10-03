@@ -37,7 +37,7 @@ async function iconOf(spec: GlanceSpec): Promise<string> {
   return png;
 }
 
-async function plain(id: string, spec: GlanceSpec | undefined) {
+export async function plain(id: string, spec: GlanceSpec | undefined) {
   if (!spec) return null;
   return {
     id,

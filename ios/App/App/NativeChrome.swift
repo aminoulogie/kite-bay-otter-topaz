@@ -56,6 +56,7 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "openHabits", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHome", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setTrain", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setFuel", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "toast", returnType: CAPPluginReturnPromise),
     ]
 
@@ -74,7 +75,7 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             chrome.publishInsets(force: true)
-            call.resolve(["active": true, "habits": chrome.hasNativeHabits, "home": chrome.hasNativeHome, "train": chrome.hasNativeTrain])
+            call.resolve(["active": true, "habits": chrome.hasNativeHabits, "home": chrome.hasNativeHome, "train": chrome.hasNativeTrain, "fuel": chrome.hasNativeFuel])
         }
     }
 
@@ -147,6 +148,14 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let json = call.getString("json") ?? ""
         DispatchQueue.main.async {
             ChromeController.current?.updateTrain(json: json)
+            call.resolve()
+        }
+    }
+
+    @objc func setFuel(_ call: CAPPluginCall) {
+        let json = call.getString("json") ?? ""
+        DispatchQueue.main.async {
+            ChromeController.current?.updateFuel(json: json)
             call.resolve()
         }
     }
@@ -484,6 +493,8 @@ final class ChromeController: UIViewController {
     var hasNativeHome: Bool { home != nil }
     private var train: AnyObject?
     var hasNativeTrain: Bool { train != nil }
+    private var fuel: AnyObject?
+    var hasNativeFuel: Bool { fuel != nil }
     private var currentToast: ToastView?
 
     var plugin: NativeChromePlugin? { NativeChromePlugin.shared }
@@ -520,6 +531,10 @@ final class ChromeController: UIViewController {
             t.model.send = { [weak self] data in self?.plugin?.send(data) }
             t.install(in: self, above: h.hosting.view)
             train = t
+            let f = FuelController()
+            f.model.send = { [weak self] data in self?.plugin?.send(data) }
+            f.install(in: self, above: t.hosting.view)
+            fuel = f
         }
 
         // The top bar.
@@ -556,6 +571,9 @@ final class ChromeController: UIViewController {
         if #available(iOS 16.0, *), let t = train as? TrainController {
             nativeRoots.append(t.hosting.view)
         }
+        if #available(iOS 16.0, *), let f = fuel as? FuelController {
+            nativeRoots.append(f.hosting.view)
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -568,6 +586,12 @@ final class ChromeController: UIViewController {
         publishInsets(force: false)
         if #available(iOS 16.0, *) {
             (habitsPanel as? HabitsPanelController)?.layout()
+        }
+    }
+
+    func updateFuel(json: String) {
+        if #available(iOS 16.0, *) {
+            (fuel as? FuelController)?.update(json: json)
         }
     }
 
@@ -624,6 +648,7 @@ final class ChromeController: UIViewController {
         if #available(iOS 16.0, *) {
             (home as? HomeController)?.setInsets(top: top, bottom: bottom)
             (train as? TrainController)?.setInsets(top: top, bottom: bottom)
+            (fuel as? FuelController)?.setInsets(top: top, bottom: bottom)
         }
         if !force && values == lastSent { return }
         lastSent = values
@@ -659,6 +684,7 @@ final class ChromeController: UIViewController {
         if #available(iOS 16.0, *) {
             (home as? HomeController)?.setOverlay(hidden)
             (train as? TrainController)?.setOverlay(hidden)
+            (fuel as? FuelController)?.setOverlay(hidden)
         }
         let views: [UIView] = [dock, nav.navigationBar]
         views.forEach { $0.isUserInteractionEnabled = !hidden }
