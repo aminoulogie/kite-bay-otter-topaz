@@ -2,9 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { tapLight, tapTick } from "@/lib/haptics";
-import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
+import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { dateLabel, shiftDate } from "@/lib/date-label";
 
 /** How far ahead the picker goes: far enough to plan a week of food. */
 const AHEAD = 60;
@@ -13,22 +14,7 @@ const BEHIND = 365;
 const ROW = 40;
 const VISIBLE = 5;
 
-function shift(date: string, n: number): string {
-  return getLocalDateKey(addDays(parseLocalDateKey(date), n));
-}
-
-function dateLabel(date: string, today: string, long = false): string {
-  if (date === today) return "Today";
-  if (date === shift(today, -1)) return "Yesterday";
-  if (date === shift(today, 1)) return "Tomorrow";
-  const d = parseLocalDateKey(date);
-  // "Sat 3 Oct", the way the iOS picker writes it; the year only when it is
-  // not this one.
-  const wd = d.toLocaleDateString("en-US", { weekday: "short" });
-  const mon = d.toLocaleDateString("en-US", { month: "short" });
-  const year = long && d.getFullYear() !== parseLocalDateKey(today).getFullYear() ? ` ${d.getFullYear()}` : "";
-  return `${wd} ${d.getDate()} ${mon}${year}`;
-}
+const shift = shiftDate;
 
 /** ‹ date › in the header. The date opens a wheel of days. */
 export function DateNav() {

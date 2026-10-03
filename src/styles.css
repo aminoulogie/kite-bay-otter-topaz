@@ -1042,3 +1042,19 @@ input[type="date"]::-webkit-datetime-edit,
 input[type="time"]::-webkit-datetime-edit {
   padding: 0;
 }
+
+/* Native Liquid Glass bars (NativeChrome.swift). The web header, dock and
+   "viewing a past day" banner step aside — the native bar carries the date —
+   and the page leaves room for the bars' real heights, which the native side
+   publishes as --chrome-top / --chrome-bottom. */
+html.soma-native-chrome .glass-header,
+html.soma-native-chrome .soma-dock,
+html.soma-native-chrome .soma-viewing-banner {
+  display: none !important;
+}
+html.soma-native-chrome .soma-main {
+  padding-top: calc(max(var(--chrome-top, 0px), env(safe-area-inset-top)) + 0.75rem) !important;
+}
+html.soma-native-chrome .soma-page {
+  padding-bottom: calc(max(var(--chrome-bottom, 0px), env(safe-area-inset-bottom)) + var(--player-h, 0px) + 0.75rem) !important;
+}

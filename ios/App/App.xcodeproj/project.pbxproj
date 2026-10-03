@@ -11,6 +11,7 @@
 		11E1C23AAC1224C4C39EC4C3 /* RoutineActivityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A14EA3591B930C8DBDECD60 /* RoutineActivityPlugin.swift */; };
 		149BF40D0B408A40728BAA4F /* SomaWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 88ACC0F1D4956CBBB179A237 /* SomaWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeaderMapsOnCopy, ); }; };
 		2DB150EE28A7B0BC826B3394 /* WidgetBridgePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B9A07FAF3159423316D91F /* WidgetBridgePlugin.swift */; };
+		5C0A11E2AA00000000000001 /* NativeChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0A11E2AA00000000000002 /* NativeChrome.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		35C21827D3B9C0787E7BBF27 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F5354F15091797E66F6A0BA /* WidgetKit.framework */; };
 		386D9E88B0D43740B6CFE2C5 /* RingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F0F56CA8FE985E51A8E816 /* RingsStore.swift */; };
@@ -60,6 +61,7 @@
 /* Begin PBXFileReference section */
 		1A14EA3591B930C8DBDECD60 /* RoutineActivityPlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RoutineActivityPlugin.swift; sourceTree = "<group>"; };
 		28B9A07FAF3159423316D91F /* WidgetBridgePlugin.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WidgetBridgePlugin.swift; sourceTree = "<group>"; };
+		5C0A11E2AA00000000000002 /* NativeChrome.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeChrome.swift; sourceTree = "<group>"; };
 		2CA7BC2EF8931B4D76F2775C /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		353BAEC7490F31CC41429890 /* App.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
@@ -155,6 +157,7 @@
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
 				28B9A07FAF3159423316D91F /* WidgetBridgePlugin.swift */,
+				5C0A11E2AA00000000000002 /* NativeChrome.swift */,
 				353BAEC7490F31CC41429890 /* App.entitlements */,
 				72FF2C4EA18CD8C2D759B4A6 /* VaultFolderPlugin.swift */,
 				1A14EA3591B930C8DBDECD60 /* RoutineActivityPlugin.swift */,
@@ -340,6 +343,7 @@
 				45F7D4A312FFDB85CA125F79 /* FaceDepthPlugin.swift in Sources */,
 				513CD6F7A1849D0EA8FF7684 /* BodyDepthPlugin.swift in Sources */,
 				2DB150EE28A7B0BC826B3394 /* WidgetBridgePlugin.swift in Sources */,
+				5C0A11E2AA00000000000001 /* NativeChrome.swift in Sources */,
 				B862E6E77BCE4327AA3A4244 /* RingsStore.swift in Sources */,
 				116A3E096488CB5135DC4220 /* VaultFolderPlugin.swift in Sources */,
 				11E1C23AAC1224C4C39EC4C3 /* RoutineActivityPlugin.swift in Sources */,

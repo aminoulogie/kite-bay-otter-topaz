@@ -17,6 +17,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // The gym region's delegate, in place before iOS delivers an arrival
         // to a background relaunch.
         _ = GymMonitor.shared
+        // Apple's own tab bar and navigation bars around the web app, so the
+        // chrome is real Liquid Glass. See NativeChrome.swift.
+        if let old = window, let bridge = old.rootViewController as? CAPBridgeViewController {
+            old.rootViewController = nil
+            old.isHidden = true
+            let chrome = ChromeTabController(bridge: bridge)
+            let w = ChromeWindow(frame: UIScreen.main.bounds)
+            w.backgroundColor = UIColor(red: 0.043, green: 0.047, blue: 0.063, alpha: 1)
+            w.rootViewController = chrome
+            window = w
+            w.makeKeyAndVisible()
+        }
         return true
     }
 

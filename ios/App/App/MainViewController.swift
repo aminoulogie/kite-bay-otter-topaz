@@ -62,6 +62,7 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(TickPlugin())
         bridge?.registerPluginInstance(HealthPlugin())
         bridge?.registerPluginInstance(GymPlugin())
+        bridge?.registerPluginInstance(NativeChromePlugin())
     }
 }
 

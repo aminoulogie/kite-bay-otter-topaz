@@ -8,6 +8,8 @@ import { startHabitAuto } from "@/lib/native/habit-auto-run";
 import { startFocusGym } from "@/lib/native/focus-gym";
 import { HabitsPanel } from "@/components/habits/HabitsPanel";
 import { DateNav } from "@/components/DateNav";
+import { chromeAvailable, chromeListen, chromeReady, chromeSetState, watchOverlays } from "@/lib/native/chrome";
+import { dateLabel, shiftDate } from "@/lib/date-label";
 import { ScreenTimeImport } from "@/components/ScreenTimeImport";
 import { getLocalDateKey } from "@/lib/soma";
 import { NUTRITION_KEEP_FROM } from "@/lib/seed";
@@ -203,6 +205,8 @@ export function AppShell() {
   // three screens deep in Setup made the safest habit the least convenient
   // one; it is now two taps from wherever you are.
   const { busy: savingBackup, download: saveBackup } = useBackupDownload();
+  const saveBackupRef = useRef(saveBackup);
+  saveBackupRef.current = saveBackup;
 
   const [ready, setReady] = useState(false);
   // Swiping in from the left edge opens Habits.
@@ -282,6 +286,8 @@ export function AppShell() {
     const el = navRef.current;
     if (!el) return;
     const publish = () => {
+      // The native tab bar publishes its own height instead.
+      if (document.documentElement.classList.contains("soma-native-chrome")) return;
       // offsetHeight, not getBoundingClientRect().height: the rect follows
       // the VISUAL viewport, which iOS moves while the URL bar collapses or
       // the keyboard opens — publishing it made --dock-h wobble and the page
@@ -366,6 +372,78 @@ export function AppShell() {
   const normalizeLive = useSoma((s) => s.normalizeLive);
   const rollDayIfNeeded = useSoma((s) => s.rollDayIfNeeded);
   const markHydrated = useSoma((s) => s.markHydrated);
+
+  // Apple's own Liquid Glass bars, when the native build has them: the page
+  // hides its header and dock and answers the bars instead.
+  const [nativeChrome, setNativeChrome] = useState(false);
+  useEffect(() => {
+    if (!ready || !chromeAvailable()) return;
+    let alive = true;
+    let offWatch: (() => void) | null = null;
+    const offListen = chromeListen((a) => {
+      const st = useSoma.getState();
+      switch (a.type) {
+        case "tab":
+          st.setTab(a.tab as TabId);
+          break;
+        case "habits":
+          st.setHabitsOpen(true);
+          break;
+        case "calendar":
+          setCalendarOpen(true);
+          break;
+        case "charts":
+          setChartsOpen(true);
+          break;
+        case "edit":
+          st.setEditingDashboard(!st.editingDashboard);
+          break;
+        case "backup":
+          void saveBackupRef.current();
+          break;
+        case "date":
+          st.setActiveDate(a.date);
+          break;
+        case "step":
+          st.setActiveDate(shiftDate(st.activeDate, a.by));
+          break;
+        case "insets": {
+          const root = document.documentElement;
+          root.style.setProperty("--chrome-top", `${Math.round(a.top)}px`);
+          root.style.setProperty("--chrome-bottom", `${Math.round(a.bottom)}px`);
+          root.style.setProperty("--dock-h", `${Math.round(a.bottom)}px`);
+          break;
+        }
+      }
+    });
+    void chromeReady().then((on) => {
+      if (!alive || !on) return;
+      document.documentElement.classList.add("soma-native-chrome");
+      setNativeChrome(true);
+      offWatch = watchOverlays();
+    });
+    return () => {
+      alive = false;
+      offListen();
+      offWatch?.();
+    };
+  }, [ready]);
+
+  // The bars show what the page is on.
+  useEffect(() => {
+    if (!nativeChrome) return;
+    const today = getLocalDateKey();
+    chromeSetState({
+      tab,
+      title: dateLabel(activeDate, today),
+      date: activeDate,
+      isToday: activeDate === today,
+      canEdit: isArrangeable(tab),
+      editing: editingDashboard,
+      accent: normalizeAccent(settings.accent),
+      theme: resolveTheme(settings.theme),
+    });
+  }, [nativeChrome, tab, activeDate, editingDashboard, settings.accent, settings.theme]);
 
   useEffect(() => {
     const result = useSoma.persist.rehydrate();
@@ -644,7 +722,7 @@ export function AppShell() {
         <button
           type="button"
           onClick={() => setActiveDate(getLocalDateKey())}
-          className="sticky top-0 z-20 flex w-full items-center justify-between gap-2 border-b border-warn/30 bg-warn/15 px-4 py-1.5 text-[0.68rem] font-bold text-warn"
+          className="soma-viewing-banner sticky top-0 z-20 flex w-full items-center justify-between gap-2 border-b border-warn/30 bg-warn/15 px-4 py-1.5 text-[0.68rem] font-bold text-warn"
         >
           <span className="truncate">Viewing {activeDate}</span>
           <span className="shrink-0 underline">Back to today</span>
@@ -658,7 +736,7 @@ export function AppShell() {
           dock that follows you across tabs. */}
       <RoutineDock />
 
-      <main key={tab} className="soma-scroll px-4 pt-4 soma-view soma-stagger">
+      <main key={tab} className="soma-main soma-scroll px-4 pt-4 soma-view soma-stagger">
         {tab === "dashboard" && <DashboardView />}
         {tab === "money" && <MoneyView />}
         {tab === "mind" && <MindView />}
