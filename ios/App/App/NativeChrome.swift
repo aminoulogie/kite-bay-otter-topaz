@@ -54,6 +54,7 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setHidden", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHabits", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openHabits", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setHome", returnType: CAPPluginReturnPromise),
     ]
 
     static weak var shared: NativeChromePlugin?
@@ -71,7 +72,7 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             chrome.publishInsets(force: true)
-            call.resolve(["active": true, "habits": chrome.hasNativeHabits])
+            call.resolve(["active": true, "habits": chrome.hasNativeHabits, "home": chrome.hasNativeHome])
         }
     }
 
@@ -127,6 +128,15 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         let json = call.getString("json") ?? ""
         DispatchQueue.main.async {
             ChromeController.current?.updateHabits(json: json)
+            call.resolve()
+        }
+    }
+
+    /// The native Home's cards, as JSON (see NativeHomeBridge.tsx).
+    @objc func setHome(_ call: CAPPluginCall) {
+        let json = call.getString("json") ?? ""
+        DispatchQueue.main.async {
+            ChromeController.current?.updateHome(json: json)
             call.resolve()
         }
     }
@@ -449,6 +459,8 @@ final class ChromeController: UIViewController {
     var nativeRoots: [UIView] = []
     private var habitsPanel: AnyObject?
     var hasNativeHabits: Bool { habitsPanel != nil }
+    private var home: AnyObject?
+    var hasNativeHome: Bool { home != nil }
 
     var plugin: NativeChromePlugin? { NativeChromePlugin.shared }
 
@@ -473,6 +485,14 @@ final class ChromeController: UIViewController {
         bridgeVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(bridgeVC.view)
         bridgeVC.didMove(toParent: self)
+
+        // The native Home, over the web view and under the bars.
+        if #available(iOS 16.0, *), let web = bridgeVC.view {
+            let h = HomeController()
+            h.model.send = { [weak self] data in self?.plugin?.send(data) }
+            h.install(in: self, above: web)
+            home = h
+        }
 
         // The top bar.
         host = HostViewController(chrome: self)
@@ -502,6 +522,9 @@ final class ChromeController: UIViewController {
             nativeRoots = panel.touchRoots
             habitsPanel = panel
         }
+        if #available(iOS 16.0, *), let h = home as? HomeController {
+            nativeRoots.append(h.hosting.view)
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -514,6 +537,12 @@ final class ChromeController: UIViewController {
         publishInsets(force: false)
         if #available(iOS 16.0, *) {
             (habitsPanel as? HabitsPanelController)?.layout()
+        }
+    }
+
+    func updateHome(json: String) {
+        if #available(iOS 16.0, *) {
+            (home as? HomeController)?.update(json: json)
         }
     }
 
@@ -536,6 +565,9 @@ final class ChromeController: UIViewController {
         let bottom = view.bounds.height - dock.frame.minY
         let safe = view.safeAreaInsets
         let values = [Double(top), Double(bottom), Double(safe.top), Double(safe.bottom)]
+        if #available(iOS 16.0, *) {
+            (home as? HomeController)?.setInsets(top: top, bottom: bottom)
+        }
         if !force && values == lastSent { return }
         lastSent = values
         plugin?.send([
@@ -567,6 +599,9 @@ final class ChromeController: UIViewController {
     func setChromeHidden(_ hidden: Bool) {
         guard hidden != chromeHidden else { return }
         chromeHidden = hidden
+        if #available(iOS 16.0, *) {
+            (home as? HomeController)?.setOverlay(hidden)
+        }
         let views: [UIView] = [dock, nav.navigationBar]
         views.forEach { $0.isUserInteractionEnabled = !hidden }
         UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {

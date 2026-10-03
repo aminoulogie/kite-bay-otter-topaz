@@ -29,6 +29,7 @@ export type ChromeAction =
   | { type: "step"; by: number }
   | { type: "insets"; top: number; bottom: number; safeTop?: number; safeBottom?: number }
   | { type: "habitsOpen"; open: boolean }
+  | { type: "home"; op: "open"; id: string }
   | HabitAction;
 
 /** What the native Habits panel asks the page to do. */
@@ -46,7 +47,8 @@ export type HabitAction = {
 };
 
 interface NativeChromePlugin {
-  ready(): Promise<{ active: boolean; habits?: boolean }>;
+  ready(): Promise<{ active: boolean; habits?: boolean; home?: boolean }>;
+  setHome(o: { json: string }): Promise<void>;
   setHabits(o: { json: string }): Promise<void>;
   openHabits(o: { open: boolean }): Promise<void>;
   setState(s: ChromeState): Promise<void>;
@@ -60,14 +62,23 @@ const NativeChrome = registerPlugin<NativeChromePlugin>("NativeChrome");
 export const chromeAvailable = (): boolean =>
   Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("NativeChrome");
 
-export async function chromeReady(): Promise<{ active: boolean; habits: boolean }> {
-  if (!chromeAvailable()) return { active: false, habits: false };
+export async function chromeReady(): Promise<{ active: boolean; habits: boolean; home: boolean }> {
+  if (!chromeAvailable()) return { active: false, habits: false, home: false };
   try {
     const r = await NativeChrome.ready();
-    return { active: !!r.active, habits: !!r.habits };
+    return { active: !!r.active, habits: !!r.habits, home: !!r.home };
   } catch {
-    return { active: false, habits: false };
+    return { active: false, habits: false, home: false };
   }
+}
+
+let lastHome = "";
+export function chromeSetHome(json: string): void {
+  if (json === lastHome) return;
+  lastHome = json;
+  const probe = (window as unknown as { __somaHomeProbe?: (j: string) => void }).__somaHomeProbe;
+  if (probe) probe(json);
+  void NativeChrome.setHome({ json }).catch(() => {});
 }
 
 let lastHabits = "";

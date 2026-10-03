@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
+import { WidgetCollectContext } from "@/components/WidgetGrid";
+
+/** Opens the check-in from outside (the native Home). */
+export const OPEN_CHECKIN_EVENT = "soma-open-checkin";
 import { Check, Dumbbell, Moon, Pill, Scale, Utensils, X } from "lucide-react";
 import { toast } from "sonner";
 import { MoneySheet } from "@/components/money/money-ui";
@@ -54,6 +58,27 @@ export function CheckInButton({
   const left = openCount(state);
   const evening = new Date().getHours() >= CHECKIN_FROM_HOUR;
   const show = (evening && left > 0 && (activeDate || today) === today) || open;
+  const collectFor = useContext(WidgetCollectContext);
+  useEffect(() => {
+    if (collectFor) return;
+    const onOpen = () => setOpen(true);
+    window.addEventListener(OPEN_CHECKIN_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_CHECKIN_EVENT, onOpen);
+  }, [collectFor]);
+  if (collectFor) {
+    const c = collectFor("checkin");
+    if (!(evening && left > 0 && (activeDate || today) === today)) c.remove();
+    else
+      c.put({
+        label: "Evening check-in",
+        icon: Moon,
+        color: "#818cf8",
+        value: String(score),
+        sub: `${left} ${left === 1 ? "thing" : "things"} still open · about 20 seconds`,
+        onOpen: () => window.dispatchEvent(new Event(OPEN_CHECKIN_EVENT)),
+      });
+    return null;
+  }
   if (!show) return null;
   return (
     <>

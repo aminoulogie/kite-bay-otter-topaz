@@ -8,6 +8,7 @@ import { startHabitAuto } from "@/lib/native/habit-auto-run";
 import { startFocusGym } from "@/lib/native/focus-gym";
 import { HabitsPanel } from "@/components/habits/HabitsPanel";
 import { NativeHabitsBridge, runHabitAction } from "@/components/habits/NativeHabitsBridge";
+import { NativeHomeBridge, openHomeWidget } from "@/components/NativeHomeBridge";
 import { DateNav } from "@/components/DateNav";
 import { chromeAvailable, chromeListen, chromeReady, chromeSetState, chromeSetTabs, watchOverlays } from "@/lib/native/chrome";
 import { dateLabel, shiftDate } from "@/lib/date-label";
@@ -378,6 +379,7 @@ export function AppShell() {
   // hides its header and dock and answers the bars instead.
   const [nativeChrome, setNativeChrome] = useState(false);
   const [nativeHabits, setNativeHabits] = useState(false);
+  const [nativeHome, setNativeHome] = useState(false);
   useEffect(() => {
     if (!ready || !chromeAvailable()) return;
     let alive = true;
@@ -415,6 +417,9 @@ export function AppShell() {
         case "habit":
           runHabitAction(a);
           break;
+        case "home":
+          openHomeWidget(a.id);
+          break;
         case "insets": {
           const root = document.documentElement;
           root.style.setProperty("--chrome-top", `${Math.round(a.top)}px`);
@@ -431,6 +436,7 @@ export function AppShell() {
     void chromeReady().then((r) => {
       if (!alive || !r.active) return;
       setNativeHabits(r.habits);
+      setNativeHome(r.home);
       document.documentElement.classList.add("soma-native-chrome");
       setNativeChrome(true);
       void chromeSetTabs(TABS);
@@ -751,6 +757,7 @@ export function AppShell() {
       )}
 
       {nativeHabits ? <NativeHabitsBridge /> : <HabitsPanel />}
+      {(nativeHome || (import.meta.env.DEV && window.location.search.includes("homeprobe"))) && <NativeHomeBridge visibleNow={tab === "dashboard" && !editingDashboard} />}
       <ScreenTimeImport />
 
       {/* A running routine: full screen, or shrunk to a player above the

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { WidgetCollectContext } from "@/components/WidgetGrid";
 import { Moon, Sun } from "lucide-react";
 import { goToSleep, wakeUp } from "@/lib/native/sleep-clock-sync";
 import { useSoma } from "@/lib/store";
@@ -15,8 +16,22 @@ export function SleepClockButton() {
     const id = setInterval(() => tick((n) => n + 1), 60_000);
     return () => clearInterval(id);
   }, []);
+  const collectFor = useContext(WidgetCollectContext);
   const hour = new Date().getHours();
   const bedtime = hour >= 20 || hour < 4;
+  if (collectFor) {
+    // The native Home draws this as a banner.
+    const c = collectFor("sleepclock");
+    if (start == null && !bedtime) {
+      c.remove();
+    } else if (start != null) {
+      const since = new Date(start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      c.put({ label: "I'm up", icon: Sun, color: "#fcd34d", sub: `Asleep since ${since} · ${((Date.now() - start) / 3_600_000).toFixed(1)} h so far`, onOpen: wakeUp });
+    } else {
+      c.put({ label: "Going to sleep", icon: Moon, color: "#818cf8", sub: "Tap now, and \"I'm up\" in the morning", onOpen: goToSleep });
+    }
+    return null;
+  }
   if (start == null && !bedtime) return null;
 
   if (start != null) {

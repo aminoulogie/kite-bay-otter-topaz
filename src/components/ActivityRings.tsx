@@ -59,6 +59,7 @@ export function ActivityRings() {
         spec={{
           label: "Today",
           visual: (px: number) => <RingSet rings={specs(values)} px={px} />,
+          rings: RING_DEFS.map((r) => ({ frac: share(values[r.id]), color: r.from })),
           stats: RING_DEFS.map((r) => ({
             label: r.label,
             color: r.from,
