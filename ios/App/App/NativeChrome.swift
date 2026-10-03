@@ -52,12 +52,6 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setTabs", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHidden", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setHabits", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "openHabits", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setHome", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setTrain", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setFuel", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "toast", returnType: CAPPluginReturnPromise),
     ]
 
     static weak var shared: NativeChromePlugin?
@@ -75,7 +69,7 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             chrome.publishInsets(force: true)
-            call.resolve(["active": true, "habits": chrome.hasNativeHabits, "home": chrome.hasNativeHome, "train": chrome.hasNativeTrain, "fuel": chrome.hasNativeFuel])
+            call.resolve(["active": true])
         }
     }
 
@@ -126,59 +120,6 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// The native Habits panel's data, as JSON (see habits-native.ts).
-    @objc func setHabits(_ call: CAPPluginCall) {
-        let json = call.getString("json") ?? ""
-        DispatchQueue.main.async {
-            ChromeController.current?.updateHabits(json: json)
-            call.resolve()
-        }
-    }
-
-    /// The native Home's cards, as JSON (see NativeHomeBridge.tsx).
-    @objc func setHome(_ call: CAPPluginCall) {
-        let json = call.getString("json") ?? ""
-        DispatchQueue.main.async {
-            ChromeController.current?.updateHome(json: json)
-            call.resolve()
-        }
-    }
-
-    @objc func setTrain(_ call: CAPPluginCall) {
-        let json = call.getString("json") ?? ""
-        DispatchQueue.main.async {
-            ChromeController.current?.updateTrain(json: json)
-            call.resolve()
-        }
-    }
-
-    @objc func setFuel(_ call: CAPPluginCall) {
-        let json = call.getString("json") ?? ""
-        DispatchQueue.main.async {
-            ChromeController.current?.updateFuel(json: json)
-            call.resolve()
-        }
-    }
-
-    @objc func toast(_ call: CAPPluginCall) {
-        let id = call.getString("id") ?? ""
-        let text = call.getString("text") ?? ""
-        let kind = call.getString("kind") ?? "message"
-        let action = call.getString("action")
-        DispatchQueue.main.async {
-            ChromeController.current?.showToast(id: id, text: text, kind: kind, action: action)
-            call.resolve()
-        }
-    }
-
-    @objc func openHabits(_ call: CAPPluginCall) {
-        let open = call.getBool("open") ?? false
-        DispatchQueue.main.async {
-            ChromeController.current?.setHabitsOpen(open)
-            call.resolve()
-        }
-    }
-
     func send(_ data: [String: Any]) {
         notifyListeners("action", data: data)
     }
@@ -193,19 +134,12 @@ final class ChromeWindow: UIWindow {
         var v: UIView? = hit
         while let cur = v, cur !== chrome.view {
             if cur === web { return hit }
-            if chrome.nativeRoots.contains(where: { $0 === cur }) { return hit }
-            if cur is ChromeDock || cur is ToastView || cur is UIControl || cur is UINavigationBar || cur is UIToolbar { return hit }
+            if cur is ChromeDock || cur is UIControl || cur is UINavigationBar || cur is UIToolbar { return hit }
             let name = NSStringFromClass(type(of: cur))
             if name.contains("Bar") || name.contains("Button") { return hit }
             v = cur.superview
         }
         if v == nil { return hit } // outside the chrome: a presented sheet
-        // Only transparent containers were hit (the top bar's full-screen
-        // layer). A native page underneath takes the touch before the web.
-        for root in chrome.nativeRoots.reversed()
-            where !root.isHidden && root.alpha > 0.01 && root.isUserInteractionEnabled {
-            if let h = root.hitTest(root.convert(point, from: self), with: event) { return h }
-        }
         return web.hitTest(web.convert(point, from: self), with: event) ?? web
     }
 }
@@ -491,17 +425,6 @@ final class ChromeController: UIViewController {
     private(set) var state = ChromeState()
     private var chromeHidden = false
     private var lastSent: [Double] = []
-    /// Native views that take their own touches (the Habits panel).
-    var nativeRoots: [UIView] = []
-    private var habitsPanel: AnyObject?
-    var hasNativeHabits: Bool { habitsPanel != nil }
-    private var home: AnyObject?
-    var hasNativeHome: Bool { home != nil }
-    private var train: AnyObject?
-    var hasNativeTrain: Bool { train != nil }
-    private var fuel: AnyObject?
-    var hasNativeFuel: Bool { fuel != nil }
-    private var currentToast: ToastView?
 
     var plugin: NativeChromePlugin? { NativeChromePlugin.shared }
 
@@ -527,22 +450,6 @@ final class ChromeController: UIViewController {
         view.addSubview(bridgeVC.view)
         bridgeVC.didMove(toParent: self)
 
-        // The native Home, over the web view and under the bars.
-        if #available(iOS 16.0, *), let web = bridgeVC.view {
-            let h = HomeController()
-            h.model.send = { [weak self] data in self?.plugin?.send(data) }
-            h.install(in: self, above: web)
-            home = h
-            let t = TrainController()
-            t.model.send = { [weak self] data in self?.plugin?.send(data) }
-            t.install(in: self, above: h.hosting.view)
-            train = t
-            let f = FuelController()
-            f.model.send = { [weak self] data in self?.plugin?.send(data) }
-            f.install(in: self, above: t.hosting.view)
-            fuel = f
-        }
-
         // The top bar.
         host = HostViewController(chrome: self)
         nav = UINavigationController(rootViewController: host)
@@ -562,24 +469,6 @@ final class ChromeController: UIViewController {
         }
         view.addSubview(dock)
         host.configure(state)
-
-        if #available(iOS 16.0, *) {
-            let panel = HabitsPanelController(host: self)
-            panel.model.send = { [weak self] data in self?.plugin?.send(data) }
-            panel.onOpenChange = { [weak self] open in self?.send("habitsOpen", ["open": open]) }
-            panel.install()
-            nativeRoots = panel.touchRoots
-            habitsPanel = panel
-        }
-        if #available(iOS 16.0, *), let h = home as? HomeController {
-            nativeRoots.append(h.hosting.view)
-        }
-        if #available(iOS 16.0, *), let t = train as? TrainController {
-            nativeRoots.append(t.hosting.view)
-        }
-        if #available(iOS 16.0, *), let f = fuel as? FuelController {
-            nativeRoots.append(f.hosting.view)
-        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -590,58 +479,6 @@ final class ChromeController: UIViewController {
         dock.frame = CGRect(x: side, y: view.bounds.height - bottom - dock.height,
                             width: view.bounds.width - side * 2, height: dock.height)
         publishInsets(force: false)
-        if #available(iOS 16.0, *) {
-            (habitsPanel as? HabitsPanelController)?.layout()
-        }
-    }
-
-    func updateFuel(json: String) {
-        if #available(iOS 16.0, *) {
-            (fuel as? FuelController)?.update(json: json)
-        }
-    }
-
-    func updateTrain(json: String) {
-        if #available(iOS 16.0, *) {
-            (train as? TrainController)?.update(json: json)
-        }
-    }
-
-    /// A glass banner at the top for each toast, with its action if it has one.
-    func showToast(id: String, text: String, kind: String, action: String?) {
-        currentToast?.dismiss()
-        let t = ToastView(text: text, kind: kind, action: action) { [weak self] in
-            self?.send("toastAction", ["id": id])
-        }
-        currentToast = t
-        view.addSubview(t)
-        let w = min(view.bounds.width - 32, 420)
-        let top = max(view.safeAreaInsets.top, 20) + 6
-        t.frame = CGRect(x: (view.bounds.width - w) / 2, y: top, width: w, height: 52)
-        t.present()
-        if kind == "error" {
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
-        } else if kind == "success" {
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-        }
-    }
-
-    func updateHome(json: String) {
-        if #available(iOS 16.0, *) {
-            (home as? HomeController)?.update(json: json)
-        }
-    }
-
-    func updateHabits(json: String) {
-        if #available(iOS 16.0, *) {
-            (habitsPanel as? HabitsPanelController)?.update(json: json)
-        }
-    }
-
-    func setHabitsOpen(_ open: Bool) {
-        if #available(iOS 16.0, *), let panel = habitsPanel as? HabitsPanelController, panel.isOpen != open {
-            panel.setOpen(open, animated: true)
-        }
     }
 
     // MARK: Insets to the page
@@ -651,11 +488,6 @@ final class ChromeController: UIViewController {
         let bottom = view.bounds.height - dock.frame.minY
         let safe = view.safeAreaInsets
         let values = [Double(top), Double(bottom), Double(safe.top), Double(safe.bottom)]
-        if #available(iOS 16.0, *) {
-            (home as? HomeController)?.setInsets(top: top, bottom: bottom)
-            (train as? TrainController)?.setInsets(top: top, bottom: bottom)
-            (fuel as? FuelController)?.setInsets(top: top, bottom: bottom)
-        }
         if !force && values == lastSent { return }
         lastSent = values
         plugin?.send([
@@ -687,11 +519,6 @@ final class ChromeController: UIViewController {
     func setChromeHidden(_ hidden: Bool) {
         guard hidden != chromeHidden else { return }
         chromeHidden = hidden
-        if #available(iOS 16.0, *) {
-            (home as? HomeController)?.setOverlay(hidden)
-            (train as? TrainController)?.setOverlay(hidden)
-            (fuel as? FuelController)?.setOverlay(hidden)
-        }
         let views: [UIView] = [dock, nav.navigationBar]
         views.forEach { $0.isUserInteractionEnabled = !hidden }
         UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
@@ -918,94 +745,5 @@ extension UIColor {
             blue: CGFloat(v & 0xff) / 255,
             alpha: 1
         )
-    }
-}
-
-/// A toast: a glass capsule that drops in from the top and leaves on its own.
-final class ToastView: UIView {
-    private let onAction: () -> Void
-    private let hasAction: Bool
-
-    init(text: String, kind: String, action: String?, onAction: @escaping () -> Void) {
-        self.onAction = onAction
-        self.hasAction = action != nil
-        super.init(frame: .zero)
-        layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.3
-        layer.shadowRadius = 16
-        layer.shadowOffset = CGSize(width: 0, height: 6)
-
-        let glass = makeGlass()
-        glass.layer.cornerRadius = 26
-        glass.layer.cornerCurve = .continuous
-        glass.clipsToBounds = true
-        glass.frame = bounds
-        glass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        addSubview(glass)
-
-        let icon = UIImageView(image: UIImage(systemName: kind == "error" ? "exclamationmark.circle.fill"
-                                                : kind == "warning" ? "exclamationmark.triangle.fill"
-                                                : kind == "success" ? "checkmark.circle.fill" : "info.circle.fill"))
-        icon.tintColor = kind == "error" ? .systemRed : kind == "warning" ? .systemOrange : kind == "success" ? .systemGreen : .secondaryLabel
-        icon.setContentHuggingPriority(.required, for: .horizontal)
-
-        let label = UILabel()
-        label.text = text
-        label.font = UIFont.systemFont(ofSize: 15, weight: .semibold)
-        label.numberOfLines = 2
-        label.adjustsFontSizeToFitWidth = true
-        label.minimumScaleFactor = 0.8
-
-        let stack = UIStackView(arrangedSubviews: [icon, label])
-        stack.axis = .horizontal
-        stack.spacing = 10
-        stack.alignment = .center
-        if let action {
-            let b = UIButton(type: .system)
-            b.setTitle(action, for: .normal)
-            b.titleLabel?.font = UIFont.systemFont(ofSize: 15, weight: .bold)
-            b.setContentHuggingPriority(.required, for: .horizontal)
-            b.addTarget(self, action: #selector(tapped), for: .touchUpInside)
-            stack.addArrangedSubview(b)
-        }
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        glass.contentView.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor, constant: -16),
-            stack.centerYAnchor.constraint(equalTo: glass.contentView.centerYAnchor),
-        ])
-        addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(dismissNow)))
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not used")
-    }
-
-    func present() {
-        alpha = 0
-        transform = CGAffineTransform(translationX: 0, y: -30).scaledBy(x: 0.92, y: 0.92)
-        UIView.animate(withDuration: 0.5, delay: 0, usingSpringWithDamping: 0.75, initialSpringVelocity: 0.6, options: []) {
-            self.alpha = 1
-            self.transform = .identity
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + (hasAction ? 5 : 2.6)) { [weak self] in
-            self?.dismiss()
-        }
-    }
-
-    @objc private func tapped() {
-        onAction()
-        dismiss()
-    }
-
-    @objc private func dismissNow() { dismiss() }
-
-    func dismiss() {
-        guard superview != nil else { return }
-        UIView.animate(withDuration: 0.25, animations: {
-            self.alpha = 0
-            self.transform = CGAffineTransform(translationX: 0, y: -20)
-        }, completion: { _ in self.removeFromSuperview() })
     }
 }

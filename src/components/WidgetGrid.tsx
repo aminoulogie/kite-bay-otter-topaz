@@ -1,7 +1,7 @@
 import { Eye, EyeOff, MoreHorizontal, Plus, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Children, Suspense, createContext, isValidElement, useContext, useEffect, useMemo, useState,
+  Children, Suspense, createContext, isValidElement, useContext, useMemo, useState,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -9,7 +9,7 @@ import {
   isDefault, isNatural, isSpacer, move, parseBorrowed, reconcile, removeWidget, resize, restyle,
   specFor, toggleHidden, visible, widgetDef, type WidgetPlacement, type WidgetSize,
 } from "@/lib/dashboard-layout";
-import { Glance, GlanceCollectContext, GlanceOpenContext, GlanceStyleContext, isGlance, type GlanceCollector, type GlanceSpec } from "@/components/Glance";
+import { Glance, GlanceOpenContext, GlanceStyleContext, isGlance, type GlanceSpec } from "@/components/Glance";
 import { WIDGET_SOURCES } from "@/components/widget-sources";
 import { WidgetStore } from "@/components/WidgetStore";
 import { WidgetStudio } from "@/components/WidgetStudio";
@@ -46,15 +46,6 @@ import { cn } from "@/lib/utils";
  * hand-written variants before any of them could be resized at all.
  */
 const SizeContext = createContext<WidgetSize>("2x4");
-
-/**
- * Collect mode (the native Home): the grid draws nothing of its own and
- * renders each widget at a glance size under a collector keyed by its id.
- */
-export const WidgetCollectContext = createContext<((id: string) => GlanceCollector) | null>(null);
-
-/** Open one widget's whole card in this page's expand sheet, from outside. */
-export const EXPAND_WIDGET_EVENT = "soma-expand-widget";
 
 export function useWidgetSize(): WidgetSize {
   return useContext(SizeContext);
@@ -280,7 +271,6 @@ export function WidgetGrid({
   innerRef?: React.Ref<HTMLDivElement>;
 }) {
   const lend = useContext(LendContext);
-  const collectFor = useContext(WidgetCollectContext);
   const layouts = useSoma((s) => s.layouts);
   const setLayout = useSoma((s) => s.setLayout);
   const resetLayout = useSoma((s) => s.resetLayout);
@@ -324,15 +314,6 @@ export function WidgetGrid({
   const [store, setStore] = useState(false);
   /** A small widget tapped open: its whole card, in a sheet. */
   const [expanded, setExpanded] = useState<string | null>(null);
-  useEffect(() => {
-    if (lend || collectFor) return;
-    const onExpand = (e: Event) => {
-      const d = (e as CustomEvent<{ tab: string; id: string }>).detail;
-      if (d?.tab === tab) setExpanded(d.id);
-    };
-    window.addEventListener(EXPAND_WIDGET_EVENT, onExpand);
-    return () => window.removeEventListener(EXPAND_WIDGET_EVENT, onExpand);
-  }, [lend, collectFor, tab]);
 
   const shown = visible(layout);
   const off = hiddenOf(layout);
@@ -346,18 +327,6 @@ export function WidgetGrid({
     if (!id || !anchor) return;
     setDashboard(move(layout, id, layout.findIndex((p) => p.id === anchor)));
   });
-
-  if (collectFor) {
-    return (
-      <>
-        {order.map((id) => (
-          <SizeContext.Provider key={id} value="2x2">
-            <GlanceCollectContext.Provider value={collectFor(id)}>{nodes[id]}</GlanceCollectContext.Provider>
-          </SizeContext.Provider>
-        ))}
-      </>
-    );
-  }
 
   // Lending one card to another page: draw only that, over there.
   if (lend) {

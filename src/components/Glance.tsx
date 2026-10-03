@@ -1,4 +1,4 @@
-import { cloneElement, createContext, isValidElement, useContext, useEffect } from "react";
+import { cloneElement, createContext, isValidElement, useContext } from "react";
 import { Check, ChevronRight, type LucideIcon } from "lucide-react";
 import type { WidgetSize } from "@/lib/dashboard-layout";
 import { cn } from "@/lib/utils";
@@ -79,19 +79,7 @@ export interface GlanceSpec {
   onOpen?: () => void;
   /** Screen-reader summary; defaults to label + value + sub. */
   aria?: string;
-  /** Rings to draw natively (the native Home), as fractions with colours. */
-  rings?: { frac: number; color: string }[];
 }
-
-/**
- * Collect mode, for the native Home: a widget rendered under this context
- * hands its glance spec over instead of drawing it.
- */
-export interface GlanceCollector {
-  put(spec: GlanceSpec): void;
-  remove(): void;
-}
-export const GlanceCollectContext = createContext<GlanceCollector | null>(null);
 
 /** Set by the grid: this widget's hand-set style at the size it is drawn. */
 export const GlanceStyleContext = createContext<WidgetStyle | undefined>(undefined);
@@ -108,12 +96,6 @@ function fit(text: string, sizes: [number, number, number]): string {
 export function Glance({ size, spec }: { size: GlanceSize; spec: GlanceSpec }) {
   const open = useContext(GlanceOpenContext);
   const style = useContext(GlanceStyleContext);
-  const collect = useContext(GlanceCollectContext);
-  useEffect(() => () => collect?.remove(), [collect]);
-  if (collect) {
-    collect.put(spec);
-    return null;
-  }
   const onClick = spec.onOpen ?? open ?? undefined;
   const { icon: Icon, value, unit, sub, progress, done, lines, stats, visual } = spec;
   const color = style?.color ?? spec.color;
