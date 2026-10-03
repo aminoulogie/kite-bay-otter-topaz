@@ -353,6 +353,29 @@ export function SettingsView() {
           onChange={(c) => patchSettings({ accent: c })}
         />
         <DisplaySize value={settings.uiScale ?? 1} onChange={(v) => patchSettings({ uiScale: v === 1 ? undefined : v })} />
+        <div className="mt-5 mb-1 text-xs font-bold text-muted">Bottom tab bar</div>
+        <Slider
+          label="Transparency"
+          value={settings.dockTransparency ?? 0.5}
+          min={0}
+          max={1}
+          step={0.05}
+          format={(v) => (v === 0.5 ? "Standard" : `${Math.round(v * 100)}%`)}
+          left="Solid"
+          right="Clear"
+          onChange={(v) => patchSettings({ dockTransparency: v })}
+        />
+        <Slider
+          label="Size"
+          value={settings.dockScale ?? 1}
+          min={0.8}
+          max={1.25}
+          step={0.05}
+          format={(v) => `${Math.round(v * 100)}%`}
+          left="S"
+          right="L"
+          onChange={(v) => patchSettings({ dockScale: v })}
+        />
       </Card>
       </Sized>
 
@@ -1755,6 +1778,52 @@ function DisplaySize({ value, onChange }: { value: number; onChange: (v: number)
             {v === 1 ? "Default" : `${Math.round(v * 100)}%`}
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** A labelled slider that applies on release, so nothing reflows mid-drag. */
+function Slider({
+  label, value, min, max, step, format, left, right, onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (v: number) => string;
+  left: string;
+  right: string;
+  onChange: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    if (Math.abs(draft - value) > 1e-6) onChange(Math.round(draft * 100) / 100);
+  };
+  return (
+    <div className="mt-3">
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="text-[0.75rem] font-semibold">{label}</span>
+        <span className="text-xs font-extrabold tabular">{format(draft)}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="w-8 text-[0.65rem] font-bold text-faint">{left}</span>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={draft}
+          onChange={(e) => setDraft(Number(e.target.value))}
+          onPointerUp={commit}
+          onTouchEnd={commit}
+          onKeyUp={commit}
+          className="h-2 flex-1 accent-[var(--color-accent)]"
+          aria-label={label}
+        />
+        <span className="w-8 text-right text-[0.65rem] font-bold text-faint">{right}</span>
       </div>
     </div>
   );

@@ -31,6 +31,10 @@ struct ChromeState {
     var editing = false
     var accent = "#d3fd50"
     var theme = "dark"
+    /// 0 = solid, 0.5 = standard glass, 1 = clearest glass.
+    var dockTransparency = 0.5
+    /// 0.8 to 1.25.
+    var dockScale = 1.0
 }
 
 struct ChromeTab {
@@ -100,6 +104,8 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         s.editing = call.getBool("editing") ?? s.editing
         s.accent = call.getString("accent") ?? s.accent
         s.theme = call.getString("theme") ?? s.theme
+        s.dockTransparency = call.getDouble("dockTransparency") ?? s.dockTransparency
+        s.dockScale = call.getDouble("dockScale") ?? s.dockScale
         DispatchQueue.main.async {
             ChromeController.current?.apply(s)
             call.resolve()
@@ -140,10 +146,10 @@ final class ChromeWindow: UIWindow {
 
 /// The glass material: Liquid Glass when built with the iOS 26 SDK and
 /// running on iOS 26+, the system chrome blur otherwise.
-func makeGlass(interactive: Bool = false, tint: UIColor? = nil) -> UIVisualEffectView {
+func makeGlass(interactive: Bool = false, tint: UIColor? = nil, clear: Bool = false) -> UIVisualEffectView {
     #if compiler(>=6.2)
     if #available(iOS 26.0, *) {
-        let g = UIGlassEffect()
+        let g = UIGlassEffect(style: clear ? .clear : .regular)
         g.isInteractive = interactive
         g.tintColor = tint
         return UIVisualEffectView(effect: g)
@@ -161,7 +167,9 @@ func makeGlass(interactive: Bool = false, tint: UIColor? = nil) -> UIVisualEffec
 final class ChromeDock: UIView {
     var onSelect: ((String) -> Void)?
 
-    private let glass = makeGlass()
+    private var glass = makeGlass()
+    /// A wash over the glass that makes it more solid as transparency drops.
+    private let shade = UIView()
     private let scroll = UIScrollView()
     private let stack = UIStackView()
     private var pill = makeGlass(interactive: true)
@@ -169,8 +177,13 @@ final class ChromeDock: UIView {
     private var order: [String] = []
     private(set) var selected = ""
     private var accent = UIColor(somaHex: "#d3fd50")
+    private var tabs: [ChromeTab] = []
+    private(set) var scale: CGFloat = 1
+    private var transparency: CGFloat = 0.5
+    private var clearStyle = false
 
-    static let height: CGFloat = 64
+    static let baseHeight: CGFloat = 64
+    var height: CGFloat { ChromeDock.baseHeight * scale }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -180,12 +193,7 @@ final class ChromeDock: UIView {
         layer.shadowRadius = 18
         layer.shadowOffset = CGSize(width: 0, height: 8)
 
-        glass.frame = bounds
-        glass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        glass.layer.cornerRadius = ChromeDock.height / 2
-        glass.layer.cornerCurve = .continuous
-        glass.clipsToBounds = true
-        addSubview(glass)
+        installGlass()
 
         scroll.showsHorizontalScrollIndicator = false
         scroll.alwaysBounceHorizontal = true
@@ -194,7 +202,6 @@ final class ChromeDock: UIView {
         scroll.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         glass.contentView.addSubview(scroll)
 
-        pill.layer.cornerRadius = (ChromeDock.height - 12) / 2
         pill.layer.cornerCurve = .continuous
         pill.clipsToBounds = true
         pill.isUserInteractionEnabled = false
@@ -211,12 +218,59 @@ final class ChromeDock: UIView {
         fatalError("init(coder:) is not used")
     }
 
+    /// The glass layer, rebuilt when the style switches between regular and
+    /// clear (the effect's style cannot change in place).
+    private func installGlass() {
+        let old = glass
+        let fresh = makeGlass(clear: clearStyle)
+        fresh.frame = bounds
+        fresh.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        fresh.layer.cornerCurve = .continuous
+        fresh.clipsToBounds = true
+        shade.frame = fresh.contentView.bounds
+        shade.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        shade.isUserInteractionEnabled = false
+        fresh.contentView.addSubview(shade)
+        if scroll.superview != nil {
+            fresh.contentView.addSubview(scroll)
+        }
+        insertSubview(fresh, at: 0)
+        if old !== fresh && old.superview != nil { old.removeFromSuperview() }
+        glass = fresh
+        applyShade()
+    }
+
+    private func applyShade() {
+        // Below the middle the glass fills in towards solid; above it, the
+        // clear style takes over.
+        let solid = max(0, 0.5 - transparency) / 0.5
+        shade.backgroundColor = UIColor.systemBackground.withAlphaComponent(solid * 0.9)
+    }
+
+    /// Transparency 0…1 and size 0.8…1.25, from Setup.
+    func setStyle(transparency t: CGFloat, scale sc: CGFloat) {
+        transparency = min(1, max(0, t))
+        let wantClear = transparency > 0.75
+        if wantClear != clearStyle {
+            clearStyle = wantClear
+            installGlass()
+        } else {
+            applyShade()
+        }
+        let newScale = min(1.25, max(0.8, sc))
+        if abs(newScale - scale) > 0.001 {
+            scale = newScale
+            setTabs(tabs)
+        }
+    }
+
     func setTabs(_ tabs: [ChromeTab]) {
+        self.tabs = tabs
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         buttons = [:]
         order = tabs.map { $0.id }
         for t in tabs {
-            let b = DockButton(tab: t)
+            let b = DockButton(tab: t, scale: scale)
             b.addTarget(self, action: #selector(tapped(_:)), for: .touchUpInside)
             stack.addArrangedSubview(b)
             buttons[t.id] = b
@@ -248,8 +302,10 @@ final class ChromeDock: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let inset: CGFloat = 6
+        let inset: CGFloat = 6 * scale
         let h = bounds.height
+        glass.layer.cornerRadius = h / 2
+        pill.layer.cornerRadius = (h - inset * 2) / 2
         stack.layoutIfNeeded()
         let w = stack.systemLayoutSizeFitting(CGSize(width: UIView.layoutFittingCompressedSize.width, height: h - inset * 2)).width
         // Few tabs centre in the capsule; many scroll.
@@ -299,7 +355,7 @@ final class DockButton: UIControl {
     private let icon = UIImageView()
     private let label = UILabel()
 
-    init(tab: ChromeTab) {
+    init(tab: ChromeTab, scale: CGFloat) {
         tabId = tab.id
         super.init(frame: .zero)
         accessibilityLabel = tab.title
@@ -309,7 +365,7 @@ final class DockButton: UIControl {
         icon.contentMode = .scaleAspectFit
         icon.isUserInteractionEnabled = false
         label.text = tab.title
-        label.font = UIFont.systemFont(ofSize: 10.5, weight: .semibold)
+        label.font = UIFont.systemFont(ofSize: 10.5 * scale, weight: .semibold)
         label.textAlignment = .center
         label.isUserInteractionEnabled = false
         let v = UIStackView(arrangedSubviews: [icon, label])
@@ -320,11 +376,11 @@ final class DockButton: UIControl {
         v.translatesAutoresizingMaskIntoConstraints = false
         addSubview(v)
         NSLayoutConstraint.activate([
-            icon.widthAnchor.constraint(equalToConstant: 22),
-            icon.heightAnchor.constraint(equalToConstant: 22),
+            icon.widthAnchor.constraint(equalToConstant: 22 * scale),
+            icon.heightAnchor.constraint(equalToConstant: 22 * scale),
             v.centerXAnchor.constraint(equalTo: centerXAnchor),
             v.centerYAnchor.constraint(equalTo: centerYAnchor),
-            widthAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 64 * scale),
             widthAnchor.constraint(greaterThanOrEqualTo: v.widthAnchor, constant: 16),
         ])
     }
@@ -409,8 +465,8 @@ final class ChromeController: UIViewController {
         let safe = view.safeAreaInsets
         let side: CGFloat = 14
         let bottom = max(safe.bottom - 8, 10)
-        dock.frame = CGRect(x: side, y: view.bounds.height - bottom - ChromeDock.height,
-                            width: view.bounds.width - side * 2, height: ChromeDock.height)
+        dock.frame = CGRect(x: side, y: view.bounds.height - bottom - dock.height,
+                            width: view.bounds.width - side * 2, height: dock.height)
         publishInsets(force: false)
     }
 
@@ -437,6 +493,10 @@ final class ChromeController: UIViewController {
         state = s
         if dock.selected != s.tab { dock.select(s.tab, animated: true) }
         if old.accent != s.accent { dock.setAccent(UIColor(somaHex: s.accent)) }
+        if old.dockTransparency != s.dockTransparency || old.dockScale != s.dockScale {
+            dock.setStyle(transparency: CGFloat(s.dockTransparency), scale: CGFloat(s.dockScale))
+            view.setNeedsLayout()
+        }
         if old.theme != s.theme {
             overrideUserInterfaceStyle = s.theme == "light" ? .light : .dark
         }

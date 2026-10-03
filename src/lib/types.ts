@@ -481,6 +481,10 @@ export interface Settings {
   colorFavorites?: string[];
   /** Display size, 0.8–1.3: everything sized in rem scales with it. */
   uiScale?: number;
+  /** Bottom bar glass: 0 solid, 0.5 standard, 1 clearest. */
+  dockTransparency?: number;
+  /** Bottom bar size, 0.8–1.25. */
+  dockScale?: number;
   sessionsPerWeek: number;
   autoProteinTarget: boolean;
   proteinPerKg: number;

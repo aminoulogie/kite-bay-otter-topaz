@@ -18,6 +18,8 @@ export interface ChromeState {
   editing: boolean;
   accent: string;
   theme: string;
+  dockTransparency: number;
+  dockScale: number;
 }
 
 export type ChromeAction =

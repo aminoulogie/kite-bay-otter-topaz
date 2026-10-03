@@ -447,8 +447,10 @@ export function AppShell() {
       editing: editingDashboard,
       accent: normalizeAccent(settings.accent),
       theme: resolveTheme(settings.theme),
+      dockTransparency: settings.dockTransparency ?? 0.5,
+      dockScale: settings.dockScale ?? 1,
     });
-  }, [nativeChrome, tab, activeDate, editingDashboard, settings.accent, settings.theme]);
+  }, [nativeChrome, tab, activeDate, editingDashboard, settings.accent, settings.theme, settings.dockTransparency, settings.dockScale]);
 
   useEffect(() => {
     const result = useSoma.persist.rehydrate();
