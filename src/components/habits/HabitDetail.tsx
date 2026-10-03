@@ -100,7 +100,7 @@ export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) 
 
   return (
     <>
-      <div className="flex items-center gap-1 px-2 pb-1 pt-[max(12px,env(safe-area-inset-top))]">
+      <div className="flex items-center gap-1 px-2 pb-1 pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
         <button type="button" onClick={onBack} className="flex items-center gap-0.5 rounded-full px-2 py-2 text-sm font-bold text-accent-text">
           <ChevronLeft className="size-5" /> Habits
         </button>
@@ -149,7 +149,7 @@ export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) 
         </div>
       </div>
 
-      <div className="soma-scroll min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+28px)]">
+      <div className="soma-scroll min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-[calc(var(--safe-bottom,env(safe-area-inset-bottom))+28px)]">
         <div className="flex items-center gap-4 pt-1">
           <HabitIcon habit={h} size="lg" />
           <div className="min-w-0 flex-1">

@@ -87,7 +87,7 @@ export function AlignSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col bg-bg px-4 pb-4 pt-[max(12px,env(safe-area-inset-top))]">
+    <div className="fixed inset-0 z-[70] flex flex-col bg-bg px-4 pb-4 pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
       <div className="mb-2 text-sm font-extrabold">Line it up</div>
       <p className="mb-2 text-xs text-muted">
         Drag to move, pinch to size and turn. Eyes on the line, face inside the oval — the same

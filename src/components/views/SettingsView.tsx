@@ -352,6 +352,7 @@ export function SettingsView() {
           value={normalizeAccent(settings.accent)}
           onChange={(c) => patchSettings({ accent: c })}
         />
+        <DisplaySize value={settings.uiScale ?? 1} onChange={(v) => patchSettings({ uiScale: v === 1 ? undefined : v })} />
       </Card>
       </Sized>
 
@@ -1212,7 +1213,7 @@ export function SettingsView() {
       {reportOpen && <ReportSheet onClose={() => setReportOpen(false)} />}
 
       {programsOpen && (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+        <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
           <div className="flex items-center justify-between border-b border-border px-4 pb-3">
             <span className="font-display text-base font-extrabold">Programme</span>
             <button
@@ -1705,5 +1706,56 @@ function AutomationsCard() {
         minutes" rule.
       </p>
     </Card>
+  );
+}
+
+/**
+ * Display size, like the phone's own Display Zoom but for SOMA alone. The
+ * slider shows the number while it moves and only applies on release, so the
+ * page does not reflow under the finger.
+ */
+function DisplaySize({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const pct = Math.round(draft * 100);
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-xs font-bold text-muted">Display size</span>
+        <span className="font-display text-sm font-extrabold tabular">{pct}%</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-[0.7rem] font-bold text-faint">A</span>
+        <input
+          type="range"
+          min={80}
+          max={130}
+          step={5}
+          value={pct}
+          onChange={(e) => setDraft(Number(e.target.value) / 100)}
+          onPointerUp={() => onChange(draft)}
+          onTouchEnd={() => onChange(draft)}
+          onKeyUp={() => onChange(draft)}
+          className="h-2 flex-1 accent-[var(--color-accent)]"
+          aria-label="Display size"
+        />
+        <span className="text-base font-bold text-faint">A</span>
+      </div>
+      <div className="mt-2 flex gap-1.5">
+        {[0.9, 1, 1.1, 1.2].map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            className={cn(
+              "flex-1 rounded-full border py-1.5 text-xs font-bold",
+              Math.abs(value - v) < 0.001 ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface-2 text-muted",
+            )}
+          >
+            {v === 1 ? "Default" : `${Math.round(v * 100)}%`}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }

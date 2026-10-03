@@ -79,7 +79,7 @@ export function FaceFileSheet({
   const p = face?.proportions;
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
       <div className="flex items-center justify-between border-b border-border px-4 pb-3">
         <div className="min-w-0">
           <div className="truncate font-display text-sm font-extrabold">Face File</div>

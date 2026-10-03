@@ -8,7 +8,7 @@ import { startHabitAuto } from "@/lib/native/habit-auto-run";
 import { startFocusGym } from "@/lib/native/focus-gym";
 import { HabitsPanel } from "@/components/habits/HabitsPanel";
 import { DateNav } from "@/components/DateNav";
-import { chromeAvailable, chromeListen, chromeReady, chromeSetState, watchOverlays } from "@/lib/native/chrome";
+import { chromeAvailable, chromeListen, chromeReady, chromeSetState, chromeSetTabs, watchOverlays } from "@/lib/native/chrome";
 import { dateLabel, shiftDate } from "@/lib/date-label";
 import { ScreenTimeImport } from "@/components/ScreenTimeImport";
 import { getLocalDateKey } from "@/lib/soma";
@@ -412,6 +412,10 @@ export function AppShell() {
           root.style.setProperty("--chrome-top", `${Math.round(a.top)}px`);
           root.style.setProperty("--chrome-bottom", `${Math.round(a.bottom)}px`);
           root.style.setProperty("--dock-h", `${Math.round(a.bottom)}px`);
+          // The web view's own env() safe area is not reliable inside the
+          // native chrome; these are the window's, measured natively.
+          if (a.safeTop != null) root.style.setProperty("--safe-top", `${Math.round(a.safeTop)}px`);
+          if (a.safeBottom != null) root.style.setProperty("--safe-bottom", `${Math.round(a.safeBottom)}px`);
           break;
         }
       }
@@ -420,6 +424,7 @@ export function AppShell() {
       if (!alive || !on) return;
       document.documentElement.classList.add("soma-native-chrome");
       setNativeChrome(true);
+      void chromeSetTabs(TABS);
       offWatch = watchOverlays();
     });
     return () => {
@@ -530,9 +535,14 @@ export function AppShell() {
     root.style.setProperty("--color-accent-text", accentText(accent, theme));
     root.style.setProperty("--color-accent-soft", `color-mix(in srgb, ${accent} 16%, transparent)`);
     root.style.setProperty("--color-accent-line", `color-mix(in srgb, ${accent} 38%, transparent)`);
+    // Display size: the app is sized in rem, so the root font size scales
+    // the whole layout — type, spacing and controls — together.
+    const scale = Math.min(1.3, Math.max(0.8, Number(settings.uiScale) || 1));
+    if (scale === 1) root.style.removeProperty("font-size");
+    else root.style.fontSize = `${(16 * scale).toFixed(2)}px`;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", theme === "light" ? "#f4f6f9" : "#0b0c10");
-  }, [settings.accent, settings.theme, hydrated]);
+  }, [settings.accent, settings.theme, settings.uiScale, hydrated]);
 
   if (!ready) {
     return (
@@ -614,7 +624,7 @@ export function AppShell() {
           left with the Calendar button hanging past the edge. A media query
           cannot see this coming, because the trigger is the text size rather
           than the viewport. */}
-      <header className="glass-header sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
+      <header className="glass-header sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-4 pb-3 pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {/* The swipe is not discoverable on its own, so the drawer also has
               a visible control. */}
@@ -760,7 +770,7 @@ export function AppShell() {
           puts it where a floating bar belongs and still never touches it. */}
       <nav
         ref={navRef}
-        className="soma-dock pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(10px,calc(env(safe-area-inset-bottom)-16px))] transition-opacity duration-150 lg:hidden"
+        className="soma-dock pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(10px,calc(var(--safe-bottom,env(safe-area-inset-bottom))-16px))] transition-opacity duration-150 lg:hidden"
       >
         {/* Scrollable: seven tabs no longer fit at a legible size, and
             shrinking them further would make the labels unreadable before it
@@ -822,8 +832,8 @@ export function AppShell() {
       <Toaster
         position="top-center"
         theme={settings.theme === "light" ? "light" : "dark"}
-        offset={{ top: "calc(env(safe-area-inset-top) + 64px)" }}
-        mobileOffset={{ top: "calc(env(safe-area-inset-top) + 64px)" }}
+        offset={{ top: "calc(var(--safe-top,env(safe-area-inset-top)) + 64px)" }}
+        mobileOffset={{ top: "calc(var(--safe-top,env(safe-area-inset-top)) + 64px)" }}
       />
     </div>
   );

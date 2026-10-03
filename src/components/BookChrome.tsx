@@ -71,7 +71,7 @@ function Panel({
       style={{ background: theme.dark ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0.3)" }}
     >
       <div
-        className="soma-expand flex max-h-[82vh] flex-col rounded-t-3xl px-4 pb-[max(18px,env(safe-area-inset-bottom))] pt-4"
+        className="soma-expand flex max-h-[82vh] flex-col rounded-t-3xl px-4 pb-[max(18px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-4"
         style={{ background: theme.bg, color: theme.fg }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -880,7 +880,7 @@ export function TopPills({
     <div
       className={cn(
         "pointer-events-none absolute inset-x-0 top-0 z-[70] flex items-start justify-between gap-2 px-3 transition-opacity duration-200",
-        "pt-[max(10px,env(safe-area-inset-top))]",
+        "pt-[max(10px,var(--safe-top,env(safe-area-inset-top)))]",
         show ? "opacity-100" : "opacity-0",
       )}
     >

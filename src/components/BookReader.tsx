@@ -2583,8 +2583,8 @@ function ReadingSurface({
       style={{
         paddingLeft: prefs.margin,
         paddingRight: prefs.margin,
-        paddingTop: "max(58px, calc(env(safe-area-inset-top) + 46px))",
-        paddingBottom: "max(58px, calc(env(safe-area-inset-bottom) + 46px))",
+        paddingTop: "max(58px, calc(var(--safe-top,env(safe-area-inset-top)) + 46px))",
+        paddingBottom: "max(58px, calc(var(--safe-bottom,env(safe-area-inset-bottom)) + 46px))",
       }}
     >
       {/* The gutter. Always there, on both sides, because a page in a book is
@@ -2893,7 +2893,7 @@ function PdfPages({
           ref={host}
           className="mx-auto w-full [&>canvas]:block"
           style={{
-            paddingTop: "max(64px, calc(env(safe-area-inset-top) + 52px))",
+            paddingTop: "max(64px, calc(var(--safe-top,env(safe-area-inset-top)) + 52px))",
             paddingBottom: "6rem",
           }}
         />
@@ -2956,8 +2956,8 @@ function Bar({
       className={cn(
         "pointer-events-none absolute inset-x-0 z-[70] px-3 transition-opacity duration-200",
         edge === "top"
-          ? "top-0 pb-6 pt-[max(12px,env(safe-area-inset-top))]"
-          : "bottom-0 pt-10 pb-[max(12px,env(safe-area-inset-bottom))]",
+          ? "top-0 pb-6 pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]"
+          : "bottom-0 pt-10 pb-[max(12px,var(--safe-bottom,env(safe-area-inset-bottom)))]",
         show ? "opacity-100" : "opacity-0",
         className,
       )}
@@ -3030,7 +3030,7 @@ function PrefsSheet({
       onClick={onClose}
     >
       <div
-        className="soma-expand max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4 text-fg"
+        className="soma-expand max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-4 text-fg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">

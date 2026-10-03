@@ -57,7 +57,7 @@ export function WidgetStore({
       onClick={onClose}
     >
       <div
-        className="soma-expand flex max-h-[88vh] flex-col rounded-t-3xl border-t border-border bg-bg pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
+        className="soma-expand flex max-h-[88vh] flex-col rounded-t-3xl border-t border-border bg-bg pb-[max(16px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-3"
         onClick={(e) => e.stopPropagation()}
         data-no-swipe-nav
       >

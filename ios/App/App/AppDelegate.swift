@@ -22,7 +22,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         if let old = window, let bridge = old.rootViewController as? CAPBridgeViewController {
             old.rootViewController = nil
             old.isHidden = true
-            let chrome = ChromeTabController(bridge: bridge)
+            let chrome = ChromeController(bridge: bridge)
             let w = ChromeWindow(frame: UIScreen.main.bounds)
             w.backgroundColor = UIColor(red: 0.043, green: 0.047, blue: 0.063, alpha: 1)
             w.rootViewController = chrome

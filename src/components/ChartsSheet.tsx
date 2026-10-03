@@ -156,7 +156,7 @@ export function ChartsSheet({ onClose }: { onClose: () => void }) {
       aria-modal="true"
       aria-label="Charts"
       data-no-swipe-nav
-      style={{ paddingTop: "env(safe-area-inset-top)" }}
+      style={{ paddingTop: "var(--safe-top,env(safe-area-inset-top))" }}
     >
       {/* Title row */}
       <div className="flex items-center justify-between px-4 pb-2 pt-3">
@@ -234,7 +234,7 @@ export function ChartsSheet({ onClose }: { onClose: () => void }) {
         })}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(24px,env(safe-area-inset-bottom))]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-[max(24px,var(--safe-bottom,env(safe-area-inset-bottom)))]">
         {table ? (
           <DataTable dates={dates} shown={shown} data={data} />
         ) : (

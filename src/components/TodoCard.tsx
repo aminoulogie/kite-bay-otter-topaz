@@ -345,7 +345,7 @@ function TodoHistorySheet({
       onClick={onClose}
     >
       <div
-        className="soma-expand flex max-h-[85vh] flex-col rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4"
+        className="soma-expand flex max-h-[85vh] flex-col rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between gap-2">

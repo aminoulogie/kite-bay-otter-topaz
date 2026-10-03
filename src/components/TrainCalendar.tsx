@@ -210,7 +210,7 @@ export function TrainCalendar({
         // calendar was readable by VoiceOver while the user was on Train.
         aria-hidden={!open}
         className={cn(
-          "glass-panel fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong pt-[max(12px,env(safe-area-inset-top))]",
+          "glass-panel fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]",
           "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
           open ? "translate-x-0" : "translate-x-full",
         )}
@@ -244,7 +244,7 @@ export function TrainCalendar({
           flex child refuses to go below its content height and the column
           overflows the screen instead of scrolling inside it. */}
       <div
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-[max(16px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-3"
       >
         {/* The month-changing swipe lives on the grid alone, and the grid opts
             out of swipe-to-close. Both gestures are horizontal, so sharing an
@@ -960,7 +960,7 @@ function RenewalSheet({
   return (
     <div className="fixed inset-0 z-[59] flex flex-col justify-end bg-black/60" onClick={onClose}>
       <div
-        className="glass-panel rounded-t-3xl border-t border-border px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
+        className="glass-panel rounded-t-3xl border-t border-border px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-2"
         ref={sheetRef}
         role="dialog"
         aria-modal="true"

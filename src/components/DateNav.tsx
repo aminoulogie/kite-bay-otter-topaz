@@ -164,7 +164,7 @@ function DateWheel({
   return (
     <div className="fixed inset-0 z-[80] flex flex-col justify-end bg-black/50" role="dialog" aria-modal="true" aria-label="Pick a day">
       <button type="button" aria-label="Cancel" className="flex-1" onClick={onClose} />
-      <div className="soma-sheet rounded-t-[1.75rem] border-t border-border-strong bg-surface pb-[max(16px,env(safe-area-inset-bottom))]">
+      <div className="soma-sheet rounded-t-[1.75rem] border-t border-border-strong bg-surface pb-[max(16px,var(--safe-bottom,env(safe-area-inset-bottom)))]">
         <div className="flex items-center justify-between px-4 pb-1 pt-3">
           <button type="button" onClick={onClose} className="px-1 py-2 text-sm font-semibold text-muted">
             Cancel

@@ -59,7 +59,7 @@ export function ReportSheet({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
       <div className="flex items-center justify-between border-b border-border px-4 pb-3 print:hidden">
         <div className="min-w-0">
           <div className="truncate font-display text-sm font-extrabold">Report</div>
@@ -72,7 +72,7 @@ export function ReportSheet({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 pb-[max(16px,env(safe-area-inset-bottom))]">
+      <div className="flex-1 overflow-y-auto px-4 py-3 pb-[max(16px,var(--safe-bottom,env(safe-area-inset-bottom)))]">
         <div className="mb-3 flex gap-1.5 print:hidden">
           {WINDOWS.map((n) => (
             <button

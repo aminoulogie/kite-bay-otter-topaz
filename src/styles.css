@@ -1053,8 +1053,8 @@ html.soma-native-chrome .soma-viewing-banner {
   display: none !important;
 }
 html.soma-native-chrome .soma-main {
-  padding-top: calc(max(var(--chrome-top, 0px), env(safe-area-inset-top)) + 0.75rem) !important;
+  padding-top: calc(max(var(--chrome-top, 0px), var(--safe-top,env(safe-area-inset-top))) + 0.75rem) !important;
 }
 html.soma-native-chrome .soma-page {
-  padding-bottom: calc(max(var(--chrome-bottom, 0px), env(safe-area-inset-bottom)) + var(--player-h, 0px) + 0.75rem) !important;
+  padding-bottom: calc(max(var(--chrome-bottom, 0px), var(--safe-bottom,env(safe-area-inset-bottom))) + var(--player-h, 0px) + 0.75rem) !important;
 }

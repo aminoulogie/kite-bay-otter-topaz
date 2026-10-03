@@ -479,6 +479,8 @@ export interface Settings {
   colorRecent?: string[];
   /** Colours starred to keep. */
   colorFavorites?: string[];
+  /** Display size, 0.8–1.3: everything sized in rem scales with it. */
+  uiScale?: number;
   sessionsPerWeek: number;
   autoProteinTarget: boolean;
   proteinPerKg: number;

@@ -86,7 +86,7 @@ export function MoneySheet({
       onClick={onClose}
     >
       <div
-        className="soma-expand max-h-[92vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-3"
+        className="soma-expand max-h-[92vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-3"
         onClick={(e) => e.stopPropagation()}
         data-no-swipe-nav
       >

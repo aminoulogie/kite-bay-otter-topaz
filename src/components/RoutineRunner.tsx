@@ -152,7 +152,7 @@ export function RoutineRunner({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[80] flex flex-col overflow-hidden bg-bg pt-[max(12px,env(safe-area-inset-top))]",
+        "fixed inset-0 z-[80] flex flex-col overflow-hidden bg-bg pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]",
         drag === 0 && "transition-transform duration-200",
       )}
       style={drag ? { transform: `translateY(${drag}px)`, borderRadius: 28 } : undefined}
@@ -218,7 +218,7 @@ export function RoutineRunner({
         )}
       </div>
 
-      <div className="px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-3">
+      <div className="px-5 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-3">
         {/* The window. A thin bar rather than a second ring: two rings compete
             and you have to work out which is which, and there is no working
             anything out while a timer is running. */}

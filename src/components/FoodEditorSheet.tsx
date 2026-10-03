@@ -79,7 +79,7 @@ export function FoodEditorSheet({
   return (
     <div className="fixed inset-0 z-[60] flex flex-col justify-end bg-black/60" onClick={onClose}>
       <div
-        className="soma-sheet max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
+        className="soma-sheet max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-2"
         ref={sheetRef}
         role="dialog"
         aria-modal="true"

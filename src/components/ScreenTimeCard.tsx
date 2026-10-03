@@ -185,7 +185,7 @@ function LogSheet({
       onClick={onClose}
     >
       <div
-        className="soma-expand max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4"
+        className="soma-expand max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between gap-2">

@@ -1,3 +1,5 @@
+import { createElement, type ComponentType } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 
 /**
@@ -23,11 +25,12 @@ export type ChromeAction =
   | { type: "habits" | "calendar" | "charts" | "edit" | "backup" }
   | { type: "date"; date: string }
   | { type: "step"; by: number }
-  | { type: "insets"; top: number; bottom: number };
+  | { type: "insets"; top: number; bottom: number; safeTop?: number; safeBottom?: number };
 
 interface NativeChromePlugin {
   ready(): Promise<{ active: boolean }>;
   setState(s: ChromeState): Promise<void>;
+  setTabs(o: { tabs: { id: string; title: string; icon: string }[] }): Promise<void>;
   setHidden(o: { hidden: boolean }): Promise<void>;
   addListener(event: "action", cb: (a: ChromeAction) => void): Promise<PluginListenerHandle>;
 }
@@ -120,4 +123,27 @@ export function watchOverlays(): () => void {
     mo.disconnect();
     if (frame) cancelAnimationFrame(frame);
   };
+}
+
+/** A lucide icon as a 66 px PNG (22 pt at 3x), black on clear, for the native dock to tint. */
+async function iconPng(Icon: ComponentType<{ size?: number; strokeWidth?: number; color?: string }>): Promise<string> {
+  const svg = renderToStaticMarkup(createElement(Icon, { size: 66, strokeWidth: 2, color: "#000" }));
+  const img = new Image();
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  await img.decode();
+  const c = document.createElement("canvas");
+  c.width = 66;
+  c.height = 66;
+  c.getContext("2d")?.drawImage(img, 0, 0, 66, 66);
+  return c.toDataURL("image/png");
+}
+
+/** Every tab, in dock order, with SOMA's own icons. */
+export async function chromeSetTabs(
+  tabs: { id: string; label: string; icon: ComponentType<{ size?: number; strokeWidth?: number; color?: string }> }[],
+): Promise<void> {
+  const out = await Promise.all(
+    tabs.map(async (t) => ({ id: t.id, title: t.label, icon: await iconPng(t.icon).catch(() => "") })),
+  );
+  await NativeChrome.setTabs({ tabs: out }).catch(() => {});
 }

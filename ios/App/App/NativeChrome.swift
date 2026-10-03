@@ -3,25 +3,23 @@ import WebKit
 import Capacitor
 
 // ==========================================================================
-// Native chrome: Apple's own tab bar and navigation bars around the web app.
+// Native chrome: real Liquid Glass around the web app.
 //
-// Liquid Glass — the refraction, the morphing selection, the iOS 27 edge and
-// highlights — exists only in UIKit's own controls; CSS can blur but cannot
-// bend light. So the bars are real UIKit bars, and the web app sits BEHIND
-// them as one full-screen layer.
+// Liquid Glass — the refraction, the iOS 27 edge and highlights — exists only
+// in UIKit; CSS can blur but cannot bend light. So the top bar is a real
+// UINavigationBar with glass buttons, and the dock is a native view made of
+// Apple's own glass material (UIGlassEffect on iOS 26+), holding every tab in
+// a scrolling row with SOMA's own icons. The web app sits BEHIND both as one
+// full-screen layer, so the glass samples it.
 //
-// Layout: ChromeTabController (a UITabBarController) owns a navigation
-// controller per tab, each holding a transparent HostViewController that only
-// exists to carry the bar items. The Capacitor web view is a child of the tab
-// controller, inserted at the very back, so every bar samples it for glass.
-// ChromeWindow passes touches that land on the transparent hosts through to
-// the web view. The web view's own safe area stays the window's (status bar
-// and home indicator only), so the page's env() values do not change; the
-// bars' real heights reach the page as an "insets" event instead.
+// ChromeWindow passes touches that land on transparent containers through
+// to the web view. The bars' heights, and the window's safe area, reach the
+// page as an "insets" event.
 //
-// The web app talks to this through NativeChromePlugin: it sends the state
-// (tab, date, theme…) and whether a web overlay is open (the bars fade out
-// under panels and sheets); taps on the bars come back as "action" events.
+// The web app talks to this through NativeChromePlugin: the tabs and their
+// icons, the state (tab, date, theme…), and whether a web overlay is open
+// (the chrome fades out under panels and sheets). Taps come back as
+// "action" events.
 // ==========================================================================
 
 struct ChromeState {
@@ -38,7 +36,7 @@ struct ChromeState {
 struct ChromeTab {
     let id: String
     let title: String
-    let symbol: String
+    let icon: UIImage?
 }
 
 @objc(NativeChromePlugin)
@@ -47,6 +45,7 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "NativeChrome"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "ready", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setTabs", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHidden", returnType: CAPPluginReturnPromise),
     ]
@@ -57,16 +56,37 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         NativeChromePlugin.shared = self
     }
 
-    /// Whether the native bars are actually up. The page keeps its own web
+    /// Whether the native chrome is actually up. The page keeps its own web
     /// header and dock unless this says yes.
     @objc func ready(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            guard let chrome = ChromeTabController.current else {
+            guard let chrome = ChromeController.current else {
                 call.resolve(["active": false])
                 return
             }
             chrome.publishInsets(force: true)
             call.resolve(["active": true])
+        }
+    }
+
+    /// [{ id, title, icon: "data:image/png;base64,…" }] in dock order.
+    @objc func setTabs(_ call: CAPPluginCall) {
+        let raw = call.getArray("tabs", JSObject.self) ?? []
+        let tabs: [ChromeTab] = raw.compactMap { o in
+            guard let id = o["id"] as? String else { return nil }
+            let title = o["title"] as? String ?? id
+            var image: UIImage?
+            if let uri = o["icon"] as? String, let comma = uri.firstIndex(of: ",") {
+                let b64 = String(uri[uri.index(after: comma)...])
+                if let data = Data(base64Encoded: b64), let img = UIImage(data: data, scale: 3) {
+                    image = img.withRenderingMode(.alwaysTemplate)
+                }
+            }
+            return ChromeTab(id: id, title: title, icon: image)
+        }
+        DispatchQueue.main.async {
+            ChromeController.current?.dock.setTabs(tabs)
+            call.resolve()
         }
     }
 
@@ -81,7 +101,7 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         s.accent = call.getString("accent") ?? s.accent
         s.theme = call.getString("theme") ?? s.theme
         DispatchQueue.main.async {
-            ChromeTabController.current?.apply(s)
+            ChromeController.current?.apply(s)
             call.resolve()
         }
     }
@@ -89,7 +109,7 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func setHidden(_ call: CAPPluginCall) {
         let hidden = call.getBool("hidden") ?? false
         DispatchQueue.main.async {
-            ChromeTabController.current?.setChromeHidden(hidden)
+            ChromeController.current?.setChromeHidden(hidden)
             call.resolve()
         }
     }
@@ -99,59 +119,247 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
-/// Lets touches that land on the transparent tab hosts reach the web view
-/// behind them. Anything on a bar, or on a presented sheet, is left alone.
+/// Lets touches that land on transparent containers reach the web view
+/// behind them. Anything on a bar, the dock, a control or a sheet is kept.
 final class ChromeWindow: UIWindow {
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         guard let hit = super.hitTest(point, with: event) else { return nil }
-        guard let chrome = ChromeTabController.current, let web = chrome.bridgeVC.view else { return hit }
-        // Walk up from what was hit. The page, any bar or any control keeps
-        // the touch; reaching the tab controller's own view through nothing
-        // but transparent containers means it belongs to the page behind.
+        guard let chrome = ChromeController.current, let web = chrome.bridgeVC.view else { return hit }
         var v: UIView? = hit
         while let cur = v, cur !== chrome.view {
             if cur === web { return hit }
-            if cur is UIControl || cur is UINavigationBar || cur is UITabBar || cur is UIToolbar { return hit }
+            if cur is ChromeDock || cur is UIControl || cur is UINavigationBar || cur is UIToolbar { return hit }
             let name = NSStringFromClass(type(of: cur))
-            if name.contains("Bar") || name.contains("Glass") || name.contains("Button") { return hit }
+            if name.contains("Bar") || name.contains("Button") { return hit }
             v = cur.superview
         }
-        if v == nil { return hit } // outside the tab controller: a presented sheet
+        if v == nil { return hit } // outside the chrome: a presented sheet
         return web.hitTest(web.convert(point, from: self), with: event) ?? web
     }
 }
 
-final class ChromeTabController: UITabBarController, UITabBarControllerDelegate {
-    static weak var current: ChromeTabController?
+/// The glass material: Liquid Glass when built with the iOS 26 SDK and
+/// running on iOS 26+, the system chrome blur otherwise.
+func makeGlass(interactive: Bool = false, tint: UIColor? = nil) -> UIVisualEffectView {
+    #if compiler(>=6.2)
+    if #available(iOS 26.0, *) {
+        let g = UIGlassEffect()
+        g.isInteractive = interactive
+        g.tintColor = tint
+        return UIVisualEffectView(effect: g)
+    }
+    #endif
+    let v = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+    if let tint {
+        v.contentView.backgroundColor = tint
+    }
+    return v
+}
 
-    static let mainTabs: [ChromeTab] = [
-        ChromeTab(id: "dashboard", title: "Home", symbol: "house.fill"),
-        ChromeTab(id: "workout", title: "Train", symbol: "dumbbell.fill"),
-        ChromeTab(id: "nutrition", title: "Fuel", symbol: "fork.knife"),
-        ChromeTab(id: "time", title: "Time", symbol: "clock.fill"),
-    ]
-    static let moreTabs: [ChromeTab] = [
-        ChromeTab(id: "insights", title: "Stats", symbol: "chart.line.uptrend.xyaxis"),
-        ChromeTab(id: "money", title: "Money", symbol: "creditcard.fill"),
-        ChromeTab(id: "mind", title: "Mind", symbol: "brain.head.profile"),
-        ChromeTab(id: "projects", title: "Projects", symbol: "folder.fill"),
-        ChromeTab(id: "looks", title: "Looks", symbol: "face.smiling"),
-        ChromeTab(id: "settings", title: "Setup", symbol: "gearshape.fill"),
-    ]
+/// Every tab in one scrolling glass capsule, with a glass pill under the
+/// selected one that springs between them.
+final class ChromeDock: UIView {
+    var onSelect: ((String) -> Void)?
+
+    private let glass = makeGlass()
+    private let scroll = UIScrollView()
+    private let stack = UIStackView()
+    private var pill = makeGlass(interactive: true)
+    private var buttons: [String: DockButton] = [:]
+    private var order: [String] = []
+    private(set) var selected = ""
+    private var accent = UIColor(somaHex: "#d3fd50")
+
+    static let height: CGFloat = 64
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.25
+        layer.shadowRadius = 18
+        layer.shadowOffset = CGSize(width: 0, height: 8)
+
+        glass.frame = bounds
+        glass.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        glass.layer.cornerRadius = ChromeDock.height / 2
+        glass.layer.cornerCurve = .continuous
+        glass.clipsToBounds = true
+        addSubview(glass)
+
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.alwaysBounceHorizontal = true
+        scroll.clipsToBounds = true
+        scroll.frame = bounds
+        scroll.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        glass.contentView.addSubview(scroll)
+
+        pill.layer.cornerRadius = (ChromeDock.height - 12) / 2
+        pill.layer.cornerCurve = .continuous
+        pill.clipsToBounds = true
+        pill.isUserInteractionEnabled = false
+        scroll.addSubview(pill)
+
+        stack.axis = .horizontal
+        stack.alignment = .fill
+        stack.distribution = .fill
+        stack.spacing = 2
+        scroll.addSubview(stack)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    func setTabs(_ tabs: [ChromeTab]) {
+        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        buttons = [:]
+        order = tabs.map { $0.id }
+        for t in tabs {
+            let b = DockButton(tab: t)
+            b.addTarget(self, action: #selector(tapped(_:)), for: .touchUpInside)
+            stack.addArrangedSubview(b)
+            buttons[t.id] = b
+        }
+        setNeedsLayout()
+        layoutIfNeeded()
+        select(selected, animated: false)
+    }
+
+    func setAccent(_ c: UIColor) {
+        accent = c
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            let g = UIGlassEffect()
+            g.isInteractive = true
+            g.tintColor = c.withAlphaComponent(0.22)
+            pill.effect = g
+        }
+        #endif
+        refreshColors()
+    }
+
+    @objc private func tapped(_ b: DockButton) {
+        guard b.tabId != selected else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+        select(b.tabId, animated: true)
+        onSelect?(b.tabId)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let inset: CGFloat = 6
+        let h = bounds.height
+        stack.layoutIfNeeded()
+        let w = stack.systemLayoutSizeFitting(CGSize(width: UIView.layoutFittingCompressedSize.width, height: h - inset * 2)).width
+        // Few tabs centre in the capsule; many scroll.
+        let contentW = max(w + inset * 2, bounds.width)
+        stack.frame = CGRect(x: (contentW - w) / 2, y: inset, width: w, height: h - inset * 2)
+        scroll.contentSize = CGSize(width: contentW, height: h)
+        placePill(animated: false)
+    }
+
+    func select(_ id: String, animated: Bool) {
+        selected = id
+        refreshColors()
+        placePill(animated: animated)
+        if let b = buttons[id] {
+            let f = b.convert(b.bounds, to: scroll).insetBy(dx: -60, dy: 0)
+            scroll.scrollRectToVisible(f, animated: animated)
+        }
+    }
+
+    private func refreshColors() {
+        for (id, b) in buttons {
+            b.tintColor = id == selected ? accent : .label
+        }
+    }
+
+    private func placePill(animated: Bool) {
+        guard let b = buttons[selected] else {
+            pill.alpha = 0
+            return
+        }
+        let target = b.convert(b.bounds, to: scroll)
+        let apply = {
+            self.pill.alpha = 1
+            self.pill.frame = target
+        }
+        if animated {
+            UIView.animate(withDuration: 0.45, delay: 0, usingSpringWithDamping: 0.72, initialSpringVelocity: 0.4,
+                           options: [.beginFromCurrentState, .allowUserInteraction], animations: apply)
+        } else {
+            apply()
+        }
+    }
+}
+
+final class DockButton: UIControl {
+    let tabId: String
+    private let icon = UIImageView()
+    private let label = UILabel()
+
+    init(tab: ChromeTab) {
+        tabId = tab.id
+        super.init(frame: .zero)
+        accessibilityLabel = tab.title
+        accessibilityTraits = .button
+        isAccessibilityElement = true
+        icon.image = tab.icon
+        icon.contentMode = .scaleAspectFit
+        icon.isUserInteractionEnabled = false
+        label.text = tab.title
+        label.font = UIFont.systemFont(ofSize: 10.5, weight: .semibold)
+        label.textAlignment = .center
+        label.isUserInteractionEnabled = false
+        let v = UIStackView(arrangedSubviews: [icon, label])
+        v.axis = .vertical
+        v.alignment = .center
+        v.spacing = 3
+        v.isUserInteractionEnabled = false
+        v.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(v)
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 22),
+            icon.heightAnchor.constraint(equalToConstant: 22),
+            v.centerXAnchor.constraint(equalTo: centerXAnchor),
+            v.centerYAnchor.constraint(equalTo: centerYAnchor),
+            widthAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            widthAnchor.constraint(greaterThanOrEqualTo: v.widthAnchor, constant: 16),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    override func tintColorDidChange() {
+        super.tintColorDidChange()
+        icon.tintColor = tintColor
+        label.textColor = tintColor
+    }
+
+    override var isHighlighted: Bool {
+        didSet {
+            UIView.animate(withDuration: 0.18) {
+                self.transform = self.isHighlighted ? CGAffineTransform(scaleX: 0.9, y: 0.9) : .identity
+            }
+        }
+    }
+}
+
+final class ChromeController: UIViewController {
+    static weak var current: ChromeController?
 
     let bridgeVC: CAPBridgeViewController
-    private(set) var navs: [UINavigationController] = []
-    private var hosts: [HostViewController] = []
+    let dock = ChromeDock()
+    private var nav: UINavigationController!
+    private var host: HostViewController!
     private(set) var state = ChromeState()
     private var chromeHidden = false
-    private var lastInsets: (CGFloat, CGFloat) = (-1, -1)
-    /// The tab bar shrinks while scrolling; the page keeps room for it at
-    /// full size rather than reflowing as it does.
-    private var fullBottom: CGFloat = 0
-    private let selection = UISelectionFeedbackGenerator()
+    private var lastSent: [Double] = []
 
     var plugin: NativeChromePlugin? { NativeChromePlugin.shared }
-    private var moreIndex: Int { navs.count - 1 }
 
     init(bridge: CAPBridgeViewController) {
         bridgeVC = bridge
@@ -164,70 +372,62 @@ final class ChromeTabController: UITabBarController, UITabBarControllerDelegate 
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        ChromeTabController.current = self
-        delegate = self
+        ChromeController.current = self
         view.backgroundColor = UIColor(red: 0.043, green: 0.047, blue: 0.063, alpha: 1)
+        overrideUserInterfaceStyle = .dark
 
-        let items = ChromeTabController.mainTabs + [ChromeTab(id: "more", title: "More", symbol: "ellipsis")]
-        for (i, t) in items.enumerated() {
-            let host = HostViewController(chrome: self, tabId: t.id)
-            let nav = UINavigationController(rootViewController: host)
-            nav.view.backgroundColor = .clear
-            nav.tabBarItem = UITabBarItem(title: t.title, image: UIImage(systemName: t.symbol), tag: i)
-            hosts.append(host)
-            navs.append(nav)
-        }
-        viewControllers = navs
-
-        // The web app, behind everything.
+        // The web app, at the back.
         addChild(bridgeVC)
         bridgeVC.view.frame = view.bounds
         bridgeVC.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.insertSubview(bridgeVC.view, at: 0)
+        view.addSubview(bridgeVC.view)
         bridgeVC.didMove(toParent: self)
 
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, *) {
-            tabBarMinimizeBehavior = .onScrollDown
+        // The top bar.
+        host = HostViewController(chrome: self)
+        nav = UINavigationController(rootViewController: host)
+        nav.view.backgroundColor = .clear
+        addChild(nav)
+        nav.view.frame = view.bounds
+        nav.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(nav.view)
+        nav.didMove(toParent: self)
+        if #available(iOS 15.0, *), let scroll = bridgeVC.webView?.scrollView {
+            host.setContentScrollView(scroll, for: .top)
         }
-        #endif
-        linkScrollView()
-        overrideUserInterfaceStyle = .dark
-        hosts.forEach { $0.configure(state) }
+
+        // The dock.
+        dock.onSelect = { [weak self] id in
+            self?.send("tab", ["tab": id])
+        }
+        view.addSubview(dock)
+        host.configure(state)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        // Keep the web view at the back: UIKit may re-add its own containers.
-        if let web = bridgeVC.view, view.subviews.first !== web {
-            view.sendSubviewToBack(web)
-        }
+        let safe = view.safeAreaInsets
+        let side: CGFloat = 14
+        let bottom = max(safe.bottom - 8, 10)
+        dock.frame = CGRect(x: side, y: view.bounds.height - bottom - ChromeDock.height,
+                            width: view.bounds.width - side * 2, height: ChromeDock.height)
         publishInsets(force: false)
-    }
-
-    /// The web view's scroll view drives the bars' scroll-edge effect and
-    /// the tab bar minimising, as if it were the tab's own content.
-    private func linkScrollView() {
-        guard let scroll = bridgeVC.webView?.scrollView else { return }
-        if #available(iOS 15.0, *) {
-            for host in hosts {
-                host.setContentScrollView(scroll, for: [.top, .bottom])
-            }
-        }
     }
 
     // MARK: Insets to the page
 
     func publishInsets(force: Bool) {
-        guard let nav = selectedViewController as? UINavigationController else { return }
-        // Measured even while faded out: hiding is alpha only, so the page's
-        // room for the bars must not change with it.
         let top = nav.navigationBar.convert(nav.navigationBar.bounds, to: view).maxY
-        fullBottom = max(fullBottom, view.bounds.height - tabBar.convert(tabBar.bounds, to: view).minY)
-        let bottom = fullBottom
-        if !force && abs(top - lastInsets.0) < 0.5 && abs(bottom - lastInsets.1) < 0.5 { return }
-        lastInsets = (top, bottom)
-        plugin?.send(["type": "insets", "top": Double(top), "bottom": Double(bottom)])
+        let bottom = view.bounds.height - dock.frame.minY
+        let safe = view.safeAreaInsets
+        let values = [Double(top), Double(bottom), Double(safe.top), Double(safe.bottom)]
+        if !force && values == lastSent { return }
+        lastSent = values
+        plugin?.send([
+            "type": "insets",
+            "top": values[0], "bottom": values[1],
+            "safeTop": values[2], "safeBottom": values[3],
+        ])
     }
 
     // MARK: State from the page
@@ -235,75 +435,27 @@ final class ChromeTabController: UITabBarController, UITabBarControllerDelegate 
     func apply(_ s: ChromeState) {
         let old = state
         state = s
-        if let i = ChromeTabController.mainTabs.firstIndex(where: { $0.id == s.tab }) {
-            if selectedIndex != i { selectedIndex = i }
-        } else if let t = ChromeTabController.moreTabs.first(where: { $0.id == s.tab }) {
-            showUnderMore(t)
-            if selectedIndex != moreIndex { selectedIndex = moreIndex }
-        }
-        tabBar.tintColor = UIColor(somaHex: s.accent)
+        if dock.selected != s.tab { dock.select(s.tab, animated: true) }
+        if old.accent != s.accent { dock.setAccent(UIColor(somaHex: s.accent)) }
         if old.theme != s.theme {
             overrideUserInterfaceStyle = s.theme == "light" ? .light : .dark
         }
-        hosts.forEach { $0.configure(s) }
-        publishInsets(force: false)
+        host.configure(s)
     }
 
-    private func showUnderMore(_ t: ChromeTab) {
-        let item = navs[moreIndex].tabBarItem
-        item?.title = t.title
-        item?.image = UIImage(systemName: t.symbol)
-    }
-
-    /// Bars fade while a web panel or sheet covers the page. A fade rather
-    /// than hiding them: hiding changes the layout the page sits in.
+    /// Chrome fades while a web panel or sheet covers the page — alpha only,
+    /// so the layout the page sits in never changes.
     func setChromeHidden(_ hidden: Bool) {
         guard hidden != chromeHidden else { return }
         chromeHidden = hidden
-        let bars: [UIView] = [tabBar] + navs.map { $0.navigationBar }
-        bars.forEach { $0.isUserInteractionEnabled = !hidden }
+        let views: [UIView] = [dock, nav.navigationBar]
+        views.forEach { $0.isUserInteractionEnabled = !hidden }
         UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-            bars.forEach { $0.alpha = hidden ? 0 : 1 }
+            views.forEach { $0.alpha = hidden ? 0 : 1 }
         }
     }
 
-    // MARK: Tab selection
-
-    func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
-        guard let i = navs.firstIndex(where: { $0 === viewController }) else { return true }
-        if i == moreIndex {
-            presentMore()
-            return false
-        }
-        if i != selectedIndex {
-            selection.selectionChanged()
-            plugin?.send(["type": "tab", "tab": ChromeTabController.mainTabs[i].id])
-        }
-        return true
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
-        publishInsets(force: true)
-    }
-
-    private func presentMore() {
-        let list = MoreListController(tabs: ChromeTabController.moreTabs, current: state.tab) { [weak self] t in
-            guard let self else { return }
-            self.selection.selectionChanged()
-            self.showUnderMore(t)
-            self.selectedIndex = self.moreIndex
-            self.plugin?.send(["type": "tab", "tab": t.id])
-            self.publishInsets(force: true)
-        }
-        let nav = UINavigationController(rootViewController: list)
-        if #available(iOS 15.0, *), let sheet = nav.sheetPresentationController {
-            sheet.detents = [.medium(), .large()]
-            sheet.prefersGrabberVisible = true
-        }
-        present(nav, animated: true)
-    }
-
-    // MARK: Header actions
+    // MARK: Actions
 
     func send(_ type: String, _ extra: [String: Any] = [:]) {
         var data = extra
@@ -315,8 +467,8 @@ final class ChromeTabController: UITabBarController, UITabBarControllerDelegate 
         let picker = DatePickerController(dateKey: state.date) { [weak self] key in
             self?.send("date", ["date": key])
         }
-        let nav = UINavigationController(rootViewController: picker)
-        if #available(iOS 15.0, *), let sheet = nav.sheetPresentationController {
+        let sheetNav = UINavigationController(rootViewController: picker)
+        if #available(iOS 15.0, *), let sheet = sheetNav.sheetPresentationController {
             if #available(iOS 16.0, *) {
                 sheet.detents = [.custom { _ in 300 }]
             } else {
@@ -324,20 +476,18 @@ final class ChromeTabController: UITabBarController, UITabBarControllerDelegate 
             }
             sheet.prefersGrabberVisible = true
         }
-        present(nav, animated: true)
+        present(sheetNav, animated: true)
     }
 }
 
-/// One tab's navigation bar. Transparent: the page shows through it.
+/// The top bar. Transparent: the page shows through it.
 final class HostViewController: UIViewController {
-    weak var chrome: ChromeTabController?
-    let tabId: String
+    weak var chrome: ChromeController?
     private let titleButton = UIButton(type: .system)
     private var itemsKey = ""
 
-    init(chrome: ChromeTabController, tabId: String) {
+    init(chrome: ChromeController) {
         self.chrome = chrome
-        self.tabId = tabId
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -506,61 +656,6 @@ final class DatePickerController: UIViewController {
     @objc private func done() {
         let key = DatePickerController.keyFormat.string(from: picker.date)
         dismiss(animated: true) { [onPick] in onPick(key) }
-    }
-}
-
-/// The tabs that do not fit in the bar.
-final class MoreListController: UITableViewController {
-    private let tabs: [ChromeTab]
-    private let current: String
-    private let onPick: (ChromeTab) -> Void
-
-    init(tabs: [ChromeTab], current: String, onPick: @escaping (ChromeTab) -> Void) {
-        self.tabs = tabs
-        self.current = current
-        self.onPick = onPick
-        super.init(style: .insetGrouped)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not used")
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        title = "More"
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "tab")
-        if #available(iOS 26.0, *) {
-            tableView.backgroundColor = .clear
-        }
-        navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .close, target: self, action: #selector(close))
-    }
-
-    @objc private func close() { dismiss(animated: true) }
-
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        tabs.count
-    }
-
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "tab", for: indexPath)
-        let t = tabs[indexPath.row]
-        if #available(iOS 14.0, *) {
-            var content = cell.defaultContentConfiguration()
-            content.text = t.title
-            content.image = UIImage(systemName: t.symbol)
-            cell.contentConfiguration = content
-        } else {
-            cell.textLabel?.text = t.title
-            cell.imageView?.image = UIImage(systemName: t.symbol)
-        }
-        cell.accessoryType = t.id == current ? .checkmark : .disclosureIndicator
-        return cell
-    }
-
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        let t = tabs[indexPath.row]
-        dismiss(animated: true) { [onPick] in onPick(t) }
     }
 }
 

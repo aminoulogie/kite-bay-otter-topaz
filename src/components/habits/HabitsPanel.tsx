@@ -64,7 +64,7 @@ export function HabitsPanel() {
       <aside
         ref={panelRef}
         className={cn(
-          "fixed inset-y-0 left-0 z-[53] flex w-[94%] max-w-md flex-col overflow-hidden border-r border-border-strong bg-bg shadow-[24px_0_60px_rgba(0,0,0,0.45)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
+          "fixed inset-y-0 left-0 z-[53] flex w-[85%] max-w-md flex-col overflow-hidden border-r border-border-strong bg-bg shadow-[24px_0_60px_rgba(0,0,0,0.45)] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
         )}
         aria-label="Habits"
@@ -109,7 +109,7 @@ function PanelBody({ onClose, onOpen }: { onClose: () => void; onOpen: (id: stri
 
   return (
     <>
-      <div className="px-5 pb-3 pt-[max(18px,env(safe-area-inset-top))]">
+      <div className="px-5 pb-3 pt-[max(18px,var(--safe-top,env(safe-area-inset-top)))]">
         <div className="flex items-center gap-2">
           <h2 className="min-w-0 flex-1 truncate font-display text-[2rem] font-extrabold leading-tight tracking-tight">
             My Habits
@@ -166,7 +166,7 @@ function PanelBody({ onClose, onOpen }: { onClose: () => void; onOpen: (id: stri
         )}
       </div>
 
-      <div className="soma-scroll min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+24px)]">
+      <div className="soma-scroll min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-[calc(var(--safe-bottom,env(safe-area-inset-bottom))+24px)]">
         {filter === "All" && <AutoSuggest />}
         {shown.map((h) => (
           <HabitCard key={h.id} habit={h} cols={cols} today={today} onOpen={() => onOpen(h.id)} />

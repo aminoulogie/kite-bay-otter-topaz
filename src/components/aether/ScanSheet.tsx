@@ -990,7 +990,7 @@ export function ScanSheet({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
       {aligning && (
         <AlignSheet
           img={aligning.img}
