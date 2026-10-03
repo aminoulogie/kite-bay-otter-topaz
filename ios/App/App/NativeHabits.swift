@@ -273,6 +273,16 @@ extension View {
         self.background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
         #endif
     }
+
+    /// Solid content card, the way iOS draws grouped content: an opaque
+    /// surface with a hairline edge. Glass is kept for floating controls,
+    /// since glass over a flat background just reads as grey.
+    func somaCard(_ radius: CGFloat) -> some View {
+        self.background(Color(uiColor: .secondarySystemBackground),
+                        in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+    }
 }
 
 func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
@@ -522,7 +532,7 @@ struct HabitCardView: View {
             .buttonStyle(.plain)
         }
         .padding(16)
-        .somaGlass(26)
+        .somaCard(26)
     }
 }
 
@@ -748,7 +758,7 @@ struct StatTileView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
-        .somaGlass(18)
+        .somaCard(18)
     }
 }
 

@@ -155,7 +155,7 @@ struct GlassCard<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .somaGlass(24)
+            .somaCard(24)
     }
 }
 
@@ -676,7 +676,7 @@ struct TrainRoot: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
-                .somaGlass(18)
+                .somaCard(18)
             }
         }
     }

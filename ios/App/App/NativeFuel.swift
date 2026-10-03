@@ -233,7 +233,7 @@ struct MacroRow: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .somaGlass(18)
+                .somaCard(18)
             }
         }
     }

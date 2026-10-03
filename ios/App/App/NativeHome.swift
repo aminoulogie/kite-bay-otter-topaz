@@ -325,7 +325,7 @@ struct HomeCard: View {
                 .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         }
         .buttonStyle(PressStyle())
-        .somaGlass(24)
+        .somaCard(24)
     }
 
     @ViewBuilder
@@ -439,7 +439,7 @@ struct ExtraBanner: View {
             .padding(12)
         }
         .buttonStyle(PressStyle())
-        .somaGlass(22, interactive: true)
+        .somaCard(22)
     }
 }
 
