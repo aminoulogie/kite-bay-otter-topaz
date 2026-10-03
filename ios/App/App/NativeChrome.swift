@@ -196,7 +196,14 @@ final class ChromeDock: UIView {
         installGlass()
 
         scroll.showsHorizontalScrollIndicator = false
+        scroll.showsVerticalScrollIndicator = false
         scroll.alwaysBounceHorizontal = true
+        scroll.alwaysBounceVertical = false
+        scroll.isDirectionalLockEnabled = true
+        // The dock sits over the home-indicator zone, and an automatic inset
+        // would add that zone INSIDE the row — shifting the icons up and
+        // letting them scroll vertically. The row is exactly the capsule.
+        scroll.contentInsetAdjustmentBehavior = .never
         scroll.clipsToBounds = true
         scroll.frame = bounds
         scroll.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -312,6 +319,10 @@ final class ChromeDock: UIView {
         let contentW = max(w + inset * 2, bounds.width)
         stack.frame = CGRect(x: (contentW - w) / 2, y: inset, width: w, height: h - inset * 2)
         scroll.contentSize = CGSize(width: contentW, height: h)
+        scroll.contentInset = .zero
+        if abs(scroll.contentOffset.y) > 0.5 {
+            scroll.contentOffset = CGPoint(x: scroll.contentOffset.x, y: 0)
+        }
         placePill(animated: false)
     }
 
