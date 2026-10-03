@@ -27,10 +27,28 @@ export type ChromeAction =
   | { type: "habits" | "calendar" | "charts" | "edit" | "backup" }
   | { type: "date"; date: string }
   | { type: "step"; by: number }
-  | { type: "insets"; top: number; bottom: number; safeTop?: number; safeBottom?: number };
+  | { type: "insets"; top: number; bottom: number; safeTop?: number; safeBottom?: number }
+  | { type: "habitsOpen"; open: boolean }
+  | HabitAction;
+
+/** What the native Habits panel asks the page to do. */
+export type HabitAction = {
+  type: "habit";
+  op: "toggle" | "step" | "amount" | "add" | "preset" | "remove" | "color" | "note" | "unnote" | "autoOn" | "setup" | "photo" | "photos" | "tickDay";
+  id?: string;
+  stepId?: string;
+  value?: number | null;
+  name?: string;
+  color?: string;
+  text?: string;
+  noteId?: string;
+  date?: string;
+};
 
 interface NativeChromePlugin {
-  ready(): Promise<{ active: boolean }>;
+  ready(): Promise<{ active: boolean; habits?: boolean }>;
+  setHabits(o: { json: string }): Promise<void>;
+  openHabits(o: { open: boolean }): Promise<void>;
   setState(s: ChromeState): Promise<void>;
   setTabs(o: { tabs: { id: string; title: string; icon: string }[] }): Promise<void>;
   setHidden(o: { hidden: boolean }): Promise<void>;
@@ -42,13 +60,25 @@ const NativeChrome = registerPlugin<NativeChromePlugin>("NativeChrome");
 export const chromeAvailable = (): boolean =>
   Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("NativeChrome");
 
-export async function chromeReady(): Promise<boolean> {
-  if (!chromeAvailable()) return false;
+export async function chromeReady(): Promise<{ active: boolean; habits: boolean }> {
+  if (!chromeAvailable()) return { active: false, habits: false };
   try {
-    return (await NativeChrome.ready()).active;
+    const r = await NativeChrome.ready();
+    return { active: !!r.active, habits: !!r.habits };
   } catch {
-    return false;
+    return { active: false, habits: false };
   }
+}
+
+let lastHabits = "";
+export function chromeSetHabits(json: string): void {
+  if (json === lastHabits) return;
+  lastHabits = json;
+  void NativeChrome.setHabits({ json }).catch(() => {});
+}
+
+export function chromeOpenHabits(open: boolean): void {
+  void NativeChrome.openHabits({ open }).catch(() => {});
 }
 
 export function chromeListen(cb: (a: ChromeAction) => void): () => void {
@@ -128,7 +158,7 @@ export function watchOverlays(): () => void {
 }
 
 /** A lucide icon as a 66 px PNG (22 pt at 3x), black on clear, for the native dock to tint. */
-async function iconPng(Icon: ComponentType<{ size?: number; strokeWidth?: number; color?: string }>): Promise<string> {
+export async function iconPng(Icon: ComponentType<{ size?: number; strokeWidth?: number; color?: string }>): Promise<string> {
   const svg = renderToStaticMarkup(createElement(Icon, { size: 66, strokeWidth: 2, color: "#000" }));
   const img = new Image();
   img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);

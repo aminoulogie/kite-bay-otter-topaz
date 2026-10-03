@@ -52,6 +52,8 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setTabs", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHidden", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setHabits", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openHabits", returnType: CAPPluginReturnPromise),
     ]
 
     static weak var shared: NativeChromePlugin?
@@ -69,7 +71,7 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
                 return
             }
             chrome.publishInsets(force: true)
-            call.resolve(["active": true])
+            call.resolve(["active": true, "habits": chrome.hasNativeHabits])
         }
     }
 
@@ -120,6 +122,23 @@ public class NativeChromePlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// The native Habits panel's data, as JSON (see habits-native.ts).
+    @objc func setHabits(_ call: CAPPluginCall) {
+        let json = call.getString("json") ?? ""
+        DispatchQueue.main.async {
+            ChromeController.current?.updateHabits(json: json)
+            call.resolve()
+        }
+    }
+
+    @objc func openHabits(_ call: CAPPluginCall) {
+        let open = call.getBool("open") ?? false
+        DispatchQueue.main.async {
+            ChromeController.current?.setHabitsOpen(open)
+            call.resolve()
+        }
+    }
+
     func send(_ data: [String: Any]) {
         notifyListeners("action", data: data)
     }
@@ -134,6 +153,7 @@ final class ChromeWindow: UIWindow {
         var v: UIView? = hit
         while let cur = v, cur !== chrome.view {
             if cur === web { return hit }
+            if chrome.nativeRoots.contains(where: { $0 === cur }) { return hit }
             if cur is ChromeDock || cur is UIControl || cur is UINavigationBar || cur is UIToolbar { return hit }
             let name = NSStringFromClass(type(of: cur))
             if name.contains("Bar") || name.contains("Button") { return hit }
@@ -425,6 +445,10 @@ final class ChromeController: UIViewController {
     private(set) var state = ChromeState()
     private var chromeHidden = false
     private var lastSent: [Double] = []
+    /// Native views that take their own touches (the Habits panel).
+    var nativeRoots: [UIView] = []
+    private var habitsPanel: AnyObject?
+    var hasNativeHabits: Bool { habitsPanel != nil }
 
     var plugin: NativeChromePlugin? { NativeChromePlugin.shared }
 
@@ -469,6 +493,15 @@ final class ChromeController: UIViewController {
         }
         view.addSubview(dock)
         host.configure(state)
+
+        if #available(iOS 16.0, *) {
+            let panel = HabitsPanelController(host: self)
+            panel.model.send = { [weak self] data in self?.plugin?.send(data) }
+            panel.onOpenChange = { [weak self] open in self?.send("habitsOpen", ["open": open]) }
+            panel.install()
+            nativeRoots = panel.touchRoots
+            habitsPanel = panel
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -479,6 +512,21 @@ final class ChromeController: UIViewController {
         dock.frame = CGRect(x: side, y: view.bounds.height - bottom - dock.height,
                             width: view.bounds.width - side * 2, height: dock.height)
         publishInsets(force: false)
+        if #available(iOS 16.0, *) {
+            (habitsPanel as? HabitsPanelController)?.layout()
+        }
+    }
+
+    func updateHabits(json: String) {
+        if #available(iOS 16.0, *) {
+            (habitsPanel as? HabitsPanelController)?.update(json: json)
+        }
+    }
+
+    func setHabitsOpen(_ open: Bool) {
+        if #available(iOS 16.0, *), let panel = habitsPanel as? HabitsPanelController, panel.isOpen != open {
+            panel.setOpen(open, animated: true)
+        }
     }
 
     // MARK: Insets to the page

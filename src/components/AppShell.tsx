@@ -7,6 +7,7 @@ import { startSleepClock } from "@/lib/native/sleep-clock-sync";
 import { startHabitAuto } from "@/lib/native/habit-auto-run";
 import { startFocusGym } from "@/lib/native/focus-gym";
 import { HabitsPanel } from "@/components/habits/HabitsPanel";
+import { NativeHabitsBridge, runHabitAction } from "@/components/habits/NativeHabitsBridge";
 import { DateNav } from "@/components/DateNav";
 import { chromeAvailable, chromeListen, chromeReady, chromeSetState, chromeSetTabs, watchOverlays } from "@/lib/native/chrome";
 import { dateLabel, shiftDate } from "@/lib/date-label";
@@ -376,6 +377,7 @@ export function AppShell() {
   // Apple's own Liquid Glass bars, when the native build has them: the page
   // hides its header and dock and answers the bars instead.
   const [nativeChrome, setNativeChrome] = useState(false);
+  const [nativeHabits, setNativeHabits] = useState(false);
   useEffect(() => {
     if (!ready || !chromeAvailable()) return;
     let alive = true;
@@ -407,6 +409,12 @@ export function AppShell() {
         case "step":
           st.setActiveDate(shiftDate(st.activeDate, a.by));
           break;
+        case "habitsOpen":
+          if (st.habitsOpen !== a.open) st.setHabitsOpen(a.open);
+          break;
+        case "habit":
+          runHabitAction(a);
+          break;
         case "insets": {
           const root = document.documentElement;
           root.style.setProperty("--chrome-top", `${Math.round(a.top)}px`);
@@ -420,8 +428,9 @@ export function AppShell() {
         }
       }
     });
-    void chromeReady().then((on) => {
-      if (!alive || !on) return;
+    void chromeReady().then((r) => {
+      if (!alive || !r.active) return;
+      setNativeHabits(r.habits);
       document.documentElement.classList.add("soma-native-chrome");
       setNativeChrome(true);
       void chromeSetTabs(TABS);
@@ -741,7 +750,7 @@ export function AppShell() {
         </button>
       )}
 
-      <HabitsPanel />
+      {nativeHabits ? <NativeHabitsBridge /> : <HabitsPanel />}
       <ScreenTimeImport />
 
       {/* A running routine: full screen, or shrunk to a player above the
