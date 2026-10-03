@@ -406,6 +406,9 @@ export interface Settings {
   focusByDay?: Record<string, number>;
   /** When the Deep Work focus turned on, while it is on (ms). */
   focusActiveSince?: number;
+  /** Charts page: days shown, and which series. */
+  chartRange?: number;
+  chartSeries?: string[];
   /**
    * What was last sent to (or taken from) Health, per item —
    * "workout:2026-10-02" → a signature of the session. A change in the

@@ -11,6 +11,7 @@ import { getLocalDateKey } from "@/lib/soma";
 import { NUTRITION_KEEP_FROM } from "@/lib/seed";
 import { requestPersistence } from "@/lib/storage-health";
 import { TrainCalendar } from "@/components/TrainCalendar";
+import { ChartsSheet } from "@/components/ChartsSheet";
 import { useEdgeSwipe, useRightEdgeSwipe } from "@/lib/use-edge-swipe";
 import { useKeyboardInset } from "@/lib/use-keyboard";
 import { useLiquidGlass } from "@/lib/use-liquid-glass";
@@ -255,6 +256,7 @@ export function AppShell() {
   // where it was asked for, and the 40px edge is wide enough for a thumb
   // coming in off the bezel.
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [chartsOpen, setChartsOpen] = useState(false);
   const editingDashboard = useSoma((s) => s.editingDashboard);
   const setEditingDashboard = useSoma((s) => s.setEditingDashboard);
 
@@ -614,6 +616,15 @@ export function AppShell() {
           </button>
           <button
             type="button"
+            onClick={() => setChartsOpen(true)}
+            aria-label="Open charts"
+            title="Charts"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted active:bg-surface-3"
+          >
+            <LineChart className="size-3.5" />
+          </button>
+          <button
+            type="button"
             onClick={() => setCalendarOpen(true)}
             aria-label="Open training calendar"
             className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-muted active:bg-surface-3"
@@ -625,6 +636,7 @@ export function AppShell() {
       </header>
 
       <TrainCalendar open={calendarOpen} onClose={() => setCalendarOpen(false)} />
+      {chartsOpen && <ChartsSheet onClose={() => setChartsOpen(false)} />}
 
       {/* Selecting a past day changes what every tab reads. Without a standing
           indicator that is invisible, and the app looks like it ignored the tap. */}
