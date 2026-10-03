@@ -29,7 +29,7 @@ const DURATION = /^(?:(\d{1,2})\s*h(?:r|rs)?\s*)?(?:(\d{1,2})\s*m(?:in)?)?\s*(?:
 
 /** "3h 25m", "3 h 25 min", "45m", "1h" → minutes; anything else → null. */
 export function readDuration(line: string): number | null {
-  const s = line.trim().replace(/ /g, " ");
+  const s = line.trim().replace(/\u00a0/g, " ");
   if (!s || !/\d/.test(s)) return null;
   const m = s.match(DURATION);
   if (!m || (!m[1] && !m[2] && !m[3])) return null;
