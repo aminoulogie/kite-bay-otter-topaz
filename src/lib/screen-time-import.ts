@@ -38,12 +38,13 @@ export function readDuration(line: string): number | null {
 
 const MOST_USED = /most used|les plus utilis|más usad|meistgenutzt|più usat/i;
 const NOT_AN_APP =
-  /^(show|afficher|mostrar|see all|tout afficher|limits?|categories|catégories|pickups?|prises en main|notifications?|screen time|temps d['’]écran|today|aujourd|yesterday|hier|daily average|moyenne|total|week|semaine|day|jour|updated|mis à jour|\d)/i;
+  /^(view options|options|show|afficher|mostrar|see all|tout afficher|limits?|categories|catégories|pickups?|prises en main|notifications?|screen time|temps d['’]écran|today|aujourd|yesterday|hier|daily average|moyenne|total|week|semaine|day|jour|updated|mis à jour|\d)/i;
 
 export function parseScreenTimeText(text: string): ScreenImport | null {
   const lines = String(text ?? "")
     .split(/\r?\n/)
-    .map((l) => l.trim())
+    // OCR reads an app's usage bar as dashes or bars before its number.
+    .map((l) => l.replace(/^[^\p{L}\p{N}]+/u, "").trim())
     .filter(Boolean);
   if (!lines.length) return null;
 

@@ -51,3 +51,11 @@ test("links", () => {
   assert.equal(textFromLink("soma://other?text=x"), null);
   assert.equal(textFromLink("https://x.com"), null);
 });
+
+test("usage bars read as dashes, and View Options is not an app", () => {
+  const r = parseScreenTimeText(
+    "Today, 3 October\n4h 23m\nMost Used\nView Options\nTikTok\n———— 2h 55m\nClaude\n— 22m\nInstagram\n|17m",
+  )!;
+  assert.deepEqual(r.apps.map((a) => a.name), ["TikTok", "Claude", "Instagram"]);
+  assert.equal(r.apps[0]!.min, 175);
+});
