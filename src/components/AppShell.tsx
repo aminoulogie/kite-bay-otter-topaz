@@ -14,7 +14,6 @@ import { NUTRITION_KEEP_FROM } from "@/lib/seed";
 import { requestPersistence } from "@/lib/storage-health";
 import { TrainCalendar } from "@/components/TrainCalendar";
 import { ChartsSheet } from "@/components/ChartsSheet";
-import { useEdgeSwipe, useRightEdgeSwipe } from "@/lib/use-edge-swipe";
 import { useKeyboardInset } from "@/lib/use-keyboard";
 import { useLiquidGlass } from "@/lib/use-liquid-glass";
 import { useBackupDownload } from "@/lib/use-backup";
@@ -210,7 +209,6 @@ export function AppShell() {
   const drawerOpen = useSoma((s) => s.habitsOpen);
   const setHabitsOpen = useSoma((s) => s.setHabitsOpen);
   const openDrawer = useCallback(() => setHabitsOpen(true), [setHabitsOpen]);
-  useEdgeSwipe(openDrawer, ready && !drawerOpen);
 
   const hydrated = useSoma((s) => s.hydrated);
 
@@ -345,11 +343,6 @@ export function AppShell() {
       window.removeEventListener("resize", move);
     };
   }, [tab, ready]);
-  useRightEdgeSwipe(
-    () => setCalendarOpen(true),
-    ready && !drawerOpen && !calendarOpen && tab === "workout",
-    40,
-  );
   const setTab = useSoma((s) => s.setTab);
 
   /**
@@ -635,7 +628,14 @@ export function AppShell() {
         </div>
       </header>
 
-      <TrainCalendar open={calendarOpen} onClose={() => setCalendarOpen(false)} />
+      <TrainCalendar
+        open={calendarOpen}
+        onClose={() => setCalendarOpen(false)}
+        // Swiping in from the right edge opens it on every tab, following the
+        // finger; the habits panel takes the left edge.
+        onOpen={() => setCalendarOpen(true)}
+        swipeEnabled={ready && !drawerOpen}
+      />
       {chartsOpen && <ChartsSheet onClose={() => setChartsOpen(false)} />}
 
       {/* Selecting a past day changes what every tab reads. Without a standing

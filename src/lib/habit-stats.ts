@@ -113,16 +113,18 @@ export interface Bar {
 }
 
 /**
- * Weekly: the last twelve weeks, out of seven. Monthly: the twelve months of
+ * Weekly: each weekday over the last twelve weeks. Monthly: the twelve months of
  * `year`, out of the month's length. Yearly: every year since it started.
  */
 export function frequency(h: Habit, mode: FrequencyMode, year: number, today: string): Bar[] {
   const t = parseLocalDateKey(today);
   if (mode === "weekly") {
-    return recentWeeks(today, 12).map((col) => ({
-      label: col[0]!.slice(8, 10).replace(/^0/, "") + "/" + col[0]!.slice(5, 7).replace(/^0/, ""),
-      value: col.filter((d) => d && done(h, d)).length,
-      max: 7,
+    // Which days of the week it actually happens on, over the last 12 weeks.
+    const weeks = recentWeeks(today, 12);
+    return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, r) => ({
+      label,
+      value: weeks.filter((col) => col[r] && done(h, col[r]!)).length,
+      max: weeks.filter((col) => col[r]).length,
     }));
   }
   if (mode === "monthly") {

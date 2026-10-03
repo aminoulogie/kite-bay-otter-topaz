@@ -16,7 +16,7 @@ import {
   DOMAIN_DOT, DOMAIN_LABEL, buildDayMarks, domainsOn, summariseDay,
   type DayMarksInput,
 } from "@/lib/day-marks";
-import { useSwipeToClose } from "@/lib/use-edge-swipe";
+import { useDragPanel } from "@/lib/use-drag-panel";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import type { HistorySession, NutritionDay } from "@/lib/types";
 import { useSheet } from "@/lib/use-sheet";
@@ -40,14 +40,30 @@ function monthMatrix(year: number, month: number): (string | null)[] {
   return cells;
 }
 
-export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function TrainCalendar({
+  open, onClose, onOpen, swipeEnabled = true,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpen?: () => void;
+  swipeEnabled?: boolean;
+}) {
   // Passing `open`: this sheet stays mounted so it can slide both ways, so it
   // must only hold the scroll lock while it is actually showing.
   const sheetRef = useSheet(onClose, open);
   // Swiping right sends it back off the right edge it came in from. The month
   // grid opts out below, because a horizontal swipe there already means
   // "previous / next month".
-  const swipeRef = useSwipeToClose(onClose, "right", open);
+  const { panelRef, backdropRef } = useDragPanel({
+    side: "right",
+    open,
+    setOpen: (o) => (o ? onOpen?.() : onClose()),
+    enabled: swipeEnabled,
+  });
+  const setPanel = (el: HTMLDivElement | null) => {
+    (sheetRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    panelRef.current = el;
+  };
   const history = useSoma((s) => s.history);
   const restDays = useSoma((s) => s.restDays);
   const habits = useSoma((s) => s.habits);
@@ -175,15 +191,16 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           the history drawer already slides both ways, so the two gestures felt
           like different apps. */}
       <div
+        ref={backdropRef}
         aria-hidden
         onClick={onClose}
         className={cn(
-          "fixed inset-0 z-[56] bg-black/60 transition-opacity duration-150",
+          "fixed inset-0 z-[56] bg-black/60 transition-opacity duration-300",
           open ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       />
       <div
-        ref={sheetRef}
+        ref={setPanel}
         role="dialog"
         aria-modal="true"
         aria-label="Training calendar"
@@ -194,7 +211,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         aria-hidden={!open}
         className={cn(
           "glass-panel fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong pt-[max(12px,env(safe-area-inset-top))]",
-          "transition-transform duration-150 ease-out",
+          "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
           open ? "translate-x-0" : "translate-x-full",
         )}
       >
@@ -227,7 +244,6 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           flex child refuses to go below its content height and the column
           overflows the screen instead of scrolling inside it. */}
       <div
-        ref={swipeRef}
         className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
       >
         {/* The month-changing swipe lives on the grid alone, and the grid opts

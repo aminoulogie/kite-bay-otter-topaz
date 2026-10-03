@@ -49,8 +49,11 @@ test("frequency bars", () => {
   assert.equal(m[8]!.value, 2);
   assert.equal(m[8]!.max, 30);
   const w = frequency(x, "weekly", 2026, "2026-10-03");
-  assert.equal(w.length, 12);
-  assert.equal(w[11]!.value, 1);
+  assert.equal(w.length, 7);
+  assert.equal(w[3]!.label, "Thu"); // 2026-10-01 was a Thursday
+  assert.equal(w[3]!.value, 1);
+  assert.equal(w[1]!.value, 1); // 2026-09-01, a Tuesday
+  assert.equal(w[6]!.max, 11); // this Sunday has not happened yet
   const y = frequency(x, "yearly", 2026, "2026-10-03");
   assert.deepEqual(y.map((b) => b.label), ["2025", "2026"]);
   assert.equal(y[1]!.value, 3);

@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  CalendarCheck, CalendarDays, Camera, ChevronLeft, ChevronRight, Flame, Percent, Plus, SlidersHorizontal,
+  BarChart3, CalendarCheck, CalendarDays, Camera, ChevronLeft, ChevronRight, Flame, MoreHorizontal, Plus, SlidersHorizontal,
   Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -22,8 +22,7 @@ import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
 
-const ROW_LABELS = ["Mon", "", "Wed", "", "Fri", "", "Sun"];
-const CELL = 11;
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 /** One habit's own page: streaks, the year, how often, and notes. */
 export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) {
@@ -45,6 +44,7 @@ export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) 
   const [shot, setShot] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [menu, setMenu] = useState(false);
 
   // The day's photo, shown on the page rather than only in the calendar.
   useEffect(() => {
@@ -100,26 +100,55 @@ export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) 
           <ChevronLeft className="size-5" /> Habits
         </button>
         <div className="flex-1" />
-        <IconBtn label="Take a photo" onClick={() => void captureNow()} disabled={busy}>
-          <Camera className="size-4" />
-        </IconBtn>
-        <IconBtn label="Photo calendar" onClick={() => setPhotos(true)}>
-          <CalendarDays className="size-4" />
-        </IconBtn>
-        <IconBtn label="Set up" onClick={() => setSetup(true)}>
-          <SlidersHorizontal className="size-4" />
-        </IconBtn>
-        <IconBtn label={`Delete ${h.name}`} onClick={remove}>
-          <Trash2 className="size-4 text-danger" />
-        </IconBtn>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setMenu((v) => !v)}
+            aria-label="More"
+            aria-expanded={menu}
+            className="grid size-10 place-items-center rounded-full text-fg active:bg-surface-2"
+          >
+            <MoreHorizontal className="size-6" />
+          </button>
+          {menu && (
+            <>
+              <button type="button" aria-label="Close menu" className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+              <div className="absolute right-1 top-11 z-20 w-52 overflow-hidden rounded-2xl border border-border-strong bg-surface-2 shadow-[0_18px_50px_rgba(0,0,0,0.55)]">
+                {[
+                  { icon: Camera, label: "Take a photo", run: () => void captureNow(), off: busy },
+                  { icon: CalendarDays, label: "Photo calendar", run: () => setPhotos(true) },
+                  { icon: SlidersHorizontal, label: "Set up", run: () => setSetup(true) },
+                  { icon: Trash2, label: "Delete habit", run: remove, danger: true },
+                ].map((it) => (
+                  <button
+                    key={it.label}
+                    type="button"
+                    disabled={it.off}
+                    onClick={() => {
+                      setMenu(false);
+                      it.run();
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left text-sm font-semibold last:border-0 active:bg-surface-3 disabled:opacity-40",
+                      it.danger && "text-danger",
+                    )}
+                  >
+                    <it.icon className="size-4" />
+                    {it.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="soma-scroll min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+28px)]">
         <div className="flex items-center gap-4 pt-1">
           <HabitIcon habit={h} size="lg" />
           <div className="min-w-0 flex-1">
-            <h2 className="font-display text-2xl font-extrabold leading-tight tracking-tight">{h.name}</h2>
-            <p className="mt-0.5 line-clamp-2 text-xs text-muted">{sub}</p>
+            <h2 className="font-display text-[1.7rem] font-extrabold leading-tight tracking-tight">{h.name}</h2>
+            <p className="mt-0.5 line-clamp-2 text-sm text-muted">{sub}</p>
             <p className="mt-0.5 text-[0.65rem] font-bold uppercase tracking-wider text-faint">
               ×{coefOf(h)} importance · {h.goalDaysPerWeek}/week goal
             </p>
@@ -140,10 +169,10 @@ export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) 
 
         <HabitWork habit={h} />
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           <StatTile icon={Flame} color="#ff9f0a" value={currentStreak(h, today)} label="Day streak" />
           <StatTile icon={Trophy} color="#ffd60a" value={longestStreak(h)} label="Longest" />
-          <StatTile icon={Percent} color="#30d158" value={rate == null ? "–" : `${rate}%`} label="Completion" />
+          <StatTile icon={BarChart3} color="#30d158" value={rate == null ? "–" : `${rate}%`} label="Completion" />
           <StatTile icon={CalendarCheck} color="#64d2ff" value={totalDays(h)} label="Total days" />
         </div>
 
@@ -184,28 +213,6 @@ export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) 
   );
 }
 
-function IconBtn({
-  label, onClick, disabled, children,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={label}
-      title={label}
-      className="grid size-9 place-items-center rounded-full border border-border bg-surface-2 text-muted active:scale-95 disabled:opacity-40"
-    >
-      {children}
-    </button>
-  );
-}
-
 function StatTile({
   icon: Icon, color, value, label,
 }: {
@@ -215,17 +222,10 @@ function StatTile({
   label: string;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-3 py-3">
-      <span
-        className="grid size-9 shrink-0 place-items-center rounded-xl"
-        style={{ background: `color-mix(in srgb, ${color} 18%, transparent)`, color }}
-      >
-        <Icon className="size-[1.1rem]" strokeWidth={2.4} />
-      </span>
-      <span className="min-w-0">
-        <span className="block font-display text-xl font-extrabold leading-tight tabular">{value}</span>
-        <span className="block text-[0.68rem] font-semibold text-muted">{label}</span>
-      </span>
+    <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-surface px-1 py-3 text-center">
+      <Icon className="size-5" style={{ color }} strokeWidth={2.4} fill={`color-mix(in srgb, ${color} 30%, transparent)`} />
+      <span className="mt-1.5 font-display text-xl font-extrabold leading-tight tabular">{value}</span>
+      <span className="mt-0.5 text-[0.66rem] font-medium text-muted">{label}</span>
     </div>
   );
 }
@@ -257,76 +257,45 @@ function YearHeatmap({ habit, today }: { habit: Habit; today: string }) {
   const firstYear = Math.min(thisYear, start ? Number(start.slice(0, 4)) : thisYear);
   const [year, setYear] = useState(thisYear);
   const { cols, months } = useMemo(() => yearWeeks(year), [year]);
-  const scroller = useRef<HTMLDivElement>(null);
   const doneInYear = Object.keys(habit.history).filter((d) => habit.history[d] && d.startsWith(`${year}-`)).length;
 
-  // This year opens on the current weeks, at the right-hand end.
-  useLayoutEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    if (year !== thisYear) {
-      el.scrollLeft = 0;
-      return;
-    }
-    // Today a little in from the right edge, with the weeks before it in view.
-    const col = cols.findIndex((c) => c.includes(today));
-    el.scrollLeft = Math.max(0, (col + 3) * (CELL + 3) - el.clientWidth);
-  }, [year, thisYear, cols, today]);
-
   return (
-    <Section
-      title="Heatmap"
-      hint={`${doneInYear} days`}
-      right={
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            disabled={year <= firstYear}
-            onClick={() => setYear((y) => y - 1)}
-            aria-label="Previous year"
-            className="grid size-7 place-items-center rounded-full bg-surface-2 text-muted disabled:opacity-30"
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-          <span className="w-10 text-center text-xs font-extrabold tabular">{year}</span>
-          <button
-            type="button"
-            disabled={year >= thisYear}
-            onClick={() => setYear((y) => y + 1)}
-            aria-label="Next year"
-            className="grid size-7 place-items-center rounded-full bg-surface-2 text-muted disabled:opacity-30"
-          >
-            <ChevronRight className="size-4" />
-          </button>
-        </div>
-      }
-    >
-      <div className="flex gap-1.5">
-        <div className="grid shrink-0 gap-[3px] pt-[18px]" style={{ gridTemplateRows: `repeat(7, ${CELL}px)` }}>
-          {ROW_LABELS.map((l, i) => (
-            <span key={i} className="text-[0.55rem] font-semibold leading-[11px] text-faint">
-              {l}
-            </span>
-          ))}
-        </div>
-        <div ref={scroller} data-no-swipe-close className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="relative h-[15px]" style={{ width: cols.length * (CELL + 3) }}>
-            {months.map((m) => (
-              <span
-                key={m.label}
-                className="absolute top-0 text-[0.58rem] font-semibold text-faint"
-                style={{ left: m.col * (CELL + 3) }}
-              >
-                {m.label}
-              </span>
-            ))}
-          </div>
-          <div className="mt-[3px]">
-            <DotGrid habit={habit} cols={cols} today={today} cell={CELL} />
-          </div>
-        </div>
+    <section className="rounded-3xl border border-white/[0.06] bg-surface px-3 pb-4 pt-3">
+      <div className="mb-2 flex items-center justify-center gap-3">
+        <button
+          type="button"
+          disabled={year <= firstYear}
+          onClick={() => setYear((y) => y - 1)}
+          aria-label="Previous year"
+          className="grid size-8 place-items-center rounded-full text-fg disabled:opacity-25"
+        >
+          <ChevronLeft className="size-5" />
+        </button>
+        <span className="w-14 text-center text-base font-bold tabular">{year}</span>
+        <button
+          type="button"
+          disabled={year >= thisYear}
+          onClick={() => setYear((y) => y + 1)}
+          aria-label="Next year"
+          className="grid size-8 place-items-center rounded-full text-fg disabled:opacity-25"
+        >
+          <ChevronRight className="size-5" />
+        </button>
       </div>
-    </Section>
+      <div className="relative mb-1.5 ml-[calc(1.6rem+1.5px)] h-[10px]">
+        {months.map((m) => (
+          <span
+            key={m.label}
+            className="absolute top-0 text-[0.5rem] font-medium leading-none text-muted"
+            style={{ left: `${(m.col / cols.length) * 100}%` }}
+          >
+            {m.label}
+          </span>
+        ))}
+      </div>
+      <DotGrid habit={habit} cols={cols} today={today} rowLabels={DAY_LABELS} gap={1.5} showFuture />
+      <p className="mt-2 text-center text-[0.68rem] text-faint">{doneInYear} days in {year}</p>
+    </section>
   );
 }
 
@@ -337,80 +306,101 @@ const MODES: { id: FrequencyMode; label: string }[] = [
 ];
 
 function Frequency({ habit, today }: { habit: Habit; today: string }) {
-  const [mode, setMode] = useState<FrequencyMode>("monthly");
+  const [mode, setMode] = useState<FrequencyMode>("weekly");
   const year = Number(today.slice(0, 4));
   const bars = useMemo(() => frequency(habit, mode, year, today), [habit, mode, year, today]);
-  const current = mode === "monthly" ? Number(today.slice(5, 7)) - 1 : bars.length - 1;
+  const ceiling = Math.max(1, ...bars.map((b) => b.max));
+  const ticks = [ceiling, Math.round((ceiling * 2) / 3), Math.round(ceiling / 3), 0];
   const [picked, setPicked] = useState<number | null>(null);
-  const sel = picked != null && picked < bars.length ? picked : current;
-  const bar = bars[sel];
+  const bar = picked != null ? bars[picked] : undefined;
 
   return (
-    <Section title="Frequency">
-      <div className="mb-3 grid grid-cols-3 rounded-full bg-surface-2 p-0.5">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            type="button"
-            onClick={() => {
-              setMode(m.id);
-              setPicked(null);
-              tapLight();
-            }}
-            className={cn(
-              "rounded-full py-1.5 text-xs font-bold transition-colors",
-              mode === m.id ? "bg-surface-3 text-fg shadow-sm" : "text-muted",
-            )}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-      {bar && (
-        <div className="mb-2 flex items-baseline gap-1.5">
-          <span className="font-display text-2xl font-extrabold tabular">{bar.value}</span>
-          <span className="text-xs text-muted">
-            of {bar.max} days · {mode === "weekly" ? `week of ${bar.label}` : mode === "monthly" ? monthName(sel, year) : bar.label}
-          </span>
-        </div>
-      )}
-      <div className="flex h-28 items-end gap-[3px] border-b border-border" data-no-swipe-close>
-        {bars.map((b, i) => (
-          <button
-            key={i}
-            type="button"
-            onClick={() => {
-              setPicked(i);
-              tapLight();
-            }}
-            className="flex h-full min-w-0 flex-1 items-end"
-            aria-label={`${b.label}: ${b.value} of ${b.max}`}
-          >
-            <span
-              className="block w-full rounded-t-[4px] transition-opacity"
-              style={{
-                height: `${Math.max(b.value ? 4 : 2, (b.value / b.max) * 100)}%`,
-                background: b.value ? habit.color : "var(--color-border)",
-                opacity: i === sel ? 1 : 0.55,
+    <section className="rounded-3xl border border-white/[0.06] bg-surface p-4">
+      <h3 className="mb-3 font-display text-base font-bold">Frequency</h3>
+      <div className="mb-4">
+        <div className="grid grid-cols-3 rounded-full bg-surface-2 p-0.5" data-no-swipe-close>
+          {MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => {
+                setMode(m.id);
+                setPicked(null);
+                tapLight();
               }}
-            />
-          </button>
-        ))}
+              className={cn(
+                "rounded-full py-1.5 text-xs font-semibold transition-colors",
+                mode === m.id ? "bg-accent text-accent-ink" : "text-muted",
+              )}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="mt-1 flex gap-[3px]">
+      <div className="flex gap-2">
+        <div className="flex h-32 shrink-0 flex-col justify-between text-right text-[0.6rem] tabular text-faint">
+          {ticks.map((t, i) => (
+            <span key={i} className="leading-none">
+              {t}
+            </span>
+          ))}
+        </div>
+        <div className="relative h-32 min-w-0 flex-1" data-no-swipe-close>
+          {ticks.map((_, i) => (
+            <div
+              key={i}
+              className="absolute inset-x-0 border-t border-white/[0.06]"
+              style={{ top: `${(i / (ticks.length - 1)) * 100}%` }}
+            />
+          ))}
+          <div className="absolute inset-0 flex items-end gap-[6%] px-[2%]">
+            {bars.map((b, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  setPicked(i === picked ? null : i);
+                  tapLight();
+                }}
+                className="relative flex h-full min-w-0 flex-1 items-end"
+                aria-label={`${b.label}: ${b.value} of ${b.max}`}
+              >
+                {picked === i && (
+                  <span className="absolute inset-x-0 -top-1 text-center text-[0.62rem] font-bold tabular">{b.value}</span>
+                )}
+                <span
+                  className="block w-full rounded-t-[5px] rounded-b-[2px] transition-[height] duration-300"
+                  style={{
+                    height: `${Math.max(b.value ? 3 : 1.5, (b.value / ceiling) * 100)}%`,
+                    background: b.value
+                      ? `linear-gradient(180deg, color-mix(in srgb, ${habit.color} 85%, white), ${habit.color})`
+                      : "var(--color-border)",
+                    opacity: picked == null || picked === i ? 1 : 0.45,
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 flex gap-[6%] pl-7 pr-[2%]">
         {bars.map((b, i) => (
-          <span
-            key={i}
-            className={cn(
-              "min-w-0 flex-1 truncate text-center text-[0.55rem] font-semibold",
-              i === sel ? "text-fg" : "text-faint",
-            )}
-          >
-            {mode === "weekly" && i % 3 !== 2 ? "" : b.label}
+          <span key={i} className="min-w-0 flex-1 truncate text-center text-[0.62rem] font-medium text-muted">
+            {b.label}
           </span>
         ))}
       </div>
-    </Section>
+      <p className="mt-2 text-center text-[0.68rem] text-faint">
+        {bar
+          ? `${bar.value} of ${bar.max} ${mode === "weekly" ? `${bar.label}s in 12 weeks` : mode === "monthly" ? `days in ${monthName(picked!, year)}` : `days in ${bar.label}`}`
+          : mode === "weekly"
+            ? "Days done per weekday, last 12 weeks"
+            : mode === "monthly"
+              ? `Days done per month, ${year}`
+              : "Days done per year"}
+      </p>
+    </section>
   );
 }
 

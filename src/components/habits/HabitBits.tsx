@@ -40,12 +40,16 @@ export function HabitIcon({ habit, size = "md" }: { habit: Habit; size?: "md" | 
     <span
       className={cn(
         "grid shrink-0 place-items-center",
-        size === "lg" ? "size-16 rounded-[1.4rem]" : "size-11 rounded-2xl",
+        size === "lg" ? "size-[4.5rem] rounded-[1.4rem]" : "size-12 rounded-[0.95rem]",
       )}
-      style={{ background: `color-mix(in srgb, ${habit.color} 20%, transparent)`, color: habit.color }}
+      style={{
+        background: `linear-gradient(160deg, color-mix(in srgb, ${habit.color} 42%, #0b0c10), color-mix(in srgb, ${habit.color} 18%, #0b0c10))`,
+        boxShadow: `inset 0 1px 0 color-mix(in srgb, ${habit.color} 35%, transparent)`,
+        color: `color-mix(in srgb, ${habit.color} 85%, white)`,
+      }}
     >
       {Icon ? (
-        <Icon className={size === "lg" ? "size-8" : "size-5"} strokeWidth={2.2} />
+        <Icon className={size === "lg" ? "size-9" : "size-6"} strokeWidth={2.2} />
       ) : (
         <span className={cn("font-display font-extrabold", size === "lg" ? "text-2xl" : "text-base")}>
           {habit.name.trim().slice(0, 1).toUpperCase() || "•"}
@@ -72,11 +76,20 @@ export function HabitCheck({ habit, size = "md" }: { habit: Habit; size?: "md" |
         else tapLight();
       }}
       className={cn(
-        "grid shrink-0 place-items-center rounded-full border-2 transition-transform active:scale-90 disabled:opacity-40",
-        size === "lg" ? "size-14" : "size-11",
-        !done && "border-border-strong text-faint",
+        "grid shrink-0 place-items-center rounded-full border-2 transition-[transform,background-color] duration-200 active:scale-90 disabled:opacity-40",
+        size === "lg" ? "size-14" : "size-10",
+        !done && "border-[color-mix(in_srgb,var(--color-fg)_45%,transparent)] text-transparent",
       )}
-      style={done ? { background: habit.color, borderColor: habit.color, color: "#0b0c10" } : undefined}
+      style={
+        done
+          ? {
+              background: habit.color,
+              borderColor: habit.color,
+              color: "#0b0c10",
+              boxShadow: `0 0 16px color-mix(in srgb, ${habit.color} 45%, transparent)`,
+            }
+          : undefined
+      }
       aria-label={
         steps.length
           ? `${list.done} of ${list.total} steps done. ${done ? "Clear them all" : "Mark them all done"}`
@@ -90,7 +103,7 @@ export function HabitCheck({ habit, size = "md" }: { habit: Habit; size?: "md" |
           {list.done}/{list.total}
         </span>
       ) : (
-        <Check className={size === "lg" ? "size-7" : "size-5"} strokeWidth={3} />
+        <Check className={size === "lg" ? "size-7" : "size-5"} strokeWidth={3.2} />
       )}
     </button>
   );
@@ -168,38 +181,67 @@ export function HabitWork({ habit }: { habit: Habit }) {
 }
 
 /**
- * Weeks as columns of rounded dots, Monday on top. Done days take the habit's
- * colour; today is ringed so it reads as a position, not a state.
+ * Weeks as columns of small round dots, Monday on top. A done day takes the
+ * habit's colour, brighter the longer the streak that reached it; days after
+ * today are left out rather than drawn as misses.
  */
 export function DotGrid({
-  habit, cols, today, cell,
+  habit, cols, today, cell, rowLabels, gap = 3, showFuture = false,
 }: {
   habit: Habit;
   cols: (string | null)[][];
   today: string;
-  /** Fixed cell size in px; omit to stretch the columns across the width. */
+  /** Fixed dot pitch in px; omit to stretch the columns across the width. */
   cell?: number;
+  /** Mon…Sun down the left, in the same grid so they line up with the rows. */
+  rowLabels?: string[];
+  gap?: number;
+  /** Draw the rest of the period as faint dots instead of leaving it blank. */
+  showFuture?: boolean;
 }) {
+  // Streak per day, walking forward through the grid's own dates.
+  const run = new Map<string, number>();
+  let streak = 0;
+  for (const col of cols)
+    for (const d of col) {
+      if (!d) continue;
+      streak = habit.history[d] === true ? streak + 1 : 0;
+      run.set(d, streak);
+    }
   return (
     <div
-      className="grid grid-flow-col grid-rows-7 gap-[3px]"
+      className="grid grid-flow-col grid-rows-7"
       style={{
-        gridTemplateColumns: cell ? `repeat(${cols.length}, ${cell}px)` : `repeat(${cols.length}, minmax(0, 1fr))`,
+        gap,
+        gridTemplateColumns:
+          (rowLabels ? "1.6rem " : "") +
+          (cell ? `repeat(${cols.length}, ${cell}px)` : `repeat(${cols.length}, minmax(0, 1fr))`),
         gridAutoRows: cell ? `${cell}px` : undefined,
       }}
     >
+      {rowLabels?.map((l) => (
+        <span key={l} className="self-center text-[0.5rem] font-medium leading-none text-muted">
+          {l}
+        </span>
+      ))}
       {cols.flatMap((col, ci) =>
         col.map((d, ri) => {
-          const on = !!d && habit.history[d] === true;
+          const n = d ? run.get(d) ?? 0 : 0;
+          const on = n > 0;
+          const future = !!d && d > today;
           return (
             <span
               key={`${ci}-${ri}`}
               title={d ?? undefined}
-              className={cn("block aspect-square rounded-[3px]", !d ? "opacity-0" : d > today && "opacity-30")}
+              className={cn(
+                "block aspect-square rounded-full",
+                !d ? "opacity-0" : future && (showFuture ? "opacity-40" : "opacity-0"),
+              )}
               style={{
-                background: on ? habit.color : "color-mix(in srgb, var(--color-fg) 8%, transparent)",
-                outline: d === today ? `1.5px solid ${habit.color}` : undefined,
-                outlineOffset: d === today ? "1px" : undefined,
+                background: on
+                  ? `color-mix(in srgb, ${habit.color} ${Math.round(Math.min(100, 55 + n * 7))}%, #0b0c10)`
+                  : "color-mix(in srgb, var(--color-fg) 9%, transparent)",
+                boxShadow: d === today ? `0 0 0 1.5px ${habit.color}` : undefined,
               }}
             />
           );
