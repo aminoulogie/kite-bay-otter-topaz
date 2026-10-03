@@ -1,7 +1,10 @@
 import type { Habit } from "./types.ts";
 
 /** A new habit takes the first of these not already in use, so a list is not all one colour. */
-export const HABIT_COLORS = ["#ff9f0a", "#30d158", "#64d2ff", "#bf5af2", "#ff375f", "#ffd60a", "#5e5ce6", "#d3fd50"];
+export const HABIT_COLORS = [
+  "#34e0a1", "#4c8dff", "#ffcf4a", "#a77bff", "#ff5c8a", "#3dd6f5",
+  "#ff9e3d", "#6e6bff", "#e879f9", "#ff6b57", "#d3fd50",
+];
 
 export function nextHabitColor(habits: Habit[]): string {
   const used = new Set(habits.map((h) => h.color.toLowerCase()));
@@ -19,4 +22,16 @@ const CATEGORY_RULES: [RegExp, HabitCategory][] = [
 /** A category guessed from the name, for the filter chips. */
 export function habitCategory(name: string): HabitCategory {
   return CATEGORY_RULES.find(([re]) => re.test(name))?.[1] ?? "Other";
+}
+
+/** Remember a colour someone picked by hand, newest first, at most eight. */
+export function pushRecentColor(list: string[] | undefined, color: string): string[] {
+  const c = color.toLowerCase();
+  return [c, ...(list ?? []).filter((x) => x.toLowerCase() !== c)].slice(0, 8);
+}
+
+export function toggleFavoriteColor(list: string[] | undefined, color: string): string[] {
+  const c = color.toLowerCase();
+  const cur = list ?? [];
+  return cur.some((x) => x.toLowerCase() === c) ? cur.filter((x) => x.toLowerCase() !== c) : [c, ...cur].slice(0, 12);
 }

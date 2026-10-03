@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  BarChart3, CalendarCheck, CalendarDays, Camera, ChevronLeft, ChevronRight, Flame, MoreHorizontal, Plus, SlidersHorizontal,
+  BarChart3, CalendarCheck, CalendarDays, Camera, ChevronLeft, ChevronRight, Flame, MoreHorizontal, Palette, Plus, SlidersHorizontal,
   Trash2, Trophy, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { MonthStrip } from "@/components/HabitHeatmap";
+import { ColorPalette } from "@/components/ColorPalette";
+import { MoneySheet } from "@/components/money/money-ui";
+import { HABIT_COLORS } from "@/lib/habit-colors";
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
 import { HabitSetupSheet } from "@/components/HabitSetupSheet";
 import { DotGrid, HabitCheck, HabitIcon, HabitWork } from "@/components/habits/HabitBits";
@@ -45,6 +48,8 @@ export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) 
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [coloring, setColoring] = useState(false);
+  const setHabitColor = useSoma((s) => s.setHabitColor);
 
   // The day's photo, shown on the page rather than only in the calendar.
   useEffect(() => {
@@ -118,6 +123,7 @@ export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) 
                   { icon: Camera, label: "Take a photo", run: () => void captureNow(), off: busy },
                   { icon: CalendarDays, label: "Photo calendar", run: () => setPhotos(true) },
                   { icon: SlidersHorizontal, label: "Set up", run: () => setSetup(true) },
+                  { icon: Palette, label: "Colour", run: () => setColoring(true) },
                   { icon: Trash2, label: "Delete habit", run: remove, danger: true },
                 ].map((it) => (
                   <button
@@ -196,6 +202,17 @@ export function HabitDetail({ id, onBack }: { id: string; onBack: () => void }) 
             onSaveCoef={(next) => setHabitCoef(h.id, next)}
             onSaveAuto={(next) => setHabitAuto(h.id, next)}
           />,
+          document.body,
+        )}
+      {coloring &&
+        createPortal(
+          <MoneySheet title={`${h.name} colour`} onClose={() => setColoring(false)}>
+            <ColorPalette
+              value={h.color}
+              onChange={(c) => setHabitColor(h.id, c)}
+              presets={HABIT_COLORS.map((c) => ({ label: c, color: c }))}
+            />
+          </MoneySheet>,
           document.body,
         )}
       {photos &&

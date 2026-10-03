@@ -8,7 +8,8 @@ import { ExerciseIcon } from "@/components/ExerciseIcon";
 import { DecimalInput, parseDecimal } from "@/components/ui/decimal-input";
 import { colorsOf, ratesOf } from "@/lib/money-model";
 import { Input } from "@/components/ui/input";
-import { ACCENT_PRESETS, SomaIntelligenceEngine, getLocalDateKey, normalizeAccent } from "@/lib/soma";
+import { SomaIntelligenceEngine, getLocalDateKey, normalizeAccent } from "@/lib/soma";
+import { ColorPalette } from "@/components/ColorPalette";
 import {
   buildBackup, parseBackup, restoreExercisePhotos, restorePhotos, restoreScanImages, saveBackupFile,
   type BackupSummary,
@@ -347,32 +348,10 @@ export function SettingsView() {
           ))}
         </div>
         <div className="mb-2 text-xs font-bold text-muted">Accent</div>
-        <div className="grid grid-cols-5 gap-2">
-          {ACCENT_PRESETS.map((p: { id: string; color: string; label: string }) => (
-            <button
-              key={p.id}
-              type="button"
-              aria-label={p.label}
-              onClick={() => patchSettings({ accent: p.color })}
-              className={cn(
-                "aspect-square rounded-xl border-2",
-                normalizeAccent(settings.accent).toLowerCase() === p.color.toLowerCase()
-                  ? "border-fg"
-                  : "border-transparent",
-              )}
-              style={{ background: p.color }}
-            />
-          ))}
-        </div>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="color"
-            value={normalizeAccent(settings.accent)}
-            onChange={(e) => patchSettings({ accent: e.target.value })}
-            className="h-10 w-12 cursor-pointer rounded-lg border border-border bg-surface-2"
-          />
-          <span className="text-xs text-muted">Or pick any colour</span>
-        </div>
+        <ColorPalette
+          value={normalizeAccent(settings.accent)}
+          onChange={(c) => patchSettings({ accent: c })}
+        />
       </Card>
       </Sized>
 

@@ -475,6 +475,10 @@ export interface Settings {
   confetti: boolean;
   theme: ThemePref;
   accent: string;
+  /** Colours picked by hand anywhere in the app, newest first. */
+  colorRecent?: string[];
+  /** Colours starred to keep. */
+  colorFavorites?: string[];
   sessionsPerWeek: number;
   autoProteinTarget: boolean;
   proteinPerKg: number;

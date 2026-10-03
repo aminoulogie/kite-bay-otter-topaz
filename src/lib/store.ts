@@ -400,6 +400,7 @@ export interface SomaStore {
   setHabitAuto: (id: string, auto: HabitAuto | null) => void;
   removeHabit: (id: string) => void;
   addHabitNote: (id: string, text: string) => void;
+  setHabitColor: (id: string, color: string) => void;
   removeHabitNote: (id: string, noteId: string) => void;
   /** The habits side panel. Not persisted: it is where you are, not data. */
   habitsOpen: boolean;
@@ -1883,6 +1884,8 @@ export const useSoma = create<SomaStore>()(
           ),
         }),
       removeHabit: (id) => set({ habits: get().habits.filter((h) => h.id !== id) }),
+      setHabitColor: (id, color) =>
+        set({ habits: get().habits.map((h) => (h.id === id ? { ...h, color } : h)) }),
       addHabitNote: (id, text) => {
         const t = text.trim();
         if (!t) return;
