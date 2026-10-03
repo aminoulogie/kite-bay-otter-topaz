@@ -65,7 +65,7 @@ export function ScreenTimeCard({ flexibleHours }: { flexibleHours: number }) {
         <div className="min-w-0">
           <CardTitle className="mb-0">Screen time</CardTitle>
           <p className="mt-0.5 text-[0.68rem] leading-snug text-faint">
-            {line ?? "Read it off Settings → Screen Time and put it here."}
+            {line ?? "Run the Screen Time shortcut on that page, or type it in."}
           </p>
         </div>
         <button

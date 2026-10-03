@@ -8,6 +8,7 @@ import { startHabitAuto } from "@/lib/native/habit-auto-run";
 import { startFocusGym } from "@/lib/native/focus-gym";
 import { HabitsPanel } from "@/components/habits/HabitsPanel";
 import { DateNav } from "@/components/DateNav";
+import { ScreenTimeImport } from "@/components/ScreenTimeImport";
 import { getLocalDateKey } from "@/lib/soma";
 import { NUTRITION_KEEP_FROM } from "@/lib/seed";
 import { requestPersistence } from "@/lib/storage-health";
@@ -651,6 +652,7 @@ export function AppShell() {
       )}
 
       <HabitsPanel />
+      <ScreenTimeImport />
 
       {/* A running routine: full screen, or shrunk to a player above the
           dock that follows you across tabs. */}

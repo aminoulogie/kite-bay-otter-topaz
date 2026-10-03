@@ -16,6 +16,10 @@
  * many hours you left flexible today, so the phone's share of them is a fact
  * about your plan rather than a statistic about your phone.
  *
+ * Since then: a Shortcut can screenshot the Screen Time page, read it with
+ * "Extract Text from Image" and open soma://screentime — see
+ * screen-time-import.ts. Typing stays as the fallback.
+ *
  * Nothing here judges. It reports what the two numbers are and lets them sit
  * next to each other, which is the whole argument.
  */
