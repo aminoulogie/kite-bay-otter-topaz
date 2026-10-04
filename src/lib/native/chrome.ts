@@ -106,11 +106,23 @@ export function overlayOpen(): boolean {
 /** Watch the DOM and keep the bars' visibility in step with web overlays. */
 export function watchOverlays(): () => void {
   let frame = 0;
+  let trailing = 0;
   const check = () => {
     frame = 0;
     chromeSetHidden(overlayOpen());
   };
   const schedule = () => {
+    if (!frame) frame = requestAnimationFrame(check);
+    // A panel closing with a CSS transition changes its style ONCE, at the
+    // start, and then slides out with no further mutation — so the check
+    // above sees it still on screen and hides the bars, and nothing would
+    // ever check again. Look once more after any transition has had time to
+    // finish (transitionend below covers the usual case; this covers a
+    // transition that is cancelled and never ends).
+    window.clearTimeout(trailing);
+    trailing = window.setTimeout(schedule2, 700);
+  };
+  const schedule2 = () => {
     if (!frame) frame = requestAnimationFrame(check);
   };
   const mo = new MutationObserver(schedule);
@@ -120,9 +132,16 @@ export function watchOverlays(): () => void {
     attributes: true,
     attributeFilter: ["class", "style", "aria-hidden"],
   });
+  document.addEventListener("transitionend", schedule2, true);
+  document.addEventListener("transitioncancel", schedule2, true);
+  document.addEventListener("animationend", schedule2, true);
   schedule();
   return () => {
     mo.disconnect();
+    document.removeEventListener("transitionend", schedule2, true);
+    document.removeEventListener("transitioncancel", schedule2, true);
+    document.removeEventListener("animationend", schedule2, true);
+    window.clearTimeout(trailing);
     if (frame) cancelAnimationFrame(frame);
   };
 }
