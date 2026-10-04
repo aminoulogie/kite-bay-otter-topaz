@@ -1,0 +1,49 @@
+name: Windows app
+
+# Builds the SOMA installer for Windows (src-tauri) and publishes it under the
+# "windows" release with a fixed name, so the download link never changes:
+#   https://github.com/<owner>/<repo>/releases/download/windows/SOMA-Setup.exe
+# The app loads SOMA from GitHub Pages, so it only needs rebuilding when the
+# shell itself changes — not for app updates.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["src-tauri/**", ".github/workflows/windows-app.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Version
+        shell: bash
+        run: |
+          V="0.1.${GITHUB_RUN_NUMBER}"
+          node -e "const f='src-tauri/tauri.conf.json';const c=JSON.parse(require('fs').readFileSync(f,'utf8'));c.version='$V';require('fs').writeFileSync(f,JSON.stringify(c,null,2))"
+          echo "V=$V" >> "$GITHUB_ENV"
+      - name: Icons from the app icon
+        run: npx -y @tauri-apps/cli@2 icon public/icon-1024.png
+      - name: Build
+        run: npx -y @tauri-apps/cli@2 build
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          EXE=$(ls src-tauri/target/release/bundle/nsis/*.exe | head -1)
+          cp "$EXE" SOMA-Setup.exe
+          gh release view windows >/dev/null 2>&1 || gh release create windows --title "SOMA for Windows" --notes "Install SOMA-Setup.exe. Windows may warn that it is from an unknown publisher (it is unsigned): More info → Run anyway."
+          gh release upload windows SOMA-Setup.exe --clobber
+          gh release edit windows --notes "SOMA for Windows $V. Install SOMA-Setup.exe. Windows may warn that it is from an unknown publisher (it is unsigned): More info → Run anyway."
+          echo "::notice title=Windows app::SOMA $V — https://github.com/${GITHUB_REPOSITORY}/releases/download/windows/SOMA-Setup.exe"
