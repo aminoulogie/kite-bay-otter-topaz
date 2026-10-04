@@ -256,3 +256,19 @@
 .ws-task-meta .ws-date { width: auto; }
 .ws-task-meta .ws-date:not(.late):invalid, .ws-task-meta .ws-date[value=""] { color: var(--ws-faint); }
 .ws-ev.meal { flex-wrap: nowrap; white-space: nowrap; font-size: 10.5px; padding-top: 1px; }
+
+/* Money ledger */
+.ws-cell { height: 26px; padding: 0 6px; border: 1px solid var(--ws-line-2); border-radius: 5px; background: var(--ws-panel); font-size: 12.5px; outline: none; max-width: 100%; }
+.ws-cell:focus { border-color: var(--ws-blue); }
+.ws-cell.plain { border-color: transparent; background: none; }
+.ws-cell.plain:hover { border-color: var(--ws-line-2); }
+.ws-cell.plain:focus { border-color: var(--ws-blue); background: var(--ws-panel); }
+.ws-ledger td { padding: 5px 8px; }
+.ws-ledger th { padding: 8px; }
+.ws-addrow td { background: var(--ws-panel-2); }
+.ws-ledger tbody tr.ws-addrow:hover td { background: var(--ws-panel-2); }
+.ws-kpi b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: clamp(16px, 1.5vw, 22px); }
+.ws-kpis { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.ws-kpi b { font-size: clamp(16px, 1.25vw, 22px); }
+.ws-card { overflow: auto; }
+.ws-card .ws-table td, .ws-card .ws-table th { padding-left: 10px; padding-right: 10px; }

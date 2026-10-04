@@ -5,6 +5,8 @@ import { DEFAULT_GOALS, addDays, getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { isActive } from "@/lib/todos";
 import { attention, clientsOf, projectStats, recentActivity } from "./metrics";
+import { byClient as moneyByClient } from "./money";
+import { formatMoney, ratesOf } from "@/lib/money-model";
 import type { PageId } from "./Workstation";
 
 const fmt = (n: number) => Math.round(n).toLocaleString();
@@ -34,7 +36,10 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
   const todos = useSoma((s) => s.todos);
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
+  const ledger = useSoma((s) => s.ledger);
+  const settings = useSoma((s) => s.settings);
   const today = getLocalDateKey();
+  const revenue = useMemo(() => new Map(moneyByClient(ledger, projects, ratesOf(settings)).map((r) => [r.client, r.income])), [ledger, projects, settings]);
 
   const stats = useMemo(() => projectStats(projects, today), [projects, today]);
   const needs = useMemo(() => attention(projects, todos, today), [projects, todos, today]);
@@ -156,6 +161,7 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
                   <th>Active</th>
                   <th>Overdue</th>
                   <th>Progress</th>
+                  <th style={{ textAlign: "right" }}>Revenue</th>
                 </tr>
               </thead>
               <tbody>
@@ -170,6 +176,9 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
                         <i style={{ width: `${Math.round(c.pct * 100)}%` }} />
                       </span>
                       <span className="ws-num">{Math.round(c.pct * 100)}%</span>
+                    </td>
+                    <td className="ws-num" style={{ textAlign: "right" }}>
+                      {revenue.get(c.client) ? formatMoney(revenue.get(c.client)!) : "—"}
                     </td>
                   </tr>
                 ))}

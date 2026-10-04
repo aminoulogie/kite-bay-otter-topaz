@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
-  Activity, BrainCircuit, CalendarDays, Clock, Dumbbell, FolderKanban, Gauge, LayoutGrid, LayoutPanelLeft, Plus, RefreshCw,
+  Activity, BrainCircuit, CalendarDays, Clock, PiggyBank, Dumbbell, FolderKanban, Gauge, LayoutGrid, LayoutPanelLeft, Plus, RefreshCw,
   ScanFace, Search, Settings as SettingsIcon, TrendingUp, Utensils, Wallet,
 } from "lucide-react";
 import { BodyView } from "@/components/views/BodyView";
@@ -21,11 +21,12 @@ import type { SyncMeta } from "@/lib/sync/engine";
 import { Overview } from "./Overview";
 import { ProjectsPage } from "./ProjectsPage";
 import { TasksPage } from "./TasksPage";
+import { MoneyPage } from "./MoneyPage";
 import { projectStats } from "./metrics";
 
 type Icon = ComponentType<{ className?: string }>;
 export type PageId =
-  | "overview" | "projects" | "tasks" | "time" | "money"
+  | "overview" | "projects" | "tasks" | "time" | "money" | "moneyClassic"
   | "home" | "train" | "fuel" | "looks" | "mind" | "body" | "stats" | "settings";
 
 interface PageDef {
@@ -41,6 +42,7 @@ const PAGES: PageDef[] = [
   { id: "tasks", label: "Tasks & calendar", icon: Clock, group: "Workspace" },
   { id: "money", label: "Money", icon: Wallet, group: "Workspace" },
   { id: "time", label: "Day planner", icon: CalendarDays, group: "Personal" },
+  { id: "moneyClassic", label: "Money goals & insights", icon: PiggyBank, group: "Personal" },
   { id: "home", label: "Today", icon: LayoutGrid, group: "Personal" },
   { id: "train", label: "Training", icon: Dumbbell, group: "Personal" },
   { id: "fuel", label: "Nutrition", icon: Utensils, group: "Personal" },
@@ -52,7 +54,7 @@ const PAGES: PageDef[] = [
 
 const CLASSIC: Partial<Record<PageId, ComponentType>> = {
   time: TimeView,
-  money: MoneyView,
+  moneyClassic: MoneyView,
   home: DashboardView,
   train: WorkoutView,
   fuel: NutritionView,
@@ -215,6 +217,7 @@ export function Workstation() {
           {page === "overview" && <Overview onOpenProject={openProjectById} onGo={go} />}
           {page === "projects" && <ProjectsPage openId={openProject} onOpen={setOpenProject} />}
           {page === "tasks" && <TasksPage />}
+          {page === "money" && <MoneyPage />}
           {Classic && (
             <div className="ws-classic soma-main">
               <Classic />

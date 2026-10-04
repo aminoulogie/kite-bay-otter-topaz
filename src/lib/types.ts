@@ -623,6 +623,8 @@ export interface LedgerEntry {
   goalId?: string;
   /** A receipt photo is stored for this entry (habit-photos store, key receipt:<id>). */
   photo?: boolean;
+  /** The project (and so the client) this money belongs to — revenue or cost. */
+  projectId?: string;
 }
 
 export type MoneyCurrency = "DZD" | "EUR" | "USD";
