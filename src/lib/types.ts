@@ -82,6 +82,10 @@ export interface SessionExercise {
   readingGoalMin?: number;
   /** Books a year, for the grid on the reading dial. */
   booksPerYear?: number;
+  /** When you eat, and what share of the day each meal carries. Unset follows the default. */
+  mealTimes?: { label: string; time: string; share: number }[];
+  /** Notifications at each meal time with how much to eat. */
+  mealReminders?: boolean;
   barWeight: number;
   supersetGroup: string;
   sets: WorkoutSet[];
@@ -468,6 +472,10 @@ export interface Settings {
   readingGoalMin?: number;
   /** Books a year, for the grid on the reading dial. */
   booksPerYear?: number;
+  /** When you eat, and what share of the day each meal carries. Unset follows the default. */
+  mealTimes?: { label: string; time: string; share: number }[];
+  /** Notifications at each meal time with how much to eat. */
+  mealReminders?: boolean;
   barWeight: number;
   restDefault: number;
   autoRest: boolean;

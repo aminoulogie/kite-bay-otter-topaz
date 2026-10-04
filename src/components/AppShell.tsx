@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MealReminderSync } from "@/components/MealReminderSync";
 import { Activity, BrainCircuit, CalendarDays, Check, Clock, CornerDownLeft, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, Pencil, Search, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { CalcBar } from "@/components/CalcBar";
@@ -743,6 +744,7 @@ export function AppShell() {
 
       <HabitsPanel />
       <ScreenTimeImport />
+      <MealReminderSync />
 
       {/* A running routine: full screen, or shrunk to a player above the
           dock that follows you across tabs. */}

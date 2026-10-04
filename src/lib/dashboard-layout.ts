@@ -357,6 +357,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   // different times of day, and stacking them made both worse.
   "nutrition-dash": [
     { id: "target", label: "Today's totals", size: "2x4" },
+    { id: "pace", label: "Meal timeline", size: "2x4" },
     { id: "suggest", label: "Suggest from pantry", size: "2x4" },
     { id: "plan", label: "Plan ahead", size: "2x4" },
     { id: "actions", label: "Scan / Search / Burn", size: "1x4", sizes: FURNITURE },

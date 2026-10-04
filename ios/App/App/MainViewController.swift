@@ -62,6 +62,7 @@ class MainViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(TickPlugin())
         bridge?.registerPluginInstance(HealthPlugin())
         bridge?.registerPluginInstance(GymPlugin())
+        bridge?.registerPluginInstance(MealRemindersPlugin())
         bridge?.registerPluginInstance(NativeChromePlugin())
     }
 }
@@ -676,5 +677,64 @@ public class GymPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             call.resolve(out)
         }
+    }
+}
+
+/// JS: MealReminders.schedule({ items: [{ id, at, title, body }] }) / MealReminders.clear()
+///
+/// Replaces every pending meal reminder with the list given. The list is
+/// rebuilt in JS whenever food is logged, so today's reminders always carry
+/// how much the next meal has to be after what has actually been eaten.
+@objc(MealRemindersPlugin)
+public class MealRemindersPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "MealRemindersPlugin"
+    public let jsName = "MealReminders"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "schedule", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clear", returnType: CAPPluginReturnPromise),
+    ]
+    static let prefix = "soma-meal-"
+
+    private func removePending(_ center: UNUserNotificationCenter, then: @escaping () -> Void) {
+        center.getPendingNotificationRequests { requests in
+            let ids = requests.map(\.identifier).filter { $0.hasPrefix(Self.prefix) }
+            center.removePendingNotificationRequests(withIdentifiers: ids)
+            then()
+        }
+    }
+
+    @objc func schedule(_ call: CAPPluginCall) {
+        let items = call.getArray("items", JSObject.self) ?? []
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else {
+                call.resolve(["ok": false, "error": "Notifications are off for SOMA"])
+                return
+            }
+            self.removePending(center) {
+                let now = Date().timeIntervalSince1970
+                var booked = 0
+                for item in items.prefix(60) {
+                    guard let id = item["id"] as? String,
+                          let atMs = item["at"] as? Double,
+                          atMs / 1000 > now + 5 else { continue }
+                    let content = UNMutableNotificationContent()
+                    content.title = item["title"] as? String ?? "Meal time"
+                    content.body = item["body"] as? String ?? ""
+                    content.sound = .default
+                    if #available(iOS 15.0, *) { content.interruptionLevel = .timeSensitive }
+                    let when = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute],
+                                                               from: Date(timeIntervalSince1970: atMs / 1000))
+                    let trigger = UNCalendarNotificationTrigger(dateMatching: when, repeats: false)
+                    center.add(UNNotificationRequest(identifier: Self.prefix + id, content: content, trigger: trigger))
+                    booked += 1
+                }
+                call.resolve(["ok": true, "booked": booked])
+            }
+        }
+    }
+
+    @objc func clear(_ call: CAPPluginCall) {
+        removePending(UNUserNotificationCenter.current()) { call.resolve(["ok": true]) }
     }
 }

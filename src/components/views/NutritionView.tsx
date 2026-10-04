@@ -16,7 +16,7 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
-import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
+import { DEFAULT_GOALS, SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
 import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
 import { GroceryCard, PantryCard } from "@/components/GroceryCard";
@@ -39,6 +39,7 @@ import { lastMealDate, mealItems, recentFoods } from "@/lib/food-recents";
 import { HUNGER_LABEL, hungerNote, hungerOn, type HungerEntry } from "@/lib/hunger";
 import { tapLight, tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
+import { MealPace } from "@/components/MealPace";
 import type { FoodItem, Goals } from "@/lib/types";
 
 // Pre-Workout was missing, so anything logged under it — including
@@ -414,6 +415,12 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
       </Card>
       </Sized>
 
+      <MealPace
+        key="pace"
+        eaten={{ cals: totals.cals, protein: totals.p }}
+        goal={{ cals: goalCals, protein: goals.protein }}
+        isToday={activeDate === getLocalDateKey()}
+      />
       <SuggestFromPantry key="suggest" meal={meal} target={planTarget} />
 
       <Sized
