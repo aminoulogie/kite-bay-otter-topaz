@@ -58,3 +58,22 @@ test("a wrong code cannot read or join", async () => {
   assert.deepEqual(stranger.get().todos, [], "a different code is a different, empty vault");
   await assert.rejects(stranger.engine.enable(URL_, "not-a-code", "join"));
 });
+
+test("a device on an older version does not delete data it does not know about", async () => {
+  const server = memoryStorage();
+  const code = secretToCode(newSecret());
+  const pc = device(server, { todos: [], timeEntries: [] });
+  await pc.engine.enable(URL_, code, "create");
+  const phone = device(server, { todos: [] });
+  await phone.engine.enable(URL_, code, "join");
+  pc.set({ ...pc.get(), timeEntries: [{ id: "t1", projectId: "p", start: 1, end: 2 }] });
+  await pc.engine.sync();
+  // The old phone pulls the entry into state, but its app keeps no such field.
+  await phone.engine.sync();
+  const { timeEntries: _drop, ...without } = phone.get() as Record<string, unknown>;
+  void _drop;
+  phone.set(without);
+  await phone.engine.sync();
+  await pc.engine.sync();
+  assert.deepEqual(pc.get().timeEntries, [{ id: "t1", projectId: "p", start: 1, end: 2 }]);
+});

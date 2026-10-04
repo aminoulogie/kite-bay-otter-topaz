@@ -86,6 +86,13 @@ export function diff(prev: Map<string, string>, next: Map<string, string>): Chan
   return out;
 }
 
+/** The top-level state field a record belongs to. */
+export function fieldOf(key: string): string {
+  if (key.startsWith("settings.")) return "settings";
+  const i = key.search(/[#/@]/);
+  return i > 0 ? key.slice(0, i) : key;
+}
+
 function parseKey(key: string): { field: string; kind: "setting" | "map" | "item" | "order" | "whole"; sub?: string } {
   if (key.startsWith("settings.")) return { field: "settings", kind: "setting", sub: key.slice(9) };
   const at = key.indexOf("@order");

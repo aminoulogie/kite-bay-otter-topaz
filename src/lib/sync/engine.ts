@@ -15,7 +15,7 @@
  */
 
 import { codeToSecret, deriveAccess, deriveKeys, newerThan, open, recordId, seal, type Envelope, type SyncKeys } from "./crypto.ts";
-import { applyChanges, toRecords, type Change, type State } from "./records.ts";
+import { applyChanges, fieldOf, toRecords, type Change, type State } from "./records.ts";
 
 export interface SyncMeta {
   url: string;
@@ -161,10 +161,14 @@ export class SyncEngine {
     }
   }
 
-  private dirty(meta: SyncMeta, records: Map<string, string>): Set<string> {
+  private dirty(meta: SyncMeta, records: Map<string, string>, state: State): Set<string> {
     const out = new Set<string>();
     for (const [k, v] of records) if (meta.known[k]?.h !== hash(v)) out.add(k);
-    for (const k of Object.keys(meta.known)) if (!records.has(k)) out.add(k);
+    // A record this device knew of and no longer has was deleted here — but
+    // only if this device has that KIND of data at all. A device running an
+    // older version that does not know a field (time entries, say) has none
+    // of its records, and must not tell the others to delete theirs.
+    for (const k of Object.keys(meta.known)) if (!records.has(k) && fieldOf(k) in state) out.add(k);
     return out;
   }
 
@@ -173,7 +177,7 @@ export class SyncEngine {
     if (!envs.length) return;
     const seen = new Map(Object.entries(meta.known).map(([k, v]) => [k, { t: v.t, device: v.d }]));
     const local = toRecords(this.host.read());
-    const dirty = this.dirty(meta, local);
+    const dirty = this.dirty(meta, local, this.host.read());
     const fresh = newerThan(envs, seen).filter((e) => e.device !== meta.device && !dirty.has(e.key));
     if (!fresh.length) return;
     this.host.write(applyChanges(this.host.read(), fresh.map((e) => ({ key: e.key, value: e.value }))));
@@ -185,7 +189,7 @@ export class SyncEngine {
 
   private async push(meta: SyncMeta): Promise<void> {
     const records = toRecords(this.host.read());
-    const keys = [...this.dirty(meta, records)];
+    const keys = [...this.dirty(meta, records, this.host.read())];
     for (let i = 0; i < keys.length; i += BATCH) {
       const slice = keys.slice(i, i + BATCH);
       const envs: Envelope[] = slice.map((k) => ({
