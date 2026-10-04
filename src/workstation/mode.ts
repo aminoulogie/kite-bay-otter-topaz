@@ -16,9 +16,24 @@ export function useWorkstation(): boolean {
   const [desk, setDesk] = useState(() => typeof window !== "undefined" && window.matchMedia(DESK).matches);
   useEffect(() => {
     const mq = window.matchMedia(DESK);
-    const on = () => setDesk(mq.matches);
+    // Printing lays the page out at paper width, which is narrower than a
+    // desk: without this the workstation would swap itself for the phone
+    // layout mid-print and the report would print blank.
+    let printing = false;
+    const before = () => (printing = true);
+    const after = () => {
+      printing = false;
+      setDesk(mq.matches);
+    };
+    const on = () => !printing && !window.matchMedia("print").matches && setDesk(mq.matches);
     mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
+    window.addEventListener("beforeprint", before);
+    window.addEventListener("afterprint", after);
+    return () => {
+      mq.removeEventListener("change", on);
+      window.removeEventListener("beforeprint", before);
+      window.removeEventListener("afterprint", after);
+    };
   }, []);
   if (pref === false) return false;
   return inDesktopApp() || desk;

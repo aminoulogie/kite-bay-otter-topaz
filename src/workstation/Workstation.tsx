@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   CalendarDays,
   Clock,
+  FileText,
   PiggyBank,
   Timer,
   Dumbbell,
@@ -40,6 +41,7 @@ import { ProjectsPage } from "./ProjectsPage";
 import { TasksPage } from "./TasksPage";
 import { MoneyPage } from "./MoneyPage";
 import { TimePage } from "./TimePage";
+import { ReportsPage } from "./ReportsPage";
 import { TopTimer } from "./Timer";
 import { projectStats } from "./metrics";
 
@@ -49,6 +51,7 @@ export type PageId =
   | "projects"
   | "tasks"
   | "tracking"
+  | "reports"
   | "time"
   | "money"
   | "moneyClassic"
@@ -74,6 +77,7 @@ const PAGES: PageDef[] = [
   { id: "tasks", label: "Tasks & calendar", icon: Clock, group: "Workspace" },
   { id: "tracking", label: "Time tracking", icon: Timer, group: "Workspace" },
   { id: "money", label: "Money", icon: Wallet, group: "Workspace" },
+  { id: "reports", label: "Reports", icon: FileText, group: "Workspace" },
   { id: "time", label: "Day planner", icon: CalendarDays, group: "Personal" },
   { id: "moneyClassic", label: "Money goals & insights", icon: PiggyBank, group: "Personal" },
   { id: "home", label: "Today", icon: LayoutGrid, group: "Personal" },
@@ -270,6 +274,7 @@ export function Workstation() {
           {page === "tasks" && <TasksPage />}
           {page === "money" && <MoneyPage />}
           {page === "tracking" && <TimePage />}
+          {page === "reports" && <ReportsPage />}
           {Classic && (
             <div className="ws-classic soma-main">
               <Classic />

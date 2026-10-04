@@ -288,3 +288,31 @@
 .ws-entry:last-child { border-bottom: 0; }
 .ws-entry { grid-template-columns: 120px 250px 70px minmax(0, 1fr) auto auto; }
 .ws-entry input[type="time"] { width: 118px; }
+
+/* Report paper */
+.ws-paper-wrap { background: var(--ws-side); border: 1px solid var(--ws-line); border-radius: var(--ws-radius); padding: 24px; display: flex; justify-content: center; }
+.ws-paper { width: 100%; max-width: 860px; background: #fff; color: #1d2128; padding: 44px 48px; border-radius: 4px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35); font-family: "Segoe UI", system-ui, sans-serif; font-size: 12.5px; line-height: 1.5; }
+.ws-paper h2 { font-size: 24px; margin: 2px 0; color: #0d0f12; }
+.ws-paper h3 { font-size: 14px; margin: 26px 0 8px; padding-bottom: 6px; border-bottom: 2px solid #1d2128; color: #0d0f12; }
+.ws-paper .kicker { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #5b8cff; font-weight: 700; }
+.ws-paper .muted { color: #6b7380; }
+.ws-paper-head { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 18px; border-bottom: 1px solid #e3e6ea; }
+.ws-paper-kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 18px; }
+.ws-paper-kpis > div { border: 1px solid #e3e6ea; border-radius: 6px; padding: 10px; }
+.ws-paper-kpis span { display: block; font-size: 11px; color: #6b7380; }
+.ws-paper-kpis b { display: block; font-size: 16px; margin: 2px 0; white-space: nowrap; }
+.ws-paper-kpis small { color: #8a929c; font-size: 11px; }
+.ws-paper table { width: 100%; border-collapse: collapse; }
+.ws-paper th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7380; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid #d3d7dd; }
+.ws-paper td { padding: 6px 8px; border-bottom: 1px solid #eef0f3; vertical-align: top; }
+.ws-paper .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ws-paper tr.total td { font-weight: 700; border-top: 2px solid #1d2128; border-bottom: 0; }
+.ws-paper ul { margin: 0; padding-left: 18px; }
+.ws-print-root { display: none; }
+@media print {
+  @page { margin: 14mm; }
+  body > *:not(.ws-print-root) { display: none !important; }
+  .ws-print-root { display: block !important; }
+  .ws-print-root .ws-paper { box-shadow: none; padding: 0; max-width: none; }
+  html, body { background: #fff !important; }
+}
