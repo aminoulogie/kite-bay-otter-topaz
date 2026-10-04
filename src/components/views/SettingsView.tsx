@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { SyncSettings } from "@/components/SyncSettings";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -806,6 +807,10 @@ export function SettingsView() {
           </Button>
         </div>
       </Card>
+      </Sized>
+
+      <Sized key="sync" glance={{ label: "Device sync", short: "Sync", empty: "Sync your phone and PC, encrypted", emptyShort: "Open" }}>
+        <SyncSettings />
       </Sized>
 
       <Sized key="vault" glance={{ label: "Vault sync", short: "Vault", empty: "Sync SOMA with a folder", emptyShort: "Open" }}>

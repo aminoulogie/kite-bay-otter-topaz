@@ -1,0 +1,11 @@
+# SOMA sync relay. Deployed by .github/workflows/sync-server.yml, which fills
+# in database_id after creating the D1 database on the first run.
+name = "soma-sync"
+main = "worker.ts"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "soma-sync"
+database_id = "__D1_ID__"

@@ -448,6 +448,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "routines", label: "Routines", size: "2x4" },
     { id: "report", label: "Report", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "data", label: "Backup and restore", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "sync", label: "Device sync", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "vault", label: "Vault sync", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "csv", label: "Export as CSV", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "foods", label: "Import foods", size: "2x4", sizes: UP_TO_MEDIUM },

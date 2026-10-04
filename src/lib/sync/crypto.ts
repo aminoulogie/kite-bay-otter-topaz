@@ -160,3 +160,19 @@ export function newerThan(
     return !s || e.t > s.t || (e.t === s.t && e.device > s.device);
   });
 }
+
+/**
+ * Where this vault lives on the server, and the password that opens it there.
+ *
+ * Both come from the secret, so there is no account: any device holding the
+ * secret finds the same vault and can prove it. Neither can be turned back
+ * into the secret, and the server only keeps a hash of the token.
+ */
+export async function deriveAccess(secret: Uint8Array): Promise<{ vault: string; token: string }> {
+  const base = await subtle().importKey("raw", secret as Uint8Array<ArrayBuffer>, "HKDF", false, ["deriveBits"]);
+  const bits = async (info: string, n: number) =>
+    new Uint8Array(
+      await subtle().deriveBits({ name: "HKDF", hash: "SHA-256", salt: enc.encode("soma-sync-v1"), info: enc.encode(info) }, base, n * 8),
+    );
+  return { vault: b64(await bits("vault", 16)), token: b64(await bits("auth", 32)) };
+}

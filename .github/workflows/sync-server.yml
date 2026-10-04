@@ -1,0 +1,50 @@
+name: Sync server
+
+# Deploys the end-to-end encrypted sync relay (server/sync) to Cloudflare.
+# Needs two repository secrets: CLOUDFLARE_API_TOKEN (Workers + D1 edit) and
+# CLOUDFLARE_ACCOUNT_ID. Run it by hand from the Actions tab.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["server/sync/**", "src/lib/sync/server-core.ts"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secrets present?
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not set yet — nothing deployed."
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/setup-node@v4
+        if: env.SKIP != '1'
+        with:
+          node-version: 22
+      - name: Database (create once) and schema
+        if: env.SKIP != '1'
+        working-directory: server/sync
+        run: |
+          ID=$(npx -y wrangler@3 d1 list --json | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));const d=l.find(x=>x.name==="soma-sync");process.stdout.write(d?d.uuid:"")')
+          if [ -z "$ID" ]; then
+            npx -y wrangler@3 d1 create soma-sync
+            ID=$(npx -y wrangler@3 d1 list --json | node -e 'const l=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(l.find(x=>x.name==="soma-sync").uuid)')
+          fi
+          sed -i "s/__D1_ID__/$ID/" wrangler.toml
+          npx -y wrangler@3 d1 execute soma-sync --remote --file schema.sql
+      - name: Deploy
+        if: env.SKIP != '1'
+        working-directory: server/sync
+        run: npx -y wrangler@3 deploy | tee deploy.log
+      - name: Address
+        if: env.SKIP != '1'
+        working-directory: server/sync
+        run: |
+          URL=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          echo "::notice title=Sync server::$URL — paste this into SOMA › Settings › Sync"
