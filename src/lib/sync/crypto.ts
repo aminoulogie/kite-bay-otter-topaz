@@ -90,7 +90,7 @@ export interface SyncKeys {
 
 /** The two working keys, derived from the secret with HKDF so neither reveals the other. */
 export async function deriveKeys(secret: Uint8Array): Promise<SyncKeys> {
-  const base = await subtle().importKey("raw", secret, "HKDF", false, ["deriveKey"]);
+  const base = await subtle().importKey("raw", secret as Uint8Array<ArrayBuffer>, "HKDF", false, ["deriveKey"]);
   const hkdf = (info: string) => ({ name: "HKDF", hash: "SHA-256", salt: enc.encode("soma-sync-v1"), info: enc.encode(info) });
   const aes = await subtle().deriveKey(hkdf("records"), base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
   const mac = await subtle().deriveKey(hkdf("ids"), base, { name: "HMAC", hash: "SHA-256", length: 256 }, false, ["sign"]);
