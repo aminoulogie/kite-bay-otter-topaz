@@ -15,6 +15,7 @@ import {
   Plus,
   RefreshCw,
   ScanFace,
+  ShieldAlert,
   Search,
   Settings as SettingsIcon,
   TrendingUp,
@@ -42,6 +43,7 @@ import { TasksPage } from "./TasksPage";
 import { MoneyPage } from "./MoneyPage";
 import { TimePage } from "./TimePage";
 import { ReportsPage } from "./ReportsPage";
+import { FindingsPage } from "./FindingsPage";
 import { TopTimer } from "./Timer";
 import { projectStats } from "./metrics";
 
@@ -52,6 +54,7 @@ export type PageId =
   | "tasks"
   | "tracking"
   | "reports"
+  | "findings"
   | "time"
   | "money"
   | "moneyClassic"
@@ -74,6 +77,7 @@ interface PageDef {
 const PAGES: PageDef[] = [
   { id: "overview", label: "Overview", icon: Gauge, group: "Workspace" },
   { id: "projects", label: "Projects", icon: FolderKanban, group: "Workspace" },
+  { id: "findings", label: "Findings", icon: ShieldAlert, group: "Workspace" },
   { id: "tasks", label: "Tasks & calendar", icon: Clock, group: "Workspace" },
   { id: "tracking", label: "Time tracking", icon: Timer, group: "Workspace" },
   { id: "money", label: "Money", icon: Wallet, group: "Workspace" },
@@ -138,6 +142,7 @@ export function Workstation() {
   const addProject = useSoma((s) => s.addProject);
   const [page, setPageState] = useState<PageId>(loadPage);
   const [openProject, setOpenProject] = useState<string | null>(null);
+  const [openFinding, setOpenFinding] = useState<string | null>(null);
   const [palette, setPalette] = useState(false);
   const sync = useSyncMeta();
   const today = getLocalDateKey();
@@ -275,6 +280,7 @@ export function Workstation() {
           {page === "money" && <MoneyPage />}
           {page === "tracking" && <TimePage />}
           {page === "reports" && <ReportsPage />}
+          {page === "findings" && <FindingsPage openId={openFinding} onOpen={setOpenFinding} />}
           {Classic && (
             <div className="ws-classic soma-main">
               <Classic />

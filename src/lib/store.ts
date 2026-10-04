@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { asFindings, isClosed, newFindingId, type Finding } from "./findings";
 import { asTimeEntries, newTimeId, type TimeEntry } from "./time-tracking";
 import { persist, type PersistStorage } from "zustand/middleware";
 import msExercises from "./ms-exercises.json";
@@ -307,6 +308,12 @@ export interface SomaStore {
   trades: Trade[];
   addProject: (name: string, color: string) => string;
   patchProject: (id: string, patch: Partial<Omit<Project, "id">>) => void;
+  /** Audit findings, each on a project. See lib/findings.ts. */
+  findings: Finding[];
+  addFinding: (f: Omit<Finding, "id" | "createdAt">) => string;
+  patchFinding: (id: string, patch: Partial<Omit<Finding, "id">>) => void;
+  removeFinding: (id: string) => void;
+  restoreFinding: (idx: number, f: Finding) => void;
   /** Hours on projects. See lib/time-tracking.ts. */
   timeEntries: TimeEntry[];
   /** Starts a timer on a project, stopping any that is running. */
@@ -680,6 +687,7 @@ export const useSoma = create<SomaStore>()(
       todos: [],
       projects: [],
       timeEntries: [],
+      findings: [],
       goals: [],
       trades: [],
       dayRoutines: [],
@@ -1476,6 +1484,28 @@ export const useSoma = create<SomaStore>()(
           ],
         }));
       },
+      addFinding: (f) => {
+        const id = newFindingId();
+        set((s) => ({ findings: [...s.findings, { ...f, id, createdAt: Date.now() }] }));
+        return id;
+      },
+      patchFinding: (id, patch) =>
+        set((s) => ({
+          findings: s.findings.map((f) => {
+            if (f.id !== id) return f;
+            const next = { ...f, ...patch };
+            // Closing stamps when; reopening clears it.
+            if (patch.status) next.closedAt = isClosed(next) ? (isClosed(f) ? f.closedAt : Date.now()) : undefined;
+            return next;
+          }),
+        })),
+      removeFinding: (id) => set((s) => ({ findings: s.findings.filter((f) => f.id !== id) })),
+      restoreFinding: (idx, f) =>
+        set((s) => {
+          const next = [...s.findings];
+          next.splice(Math.max(0, Math.min(idx, next.length)), 0, f);
+          return { findings: next };
+        }),
       stopTimer: () => {
         const now = Date.now();
         set((s) => ({ timeEntries: s.timeEntries.map((e) => (e.end === undefined ? { ...e, end: now } : e)) }));
@@ -2702,6 +2732,7 @@ export const useSoma = create<SomaStore>()(
             todos: get().todos,
             projects: get().projects,
             timeEntries: get().timeEntries,
+            findings: get().findings,
             goals: get().goals,
             trades: get().trades,
             dayRoutines: get().dayRoutines,
@@ -2758,6 +2789,7 @@ export const useSoma = create<SomaStore>()(
               todos: data.todos || [],
               projects: asProjects(data.projects),
               timeEntries: asTimeEntries(data.timeEntries),
+              findings: asFindings(data.findings),
               goals: asGoals(data.goals),
               trades: asTrades(data.trades),
               dayRoutines: asRoutines(data.dayRoutines),
@@ -2862,6 +2894,7 @@ export const useSoma = create<SomaStore>()(
             todos: mergeById(data.todos || [], cur.todos),
             projects: mergeById(asProjects(data.projects), cur.projects),
             timeEntries: mergeById(asTimeEntries(data.timeEntries), cur.timeEntries),
+            findings: mergeById(asFindings(data.findings), cur.findings),
             goals: mergeById(asGoals(data.goals), cur.goals),
             trades: mergeById(asTrades(data.trades), cur.trades),
             dayRoutines: mergeById(asRoutines(data.dayRoutines), cur.dayRoutines),
@@ -2986,6 +3019,7 @@ export const useSoma = create<SomaStore>()(
         todos: s.todos,
         projects: s.projects,
         timeEntries: s.timeEntries,
+        findings: s.findings,
         goals: s.goals,
         trades: s.trades,
         dayRoutines: s.dayRoutines,

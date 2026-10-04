@@ -622,6 +622,7 @@ function Detail({
       </section>
 
       <ProjectTime project={p} />
+      <ProjectFindings projectId={p.id} />
 
       <section>
         <div style={{ fontWeight: 600, marginBottom: 6 }}>Notes</div>
@@ -723,6 +724,47 @@ function ProjectTime({ project: p }: { project: Project }) {
           </span>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function ProjectFindings({ projectId }: { projectId: string }) {
+  const findings = useSoma((s) => s.findings);
+  const addFinding = useSoma((s) => s.addFinding);
+  const [draft, setDraft] = useState("");
+  const mine = findings.filter((f) => f.projectId === projectId);
+  const open = mine.filter((f) => f.status === "open" || f.status === "in-progress");
+  return (
+    <section>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+        <span style={{ fontWeight: 600 }}>Findings</span>
+        <span className="ws-faint" style={{ marginLeft: 8 }}>
+          {open.length} open · {mine.length - open.length} closed
+        </span>
+      </div>
+      {open.slice(0, 6).map((f) => (
+        <div key={f.id} className="ws-step">
+          <span className={`ws-pill ${f.severity}`}>
+            {f.severity[0]!.toUpperCase() + f.severity.slice(1)}
+          </span>
+          <span className="lbl" style={{ border: 0 }}>
+            {f.title}
+          </span>
+        </div>
+      ))}
+      <input
+        className="ws-input"
+        style={{ width: "100%", marginTop: 6 }}
+        placeholder="Log a finding and press Enter (edit it under Findings)"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && draft.trim()) {
+            addFinding({ projectId, title: draft.trim(), severity: "medium", status: "open" });
+            setDraft("");
+          }
+        }}
+      />
     </section>
   );
 }

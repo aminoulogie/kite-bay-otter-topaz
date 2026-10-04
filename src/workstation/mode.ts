@@ -13,7 +13,9 @@ export const inDesktopApp = () => typeof window !== "undefined" && "__TAURI_INTE
  */
 export function useWorkstation(): boolean {
   const pref = useSoma((s) => s.settings.workstation);
-  const [desk, setDesk] = useState(() => typeof window !== "undefined" && window.matchMedia(DESK).matches);
+  const [desk, setDesk] = useState(
+    () => typeof window !== "undefined" && window.matchMedia(DESK).matches,
+  );
   useEffect(() => {
     const mq = window.matchMedia(DESK);
     // Printing lays the page out at paper width, which is narrower than a

@@ -31,7 +31,12 @@ export interface ClientMoney {
 }
 
 /** Income and costs per client, through the projects entries are tagged with, in base currency. */
-export function byClient(ledger: LedgerEntry[], projects: Project[], rates?: Rates, month?: string): ClientMoney[] {
+export function byClient(
+  ledger: LedgerEntry[],
+  projects: Project[],
+  rates?: Rates,
+  month?: string,
+): ClientMoney[] {
   const clientOf = new Map(projects.map((p) => [p.id, p.client?.trim() || p.name]));
   const out = new Map<string, ClientMoney>();
   for (const e of ledger) {
@@ -46,6 +51,11 @@ export function byClient(ledger: LedgerEntry[], projects: Project[], rates?: Rat
     out.set(c, row);
   }
   return [...out.values()]
-    .map((r) => ({ ...r, income: Math.round(r.income), cost: Math.round(r.cost), net: Math.round(r.net) }))
+    .map((r) => ({
+      ...r,
+      income: Math.round(r.income),
+      cost: Math.round(r.cost),
+      net: Math.round(r.net),
+    }))
     .sort((a, b) => b.income - a.income || a.client.localeCompare(b.client));
 }

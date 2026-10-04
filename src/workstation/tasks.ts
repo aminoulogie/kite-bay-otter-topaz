@@ -18,21 +18,31 @@ export function filterTasks(todos: TodoItem[], f: TaskFilter, today: string): To
   const live = todos.filter((t) => !t.cleared);
   switch (f) {
     case "today":
-      return live.filter((t) => !t.done && (isActive(t, today) && scopeOf(t) === "day" || t.slot?.date === today || t.due === today));
+      return live.filter(
+        (t) =>
+          !t.done &&
+          ((isActive(t, today) && scopeOf(t) === "day") ||
+            t.slot?.date === today ||
+            t.due === today),
+      );
     case "week":
-      return live.filter((t) => !t.done && (isActive(t, today) && scopeOf(t) === "week"));
+      return live.filter((t) => !t.done && isActive(t, today) && scopeOf(t) === "week");
     case "due":
       return live.filter((t) => !t.done && t.due).sort((a, b) => a.due!.localeCompare(b.due!));
     case "open":
       return live.filter((t) => !t.done);
     case "done":
-      return todos.filter((t) => t.done).slice(-200).reverse();
+      return todos
+        .filter((t) => t.done)
+        .slice(-200)
+        .reverse();
   }
 }
 
 export function counts(todos: TodoItem[], today: string): Record<TaskFilter, number> {
   const out = {} as Record<TaskFilter, number>;
-  for (const f of ["today", "week", "due", "open"] as TaskFilter[]) out[f] = filterTasks(todos, f, today).length;
+  for (const f of ["today", "week", "due", "open"] as TaskFilter[])
+    out[f] = filterTasks(todos, f, today).length;
   out.done = 0;
   return out;
 }

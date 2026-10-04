@@ -10,4 +10,3 @@ export function useTick(on: boolean): number {
   }, [on]);
   return now;
 }
-

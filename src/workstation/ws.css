@@ -316,3 +316,22 @@
   .ws-print-root .ws-paper { box-shadow: none; padding: 0; max-width: none; }
   html, body { background: #fff !important; }
 }
+
+/* Findings */
+.ws-pill.critical { color: #fff; background: var(--ws-red); }
+.ws-pill.critical::before { background: #fff; }
+.ws-sev-kpi { text-align: left; cursor: pointer; color: inherit; font: inherit; }
+.ws-sev-kpi:hover { border-color: var(--ws-line-2); }
+.ws-sev-kpi.on { border-color: var(--ws-blue); box-shadow: 0 0 0 1px var(--ws-blue) inset; }
+.ws-addbar { display: flex; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--ws-line); background: var(--ws-panel-2); }
+.ws-detail textarea { min-height: 90px; }
+.ws-paper-findings { display: grid; gap: 10px; }
+.ws-paper .finding { border: 1px solid #e3e6ea; border-left-width: 4px; border-radius: 6px; padding: 10px 12px; break-inside: avoid; }
+.ws-paper .finding .row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.ws-paper .finding p { margin: 6px 0 0; }
+.ws-paper .sev { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; color: #fff; }
+.ws-paper .sev.critical { background: #c62828; }
+.ws-paper .sev.high { background: #e65100; }
+.ws-paper .sev.medium { background: #f0a63c; }
+.ws-paper .sev.low { background: #8a929c; }
+.ws-kpi span.ws-pill { display: inline-flex; }

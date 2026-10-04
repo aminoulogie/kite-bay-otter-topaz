@@ -45,6 +45,7 @@ export function Overview({
   const nutrition = useSoma((s) => s.nutrition);
   const ledger = useSoma((s) => s.ledger);
   const timeEntries = useSoma((s) => s.timeEntries);
+  const findings = useSoma((s) => s.findings);
   const settings = useSoma((s) => s.settings);
   const today = getLocalDateKey();
   const revenue = useMemo(
@@ -54,7 +55,14 @@ export function Overview({
   );
 
   const stats = useMemo(() => projectStats(projects, today), [projects, today]);
-  const needs = useMemo(() => attention(projects, todos, today), [projects, todos, today]);
+  const needs = useMemo(
+    () => attention(projects, todos, today, Date.now(), findings),
+    [projects, todos, today, findings],
+  );
+  const openFindings = findings.filter((f) => f.status === "open" || f.status === "in-progress");
+  const severe = openFindings.filter(
+    (f) => f.severity === "critical" || f.severity === "high",
+  ).length;
   const activity = useMemo(() => recentActivity(projects, 10), [projects]);
   const monday = mondayOf(today);
   const weekHours = timeEntries
@@ -132,6 +140,12 @@ export function Overview({
         <Kpi label="Steps done" value={stats.stepsWeek} hint="last 7 days" />
         <Kpi label="To-dos today" value={openTodos} hint="still open" />
         <Kpi label="Hours tracked" value={fmtHours(weekHours)} hint="this week" />
+        <Kpi
+          label="Open findings"
+          value={openFindings.length}
+          hint={`${severe} critical or high`}
+          tone={severe ? "bad" : undefined}
+        />
         <Kpi label="Training" value={sessions} hint="sessions, last 7 days" />
         <Kpi label="Calories" value={fmt(eaten)} hint={`of ${fmt(goal)} today`} />
       </div>
@@ -148,18 +162,26 @@ export function Overview({
                 <li
                   key={n.id}
                   className={n.projectId ? "click" : undefined}
-                  onClick={() => (n.projectId ? onOpenProject(n.projectId) : onGo("tasks"))}
+                  onClick={() =>
+                    n.kind === "finding"
+                      ? onGo("findings")
+                      : n.projectId
+                        ? onOpenProject(n.projectId)
+                        : onGo("tasks")
+                  }
                 >
                   <span
-                    className={`ws-pill ${n.kind === "overdue" || n.kind === "todo-overdue" ? "overdue" : n.kind === "stale" ? "stale" : "active"}`}
+                    className={`ws-pill ${n.kind === "finding" ? "high" : n.kind === "overdue" || n.kind === "todo-overdue" ? "overdue" : n.kind === "stale" ? "stale" : "active"}`}
                   >
-                    {n.kind === "overdue"
-                      ? "Overdue"
-                      : n.kind === "todo-overdue"
-                        ? "To-do"
-                        : n.kind === "stale"
-                          ? "Drifting"
-                          : "Due soon"}
+                    {n.kind === "finding"
+                      ? "Finding"
+                      : n.kind === "overdue"
+                        ? "Overdue"
+                        : n.kind === "todo-overdue"
+                          ? "To-do"
+                          : n.kind === "stale"
+                            ? "Drifting"
+                            : "Due soon"}
                   </span>
                   <span className="t">{n.title}</span>
                   <span className="d">{n.detail}</span>

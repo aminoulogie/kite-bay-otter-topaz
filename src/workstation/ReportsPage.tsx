@@ -59,6 +59,7 @@ export function ReportsPage() {
   const projects = useSoma((s) => s.projects);
   const timeEntries = useSoma((s) => s.timeEntries);
   const ledger = useSoma((s) => s.ledger);
+  const findings = useSoma((s) => s.findings);
   const settings = useSoma((s) => s.settings);
   const today = getLocalDateKey();
   const clients = useMemo(() => clientsOf(projects), [projects]);
@@ -73,9 +74,9 @@ export function ReportsPage() {
     () =>
       buildReport(
         { client, projectId: projectId || undefined, from: r.from, to: r.to },
-        { projects, timeEntries, ledger, rates: ratesOf(settings) },
+        { projects, timeEntries, ledger, findings, rates: ratesOf(settings) },
       ),
-    [client, projectId, r.from, r.to, projects, timeEntries, ledger, settings],
+    [client, projectId, r.from, r.to, projects, timeEntries, ledger, findings, settings],
   );
   const scoped = projects.filter((p) => !client || p.client?.trim() === client);
   const fileBase = `report-${(report.title || "all").replace(/[^\w-]+/g, "-").toLowerCase()}-${r.label.replace(/[^\w-]+/g, "-").toLowerCase()}`;
@@ -361,6 +362,45 @@ function ReportDoc({ report: r, period }: { report: ReportData; period: string }
         </table>
       ) : (
         <p className="muted">No transactions tagged to these projects in this period.</p>
+      )}
+
+      <h3>Findings</h3>
+      {r.findings.length ? (
+        <div className="ws-paper-findings">
+          {r.findings.map((f) => (
+            <div key={f.id} className="finding">
+              <div className="row">
+                <span className={`sev ${f.severity}`}>{f.severity}</span>
+                <b>{f.title}</b>
+                <span className="muted" style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>
+                  {f.status === "in-progress"
+                    ? "In progress"
+                    : f.status === "accepted"
+                      ? "Risk accepted"
+                      : f.status[0]!.toUpperCase() + f.status.slice(1)}
+                </span>
+              </div>
+              <div className="muted">
+                {f.project}
+                {f.area ? ` · ${f.area}` : ""}
+                {f.owner ? ` · Owner: ${f.owner}` : ""}
+                {f.due ? ` · Due ${f.due}` : ""}
+              </div>
+              {f.description && (
+                <p>
+                  <b>Finding.</b> {f.description}
+                </p>
+              )}
+              {f.recommendation && (
+                <p>
+                  <b>Recommendation.</b> {f.recommendation}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="muted">No findings.</p>
       )}
 
       {r.openSteps.length > 0 && (

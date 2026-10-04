@@ -4,7 +4,14 @@ import type { Project } from "../lib/projects.ts";
 import type { LedgerEntry } from "../lib/types.ts";
 import { byClient, filterLedger } from "./money.ts";
 
-const e = (o: Partial<LedgerEntry>): LedgerEntry => ({ id: Math.random().toString(36), date: "2026-10-03", kind: "spend", amount: 100, category: "Food", ...o });
+const e = (o: Partial<LedgerEntry>): LedgerEntry => ({
+  id: Math.random().toString(36),
+  date: "2026-10-03",
+  kind: "spend",
+  amount: 100,
+  category: "Food",
+  ...o,
+});
 const projects = [
   { id: "a", name: "Audit", client: "Acme" },
   { id: "b", name: "Site", client: "Acme" },
