@@ -45,38 +45,64 @@ const BASE_FOOD_LIBRARY = [
 const BASE_EXERCISE_DB = [
   // CHEST
   { name: "Incline Dumbbell Press", muscle: "Chest", subTarget: "Upper Pec (Clavicular)", targetKeys: ["chest"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Incline Barbell Bench", muscle: "Chest", subTarget: "Upper Pec (Clavicular)", targetKeys: ["chest"], position: "Mid-Range", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: false },
+  { name: "Incline Barbell Bench", muscle: "Chest", subTarget: "Upper Pec (Clavicular)", targetKeys: ["chest"], position: "Mid-Range", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/incline-barbell-bench.jpg" },
   { name: "Smith Machine Incline Press", muscle: "Chest", subTarget: "Upper Pec (Clavicular)", targetKeys: ["chest"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Low-to-High Cable Fly", muscle: "Chest", subTarget: "Upper Pec (Clavicular)", targetKeys: ["chest"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "High-to-Low Cable Fly", muscle: "Chest", subTarget: "Lower Pec (Costal)", targetKeys: ["chest"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Flat Barbell Bench Press", muscle: "Chest", subTarget: "Mid/Lower Pec (Sternal)", targetKeys: ["chest"], position: "Mid-Range", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: false },
+  { name: "Flat Barbell Bench Press", muscle: "Chest", subTarget: "Mid/Lower Pec (Sternal)", targetKeys: ["chest"], position: "Mid-Range", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/flat-barbell-bench-press.jpg" },
   { name: "Flat Dumbbell Press", muscle: "Chest", subTarget: "Mid/Lower Pec (Sternal)", targetKeys: ["chest"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Pec Deck Fly (Machine)", muscle: "Chest", subTarget: "Mid/Lower Pec (Sternal)", targetKeys: ["chest"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Bodyweight Chest Dips", muscle: "Chest", subTarget: "Lower Pec (Costal)", targetKeys: ["chest", "triceps", "triceps_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: true },
   { name: "Weighted Chest Dips", muscle: "Chest", subTarget: "Lower Pec (Costal)", targetKeys: ["chest", "triceps", "triceps_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Machine Chest Press", muscle: "Chest", subTarget: "Mid/Lower Pec (Sternal)", targetKeys: ["chest"], position: "Mid-Range", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
 
+
+  // Added for the six-day push/pull/legs rotation. Pictures come from
+  // free-exercise-db (public domain), scaled to the 256px the card actually
+  // draws; an exercise with no honest likeness in that set carries none.
+  { name: "Larsen Press", muscle: "Chest", subTarget: "Mid/Lower Pec (Sternal)", targetKeys: ["chest", "triceps", "triceps_back"], position: "Mid-Range", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/larsen-press.jpg" },
+  { name: "Cable Press-Around", muscle: "Chest", subTarget: "Mid/Lower Pec (Sternal)", targetKeys: ["chest"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/cable-press-around.jpg" },
+
   // BACK
-  { name: "Bodyweight Pull-ups", muscle: "Back", subTarget: "Lats (Vertical Pull)", targetKeys: ["upper_back", "biceps"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: true },
+  { name: "Bodyweight Pull-ups", muscle: "Back", subTarget: "Lats (Vertical Pull)", targetKeys: ["upper_back", "biceps"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: true, img: "/exercises/bodyweight-pull-ups.jpg" },
   { name: "Weighted Pull-ups / Chin-ups", muscle: "Back", subTarget: "Lats (Vertical Pull)", targetKeys: ["upper_back", "biceps"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Lat Pulldown (Wide/Neutral)", muscle: "Back", subTarget: "Lats (Vertical Pull)", targetKeys: ["upper_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Lat Pulldown (Wide/Neutral)", muscle: "Back", subTarget: "Lats (Vertical Pull)", targetKeys: ["upper_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/lat-pulldown-wide-neutral.jpg" },
   { name: "Single-Arm Lat Cable Row", muscle: "Back", subTarget: "Lats (Iliac / Lower)", targetKeys: ["upper_back"], position: "Lengthened & Shortened", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Single-Arm Dumbbell Row", muscle: "Back", subTarget: "Lats & Upper Back", targetKeys: ["upper_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Chest-Supported T-Bar Row", muscle: "Back", subTarget: "Upper Back / Rhomboids", targetKeys: ["trapezius_back", "upper_back", "trapezius"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Chest-Supported T-Bar Row", muscle: "Back", subTarget: "Upper Back / Rhomboids", targetKeys: ["trapezius_back", "upper_back", "trapezius"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/chest-supported-t-bar-row.jpg" },
   { name: "Meadows Row", muscle: "Back", subTarget: "Upper Lats & Teres Major", targetKeys: ["upper_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Barbell Bent-Over Row", muscle: "Back", subTarget: "Upper Back / Lats", targetKeys: ["upper_back", "trapezius_back", "lower_back", "trapezius"], position: "Mid-Range", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false },
   { name: "Seated Cable Row (Wide)", muscle: "Back", subTarget: "Upper Back / Mid-Traps", targetKeys: ["trapezius_back", "upper_back", "trapezius"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },
-  { name: "Barbell Deadlift", muscle: "Back", subTarget: "Erectors / Posterior Chain", targetKeys: ["lower_back", "hamstring", "gluteal"], position: "Mid-Range", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false },
+  { name: "Barbell Deadlift", muscle: "Back", subTarget: "Erectors / Posterior Chain", targetKeys: ["lower_back", "hamstring", "gluteal"], position: "Mid-Range", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false, img: "/exercises/barbell-deadlift.jpg" },
+
+
+  // Added for the six-day push/pull/legs rotation. Pictures come from
+  // free-exercise-db (public domain), scaled to the 256px the card actually
+  // draws; an exercise with no honest likeness in that set carries none.
+  { name: "Kneeling Single-Arm Lat Pulldown", muscle: "Back", subTarget: "Lats (Vertical Pull)", targetKeys: ["upper_back", "biceps"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/kneeling-single-arm-lat-pulldown.jpg" },
+  { name: "Chest-Supported Cable Row", muscle: "Back", subTarget: "Mid-Back (Horizontal Pull)", targetKeys: ["upper_back", "biceps"], position: "Mid-Range", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/chest-supported-cable-row.jpg" },
+  { name: "Dumbbell Shrugs", muscle: "Back", subTarget: "Traps (Upper)", targetKeys: ["trapezius", "trapezius_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/dumbbell-shrugs.jpg" },
 
   // SHOULDERS
   { name: "Standing Overhead Press (OHP)", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids", "triceps", "triceps_back"], position: "Mid-Range", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false },
   { name: "Seated Dumbbell Shoulder Press", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids", "triceps", "triceps_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "A-Tier", isAxial: false, isBW: false },
-  { name: "Machine Shoulder Press", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids", "triceps", "triceps_back"], position: "Mid-Range", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Machine Shoulder Press", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids", "triceps", "triceps_back"], position: "Mid-Range", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/machine-shoulder-press.jpg" },
   { name: "Cable Lateral Raise", muscle: "Shoulders", subTarget: "Side Delt (Lateral)", targetKeys: ["deltoids", "deltoids_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Cable Y-Raise", muscle: "Shoulders", subTarget: "Side Delt (Lateral)", targetKeys: ["deltoids", "deltoids_back"], position: "Lengthened & Shortened", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "Dumbbell Lateral Raise", muscle: "Shoulders", subTarget: "Side Delt (Lateral)", targetKeys: ["deltoids", "deltoids_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },
-  { name: "Face Pulls", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back", "trapezius_back", "trapezius"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Face Pulls", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back", "trapezius_back", "trapezius"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/face-pulls.jpg" },
   { name: "Reverse Pec Deck", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back"], position: "Lengthened & Shortened", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+
+  // Added for the six-day push/pull/legs rotation. Pictures come from
+  // free-exercise-db (public domain), scaled to the 256px the card actually
+  // draws; an exercise with no honest likeness in that set carries none.
+  { name: "Standing Dumbbell Arnold Press", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids"], position: "Mid-Range", risk: "Moderate 🟡", tier: "A-Tier", isAxial: true, isBW: false, img: "/exercises/standing-dumbbell-arnold-press.jpg" },
+  { name: "Cross-Body Cable Y-Raise", muscle: "Shoulders", subTarget: "Side Delt (Lateral)", targetKeys: ["deltoids"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Machine Lateral Raise", muscle: "Shoulders", subTarget: "Side Delt (Lateral)", targetKeys: ["deltoids"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/machine-lateral-raise.jpg" },
+  { name: "Plate Front Raise", muscle: "Shoulders", subTarget: "Front Delt (Anterior)", targetKeys: ["deltoids"], position: "Mid-Range", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/plate-front-raise.jpg" },
+  { name: "Bent-Over Cable Flye", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back", "upper_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/bent-over-cable-flye.jpg" },
+  { name: "Chest-Supported Rear Delt Raise", muscle: "Shoulders", subTarget: "Rear Delt (Posterior)", targetKeys: ["deltoids_back", "upper_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/chest-supported-rear-delt-raise.jpg" },
+
   // Neck: light, slow and high-rep. Start with hand resistance before any plate
   // or harness, and stop for pain that travels into the arms, numbness or
   // dizziness. Risk is "Moderate" for load, not for the movement done right.
@@ -89,28 +115,101 @@ const BASE_EXERCISE_DB = [
   { name: "Standing Barbell / EZ-Bar Curl", muscle: "Biceps", subTarget: "Overall Biceps", targetKeys: ["biceps"], position: "Mid-Range", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },
   { name: "Dumbbell Preacher Curl", muscle: "Biceps", subTarget: "Short Head (Inner)", targetKeys: ["biceps"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false },
   { name: "One-Arm Dumbbell Preacher Curl", muscle: "Biceps", subTarget: "Short Head (Inner / Unilateral)", targetKeys: ["biceps"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Incline Dumbbell Curl", muscle: "Biceps", subTarget: "Long Head (Peak)", targetKeys: ["biceps"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Incline Dumbbell Curl", muscle: "Biceps", subTarget: "Long Head (Peak)", targetKeys: ["biceps"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/incline-dumbbell-curl.jpg" },
   { name: "Bayesian Cable Curl", muscle: "Biceps", subTarget: "Long Head (Peak)", targetKeys: ["biceps"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Hammer Curl (Dumbbell/Cable)", muscle: "Biceps", subTarget: "Brachialis & Forearms", targetKeys: ["biceps"], position: "Mid-Range", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Hammer Curl (Dumbbell/Cable)", muscle: "Biceps", subTarget: "Brachialis & Forearms", targetKeys: ["biceps"], position: "Mid-Range", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/hammer-curl-dumbbell-cable.jpg" },
   { name: "EZ Bar Skullcrusher", muscle: "Triceps", subTarget: "Long & Medial Head", targetKeys: ["triceps", "triceps_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Standing Low Pulley Overhead Tricep Extension", muscle: "Triceps", subTarget: "Long Head (Lengthened)", targetKeys: ["triceps", "triceps_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Cable Triceps Pushdown (Straight/V)", muscle: "Triceps", subTarget: "Lateral & Medial Head", targetKeys: ["triceps", "triceps_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
+  { name: "Standing Low Pulley Overhead Tricep Extension", muscle: "Triceps", subTarget: "Long Head (Lengthened)", targetKeys: ["triceps", "triceps_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/standing-low-pulley-overhead-tricep-extension.jpg" },
+  { name: "Cable Triceps Pushdown (Straight/V)", muscle: "Triceps", subTarget: "Lateral & Medial Head", targetKeys: ["triceps", "triceps_back"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/cable-triceps-pushdown-straight-v.jpg" },
+
+
+  // Added for the six-day push/pull/legs rotation. Pictures come from
+  // free-exercise-db (public domain), scaled to the 256px the card actually
+  // draws; an exercise with no honest likeness in that set carries none.
+  { name: "Floor-Reset Skullcrusher", muscle: "Triceps", subTarget: "Long Head (Stretch)", targetKeys: ["triceps", "triceps_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/floor-reset-skullcrusher.jpg" },
+  { name: "Cross-Body Triceps Extension", muscle: "Triceps", subTarget: "Long Head (Stretch)", targetKeys: ["triceps", "triceps_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/cross-body-triceps-extension.jpg" },
+  { name: "Diamond Push-Ups", muscle: "Triceps", subTarget: "Medial/Lateral Head", targetKeys: ["triceps", "triceps_back", "chest"], position: "Mid-Range", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: true, img: "/exercises/diamond-push-ups.jpg" },
+
+
+  // Added for the six-day push/pull/legs rotation. Pictures come from
+  // free-exercise-db (public domain), scaled to the 256px the card actually
+  // draws; an exercise with no honest likeness in that set carries none.
+  { name: "Standing Cable Preacher Curl", muscle: "Biceps", subTarget: "Short Head (Peak)", targetKeys: ["biceps"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/standing-cable-preacher-curl.jpg" },
+  { name: "Reverse Grip Cable Curl", muscle: "Biceps", subTarget: "Brachialis / Forearm", targetKeys: ["biceps"], position: "Mid-Range", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/reverse-grip-cable-curl.jpg" },
+  { name: "Concentration Curl", muscle: "Biceps", subTarget: "Short Head (Peak)", targetKeys: ["biceps"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/concentration-curl.jpg" },
 
   // LEGS & CALVES
-  { name: "Hack Squat", muscle: "Legs", subTarget: "Quads (Knee Extensors)", targetKeys: ["quadriceps", "gluteal"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Barbell Back Squat", muscle: "Legs", subTarget: "Quads & Glutes", targetKeys: ["quadriceps", "gluteal", "lower_back"], position: "Lengthened (Stretch)", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false },
-  { name: "Leg Press", muscle: "Legs", subTarget: "Quads & Adductors", targetKeys: ["quadriceps", "adductors", "adductors_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Leg Extensions", muscle: "Legs", subTarget: "Rectus Femoris", targetKeys: ["quadriceps"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Bulgarian Split Squat", muscle: "Legs", subTarget: "Glutes & Quads", targetKeys: ["gluteal", "quadriceps", "adductors", "adductors_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Romanian Deadlift (DB/Barbell)", muscle: "Legs", subTarget: "Hamstrings (Lengthened)", targetKeys: ["hamstring", "gluteal", "lower_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: true, isBW: false },
-  { name: "Seated Leg Curl", muscle: "Legs", subTarget: "Hamstrings (Knee Flexion)", targetKeys: ["hamstring"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Lying Leg Curl", muscle: "Legs", subTarget: "Hamstrings (Shortened)", targetKeys: ["hamstring"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false },
+  { name: "Hack Squat", muscle: "Legs", subTarget: "Quads (Knee Extensors)", targetKeys: ["quadriceps", "gluteal"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/hack-squat.jpg" },
+  { name: "Barbell Back Squat", muscle: "Legs", subTarget: "Quads & Glutes", targetKeys: ["quadriceps", "gluteal", "lower_back"], position: "Lengthened (Stretch)", risk: "High (Axial) 🔴", tier: "A-Tier", isAxial: true, isBW: false, img: "/exercises/barbell-back-squat.jpg" },
+  { name: "Leg Press", muscle: "Legs", subTarget: "Quads & Adductors", targetKeys: ["quadriceps", "adductors", "adductors_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/leg-press.jpg" },
+  { name: "Leg Extensions", muscle: "Legs", subTarget: "Rectus Femoris", targetKeys: ["quadriceps"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/leg-extensions.jpg" },
+  { name: "Bulgarian Split Squat", muscle: "Legs", subTarget: "Glutes & Quads", targetKeys: ["gluteal", "quadriceps", "adductors", "adductors_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/bulgarian-split-squat.jpg" },
+  { name: "Romanian Deadlift (DB/Barbell)", muscle: "Legs", subTarget: "Hamstrings (Lengthened)", targetKeys: ["hamstring", "gluteal", "lower_back"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "S-Tier", isAxial: true, isBW: false, img: "/exercises/romanian-deadlift-db-barbell.jpg" },
+  { name: "Seated Leg Curl", muscle: "Legs", subTarget: "Hamstrings (Knee Flexion)", targetKeys: ["hamstring"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/seated-leg-curl.jpg" },
+  { name: "Lying Leg Curl", muscle: "Legs", subTarget: "Hamstrings (Shortened)", targetKeys: ["hamstring"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/lying-leg-curl.jpg" },
   { name: "Barbell / Machine Hip Thrust", muscle: "Legs", subTarget: "Glutes (Maximus)", targetKeys: ["gluteal"], position: "Shortened (Peak)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Standing Machine Calf Raise", muscle: "Legs", subTarget: "Calves (Gastrocnemius)", targetKeys: ["calves", "calves_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false },
-  { name: "Seated Calf Raise Machine", muscle: "Legs", subTarget: "Calves (Soleus)", targetKeys: ["calves", "calves_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false }
+  { name: "Standing Machine Calf Raise", muscle: "Legs", subTarget: "Calves (Gastrocnemius)", targetKeys: ["calves", "calves_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/standing-machine-calf-raise.jpg" },
+  { name: "Seated Calf Raise Machine", muscle: "Legs", subTarget: "Calves (Soleus)", targetKeys: ["calves", "calves_back"], position: "Lengthened (Stretch)", risk: "Low 🟢", tier: "S-Tier", isAxial: false, isBW: false, img: "/exercises/seated-calf-raise-machine.jpg" },
+
+  // Added for the six-day push/pull/legs rotation. Pictures come from
+  // free-exercise-db (public domain), scaled to the 256px the card actually
+  // draws; an exercise with no honest likeness in that set carries none.
+  { name: "Trap Bar Deadlift", muscle: "Legs", subTarget: "Posterior Chain", targetKeys: ["hamstring", "gluteal", "lower_back", "quadriceps"], position: "Mid-Range", risk: "High (Axial) 🔴", tier: "S-Tier", isAxial: true, isBW: false, img: "/exercises/trap-bar-deadlift.jpg" },
+  { name: "Walking Lunges", muscle: "Legs", subTarget: "Quads / Glutes", targetKeys: ["quadriceps", "gluteal"], position: "Lengthened (Stretch)", risk: "Moderate 🟡", tier: "A-Tier", isAxial: true, isBW: false, img: "/exercises/walking-lunges.jpg" },
+  { name: "Step-Ups", muscle: "Legs", subTarget: "Quads / Glutes", targetKeys: ["quadriceps", "gluteal"], position: "Mid-Range", risk: "Low 🟢", tier: "A-Tier", isAxial: false, isBW: false, img: "/exercises/step-ups.jpg" },
 ];
 
 const ROUTINE_PRESETS = {
+  "Push 1 (Heavy Press & Long-Head Triceps)": [
+    { name: "Flat Barbell Bench Press" },
+    { name: "Larsen Press" },
+    { name: "Standing Dumbbell Arnold Press" },
+    { name: "Cable Press-Around" },
+    { name: "Cross-Body Cable Y-Raise" },
+    { name: "Cable Triceps Pushdown (Straight/V)" },
+    { name: "Standing Low Pulley Overhead Tricep Extension" },
+    { name: "Cross-Body Triceps Extension" }
+  ],
+  "Pull 1 (Lat Width & Biceps)": [
+    { name: "Lat Pulldown (Wide/Neutral)" },
+    { name: "Chest-Supported T-Bar Row" },
+    { name: "Kneeling Single-Arm Lat Pulldown" },
+    { name: "Face Pulls" },
+    { name: "Incline Dumbbell Curl" },
+    { name: "Hammer Curl (Dumbbell/Cable)" }
+  ],
+  "Legs 1 (Squat Pattern & Hamstrings)": [
+    { name: "Barbell Back Squat" },
+    { name: "Romanian Deadlift (DB/Barbell)" },
+    { name: "Bulgarian Split Squat" },
+    { name: "Seated Leg Curl" },
+    { name: "Standing Machine Calf Raise" }
+  ],
+  "Push 2 (Incline Volume & Delts)": [
+    { name: "Incline Barbell Bench" },
+    { name: "Machine Shoulder Press" },
+    { name: "Floor-Reset Skullcrusher" },
+    { name: "Bent-Over Cable Flye" },
+    { name: "Machine Lateral Raise" },
+    { name: "Plate Front Raise" },
+    { name: "Diamond Push-Ups" }
+  ],
+  "Pull 2 (Row Thickness & Arms)": [
+    { name: "Chest-Supported Cable Row" },
+    { name: "Bodyweight Pull-ups" },
+    { name: "Chest-Supported Rear Delt Raise" },
+    { name: "Standing Cable Preacher Curl" },
+    { name: "Reverse Grip Cable Curl" },
+    { name: "Dumbbell Shrugs" }
+  ],
+  "Legs 2 (Hinge Pattern & Quads)": [
+    { name: "Barbell Deadlift" },
+    { name: "Leg Press" },
+    { name: "Walking Lunges" },
+    { name: "Leg Extensions" },
+    { name: "Seated Calf Raise Machine" }
+  ],
+
   "Legs A (Quad / Squat Dominant)": [
     { name: "Hack Squat" },
     { name: "Romanian Deadlift (DB/Barbell)" },
