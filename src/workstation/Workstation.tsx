@@ -1,7 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
-  Activity, BrainCircuit, CalendarDays, Clock, PiggyBank, Dumbbell, FolderKanban, Gauge, LayoutGrid, LayoutPanelLeft, Plus, RefreshCw,
-  ScanFace, Search, Settings as SettingsIcon, TrendingUp, Utensils, Wallet,
+  Activity,
+  BrainCircuit,
+  CalendarDays,
+  Clock,
+  PiggyBank,
+  Timer,
+  Dumbbell,
+  FolderKanban,
+  Gauge,
+  LayoutGrid,
+  LayoutPanelLeft,
+  Plus,
+  RefreshCw,
+  ScanFace,
+  Search,
+  Settings as SettingsIcon,
+  TrendingUp,
+  Utensils,
+  Wallet,
 } from "lucide-react";
 import { BodyView } from "@/components/views/BodyView";
 import { DashboardView } from "@/components/views/DashboardView";
@@ -22,12 +39,27 @@ import { Overview } from "./Overview";
 import { ProjectsPage } from "./ProjectsPage";
 import { TasksPage } from "./TasksPage";
 import { MoneyPage } from "./MoneyPage";
+import { TimePage } from "./TimePage";
+import { TopTimer } from "./Timer";
 import { projectStats } from "./metrics";
 
 type Icon = ComponentType<{ className?: string }>;
 export type PageId =
-  | "overview" | "projects" | "tasks" | "time" | "money" | "moneyClassic"
-  | "home" | "train" | "fuel" | "looks" | "mind" | "body" | "stats" | "settings";
+  | "overview"
+  | "projects"
+  | "tasks"
+  | "tracking"
+  | "time"
+  | "money"
+  | "moneyClassic"
+  | "home"
+  | "train"
+  | "fuel"
+  | "looks"
+  | "mind"
+  | "body"
+  | "stats"
+  | "settings";
 
 interface PageDef {
   id: PageId;
@@ -40,6 +72,7 @@ const PAGES: PageDef[] = [
   { id: "overview", label: "Overview", icon: Gauge, group: "Workspace" },
   { id: "projects", label: "Projects", icon: FolderKanban, group: "Workspace" },
   { id: "tasks", label: "Tasks & calendar", icon: Clock, group: "Workspace" },
+  { id: "tracking", label: "Time tracking", icon: Timer, group: "Workspace" },
   { id: "money", label: "Money", icon: Wallet, group: "Workspace" },
   { id: "time", label: "Day planner", icon: CalendarDays, group: "Personal" },
   { id: "moneyClassic", label: "Money goals & insights", icon: PiggyBank, group: "Personal" },
@@ -161,21 +194,38 @@ export function Workstation() {
             <div key={g}>
               <h6>{g}</h6>
               {PAGES.filter((p) => p.group === g).map((p) => (
-                <button key={p.id} type="button" aria-current={page === p.id ? "page" : undefined} onClick={() => go(p.id)}>
+                <button
+                  key={p.id}
+                  type="button"
+                  aria-current={page === p.id ? "page" : undefined}
+                  onClick={() => go(p.id)}
+                >
                   <p.icon />
                   {p.label}
-                  {p.id === "projects" && stats.active > 0 && <span className="ws-count">{stats.active}</span>}
-                  {p.id === "overview" && stats.overdue > 0 && <span className="ws-count ws-red">{stats.overdue}</span>}
+                  {p.id === "projects" && stats.active > 0 && (
+                    <span className="ws-count">{stats.active}</span>
+                  )}
+                  {p.id === "overview" && stats.overdue > 0 && (
+                    <span className="ws-count ws-red">{stats.overdue}</span>
+                  )}
                 </button>
               ))}
             </div>
           ))}
         </nav>
         <div className="ws-side-foot">
-          <button type="button" aria-current={page === "settings" ? "page" : undefined} onClick={() => go("settings")}>
+          <button
+            type="button"
+            aria-current={page === "settings" ? "page" : undefined}
+            onClick={() => go("settings")}
+          >
             <SettingsIcon /> Settings
           </button>
-          <button type="button" onClick={() => patchSettings({ workstation: false })} title="Switch this device back to the phone-style layout">
+          <button
+            type="button"
+            onClick={() => patchSettings({ workstation: false })}
+            title="Switch this device back to the phone-style layout"
+          >
             <LayoutPanelLeft /> Classic layout
           </button>
         </div>
@@ -192,6 +242,7 @@ export function Workstation() {
               <kbd>Ctrl</kbd> <kbd>K</kbd>
             </span>
           </button>
+          <TopTimer />
           <button type="button" className="ws-btn primary" onClick={() => newProject()}>
             <Plus /> New project
           </button>
@@ -218,6 +269,7 @@ export function Workstation() {
           {page === "projects" && <ProjectsPage openId={openProject} onOpen={setOpenProject} />}
           {page === "tasks" && <TasksPage />}
           {page === "money" && <MoneyPage />}
+          {page === "tracking" && <TimePage />}
           {Classic && (
             <div className="ws-classic soma-main">
               <Classic />
@@ -256,7 +308,10 @@ interface Cmd {
 }
 
 function Palette({
-  onClose, onGo, onProject, onNew,
+  onClose,
+  onGo,
+  onProject,
+  onNew,
 }: {
   onClose: () => void;
   onGo: (p: PageId) => void;
@@ -272,14 +327,41 @@ function Palette({
     const needle = q.trim().toLowerCase();
     const match = (s: string) => !needle || s.toLowerCase().includes(needle);
     const out: Cmd[] = [];
-    for (const p of PAGES) if (match(p.label)) out.push({ id: `page-${p.id}`, label: p.label, hint: "Go to", icon: p.icon, run: () => onGo(p.id) });
-    if (match("Settings")) out.push({ id: "page-settings", label: "Settings", hint: "Go to", icon: SettingsIcon, run: () => onGo("settings") });
+    for (const p of PAGES)
+      if (match(p.label))
+        out.push({
+          id: `page-${p.id}`,
+          label: p.label,
+          hint: "Go to",
+          icon: p.icon,
+          run: () => onGo(p.id),
+        });
+    if (match("Settings"))
+      out.push({
+        id: "page-settings",
+        label: "Settings",
+        hint: "Go to",
+        icon: SettingsIcon,
+        run: () => onGo("settings"),
+      });
     for (const p of projects) {
       if (match(p.name) || match(p.client ?? "")) {
-        out.push({ id: `pj-${p.id}`, label: p.name, hint: p.client ? `Project · ${p.client}` : "Project", icon: FolderKanban, run: () => onProject(p.id) });
+        out.push({
+          id: `pj-${p.id}`,
+          label: p.name,
+          hint: p.client ? `Project · ${p.client}` : "Project",
+          icon: FolderKanban,
+          run: () => onProject(p.id),
+        });
       }
     }
-    out.push({ id: "new", label: needle ? `New project “${q.trim()}”` : "New project", hint: "Create", icon: Plus, run: () => onNew(q.trim() || "Untitled project") });
+    out.push({
+      id: "new",
+      label: needle ? `New project “${q.trim()}”` : "New project",
+      hint: "Create",
+      icon: Plus,
+      run: () => onNew(q.trim() || "Untitled project"),
+    });
     return out.slice(0, 40);
   }, [q, projects, onGo, onProject, onNew]);
 
@@ -309,7 +391,13 @@ function Palette({
         />
         <ul ref={list} role="listbox">
           {items.map((it, i) => (
-            <li key={it.id} role="option" aria-selected={i === sel} onMouseEnter={() => setSel(i)} onMouseDown={() => it.run()}>
+            <li
+              key={it.id}
+              role="option"
+              aria-selected={i === sel}
+              onMouseEnter={() => setSel(i)}
+              onMouseDown={() => it.run()}
+            >
               <it.icon />
               {it.label}
               <small>{it.hint}</small>

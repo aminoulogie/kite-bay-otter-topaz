@@ -45,7 +45,7 @@ function idArray(v: unknown): v is { id: string }[] {
 
 /** Fields synced as an array of id'd items, remembered once seen so an emptied list still splits. */
 export const ID_ARRAY_FIELDS = new Set([
-  "habits", "hunger", "scans", "ledger", "mind", "pantry", "grocery", "todos", "projects", "goals", "trades", "dayRoutines", "langs",
+  "habits", "hunger", "scans", "ledger", "mind", "pantry", "grocery", "todos", "projects", "timeEntries", "goals", "trades", "dayRoutines", "langs",
 ]);
 
 /** Every synced record in `state`, as key → JSON text. */

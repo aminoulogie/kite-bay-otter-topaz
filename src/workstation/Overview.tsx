@@ -3,7 +3,8 @@ import { AlertTriangle, CalendarClock, CheckCircle2, Users } from "lucide-react"
 import { daysLeft, doneCount, progress, stepsOf } from "@/lib/projects";
 import { DEFAULT_GOALS, addDays, getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
-import { isActive } from "@/lib/todos";
+import { isActive, mondayOf } from "@/lib/todos";
+import { durationMs, hours as fmtHours } from "@/lib/time-tracking";
 import { attention, clientsOf, projectStats, recentActivity } from "./metrics";
 import { byClient as moneyByClient } from "./money";
 import { formatMoney, ratesOf } from "@/lib/money-model";
@@ -31,19 +32,34 @@ function dueLabel(d: number | null): string {
  * Everything at a glance: the audit view across projects, tasks, training
  * and food, with what needs looking at first.
  */
-export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) => void; onGo: (p: PageId) => void }) {
+export function Overview({
+  onOpenProject,
+  onGo,
+}: {
+  onOpenProject: (id: string) => void;
+  onGo: (p: PageId) => void;
+}) {
   const projects = useSoma((s) => s.projects);
   const todos = useSoma((s) => s.todos);
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
   const ledger = useSoma((s) => s.ledger);
+  const timeEntries = useSoma((s) => s.timeEntries);
   const settings = useSoma((s) => s.settings);
   const today = getLocalDateKey();
-  const revenue = useMemo(() => new Map(moneyByClient(ledger, projects, ratesOf(settings)).map((r) => [r.client, r.income])), [ledger, projects, settings]);
+  const revenue = useMemo(
+    () =>
+      new Map(moneyByClient(ledger, projects, ratesOf(settings)).map((r) => [r.client, r.income])),
+    [ledger, projects, settings],
+  );
 
   const stats = useMemo(() => projectStats(projects, today), [projects, today]);
   const needs = useMemo(() => attention(projects, todos, today), [projects, todos, today]);
   const activity = useMemo(() => recentActivity(projects, 10), [projects]);
+  const monday = mondayOf(today);
+  const weekHours = timeEntries
+    .filter((e) => getLocalDateKey(new Date(e.start)) >= monday)
+    .reduce((a, e) => a + durationMs(e), 0);
   const openTodos = todos.filter((t) => !t.done && isActive(t, today)).length;
 
   const weekAgo = getLocalDateKey(addDays(new Date(), -6));
@@ -85,17 +101,37 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
     <div className="ws-page">
       <h1>Overview</h1>
       <p className="ws-sub">
-        {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })} · everything across
-        your projects, tasks and health.
+        {new Date().toLocaleDateString(undefined, {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        })}{" "}
+        · everything across your projects, tasks and health.
       </p>
 
       <div className="ws-kpis">
         <Kpi label="Active projects" value={stats.active} hint={`${stats.openSteps} steps open`} />
-        <Kpi label="Overdue" value={stats.overdue} hint="projects past due" tone={stats.overdue ? "bad" : undefined} />
-        <Kpi label="Due this week" value={stats.dueSoon} hint="next 7 days" tone={stats.dueSoon ? "warn" : undefined} />
-        <Kpi label="Drifting" value={stats.stale} hint="no progress in 10+ days" tone={stats.stale ? "warn" : undefined} />
+        <Kpi
+          label="Overdue"
+          value={stats.overdue}
+          hint="projects past due"
+          tone={stats.overdue ? "bad" : undefined}
+        />
+        <Kpi
+          label="Due this week"
+          value={stats.dueSoon}
+          hint="next 7 days"
+          tone={stats.dueSoon ? "warn" : undefined}
+        />
+        <Kpi
+          label="Drifting"
+          value={stats.stale}
+          hint="no progress in 10+ days"
+          tone={stats.stale ? "warn" : undefined}
+        />
         <Kpi label="Steps done" value={stats.stepsWeek} hint="last 7 days" />
         <Kpi label="To-dos today" value={openTodos} hint="still open" />
+        <Kpi label="Hours tracked" value={fmtHours(weekHours)} hint="this week" />
         <Kpi label="Training" value={sessions} hint="sessions, last 7 days" />
         <Kpi label="Calories" value={fmt(eaten)} hint={`of ${fmt(goal)} today`} />
       </div>
@@ -103,7 +139,8 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
       <div className="ws-grid" style={{ gridTemplateColumns: "minmax(0, 1.25fr) minmax(0, 1fr)" }}>
         <section className="ws-card">
           <header>
-            <AlertTriangle size={14} className="ws-amber" /> Needs attention <small>{needs.length}</small>
+            <AlertTriangle size={14} className="ws-amber" /> Needs attention{" "}
+            <small>{needs.length}</small>
           </header>
           {needs.length ? (
             <ul className="ws-list">
@@ -113,8 +150,16 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
                   className={n.projectId ? "click" : undefined}
                   onClick={() => (n.projectId ? onOpenProject(n.projectId) : onGo("tasks"))}
                 >
-                  <span className={`ws-pill ${n.kind === "overdue" || n.kind === "todo-overdue" ? "overdue" : n.kind === "stale" ? "stale" : "active"}`}>
-                    {n.kind === "overdue" ? "Overdue" : n.kind === "todo-overdue" ? "To-do" : n.kind === "stale" ? "Drifting" : "Due soon"}
+                  <span
+                    className={`ws-pill ${n.kind === "overdue" || n.kind === "todo-overdue" ? "overdue" : n.kind === "stale" ? "stale" : "active"}`}
+                  >
+                    {n.kind === "overdue"
+                      ? "Overdue"
+                      : n.kind === "todo-overdue"
+                        ? "To-do"
+                        : n.kind === "stale"
+                          ? "Drifting"
+                          : "Due soon"}
                   </span>
                   <span className="t">{n.title}</span>
                   <span className="d">{n.detail}</span>
@@ -128,7 +173,8 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
 
         <section className="ws-card">
           <header>
-            <CalendarClock size={14} className="ws-muted" /> Upcoming deadlines <small>next 30 days</small>
+            <CalendarClock size={14} className="ws-muted" /> Upcoming deadlines{" "}
+            <small>next 30 days</small>
           </header>
           {upcoming.length ? (
             <ul className="ws-list">
@@ -144,7 +190,9 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
               ))}
             </ul>
           ) : (
-            <p className="ws-empty">No deadlines in the next 30 days. Give a project a due date to see it here.</p>
+            <p className="ws-empty">
+              No deadlines in the next 30 days. Give a project a due date to see it here.
+            </p>
           )}
         </section>
 
@@ -185,7 +233,9 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
               </tbody>
             </table>
           ) : (
-            <p className="ws-empty">Set a client on your projects to see the work grouped by business.</p>
+            <p className="ws-empty">
+              Set a client on your projects to see the work grouped by business.
+            </p>
           )}
         </section>
 
@@ -196,7 +246,11 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
           {activity.length ? (
             <ul className="ws-list">
               {activity.map((a) => (
-                <li key={`${a.projectId}-${a.at}`} className="click" onClick={() => onOpenProject(a.projectId)}>
+                <li
+                  key={`${a.projectId}-${a.at}`}
+                  className="click"
+                  onClick={() => onOpenProject(a.projectId)}
+                >
                   <CheckCircle2 size={13} className="ws-faint" />
                   <span className="t">
                     {a.step} <span className="ws-faint">· {a.project}</span>
@@ -214,14 +268,25 @@ export function Overview({ onOpenProject, onGo }: { onOpenProject: (id: string) 
       {projects.length > 0 && (
         <p className="ws-faint" style={{ marginTop: 14 }}>
           {projects.filter((p) => p.status === "done").length} finished · overall{" "}
-          {Math.round((projects.reduce((a, p) => a + progress(p), 0) / projects.length) * 100)}% through all projects.
+          {Math.round((projects.reduce((a, p) => a + progress(p), 0) / projects.length) * 100)}%
+          through all projects.
         </p>
       )}
     </div>
   );
 }
 
-function Kpi({ label, value, hint, tone }: { label: string; value: number | string; hint: string; tone?: "warn" | "bad" }) {
+function Kpi({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: number | string;
+  hint: string;
+  tone?: "warn" | "bad";
+}) {
   return (
     <div className={`ws-kpi ${tone ?? ""}`}>
       <span>{label}</span>

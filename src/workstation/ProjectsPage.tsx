@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Columns3, Plus, Rows3, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Columns3, Play, Plus, Rows3, Square, Trash2, X } from "lucide-react";
+import { formatMoney } from "@/lib/money-model";
+import { clock, durationMs, hours, running } from "@/lib/time-tracking";
+import { mondayOf } from "@/lib/todos";
+import { useTick } from "./tick";
 import { toast } from "sonner";
 import {
-  PROJECT_COLORS, daysLeft, doneCount, isStale, nextStep, progress, stepsOf,
-  type Project, type ProjectPriority, type ProjectStatus,
+  PROJECT_COLORS,
+  daysLeft,
+  doneCount,
+  isStale,
+  nextStep,
+  progress,
+  stepsOf,
+  type Project,
+  type ProjectPriority,
+  type ProjectStatus,
 } from "@/lib/projects";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -12,13 +24,20 @@ import { clientsOf } from "./metrics";
 type View = "table" | "board";
 type SortKey = "name" | "client" | "status" | "priority" | "progress" | "due" | "activity";
 const STATUS: ProjectStatus[] = ["active", "paused", "done"];
-const STATUS_LABEL: Record<ProjectStatus, string> = { active: "Active", paused: "Paused", done: "Done" };
+const STATUS_LABEL: Record<ProjectStatus, string> = {
+  active: "Active",
+  paused: "Paused",
+  done: "Done",
+};
 const PRIO_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 function dueText(p: Project, today: string): { text: string; cls: string } {
   const d = daysLeft(p, today);
   if (d === null) return { text: "—", cls: "ws-faint" };
-  const date = new Date(`${p.due}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const date = new Date(`${p.due}T00:00:00`).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+  });
   if (p.status === "done") return { text: date, cls: "ws-faint" };
   if (d < 0) return { text: `${date} · ${-d}d late`, cls: "ws-red" };
   if (d <= 3) return { text: `${date} · ${d === 0 ? "today" : `${d}d`}`, cls: "ws-amber" };
@@ -36,7 +55,13 @@ function lastMoved(p: Project): string {
  * Projects at a desk: a sortable table or a board, filtered by status and
  * client, with the selected project open in a panel on the right.
  */
-export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen: (id: string | null) => void }) {
+export function ProjectsPage({
+  openId,
+  onOpen,
+}: {
+  openId: string | null;
+  onOpen: (id: string | null) => void;
+}) {
   const projects = useSoma((s) => s.projects);
   const addProject = useSoma((s) => s.addProject);
   const patchProject = useSoma((s) => s.patchProject);
@@ -70,7 +95,9 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
       (p) =>
         (status === "all" || view === "board" || p.status === status) &&
         (!client || p.client?.trim() === client) &&
-        (!needle || p.name.toLowerCase().includes(needle) || (p.client ?? "").toLowerCase().includes(needle)),
+        (!needle ||
+          p.name.toLowerCase().includes(needle) ||
+          (p.client ?? "").toLowerCase().includes(needle)),
     );
   }, [projects, status, client, q, view]);
 
@@ -104,7 +131,14 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement;
-      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      if (
+        el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT" ||
+          el.isContentEditable)
+      )
+        return;
       if (e.key === "Escape") onOpen(null);
       if (view !== "table" || !sorted.length) return;
       const i = sorted.findIndex((p) => p.id === openId);
@@ -130,7 +164,10 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
   };
 
   const th = (key: SortKey, label: string) => (
-    <th className="sort" onClick={() => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : 1 }))}>
+    <th
+      className="sort"
+      onClick={() => setSort((s) => ({ key, dir: s.key === key ? (s.dir === 1 ? -1 : 1) : 1 }))}
+    >
       {label} {sort.key === key ? (sort.dir === 1 ? "↑" : "↓") : ""}
     </th>
   );
@@ -141,22 +178,47 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
     <div className={`ws-split ${open ? "open" : ""}`}>
       <div className="ws-scroll">
         <div className="ws-page" style={{ maxWidth: "none" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginBottom: 14,
+              flexWrap: "wrap",
+            }}
+          >
             <h1 style={{ marginRight: 8 }}>Projects</h1>
             <div className="ws-seg">
-              <button type="button" aria-pressed={view === "table"} onClick={() => setView("table")}>
+              <button
+                type="button"
+                aria-pressed={view === "table"}
+                onClick={() => setView("table")}
+              >
                 <Rows3 /> Table
               </button>
-              <button type="button" aria-pressed={view === "board"} onClick={() => setView("board")}>
+              <button
+                type="button"
+                aria-pressed={view === "board"}
+                onClick={() => setView("board")}
+              >
                 <Columns3 /> Board
               </button>
             </div>
             {view === "table" && (
               <div className="ws-seg">
                 {(["all", ...STATUS] as const).map((s) => (
-                  <button key={s} type="button" aria-pressed={status === s} onClick={() => setStatus(s)}>
+                  <button
+                    key={s}
+                    type="button"
+                    aria-pressed={status === s}
+                    onClick={() => setStatus(s)}
+                  >
                     {s === "all" ? "All" : STATUS_LABEL[s]}
-                    <span className="ws-faint">{s === "all" ? projects.length : projects.filter((p) => p.status === s).length}</span>
+                    <span className="ws-faint">
+                      {s === "all"
+                        ? projects.length
+                        : projects.filter((p) => p.status === s).length}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -169,7 +231,13 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
                 </option>
               ))}
             </select>
-            <input className="ws-input" placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 180 }} />
+            <input
+              className="ws-input"
+              placeholder="Filter…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              style={{ width: 180 }}
+            />
             <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               <input
                 className="ws-input"
@@ -179,7 +247,12 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
                 onKeyDown={(e) => e.key === "Enter" && create()}
                 style={{ width: 220 }}
               />
-              <button type="button" className="ws-btn primary" onClick={create} disabled={!draft.trim()}>
+              <button
+                type="button"
+                className="ws-btn primary"
+                onClick={create}
+                disabled={!draft.trim()}
+              >
                 <Plus /> Add
               </button>
             </div>
@@ -207,18 +280,32 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
                       const steps = stepsOf(p).length;
                       const late = p.status === "active" && (daysLeft(p, today) ?? 0) < 0;
                       return (
-                        <tr key={p.id} aria-selected={p.id === openId} onClick={() => onOpen(p.id === openId ? null : p.id)}>
+                        <tr
+                          key={p.id}
+                          aria-selected={p.id === openId}
+                          onClick={() => onOpen(p.id === openId ? null : p.id)}
+                        >
                           <td style={{ fontWeight: 600 }}>
                             <span className="ws-swatch" style={{ background: p.color }} />
                             {p.name}
                           </td>
                           <td className={p.client ? "" : "ws-faint"}>{p.client || "—"}</td>
                           <td>
-                            <span className={`ws-pill ${late ? "overdue" : isStale(p) ? "stale" : p.status}`}>
+                            <span
+                              className={`ws-pill ${late ? "overdue" : isStale(p) ? "stale" : p.status}`}
+                            >
                               {late ? "Overdue" : isStale(p) ? "Drifting" : STATUS_LABEL[p.status]}
                             </span>
                           </td>
-                          <td>{p.priority ? <span className={`ws-pill ${p.priority}`}>{p.priority[0]!.toUpperCase() + p.priority.slice(1)}</span> : <span className="ws-faint">—</span>}</td>
+                          <td>
+                            {p.priority ? (
+                              <span className={`ws-pill ${p.priority}`}>
+                                {p.priority[0]!.toUpperCase() + p.priority.slice(1)}
+                              </span>
+                            ) : (
+                              <span className="ws-faint">—</span>
+                            )}
+                          </td>
                           <td>
                             <span className="ws-bar">
                               <i style={{ width: `${Math.round(progress(p) * 100)}%` }} />
@@ -227,7 +314,9 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
                               {doneCount(p)}/{steps}
                             </span>
                           </td>
-                          <td className="ws-muted">{nextStep(p)?.label ?? (steps ? "All done" : "No steps yet")}</td>
+                          <td className="ws-muted">
+                            {nextStep(p)?.label ?? (steps ? "All done" : "No steps yet")}
+                          </td>
                           <td className={due.cls}>{due.text}</td>
                           <td className="ws-faint">{lastMoved(p)}</td>
                         </tr>
@@ -237,7 +326,9 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
                 </table>
               ) : (
                 <p className="ws-empty">
-                  {projects.length ? "Nothing matches these filters." : "No projects yet — type a name in the box above and press Enter."}
+                  {projects.length
+                    ? "Nothing matches these filters."
+                    : "No projects yet — type a name in the box above and press Enter."}
                 </p>
               )}
             </div>
@@ -246,12 +337,24 @@ export function ProjectsPage({ openId, onOpen }: { openId: string | null; onOpen
           )}
         </div>
       </div>
-      {open && <Detail key={open.id} project={open} clients={clients} onClose={() => onOpen(null)} />}
+      {open && (
+        <Detail key={open.id} project={open} clients={clients} onClose={() => onOpen(null)} />
+      )}
     </div>
   );
 }
 
-function Board({ projects, openId, onOpen, today }: { projects: Project[]; openId: string | null; onOpen: (id: string | null) => void; today: string }) {
+function Board({
+  projects,
+  openId,
+  onOpen,
+  today,
+}: {
+  projects: Project[];
+  openId: string | null;
+  onOpen: (id: string | null) => void;
+  today: string;
+}) {
   const patchProject = useSoma((s) => s.patchProject);
   const [over, setOver] = useState<ProjectStatus | null>(null);
   return (
@@ -300,12 +403,20 @@ function Board({ projects, openId, onOpen, today }: { projects: Project[]; openI
                         <i style={{ width: `${Math.round(progress(p) * 100)}%` }} />
                       </span>
                       {doneCount(p)}/{stepsOf(p).length}
-                      {p.due && <span className={due.cls} style={{ marginLeft: "auto" }}>{due.text}</span>}
+                      {p.due && (
+                        <span className={due.cls} style={{ marginLeft: "auto" }}>
+                          {due.text}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
               })}
-              {!col.length && <p className="ws-faint" style={{ padding: "6px 2px" }}>Drop a project here</p>}
+              {!col.length && (
+                <p className="ws-faint" style={{ padding: "6px 2px" }}>
+                  Drop a project here
+                </p>
+              )}
             </div>
           </div>
         );
@@ -314,7 +425,15 @@ function Board({ projects, openId, onOpen, today }: { projects: Project[]; openI
   );
 }
 
-function Detail({ project: p, clients, onClose }: { project: Project; clients: string[]; onClose: () => void }) {
+function Detail({
+  project: p,
+  clients,
+  onClose,
+}: {
+  project: Project;
+  clients: string[];
+  onClose: () => void;
+}) {
   const patchProject = useSoma((s) => s.patchProject);
   const removeProject = useSoma((s) => s.removeProject);
   const restoreProject = useSoma((s) => s.restoreProject);
@@ -333,7 +452,9 @@ function Detail({ project: p, clients, onClose }: { project: Project; clients: s
     const idx = all.findIndex((x) => x.id === p.id);
     removeProject(p.id);
     onClose();
-    toast.success(`Deleted “${p.name}”`, { action: { label: "Undo", onClick: () => restoreProject(idx, p) } });
+    toast.success(`Deleted “${p.name}”`, {
+      action: { label: "Undo", onClick: () => restoreProject(idx, p) },
+    });
   };
 
   return (
@@ -352,7 +473,9 @@ function Detail({ project: p, clients, onClose }: { project: Project; clients: s
           className="ws-title-input"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onBlur={() => name.trim() && name.trim() !== p.name && patchProject(p.id, { name: name.trim() })}
+          onBlur={() =>
+            name.trim() && name.trim() !== p.name && patchProject(p.id, { name: name.trim() })
+          }
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         />
         <label className="ws-field">
@@ -377,7 +500,12 @@ function Detail({ project: p, clients, onClose }: { project: Project; clients: s
           <span>Status</span>
           <div className="ws-seg">
             {STATUS.map((s) => (
-              <button key={s} type="button" aria-pressed={p.status === s} onClick={() => patchProject(p.id, { status: s })}>
+              <button
+                key={s}
+                type="button"
+                aria-pressed={p.status === s}
+                onClick={() => patchProject(p.id, { status: s })}
+              >
                 {STATUS_LABEL[s]}
               </button>
             ))}
@@ -416,7 +544,13 @@ function Detail({ project: p, clients, onClose }: { project: Project; clients: s
                 type="button"
                 aria-label={c}
                 onClick={() => patchProject(p.id, { color: c })}
-                style={{ width: 18, height: 18, borderRadius: 5, background: c, border: c === p.color ? "2px solid var(--ws-text)" : "0" }}
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 5,
+                  background: c,
+                  border: c === p.color ? "2px solid var(--ws-text)" : "0",
+                }}
               />
             ))}
           </div>
@@ -427,21 +561,46 @@ function Detail({ project: p, clients, onClose }: { project: Project; clients: s
         <div style={{ fontWeight: 600, marginBottom: 6 }}>Steps</div>
         {steps.map((s, i) => (
           <div key={s.id} className={`ws-step ${s.done ? "done" : ""}`}>
-            <input type="checkbox" checked={s.done} onChange={(e) => setProjectStep(p.id, s.id, e.target.checked)} />
+            <input
+              type="checkbox"
+              checked={s.done}
+              onChange={(e) => setProjectStep(p.id, s.id, e.target.checked)}
+            />
             <input
               className="lbl"
               defaultValue={s.label}
-              onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== s.label && renameProjectStep(p.id, s.id, e.target.value.trim())}
+              onBlur={(e) =>
+                e.target.value.trim() &&
+                e.target.value.trim() !== s.label &&
+                renameProjectStep(p.id, s.id, e.target.value.trim())
+              }
               onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             />
             <span className="tools">
-              <button type="button" className="ws-icon" disabled={i === 0} onClick={() => moveProjectStep(p.id, s.id, -1)} title="Move up">
+              <button
+                type="button"
+                className="ws-icon"
+                disabled={i === 0}
+                onClick={() => moveProjectStep(p.id, s.id, -1)}
+                title="Move up"
+              >
                 <ArrowUp />
               </button>
-              <button type="button" className="ws-icon" disabled={i === steps.length - 1} onClick={() => moveProjectStep(p.id, s.id, 1)} title="Move down">
+              <button
+                type="button"
+                className="ws-icon"
+                disabled={i === steps.length - 1}
+                onClick={() => moveProjectStep(p.id, s.id, 1)}
+                title="Move down"
+              >
                 <ArrowDown />
               </button>
-              <button type="button" className="ws-icon" onClick={() => removeProjectStep(p.id, s.id)} title="Delete step">
+              <button
+                type="button"
+                className="ws-icon"
+                onClick={() => removeProjectStep(p.id, s.id)}
+                title="Delete step"
+              >
                 <Trash2 />
               </button>
             </span>
@@ -462,6 +621,8 @@ function Detail({ project: p, clients, onClose }: { project: Project; clients: s
         />
       </section>
 
+      <ProjectTime project={p} />
+
       <section>
         <div style={{ fontWeight: 600, marginBottom: 6 }}>Notes</div>
         <textarea
@@ -473,12 +634,95 @@ function Detail({ project: p, clients, onClose }: { project: Project; clients: s
         />
       </section>
 
-      <section style={{ borderBottom: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <section
+        style={{
+          borderBottom: 0,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
         <span className="ws-faint">Created {new Date(p.createdAt).toLocaleDateString()}</span>
         <button type="button" className="ws-btn ghost danger" onClick={remove}>
           <Trash2 /> Delete project
         </button>
       </section>
     </aside>
+  );
+}
+
+function ProjectTime({ project: p }: { project: Project }) {
+  const entries = useSoma((s) => s.timeEntries);
+  const startTimer = useSoma((s) => s.startTimer);
+  const stopTimer = useSoma((s) => s.stopTimer);
+  const patchProject = useSoma((s) => s.patchProject);
+  const live = running(entries);
+  const mine = entries.filter((e) => e.projectId === p.id);
+  const isLive = live?.projectId === p.id;
+  const now = useTick(isLive);
+  const total = mine.reduce((a, e) => a + durationMs(e, now), 0);
+  const monday = mondayOf(getLocalDateKey());
+  const week = mine
+    .filter((e) => getLocalDateKey(new Date(e.start)) >= monday)
+    .reduce((a, e) => a + durationMs(e, now), 0);
+  const billableMs = mine
+    .filter((e) => e.billable !== false)
+    .reduce((a, e) => a + durationMs(e, now), 0);
+  const value = p.rate ? Math.round((billableMs / 3600_000) * p.rate) : 0;
+  return (
+    <section>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+        <span style={{ fontWeight: 600 }}>Time</span>
+        {isLive ? (
+          <button
+            type="button"
+            className="ws-timer on"
+            style={{ marginLeft: "auto" }}
+            onClick={stopTimer}
+          >
+            <span className="ws-rec" />
+            <b>{clock(durationMs(live!, now))}</b>
+            <Square size={12} />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="ws-btn"
+            style={{ marginLeft: "auto" }}
+            onClick={() => startTimer(p.id)}
+          >
+            <Play /> Start timer
+          </button>
+        )}
+      </div>
+      <div className="ws-field">
+        <span>Logged</span>
+        <span>
+          <b>{hours(total)}</b> <span className="ws-faint">· {hours(week)} this week</span>
+        </span>
+      </div>
+      <label className="ws-field">
+        <span>Rate / hour</span>
+        <input
+          className="ws-input"
+          inputMode="decimal"
+          placeholder="e.g. 5000"
+          defaultValue={p.rate ?? ""}
+          onBlur={(e) => {
+            const n = Number(e.target.value.replace(",", "."));
+            patchProject(p.id, { rate: Number.isFinite(n) && n > 0 ? n : undefined });
+          }}
+        />
+      </label>
+      {p.rate ? (
+        <div className="ws-field">
+          <span>Billable</span>
+          <span>
+            <b style={{ color: "var(--ws-green)" }}>{formatMoney(value)}</b>{" "}
+            <span className="ws-faint">for {hours(billableMs)}</span>
+          </span>
+        </div>
+      ) : null}
+    </section>
   );
 }

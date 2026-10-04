@@ -42,6 +42,8 @@ export interface Project {
   /** Who it is for — a business or client. Free text; the workstation groups by it. */
   client?: string;
   priority?: ProjectPriority;
+  /** Hourly rate in the base currency, for billable time. */
+  rate?: number;
 }
 
 export type ProjectPriority = "high" | "medium" | "low";
@@ -243,6 +245,7 @@ export function cleanProject(raw: unknown): Project | null {
     touchedAt: Number(r.touchedAt) || undefined,
     client: typeof r.client === "string" && r.client.trim() ? r.client.trim() : undefined,
     priority: r.priority === "high" || r.priority === "medium" || r.priority === "low" ? r.priority : undefined,
+    rate: Number(r.rate) > 0 ? Number(r.rate) : undefined,
   };
 }
 

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { asTimeEntries, newTimeId, type TimeEntry } from "./time-tracking";
 import { persist, type PersistStorage } from "zustand/middleware";
 import msExercises from "./ms-exercises.json";
 import {
@@ -306,6 +307,15 @@ export interface SomaStore {
   trades: Trade[];
   addProject: (name: string, color: string) => string;
   patchProject: (id: string, patch: Partial<Omit<Project, "id">>) => void;
+  /** Hours on projects. See lib/time-tracking.ts. */
+  timeEntries: TimeEntry[];
+  /** Starts a timer on a project, stopping any that is running. */
+  startTimer: (projectId: string, note?: string) => void;
+  stopTimer: () => void;
+  addTimeEntry: (e: Omit<TimeEntry, "id">) => void;
+  patchTimeEntry: (id: string, patch: Partial<Omit<TimeEntry, "id">>) => void;
+  removeTimeEntry: (id: string) => void;
+  restoreTimeEntry: (idx: number, e: TimeEntry) => void;
   removeProject: (id: string) => void;
   restoreProject: (idx: number, project: Project) => void;
   /** Opens a trade. The gate runs in the view; this records what was decided. */
@@ -669,6 +679,7 @@ export const useSoma = create<SomaStore>()(
       grocery: [],
       todos: [],
       projects: [],
+      timeEntries: [],
       goals: [],
       trades: [],
       dayRoutines: [],
@@ -1456,6 +1467,29 @@ export const useSoma = create<SomaStore>()(
           projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)),
         })),
       removeProject: (id) => set((s) => ({ projects: s.projects.filter((p) => p.id !== id) })),
+      startTimer: (projectId, note) => {
+        const now = Date.now();
+        set((s) => ({
+          timeEntries: [
+            ...s.timeEntries.map((e) => (e.end === undefined ? { ...e, end: now } : e)),
+            { id: newTimeId(), projectId, start: now, note: note?.trim() || undefined },
+          ],
+        }));
+      },
+      stopTimer: () => {
+        const now = Date.now();
+        set((s) => ({ timeEntries: s.timeEntries.map((e) => (e.end === undefined ? { ...e, end: now } : e)) }));
+      },
+      addTimeEntry: (e) => set((s) => ({ timeEntries: [...s.timeEntries, { ...e, id: newTimeId() }] })),
+      patchTimeEntry: (id, patch) =>
+        set((s) => ({ timeEntries: s.timeEntries.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
+      removeTimeEntry: (id) => set((s) => ({ timeEntries: s.timeEntries.filter((e) => e.id !== id) })),
+      restoreTimeEntry: (idx, e) =>
+        set((s) => {
+          const next = [...s.timeEntries];
+          next.splice(Math.max(0, Math.min(idx, next.length)), 0, e);
+          return { timeEntries: next };
+        }),
       addGoal: (goal) => {
         const id = newId();
         set((s) => ({ goals: [...s.goals, { ...goal, id, done: false, createdAt: Date.now() }] }));
@@ -2667,6 +2701,7 @@ export const useSoma = create<SomaStore>()(
             grocery: get().grocery,
             todos: get().todos,
             projects: get().projects,
+            timeEntries: get().timeEntries,
             goals: get().goals,
             trades: get().trades,
             dayRoutines: get().dayRoutines,
@@ -2722,6 +2757,7 @@ export const useSoma = create<SomaStore>()(
               grocery: data.grocery || [],
               todos: data.todos || [],
               projects: asProjects(data.projects),
+              timeEntries: asTimeEntries(data.timeEntries),
               goals: asGoals(data.goals),
               trades: asTrades(data.trades),
               dayRoutines: asRoutines(data.dayRoutines),
@@ -2825,6 +2861,7 @@ export const useSoma = create<SomaStore>()(
             grocery: mergeById(data.grocery || [], cur.grocery),
             todos: mergeById(data.todos || [], cur.todos),
             projects: mergeById(asProjects(data.projects), cur.projects),
+            timeEntries: mergeById(asTimeEntries(data.timeEntries), cur.timeEntries),
             goals: mergeById(asGoals(data.goals), cur.goals),
             trades: mergeById(asTrades(data.trades), cur.trades),
             dayRoutines: mergeById(asRoutines(data.dayRoutines), cur.dayRoutines),
@@ -2948,6 +2985,7 @@ export const useSoma = create<SomaStore>()(
         grocery: s.grocery,
         todos: s.todos,
         projects: s.projects,
+        timeEntries: s.timeEntries,
         goals: s.goals,
         trades: s.trades,
         dayRoutines: s.dayRoutines,
