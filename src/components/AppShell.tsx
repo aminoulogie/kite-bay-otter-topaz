@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Workstation } from "@/workstation/Workstation";
+import { useWorkstation } from "@/workstation/mode";
 import { SyncRunner } from "@/components/SyncRunner";
 import { MealReminderSync } from "@/components/MealReminderSync";
 import { Activity, BrainCircuit, CalendarDays, Check, Clock, CornerDownLeft, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, Pencil, Search, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
@@ -265,6 +267,7 @@ export function AppShell() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [chartsOpen, setChartsOpen] = useState(false);
   const editingDashboard = useSoma((s) => s.editingDashboard);
+  const workstation = useWorkstation();
   const setEditingDashboard = useSoma((s) => s.setEditingDashboard);
 
   // Measured rather than computed from an index, because the dock scrolls and
@@ -547,6 +550,17 @@ export function AppShell() {
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", theme === "light" ? "#f4f6f9" : "#0b0c10");
   }, [settings.accent, settings.theme, settings.uiScale, hydrated]);
+
+  if (ready && workstation) {
+    return (
+      <>
+        <Workstation />
+        <SyncRunner />
+        <MealReminderSync />
+        <Toaster position="bottom-right" theme={settings.theme === "light" ? "light" : "dark"} />
+      </>
+    );
+  }
 
   if (!ready) {
     return (

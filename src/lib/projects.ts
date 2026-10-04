@@ -39,7 +39,12 @@ export interface Project {
   createdAt: number;
   /** Last time any step was ticked or unticked. */
   touchedAt?: number;
+  /** Who it is for — a business or client. Free text; the workstation groups by it. */
+  client?: string;
+  priority?: ProjectPriority;
 }
+
+export type ProjectPriority = "high" | "medium" | "low";
 
 /** Eight fills that hold apart on a near-black ground and a near-white one. */
 export const PROJECT_COLORS = [
@@ -236,6 +241,8 @@ export function cleanProject(raw: unknown): Project | null {
     due: typeof r.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.due) ? r.due : undefined,
     createdAt: Number(r.createdAt) || Date.now(),
     touchedAt: Number(r.touchedAt) || undefined,
+    client: typeof r.client === "string" && r.client.trim() ? r.client.trim() : undefined,
+    priority: r.priority === "high" || r.priority === "medium" || r.priority === "low" ? r.priority : undefined,
   };
 }
 

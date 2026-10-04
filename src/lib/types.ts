@@ -88,6 +88,8 @@ export interface SessionExercise {
   mealReminders?: boolean;
   /** When meal verdicts started (epoch ms). Meals whose window opened before it are never judged. */
   mealVerdictsSince?: number;
+  /** The desktop workstation layout on this device. Unset: on at a desk. */
+  workstation?: boolean;
   /** When you train; read by Train, the Time tab and Fuel. See lib/workout-time.ts. */
   workoutTime?: { time: string; mins: number; days?: Partial<Record<number, string>>; dates?: Record<string, string> };
   barWeight: number;
@@ -492,6 +494,8 @@ export interface Settings {
   mealReminders?: boolean;
   /** When meal verdicts started (epoch ms). Meals whose window opened before it are never judged. */
   mealVerdictsSince?: number;
+  /** The desktop workstation layout on this device. Unset: on at a desk. */
+  workstation?: boolean;
   /** When you train; read by Train, the Time tab and Fuel. See lib/workout-time.ts. */
   workoutTime?: { time: string; mins: number; days?: Partial<Record<number, string>>; dates?: Record<string, string> };
   barWeight: number;

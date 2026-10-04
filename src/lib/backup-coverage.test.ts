@@ -50,6 +50,8 @@ const NOT_USER_DATA: Record<string, string> = {
   "grok-auth.bearer-token": "a session token, and sessionStorage besides — it dies with the tab by design",
   "soma-scan-assist": "scan camera/zoom/flash choices for THIS phone's lenses — a restored 3x on a phone without a telephoto would be wrong",
   "soma.tickWay": "which haptic path THIS phone plays — another phone may need a different one",
+  "soma-ws-page": "which workstation page was last open on THIS computer",
+  "soma-ws-projects-view": "table or board, on THIS computer",
   "soma-sync-v1": "device sync's key and bookkeeping — the recovery code must never sit in a backup file, and the bookkeeping is per device",
 };
 

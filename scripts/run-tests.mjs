@@ -27,6 +27,7 @@ const SUITES = [
       "--experimental-strip-types",
       "--test",
       "src/lib/**/*.test.ts",
+      "src/workstation/**/*.test.ts",
     ],
   },
 ];

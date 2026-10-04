@@ -24,7 +24,7 @@ export type State = Record<string, unknown>;
 /** Top-level fields that belong to one device. */
 export const LOCAL_FIELDS = new Set(["seeded", "activeDate", "live", "tab"]);
 /** Settings that belong to one device: how this screen looks, not what you did. */
-export const LOCAL_SETTINGS = new Set(["uiScale", "dockTransparency", "dockScale", "mealVerdictsSince"]);
+export const LOCAL_SETTINGS = new Set(["uiScale", "dockTransparency", "dockScale", "mealVerdictsSince", "workstation"]);
 /** Maps whose entries are records of their own. */
 export const MAP_FIELDS = new Set([
   "history", "nutrition", "logOverrides", "dayNotes", "restDays", "dayPlans", "screenTime", "layouts", "reading",

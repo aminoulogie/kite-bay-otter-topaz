@@ -332,6 +332,22 @@ export function SettingsView() {
       <Sized key="appearance" glance={{ label: "Appearance", short: "Theme", value: String(settings.theme ?? "system").replace(/^./, (c) => c.toUpperCase()) }}>
       <Card>
         <CardTitle>Appearance</CardTitle>
+        <div className="mb-4 hidden items-center justify-between gap-3 rounded-xl border border-border bg-surface-2 p-3 lg:flex">
+          <div>
+            <div className="text-sm font-bold">Workstation layout</div>
+            <div className="text-xs text-muted">The desktop layout on this computer: Overview, project table and board, Ctrl+K.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => patchSettings({ workstation: settings.workstation === false ? undefined : false })}
+            className={cn(
+              "h-9 shrink-0 rounded-xl border px-4 text-sm font-bold",
+              settings.workstation === false ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface",
+            )}
+          >
+            {settings.workstation === false ? "Switch to workstation" : "Use classic layout"}
+          </button>
+        </div>
         <div className="mb-2 text-xs font-bold text-muted">Theme</div>
         <div className="mb-4 grid grid-cols-3 gap-2">
           {(["dark", "light", "system"] as const).map((t) => (
