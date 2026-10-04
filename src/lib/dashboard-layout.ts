@@ -260,6 +260,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   // the drills and the languages themselves.
   "mind-book": [
     { id: "goal", label: "Reading goal", size: "2x4" },
+    { id: "plan", label: "Reading plan", size: "3x4" },
     { id: "shelf", label: "Reading shelf", size: "2x4" },
     { id: "review", label: "Words to review", size: "2x4" },
     { id: "words", label: "Your own words", size: "2x4" },

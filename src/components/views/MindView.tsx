@@ -12,6 +12,7 @@ import { hasFullRoom } from "@/lib/dashboard-layout";
 import { TopTabs } from "@/components/TopTabs";
 import { LanguageStudy } from "@/components/LanguageStudy";
 import { ReadingGoal } from "@/components/ReadingGoal";
+import { ReadingPlan } from "@/components/ReadingPlan";
 import { Highlights } from "@/components/Highlights";
 import { WordBook } from "@/components/WordBook";
 import { getLocalDateKey } from "@/lib/soma";
@@ -133,6 +134,7 @@ export function MindView({ initialKind }: { initialKind?: string } = {}) {
 
       <WidgetGrid tab={`mind-${kind}`}>
         {kind === "book" && <ReadingGoal key="goal" />}
+        {kind === "book" && <ReadingPlan key="plan" />}
         {kind === "book" && <Bookshelf key="shelf" />}
         {/* Words sit with the books. Highlighting one while reading files it
             straight away, and the list of what you have collected belongs on
