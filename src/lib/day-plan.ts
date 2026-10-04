@@ -19,6 +19,8 @@
  * work.
  */
 
+import { SLEEP_COLOR } from "./sleep-color.ts";
+
 export const DAY_HOURS = 24;
 
 /** Below this an arc is thinner than its own border and cannot be tapped. */
@@ -88,7 +90,13 @@ export interface PlanState {
  * is created rather than leaving a plan that does not add up.
  */
 export function normalise(input: TimeBlock[]): PlanState {
-  const blocks = (input ?? []).map((b) => ({ ...b, hours: snap(b.hours) }));
+  // Sleep is always sleep's colour, whatever a stored plan was saved with, so
+  // the ring and the timeline match every other screen that shows it.
+  const blocks = (input ?? []).map((b) => ({
+    ...b,
+    hours: snap(b.hours),
+    ...(/\bsleep\b|نوم|sommeil/i.test(b.label ?? "") ? { color: SLEEP_COLOR } : {}),
+  }));
   const fixed = blocks.filter((b) => b.fixed);
   const variable = blocks.filter((b) => !b.fixed);
 
@@ -527,7 +535,7 @@ export const PALETTE = [
  */
 export function defaultPlan(): TimeBlock[] {
   return normalise([
-    { id: "sleep", label: "Sleep", hours: 8, color: "#7b6cf0", fixed: true, start: 23 },
+    { id: "sleep", label: "Sleep", hours: 8, color: SLEEP_COLOR, fixed: true, start: 23 },
     { id: "morning", label: "Morning", hours: 1.5, color: "#f0a63c", fixed: false },
     { id: "work", label: "Work", hours: 8, color: "#5b8cff", fixed: true },
     { id: "free", label: "Free", hours: 6.5, color: FREE_COLOR, fixed: false },

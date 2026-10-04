@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { scaleTo } from "@/components/PortionSheet";
@@ -182,7 +182,11 @@ export function MealProgramPicker({ target }: { target: string }) {
  * a programme from nothing", it is "take Tuesday, swap the rechta for pasta,
  * and keep both".
  */
-export function MealPrograms() {
+/**
+ * Memoised: it sits on the Fuel page beside the food search, and without
+ * this every letter typed there redrew it too.
+ */
+export const MealPrograms = memo(function MealPrograms() {
   const customFoods = useSoma((s) => s.customFoods);
   const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
 
@@ -449,4 +453,4 @@ export function MealPrograms() {
       )}
     </Card>
   );
-}
+});

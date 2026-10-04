@@ -12,6 +12,7 @@ import { hasFullRoom } from "@/lib/dashboard-layout";
 import { TopTabs } from "@/components/TopTabs";
 import { LanguageStudy } from "@/components/LanguageStudy";
 import { ReadingGoal } from "@/components/ReadingGoal";
+import { ReadingPlan } from "@/components/ReadingPlan";
 import { Highlights } from "@/components/Highlights";
 import { WordBook } from "@/components/WordBook";
 import { getLocalDateKey } from "@/lib/soma";
@@ -47,7 +48,7 @@ const KINDS = [
 
 type Kind = (typeof KINDS)[number]["id"];
 
-export function MindView() {
+export function MindView({ initialKind }: { initialKind?: string } = {}) {
   const mind = useSoma((s) => s.mind);
   const addMind = useSoma((s) => s.addMind);
   const removeMind = useSoma((s) => s.removeMind);
@@ -56,7 +57,7 @@ export function MindView() {
   const today = getLocalDateKey(new Date());
   // The sub-tab IS the kind. Reading covers books, and the shelf and the dial
   // live there too — the whole of reading in one place, which is the point.
-  const [kind, setKind] = useState<Kind>("book");
+  const [kind, setKind] = useState<Kind>(KINDS.some((k) => k.id === initialKind) ? (initialKind as Kind) : "book");
   const [title, setTitle] = useState("");
   const [count, setCount] = useState("");
   const [takeaway, setTakeaway] = useState("");
@@ -133,6 +134,7 @@ export function MindView() {
 
       <WidgetGrid tab={`mind-${kind}`}>
         {kind === "book" && <ReadingGoal key="goal" />}
+        {kind === "book" && <ReadingPlan key="plan" />}
         {kind === "book" && <Bookshelf key="shelf" />}
         {/* Words sit with the books. Highlighting one while reading files it
             straight away, and the list of what you have collected belongs on

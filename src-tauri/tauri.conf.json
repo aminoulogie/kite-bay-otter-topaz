@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "SOMA",
+  "version": "0.1.0",
+  "identifier": "io.github.aminoulogie.soma",
+  "build": {
+    "frontendDist": "https://aminoulogie.github.io/kite-bay-otter-topaz/"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "SOMA",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 620,
+        "center": true,
+        "backgroundColor": "#0b0c10"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "SOMA",
+    "shortDescription": "SOMA",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
+}

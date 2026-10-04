@@ -91,10 +91,18 @@ const PLAIN_WATER = /\bwater\b|^eau|eau minerale|sparkling|mineral water|ifri|\b
  * preselected, and the picker is one tap away either way.
  */
 export function looksLikeDrink(name: string, waterPct?: number): boolean {
-  if ((waterPct ?? 0) >= 80) return true;
-  return /juice|jus|milk|lait|drink|soda|cola|water|eau|tea|coffee|café|shake|smoothie|nectar|حليب|ماء/i.test(
-    name || "",
-  );
+  const n = name || "";
+  // A food named after a drink is not always one: milk chocolate, milk
+  // powder, a cream cheese, an oat "shake" powder are all spooned or eaten.
+  if (/powder|poudre|chocolate bar|milk chocolate|condensed|cheese|fromage|biscuit|cake|ice cream|rice cream|mhalbi/i.test(n)) {
+    return false;
+  }
+  if (/juice|jus|milk|lait|drink|soda|cola|\bwater\b|\beau\b|\btea\b|coffee|café|shake|smoothie|nectar|soup|chorba|harira|hrira|candia|rouiba|ifruit|ifri|hamoud|selecto|ayran|kefir|lben|حليب|ماء/i.test(n)) {
+    return true;
+  }
+  // Water content alone no longer makes a drink: a watermelon is 91% water
+  // and is still weighed, not poured. Only a label that says so counts.
+  return (waterPct ?? 0) >= 95 && /\b(ml|l)\b/i.test(n);
 }
 
 /**
@@ -121,6 +129,16 @@ export function suggestWaterPct(name: string, macros?: Macros): number {
   // Nothing to compute from: only the things that really are water say so.
   if (!PLAIN_WATER.test(name || "")) return 0;
   return /coffee|cafe|espresso|\btea\b|the vert|infusion|tisane/i.test(name) ? 99 : 100;
+}
+
+/**
+ * Water only ever comes from a liquid — something measured in millilitres.
+ * Fruit and yoghurt are mostly water too, but eating an apple is not
+ * drinking a glass of water, and counting it that way filled the water ring
+ * with food.
+ */
+export function waterMlForPortion(amount: number, unit: string | undefined, waterPct?: number): number {
+  return unit === "ml" ? waterMlFor(amount, waterPct) : 0;
 }
 
 export function waterMlFor(grams: number, waterPct?: number): number {

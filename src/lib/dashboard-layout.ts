@@ -37,14 +37,16 @@
  * capping that would put its buttons somewhere you cannot reach them. So a
  * wide card can grow past its size, and a narrow one is clipped behind a fade.
  */
-export type WidgetSize = "1x1" | "1x2" | "2x2" | "1x4" | "2x4" | "3x4";
+import { cleanStyle, type WidgetStyle } from "./widget-style.ts";
+
+export type WidgetSize = "1x1" | "1x2" | "2x2" | "1x4" | "2x4" | "3x4" | "4x4";
 
 export interface SizeSpec {
   id: WidgetSize;
   /** Columns out of four. */
   w: 1 | 2 | 4;
   /** Height units. One unit is about one column wide, so 1x1 is a square. */
-  h: 1 | 2 | 3;
+  h: 1 | 2 | 3 | 4;
 }
 
 /** Smallest to largest, which is the order the picker shows them in. */
@@ -55,9 +57,23 @@ export const SIZE_SPECS: SizeSpec[] = [
   { id: "1x4", w: 4, h: 1 },
   { id: "2x4", w: 4, h: 2 },
   { id: "3x4", w: 4, h: 3 },
+  { id: "4x4", w: 4, h: 4 },
 ];
 
-export const SIZES: WidgetSize[] = SIZE_SPECS.map((s) => s.id);
+/**
+ * The six every widget comes in, and the ladder the size button steps along.
+ * 4x4 — four rows, full width — is opt-in and outside it: a window you scroll
+ * inside, like the Timeline's day, earns it; a card that simply ends leaves
+ * most of a 4x4 empty.
+ */
+export const SIZES: WidgetSize[] = SIZE_SPECS.filter((s) => s.id !== "4x4").map((s) => s.id);
+export const STANDARD_SIZES = SIZES;
+
+/** Every size a stored layout may hold. */
+export const ALL_SIZES: WidgetSize[] = SIZE_SPECS.map((s) => s.id);
+
+/** A window worth scrolling inside: medium up to the tall 4x4. */
+export const WINDOW_SIZES: WidgetSize[] = ["2x4", "3x4", "4x4"];
 
 export function specFor(size: WidgetSize): SizeSpec {
   return SIZE_SPECS.find((s) => s.id === size) ?? SIZE_SPECS[4]!;
@@ -68,7 +84,7 @@ export function columnsFor(size: WidgetSize): 1 | 2 | 4 {
   return specFor(size).w;
 }
 
-export function rowsFor(size: WidgetSize): 1 | 2 | 3 {
+export function rowsFor(size: WidgetSize): 1 | 2 | 3 | 4 {
   return specFor(size).h;
 }
 
@@ -134,15 +150,26 @@ export interface WidgetDef {
    * says less as it gets smaller (see components/Glance.tsx).
    */
   sizes?: WidgetSize[];
+  /** More words the widget store finds it by ("sleep" for the Body panel). */
+  keywords?: string;
 }
 
 /** Page furniture: bars and buttons that are as tall as they need to be, one row, full width. */
 export const FURNITURE: WidgetSize[] = ["1x4"];
 
+/**
+ * Short cards — a setting, a one-line form, a paragraph — have nothing more
+ * to say at the largest size, so 3x4 was a small card in a big empty box.
+ * They stop at 2x4.
+ */
+export const UP_TO_MEDIUM: WidgetSize[] = ["1x1", "1x2", "2x2", "1x4", "2x4"];
+
 export interface WidgetPlacement {
   id: string;
   size: WidgetSize;
   hidden: boolean;
+  /** Colours, text and parts set by hand, per size (lib/widget-style.ts). */
+  style?: Partial<Record<WidgetSize, WidgetStyle>>;
 }
 
 /**
@@ -162,7 +189,7 @@ const LEGACY: Record<string, WidgetSize> = {
 
 export function asSize(value: unknown): WidgetSize | null {
   if (typeof value === "string") {
-    if ((SIZES as string[]).includes(value)) return value as WidgetSize;
+    if ((ALL_SIZES as string[]).includes(value)) return value as WidgetSize;
     return LEGACY[value] ?? null;
   }
   if (value === 1) return "2x2";
@@ -184,7 +211,11 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   // to say.
   { id: "brief", label: "Coach brief", size: "1x4" },
   { id: "rings", label: "Activity rings", size: "2x4" },
+  // Steps, active energy, sleep and resting heart rate from Apple Health.
+  { id: "health", label: "Apple Health", size: "2x4", keywords: "steps sleep heart rate fitness" },
   { id: "score", label: "Today's score", size: "2x4" },
+  // What cost the last seven days most — the weekly review.
+  { id: "week", label: "The week", size: "2x4", keywords: "weekly review pulled down" },
   { id: "cals", label: "Calories", size: "2x2" },
   { id: "protein", label: "Protein", size: "2x2" },
   { id: "carbs", label: "Carbs", size: "2x2" },
@@ -198,7 +229,7 @@ export const DASHBOARD_WIDGETS: WidgetDef[] = [
   // Next steps, not progress bars. Sits beside the to-do list because the two
   // answer the same question at different scales — what could I pick up now.
   { id: "projects", label: "Projects", size: "2x4" },
-  { id: "gap", label: "Log the gap", size: "2x4" },
+  { id: "gap", label: "Log the gap", size: "2x4", keywords: "sleep water food habits session quick" },
   { id: "correlate", label: "Across everything", size: "2x4" },
 ];
 
@@ -229,47 +260,68 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   // the drills and the languages themselves.
   "mind-book": [
     { id: "goal", label: "Reading goal", size: "2x4" },
+    { id: "plan", label: "Reading plan", size: "3x4" },
     { id: "shelf", label: "Reading shelf", size: "2x4" },
     { id: "review", label: "Words to review", size: "2x4" },
     { id: "words", label: "Your own words", size: "2x4" },
     { id: "highlights", label: "Highlights", size: "2x4" },
     { id: "week", label: "This week", size: "2x4" },
-    { id: "log", label: "Log a book", size: "2x4" },
+    { id: "log", label: "Log a book", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "recent", label: "Recent books", size: "2x4" },
   ],
   "mind-language": [
     { id: "languages", label: "Languages and drills", size: "2x4" },
     { id: "week", label: "This week", size: "2x4" },
-    { id: "log", label: "Log a drill", size: "2x4" },
+    { id: "log", label: "Log a drill", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "recent", label: "Recent drills", size: "2x4" },
   ],
   "mind-idea": [
     { id: "week", label: "This week", size: "2x4" },
-    { id: "log", label: "Log an idea", size: "2x4" },
+    { id: "log", label: "Log an idea", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "recent", label: "Recent ideas", size: "2x4" },
   ],
   "mind-research": [
     { id: "week", label: "This week", size: "2x4" },
-    { id: "log", label: "Log research", size: "2x4" },
+    { id: "log", label: "Log research", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "recent", label: "Recent research", size: "2x4" },
   ],
   projects: [
     { id: "header", label: "On the go", size: "2x4" },
-    { id: "new", label: "Start something", size: "2x4" },
+    { id: "new", label: "Start something", size: "2x4", sizes: UP_TO_MEDIUM },
     // A bar, not a card: one row, the same as Habits' Today/Matrix/Year.
     { id: "filter", label: "Active / Paused / Done", size: "1x4", sizes: FURNITURE },
     { id: "list", label: "The projects", size: "2x4" },
   ],
-  // Money is two pages behind one tab: what you spend, and what you trade.
-  // The spending page keeps the bare "money" key rather than gaining a suffix,
-  // because every layout already saved is stored under it and renaming the
-  // page would reset the arrangement of everyone who had ever tidied it.
-  money: [
-    { id: "summary", label: "This month", size: "2x4" },
-    { id: "add", label: "Add an entry", size: "2x4" },
-    { id: "grocery", label: "Shopping list", size: "2x4" },
-    { id: "entries", label: "Entries", size: "2x4" },
-    { id: "categories", label: "Categories", size: "2x4" },
+  // The Goals page behind the same tab: the three horizons, and the tally.
+  "projects-goals": [
+    { id: "header", label: "Goals at a glance", size: "2x4" },
+    { id: "week", label: "This week", size: "2x4" },
+    { id: "month", label: "This month", size: "2x4" },
+    { id: "year", label: "This year", size: "2x4" },
+  ],
+  // Money is six pages behind one tab, laid out like a money app: accounts,
+  // every transaction, budgets, where it went, savings goals, and trading.
+  "money-dash": [
+    { id: "accounts", label: "Accounts", size: "2x4" },
+    { id: "actions", label: "Add / Budgets / Insights", size: "1x4", sizes: FURNITURE },
+    { id: "budget", label: "This month's budget", size: "2x4" },
+    { id: "recent", label: "Recent transactions", size: "2x4" },
+  ],
+  "money-tx": [
+    { id: "filters", label: "Filters", size: "1x4", sizes: FURNITURE },
+    { id: "list", label: "Transactions", size: "2x4" },
+  ],
+  "money-budgets": [
+    { id: "total", label: "Monthly budget", size: "2x4" },
+    { id: "categories", label: "By category", size: "2x4" },
+  ],
+  "money-insights": [
+    { id: "month", label: "The month", size: "1x4", sizes: FURNITURE },
+    { id: "donut", label: "Where it went", size: "2x4" },
+    { id: "daily", label: "Day by day", size: "2x4" },
+  ],
+  "money-goals": [
+    { id: "goals", label: "Savings goals", size: "2x4" },
   ],
   "money-trade": [
     { id: "account", label: "The account", size: "2x4" },
@@ -283,8 +335,13 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   time: [
     { id: "header", label: "The day", size: "2x4" },
+    // The day as a calendar: hours down the side, what is on at each, and a
+    // line at now. A window you scroll inside, hence the tall size.
+    { id: "timeline", label: "Timeline", size: "4x4", sizes: WINDOW_SIZES },
     { id: "routines", label: "Routines", size: "2x4" },
-    { id: "ring", label: "The ring", size: "2x4" },
+    // A glance now, not the page's centrepiece: the timeline is where the day
+    // is planned, and the ring answers only "does it fit in 24 hours".
+    { id: "ring", label: "The ring", size: "2x2" },
     { id: "screen", label: "Screen time", size: "2x4" },
     { id: "blocks", label: "The day, in order", size: "2x4" },
   ],
@@ -292,7 +349,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "header", label: "Consistency", size: "2x4" },
     { id: "tabs", label: "Today / Matrix / Year", size: "1x4", sizes: FURNITURE },
     { id: "list", label: "The habits", size: "2x4" },
-    { id: "new", label: "New habit", size: "2x4" },
+    { id: "new", label: "New habit", size: "2x4", sizes: UP_TO_MEDIUM },
   ],
   // Fuel is four pages behind one tab. The old single page held thirteen cards
   // and you scrolled past the ones you were not using to reach the ones you
@@ -300,15 +357,23 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   // different times of day, and stacking them made both worse.
   "nutrition-dash": [
     { id: "target", label: "Today's totals", size: "2x4" },
+    { id: "pace", label: "Meal timeline", size: "2x4" },
     { id: "suggest", label: "Suggest from pantry", size: "2x4" },
     { id: "plan", label: "Plan ahead", size: "2x4" },
     { id: "actions", label: "Scan / Search / Burn", size: "1x4", sizes: FURNITURE },
+    // On the page you open, not only in the log: water is logged a glass at a
+    // time all day, and hiding the buttons a tab away lost it.
+    { id: "water", label: "Water", size: "2x4" },
     { id: "plate", label: "Plate photo", size: "2x4" },
     { id: "hunger", label: "Hunger", size: "2x4" },
     { id: "add", label: "Add food", size: "2x4" },
     { id: "meal", label: "Meal builder", size: "2x4" },
     { id: "programs", label: "Day programmes", size: "2x4" },
     { id: "preworkout", label: "Pre-workout", size: "2x4" },
+    // The shopping list and the cupboard came over from Money: they are the
+    // food loop's stock, and stock is a Fuel question before a money one.
+    { id: "grocery", label: "Shopping list", size: "2x4" },
+    { id: "pantry", label: "In the cupboard", size: "2x4" },
   ],
   "nutrition-week": [
     { id: "weekly", label: "The last seven days", size: "2x4" },
@@ -324,6 +389,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   workout: [
     { id: "header", label: "Session header", size: "2x4" },
+    { id: "time", label: "Workout time", size: "2x4" },
     { id: "date", label: "The date", size: "1x4", sizes: FURNITURE },
     { id: "quick", label: "Undo / Save", size: "1x4", sizes: FURNITURE },
     { id: "session", label: "Rest timer", size: "2x4" },
@@ -334,10 +400,10 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
     { id: "scan", label: "Scan button", size: "1x4", sizes: FURNITURE },
     { id: "truedepth", label: "3D scan", size: "2x4" },
     { id: "lidar-body", label: "Body scan", size: "2x4" },
-    { id: "reanalyse", label: "Scans to re-measure", size: "2x4" },
+    { id: "reanalyse", label: "Scans to re-measure", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "gallery", label: "Captures", size: "2x4" },
     { id: "guide", label: "What it measures", size: "2x4" },
-    { id: "note", label: "What the mesh is", size: "1x4" },
+    { id: "note", label: "What the mesh is", size: "1x4", sizes: UP_TO_MEDIUM },
   ],
   // Stats is eight pages behind one tab, like Mind. Only the two that are
   // genuinely card stacks get a layout; the rest delegate to whole other
@@ -361,31 +427,35 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   body: [
     { id: "tabs", label: "Sleep / Measure / Supplements", size: "1x4", sizes: FURNITURE },
-    { id: "panel", label: "The panel", size: "2x4" },
+    { id: "panel", label: "Sleep", size: "2x4", keywords: "night bed rest debt tape measure supplements creatine body" },
   ],
   estimates: [
     { id: "weight", label: "Bodyweight", size: "2x4" },
-    { id: "composition", label: "Muscle vs fat", size: "2x4" },
+    { id: "composition", label: "Muscle vs fat", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "measures", label: "Measurements", size: "2x4" },
     { id: "strength", label: "Strength", size: "2x4" },
-    { id: "note", label: "How these are made", size: "1x4" },
+    { id: "note", label: "How these are made", size: "1x4", sizes: UP_TO_MEDIUM },
   ],
   settings: [
-    { id: "phase", label: "Phase", size: "2x4" },
-    { id: "goal", label: "Training goal", size: "2x4" },
-    { id: "appearance", label: "Appearance", size: "2x4" },
+    { id: "phase", label: "Phase", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "goal", label: "Training goal", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "appearance", label: "Appearance", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "money", label: "Money", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "health", label: "Apple Health", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "automations", label: "Automations", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "training", label: "Training", size: "2x4" },
-    { id: "nutrition", label: "Nutrition", size: "2x4" },
+    { id: "nutrition", label: "Nutrition", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "routines", label: "Routines", size: "2x4" },
-    { id: "report", label: "Report", size: "2x4" },
-    { id: "data", label: "Backup and restore", size: "2x4" },
-    { id: "vault", label: "Vault sync", size: "2x4" },
-    { id: "csv", label: "Export as CSV", size: "2x4" },
-    { id: "foods", label: "Import foods", size: "2x4" },
+    { id: "report", label: "Report", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "data", label: "Backup and restore", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "sync", label: "Device sync", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "vault", label: "Vault sync", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "csv", label: "Export as CSV", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "foods", label: "Import foods", size: "2x4", sizes: UP_TO_MEDIUM },
     { id: "programme", label: "Training programme", size: "2x4" },
     { id: "targets", label: "Daily nutrition targets", size: "2x4" },
-    { id: "habit-history", label: "Habit history", size: "2x4" },
-    { id: "about", label: "About", size: "2x4" },
+    { id: "habit-history", label: "Habit history", size: "2x4", sizes: UP_TO_MEDIUM },
+    { id: "about", label: "About", size: "2x4", sizes: UP_TO_MEDIUM },
   ],
 };
 
@@ -456,7 +526,7 @@ function registeredElsewhere(tab: string, id: string): boolean {
 }
 
 export function isDynamic(tab: string, id: string): boolean {
-  return !isSpacer(id) && widgetDef(tab, id) === undefined;
+  return !isSpacer(id) && !isBorrowed(id) && widgetDef(tab, id) === undefined;
 }
 
 /** The default gap: one row tall, the full width of the page. */
@@ -465,6 +535,69 @@ export const SPACER_SIZE: WidgetSize = "1x4";
 /** Put a new gap at the end, for the user to drag where they want it. */
 export function addSpacer(layout: WidgetPlacement[]): WidgetPlacement[] {
   return [...layout, { id: nextSpacerId(layout), size: SPACER_SIZE, hidden: false }];
+}
+
+/**
+ * A widget brought in from another page: "from:nutrition-dash/water".
+ *
+ * Any widget can be put on any page from the widget store. It is not copied:
+ * the page it comes from draws it (see components/WidgetGrid.tsx), so it is
+ * the same live card in two places. Like a spacer it is not in this page's
+ * registry, and the prefix is what tells reconcile to keep it.
+ */
+export const BORROW_PREFIX = "from:";
+
+export function isBorrowed(id: string): boolean {
+  return id.startsWith(BORROW_PREFIX);
+}
+
+export function borrowedId(tab: string, id: string): string {
+  return `${BORROW_PREFIX}${tab}/${id}`;
+}
+
+/** Where a brought-in widget lives: its page and its id there. */
+export function parseBorrowed(id: string): { tab: string; id: string } | null {
+  if (!isBorrowed(id)) return null;
+  const rest = id.slice(BORROW_PREFIX.length);
+  const slash = rest.indexOf("/");
+  if (slash <= 0) return null;
+  const tab = rest.slice(0, slash);
+  const wid = rest.slice(slash + 1);
+  if (!wid || !widgetsFor(tab).some((w) => w.id === wid)) return null;
+  return { tab, id: wid };
+}
+
+/** Put a widget on the page, at the top where it can be seen and dragged into place. */
+export function addWidget(layout: WidgetPlacement[], tab: string, id: string): WidgetPlacement[] {
+  const cur = layout.find((p) => p.id === id);
+  if (cur) return [{ ...cur, hidden: false }, ...layout.filter((p) => p.id !== id)];
+  return [{ id, size: cleanSize(tab, id, undefined), hidden: false }, ...layout];
+}
+
+/** One size's style replaced; an empty style is dropped rather than stored. */
+export function restyle(
+  layout: WidgetPlacement[], id: string, size: WidgetSize, style: WidgetStyle | undefined,
+): WidgetPlacement[] {
+  return layout.map((p) => {
+    if (p.id !== id) return p;
+    const next = { ...(p.style ?? {}) };
+    const clean = cleanStyle(style);
+    if (clean) next[size] = clean;
+    else delete next[size];
+    const { style: _old, ...rest } = p;
+    return Object.keys(next).length ? { ...rest, style: next } : rest;
+  });
+}
+
+function cleanStyles(raw: unknown): WidgetPlacement["style"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Partial<Record<WidgetSize, WidgetStyle>> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const size = asSize(k);
+    const st = cleanStyle(v);
+    if (size && st) out[size] = st;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Gaps are removed rather than hidden — there is always another one. */
@@ -502,6 +635,8 @@ export function widgetsFor(tab: string): WidgetDef[] {
  * a single flat map would silently give one of them the other's rules.
  */
 export function widgetDef(tab: string, id: string): WidgetDef | undefined {
+  const from = parseBorrowed(id);
+  if (from) return widgetsFor(from.tab).find((w) => w.id === from.id);
   return widgetsFor(tab).find((w) => w.id === id) ?? BY_ID.get(id);
 }
 
@@ -531,10 +666,10 @@ function cleanSize(tab: string, id: string, value: unknown): WidgetSize {
  * at its own height.
  */
 export function allowedSizes(tab: string, id: string): WidgetSize[] {
-  if (isSpacer(id)) return SIZES;
+  if (isSpacer(id)) return STANDARD_SIZES;
   const def = widgetDef(tab, id);
   if (!def) return FURNITURE;
-  return def.sizes?.length ? def.sizes : SIZES;
+  return def.sizes?.length ? def.sizes : STANDARD_SIZES;
 }
 
 /**
@@ -580,17 +715,19 @@ export function reconcile(
     // A spacer is not in the registry and never will be — it is a gap the
     // user put there, and dropping it as "unknown" would quietly undo their
     // arrangement on every load.
-    if (!known.has(p.id) && !isSpacer(p.id) && !here.has(p.id)) continue;
+    if (!known.has(p.id) && !isSpacer(p.id) && !here.has(p.id) && !parseBorrowed(p.id)) continue;
     if (seen.has(p.id)) continue;
     seen.add(p.id);
-    if (!isSpacer(p.id)) found++;
+    if (!isSpacer(p.id) && !isBorrowed(p.id)) found++;
     // `span` is read too: layouts saved before the three sizes existed hold a
     // column count, and dropping them would reset everyone's page.
     const stored_ = (p as { size?: unknown; span?: unknown });
+    const style = cleanStyles((p as { style?: unknown }).style);
     out.push({
       id: p.id,
       size: cleanSize(tab, p.id, stored_.size ?? stored_.span),
       hidden: p.hidden === true,
+      ...(style ? { style } : {}),
     });
   }
 
@@ -729,6 +866,6 @@ export function isDefault(layout: WidgetPlacement[], tab = "dashboard"): boolean
   if (layout.length !== base.length) return false;
   return layout.every((p, i) => {
     const b = base[i]!;
-    return p.id === b.id && p.size === b.size && p.hidden === b.hidden;
+    return p.id === b.id && p.size === b.size && p.hidden === b.hidden && !p.style;
   });
 }

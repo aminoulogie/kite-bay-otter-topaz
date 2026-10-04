@@ -26,13 +26,14 @@ export function useBackupDownload(onSaved?: () => void): {
   const [busy, setBusy] = useState(false);
 
   const download = useCallback(async () => {
-    // Guarded rather than queued: the file can be tens of megabytes with
-    // photos in it, and a second press while the first is still reading
-    // IndexedDB would build the whole thing twice.
+    // Guarded rather than queued: a second press while the first is still
+    // reading IndexedDB would build the whole thing twice.
     if (busy) return;
     setBusy(true);
     try {
-      const backup = await buildBackup(JSON.parse(exportJson()));
+      // Without photos: they go to the vault folder as files, and with them
+      // embedded the file ran to 30 MB.
+      const backup = await buildBackup(JSON.parse(exportJson()), { photos: false });
       const json = JSON.stringify(backup);
       const name = `soma-backup-${new Date().toISOString().slice(0, 10)}.json`;
       const how = await saveBackupFile(json, name);
@@ -41,7 +42,7 @@ export function useBackupDownload(onSaved?: () => void): {
       const mb = (json.length / 1048576).toFixed(1);
       toast.success(
         how === "shared"
-          ? `Backup ready to save (${mb} MB, ${backup.photos.length} photos)`
+          ? `Backup ready to save (${mb} MB, photos are in your vault folder)`
           : `Downloaded ${name} (${mb} MB)`,
       );
     } catch (err) {

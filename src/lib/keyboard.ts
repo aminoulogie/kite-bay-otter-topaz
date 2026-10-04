@@ -99,3 +99,11 @@ export function keyboardTopFrom(
 /** Fields the keyboard opens for. A button focused by tab does not count. */
 export const FIELD_SELECTOR =
   'input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]),textarea,[contenteditable="true"]';
+
+/**
+ * iOS's own strip above the keys (up, down, Done). On recent iOS it floats
+ * OVER the bottom of the page instead of shrinking the visible area, so
+ * anything placed at the bottom of the visual viewport sits behind it — the
+ * calc bar's + − × ÷ did. Room is left for it on the iPhone.
+ */
+export const IOS_ACCESSORY_H = 46;

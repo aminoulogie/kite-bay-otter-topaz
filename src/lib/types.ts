@@ -82,6 +82,16 @@ export interface SessionExercise {
   readingGoalMin?: number;
   /** Books a year, for the grid on the reading dial. */
   booksPerYear?: number;
+  /** When you eat, and what share of the day each meal carries. Unset follows the default. */
+  mealTimes?: { label: string; time: string; share: number }[];
+  /** Notifications at each meal time with how much to eat. */
+  mealReminders?: boolean;
+  /** When meal verdicts started (epoch ms). Meals whose window opened before it are never judged. */
+  mealVerdictsSince?: number;
+  /** The desktop workstation layout on this device. Unset: on at a desk. */
+  workstation?: boolean;
+  /** When you train; read by Train, the Time tab and Fuel. See lib/workout-time.ts. */
+  workoutTime?: { time: string; mins: number; days?: Partial<Record<number, string>>; dates?: Record<string, string> };
   barWeight: number;
   supersetGroup: string;
   sets: WorkoutSet[];
@@ -135,6 +145,14 @@ export interface Goals {
 }
 
 export interface FoodItem {
+  /** When it was logged (epoch ms). Logged today, it waits grey until confirmed. */
+  loggedAt?: number;
+  /**
+   * When it was confirmed as eaten (epoch ms). Set once, by the swipe, and
+   * from then on the item is locked: it cannot be un-confirmed, edited or
+   * deleted — the meal-time verdicts are built on it. See lib/meal-verdict.ts.
+   */
+  eatenAt?: number;
   name: string;
   serving: number;
   unit: string;
@@ -208,6 +226,9 @@ export interface FoodItem {
 
 export interface SleepLog {
   hours: number;
+  /** When the night started and ended (ms), if it was clocked rather than typed. */
+  start?: number;
+  end?: number;
   /**
    * 1-5, and genuinely optional.
    *
@@ -246,6 +267,8 @@ export interface NutritionDay {
    * Confirming moves the item across. Nothing is ever in both.
    */
   planned?: FoodItem[];
+  /** Each meal time's verdict, written once and never changed. See lib/meal-verdict.ts. */
+  mealVerdicts?: Record<string, import("./meal-verdict.ts").MealVerdict>;
   sleep?: SleepLog;
   measurements?: Record<string, number>;
   readiness?: ReadinessCheckin;
@@ -300,7 +323,41 @@ export interface Habit {
    * a day that came to nothing, and the two must never be collapsed.
    */
   amountLog?: Record<string, number>;
+  /**
+   * How much the habit matters, 1-5, like a subject's coefficient in a school
+   * average. Absent means 2. See lib/habit-score.ts.
+   */
+  coef?: number;
+  /** The day it was added, so the days before it are not scored as misses. */
+  since?: string;
+  /** Tick it automatically when today's data says it is done. lib/habit-auto.ts. */
+  auto?: HabitAuto;
+  /** Free-text notes on the habit, newest first. */
+  notes?: HabitNote[];
 }
+
+export interface HabitNote {
+  id: string;
+  date: string;
+  text: string;
+}
+
+export type HabitAuto =
+  | { kind: "workout" }
+  | { kind: "protein" }
+  | { kind: "water" }
+  | { kind: "calories"; within: number }
+  | { kind: "creatine" }
+  | { kind: "sleep"; hours: number }
+  | { kind: "bedtime"; before: string }
+  | { kind: "steps"; min: number }
+  | { kind: "activeKcal"; min: number }
+  | { kind: "reading"; minutes: number }
+  | { kind: "mind"; mindKind: "book" | "research" | "language" | "idea" }
+  | { kind: "screen"; under: number }
+  | { kind: "underBudget" }
+  | { kind: "mindful"; minutes: number }
+  | { kind: "focus"; minutes: number }
 
 export type { ScreenApp, ScreenTimeDay } from "./screen-time";
 export type { RampAdvance, RampUnit } from "./habit-ramp";
@@ -332,13 +389,60 @@ export interface Settings {
    * at whatever the default happened to be on the day it was first edited.
    */
   customGoals?: Partial<Goals>;
+  /**
+   * Floors, below the targets: the least of a nutrient that still counts as a
+   * day that went right. Drawn as a second line on the Fuel charts. Only the
+   * ones set are stored; none are set by default.
+   */
+  nutrientMins?: Partial<Record<"cals" | "protein" | "carbs" | "fat" | "fiber" | "water", number>>;
   unit: Unit;
   /** What money is counted in. Defaults to the dinar; free text, not a list. */
   currency?: string;
   /** Monthly spending budget. Unset means the Money tab reports without judging. */
   monthlyBudget?: number;
+  /**
+   * A real balance, checked against a bank or a wallet, and the day it was
+   * checked. Everything logged from that day forward is added or subtracted
+   * on top of it — "how much do I actually have" is the thing the ledger
+   * could not answer on its own, because a month's net is a flow, not a
+   * balance, and most days nobody has logged literally every dollar that
+   * ever passed through their hands. Re-checking it later moves the anchor
+   * forward, so a correction never double-counts what already happened.
+   */
+  moneyBalance?: number;
+  moneyBalanceDate?: string;
   /** Spending categories. Unset means the shipped defaults. */
   spendCategories?: string[];
+  /** Money accounts; unset means one Main account built from moneyBalance. */
+  moneyAccounts?: MoneyAccount[];
+  /** Categories with their icons and colours; unset means the defaults. */
+  moneyCategories?: MoneyCategory[];
+  /** Monthly budget per spending category, in the base currency. */
+  categoryBudgets?: Record<string, number>;
+  /** How many dinars one euro and one dollar are worth, for totals. */
+  moneyRates?: Partial<Record<"EUR" | "USD", number>>;
+  /** The Money tab's own colours. */
+  moneyColors?: Partial<Record<"card" | "income" | "expense", string>>;
+  savingsGoals?: SavingsGoal[];
+  /** Amounts hidden behind the eye on the Money dashboard. */
+  moneyHidden?: boolean;
+  /** Two-way Apple Health sync, switched on by connecting. */
+  healthSync?: boolean;
+  /** "Going to sleep" was tapped at this moment (ms) and "I'm up" not yet. */
+  sleepStart?: number;
+  /** Minutes in the Deep Work focus, per day (from the Focus filter). */
+  focusByDay?: Record<string, number>;
+  /** When the Deep Work focus turned on, while it is on (ms). */
+  focusActiveSince?: number;
+  /** Charts page: days shown, and which series. */
+  chartRange?: number;
+  chartSeries?: string[];
+  /**
+   * What was last sent to (or taken from) Health, per item —
+   * "workout:2026-10-02" → a signature of the session. A change in the
+   * signature is what triggers a re-send; a match means it is already there.
+   */
+  healthSynced?: Record<string, string>;
   /**
    * The trading account balance, in dollars.
    *
@@ -384,6 +488,16 @@ export interface Settings {
   readingGoalMin?: number;
   /** Books a year, for the grid on the reading dial. */
   booksPerYear?: number;
+  /** When you eat, and what share of the day each meal carries. Unset follows the default. */
+  mealTimes?: { label: string; time: string; share: number }[];
+  /** Notifications at each meal time with how much to eat. */
+  mealReminders?: boolean;
+  /** When meal verdicts started (epoch ms). Meals whose window opened before it are never judged. */
+  mealVerdictsSince?: number;
+  /** The desktop workstation layout on this device. Unset: on at a desk. */
+  workstation?: boolean;
+  /** When you train; read by Train, the Time tab and Fuel. See lib/workout-time.ts. */
+  workoutTime?: { time: string; mins: number; days?: Partial<Record<number, string>>; dates?: Record<string, string> };
   barWeight: number;
   restDefault: number;
   autoRest: boolean;
@@ -391,6 +505,16 @@ export interface Settings {
   confetti: boolean;
   theme: ThemePref;
   accent: string;
+  /** Colours picked by hand anywhere in the app, newest first. */
+  colorRecent?: string[];
+  /** Colours starred to keep. */
+  colorFavorites?: string[];
+  /** Display size, 0.8–1.3: everything sized in rem scales with it. */
+  uiScale?: number;
+  /** Bottom bar glass: 0 solid, 0.5 standard, 1 clearest. */
+  dockTransparency?: number;
+  /** Bottom bar size, 0.8–1.25. */
+  dockScale?: number;
   sessionsPerWeek: number;
   autoProteinTarget: boolean;
   proteinPerKg: number;
@@ -440,6 +564,12 @@ export interface LiveSession {
   forDate?: string;
   split: string;
   exercises: SessionExercise[];
+  /**
+   * The exercises exactly as the app loaded them from the programme. A sheet
+   * that still matches it is the app's to rebuild; one that does not has the
+   * user's work in it. See lib/live-guard.ts.
+   */
+  pristine?: string;
   undoStack: string[];
   redoStack: string[];
   finished: HistorySession | null;
@@ -477,10 +607,57 @@ export interface LedgerEntry {
   /** Local date key, the same shape every other log uses. */
   date: string;
   /** Negative amounts are not allowed; the kind carries the direction. */
-  kind: "spend" | "income";
+  /**
+   * "save" is money put towards a savings goal: it leaves the account like a
+   * spend but is not spending, so budgets and the spending charts skip it.
+   */
+  kind: "spend" | "income" | "save";
   amount: number;
   category: string;
   note?: string;
+  /** Which account it moved in; none means the Main account (older entries). */
+  accountId?: string;
+  /** What it was paid in; none means the base currency. */
+  currency?: MoneyCurrency;
+  /** The savings goal a "save" entry went to. */
+  goalId?: string;
+  /** A receipt photo is stored for this entry (habit-photos store, key receipt:<id>). */
+  photo?: boolean;
+  /** The project (and so the client) this money belongs to — revenue or cost. */
+  projectId?: string;
+}
+
+export type MoneyCurrency = "DZD" | "EUR" | "USD";
+
+export interface MoneyAccount {
+  id: string;
+  name: string;
+  kind: "cash" | "bank" | "card" | "savings";
+  currency: MoneyCurrency;
+  /** What it held on `openingDate`; entries from that day on move it. */
+  opening: number;
+  openingDate: string;
+  color: string;
+}
+
+export interface MoneyCategory {
+  name: string;
+  /** A lucide icon name from lib/money-ui.ts. */
+  icon: string;
+  color: string;
+  kind: "spend" | "income";
+}
+
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  /** In the base currency. */
+  target: number;
+  createdAt: number;
+  /** The counted goal it shows as in Projects › Goals. */
+  lifeGoalId?: string;
 }
 
 export interface TodoItem {
@@ -515,6 +692,20 @@ export interface TodoItem {
    * which is what "Clear done" does instead of throwing the row away.
    */
   cleared?: boolean;
+  /**
+   * A place on the timeline: the day, and when in it, as minutes from
+   * midnight. Unset means "some time" — most of a list is not an
+   * appointment, and only what you drag into the day gets a time.
+   */
+  slot?: TodoSlot;
+}
+
+export interface TodoSlot {
+  date: string;
+  /** Minutes from midnight. */
+  start: number;
+  /** Minutes long. */
+  mins: number;
 }
 
 export interface MindEntry {

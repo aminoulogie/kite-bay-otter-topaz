@@ -83,6 +83,17 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync ios
 
+      # Liquid Glass bars only exist when the app is built with the iOS 26+ SDK.
+      # Use the newest Xcode 26 or later on the runner, and say which one ran.
+      - name: Pick Xcode
+        run: |
+          set -euo pipefail
+          X=$( (ls -d /Applications/Xcode_2[6-9]*.app /Applications/Xcode_[3-9]*.app 2>/dev/null || true) | sort -V | tail -1)
+          if [ -n "$X" ]; then sudo xcode-select -s "$X"; fi
+          V=$(xcodebuild -version | tr '\n' ' ')
+          echo "::notice title=Xcode::$V"
+          xcodebuild -showsdks | grep -i iphoneos || true
+
       - name: Install pods
         working-directory: ios/App
         run: pod install --repo-update
@@ -136,6 +147,35 @@ jobs:
 
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP" "$RUNNER_TEMP/Payload/"
+
+          # The home-screen widget ships inside the app. Without it the
+          # "Rings" widget would silently be missing from the phone's gallery.
+          OUT="$RUNNER_TEMP/Payload/App.app"
+          WIDGET="$OUT/PlugIns/SomaWidgets.appex"
+          if [ ! -d "$WIDGET" ]; then
+            echo "FATAL: SomaWidgets.appex is not embedded in the app."
+            ls -la "$OUT/PlugIns" || true
+            exit 1
+          fi
+
+          # Ad-hoc signed, inside out, carrying the App Group entitlement. The
+          # app and its widget share today's rings through that group, and a
+          # sideloader reads the entitlements it should request from the
+          # binary — an unsigned binary carries none, so the group would never
+          # be granted. The sideloader re-signs everything with your Apple ID
+          # at install; this signature only states what is being asked for.
+          for f in "$OUT"/Frameworks/*; do
+            codesign --force --sign - "$f"
+          done
+          codesign --force --sign - \
+            --entitlements "$GITHUB_WORKSPACE/ios/App/SomaWidgets/SomaWidgets.entitlements" "$WIDGET"
+          codesign --force --sign - \
+            --entitlements "$GITHUB_WORKSPACE/ios/App/App/App.entitlements" "$OUT"
+          ENTS=$(codesign -d --entitlements - "$OUT" 2>&1 || true)
+          case "$ENTS" in
+            *application-groups*) echo "App Group entitlement present" ;;
+            *) echo "FATAL: App Group entitlement missing from the signed app."; echo "$ENTS"; exit 1 ;;
+          esac
           cd "$RUNNER_TEMP"
           zip -qry "SOMA-$V.ipa" Payload
           echo "Built $(du -h "SOMA-$V.ipa" | cut -f1) unsigned ipa"
@@ -171,6 +211,106 @@ jobs:
             gh release create "$TAG" "$IPA" --title "SOMA $V" --notes "$NOTES"
           fi
           echo "Release: $(gh release view "$TAG" --json url -q .url)"
+
+      # The AltStore source: one JSON file at a URL that never changes, which
+      # AltStore reads to list SOMA and offer each new build as an update.
+      # Kept on a release of its own ("altstore"), marked prerelease so it is
+      # never shown as the latest version of the app.
+      #   https://github.com/<owner>/<repo>/releases/download/altstore/altstore.json
+      - name: Publish AltStore source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.ver.outputs.marketing }}
+          B: ${{ steps.ver.outputs.build }}
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download"
+          TAG=altstore
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "AltStore source" --prerelease \
+              --notes "Add this to AltStore › Sources: $BASE/$TAG/altstore.json"
+          fi
+          # The versions already listed, so older builds stay installable.
+          curl -fsSL "$BASE/$TAG/altstore.json" -o "$RUNNER_TEMP/previous.json" || true
+          cp ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png "$RUNNER_TEMP/icon.png"
+          python3 scripts/altstore_source.py \
+            --app "$RUNNER_TEMP/Payload/App.app" \
+            --ipa "$RUNNER_TEMP/SOMA-$V.ipa" \
+            --version "$V" --build "$B" \
+            --download "$BASE/ios-v$V/SOMA-$V.ipa" \
+            --icon "$BASE/$TAG/icon.png" \
+            --previous "$RUNNER_TEMP/previous.json" \
+            --entitlements ios/App/App/App.entitlements ios/App/SomaWidgets/SomaWidgets.entitlements \
+            --out "$RUNNER_TEMP/altstore.json"
+          gh release upload "$TAG" "$RUNNER_TEMP/altstore.json" "$RUNNER_TEMP/icon.png" --clobber
+          echo "AltStore source: $BASE/$TAG/altstore.json"
+
+      # Live updates: the web layer as a zip, and live.json saying which
+      # installed builds it runs on (scripts/live_manifest.py). The app reads
+      # live.json on launch and downloads the zip when it fits — see
+      # src/lib/native/live-update.ts.
+      #
+      # Served three ways, because on some networks GitHub's release-download
+      # servers crawl: from a `live` branch through jsDelivr's CDN (fast
+      # nearly everywhere), the same branch through raw.githubusercontent.com,
+      # and the release assets as before. The branch holds only the newest
+      # layer and is replaced on every build, so it never grows. The zip is
+      # addressed by commit, so no cache can hand out a stale one; live.json
+      # is purged from jsDelivr after each push.
+      - name: Publish live update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.ver.outputs.marketing }}
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download"
+          NAME="SOMA-web-$V.zip"
+          ZIP="$RUNNER_TEMP/$NAME"
+          (cd .vercel/output/static && zip -qr "$ZIP" .)
+          gh release upload "ios-v$V" "$ZIP" --clobber
+          curl -fsSL "$BASE/altstore/live.json" -o "$RUNNER_TEMP/live-previous.json" || true
+
+          LIVE="$RUNNER_TEMP/live-branch"
+          mkdir -p "$LIVE" && cd "$LIVE"
+          git init -q && git checkout -q -b live
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp "$ZIP" .
+          # The app itself rides along, so AltStore installs come off the CDN
+          # too (below) instead of GitHub's slow release downloads.
+          cp "$RUNNER_TEMP/SOMA-$V.ipa" .
+          git add "$NAME" "SOMA-$V.ipa" && git commit -qm "SOMA $V: app and web layer"
+          SHA=$(git rev-parse HEAD)
+          cd "$GITHUB_WORKSPACE"
+
+          python3 scripts/live_manifest.py \
+            --version "$V" \
+            --zip "$ZIP" \
+            --url "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${SHA}/$NAME" \
+            --mirror "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${SHA}/$NAME" \
+            --mirror "$BASE/ios-v$V/$NAME" \
+            --previous "$RUNNER_TEMP/live-previous.json" \
+            --out "$RUNNER_TEMP/live.json"
+
+          cp "$RUNNER_TEMP/live.json" "$LIVE/live.json"
+          cd "$LIVE"
+          git add live.json && git commit -qm "live.json for $V"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" live
+          cd "$GITHUB_WORKSPACE"
+          gh release upload altstore "$RUNNER_TEMP/live.json" --clobber
+          curl -fsS "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@live/live.json" >/dev/null || true
+
+          # The AltStore source again, now pointing at the CDN copy of the app.
+          python3 scripts/altstore_source.py \
+            --app "$RUNNER_TEMP/Payload/App.app" \
+            --ipa "$RUNNER_TEMP/SOMA-$V.ipa" \
+            --version "$V" --build "${{ steps.ver.outputs.build }}" \
+            --download "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${SHA}/SOMA-$V.ipa" \
+            --icon "$BASE/altstore/icon.png" \
+            --previous "$RUNNER_TEMP/previous.json" \
+            --entitlements ios/App/App/App.entitlements ios/App/SomaWidgets/SomaWidgets.entitlements \
+            --out "$RUNNER_TEMP/altstore.json"
+          gh release upload altstore "$RUNNER_TEMP/altstore.json" --clobber
 
       - uses: actions/upload-artifact@v4
         with:

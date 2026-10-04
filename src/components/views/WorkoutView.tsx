@@ -25,7 +25,11 @@ import { currentDebt } from "@/lib/sleep-debt";
 import { rateExerciseInstance, rateSession, rateSet, ratingTone } from "@/lib/stimulus";
 import { tapMedium, tapSuccess } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
+import { isRestSplit } from "@/lib/programs";
+import { sessionBurn } from "@/lib/training-burn";
+import { latestWeight } from "@/lib/rings";
 import type { SessionExercise } from "@/lib/types";
+import { WorkoutTimeCard } from "@/components/WorkoutTimeCard";
 
 const SUPERSET_COLOR: Record<string, string> = {
   A: "var(--color-accent)",
@@ -48,6 +52,10 @@ export function WorkoutView() {
   const settings = useSoma((s) => s.settings);
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
+  // The same burn the Burned ring uses (lib/training-burn.ts), worked out
+  // from the session rather than the figure stored when it was saved, which
+  // came from an older formula and disagreed with the ring.
+  const bodyweight = useMemo(() => latestWeight(nutrition), [nutrition]);
   const activeDate = useSoma((s) => s.activeDate);
   // Declared here rather than further down: the readiness drafts below read it
   // inside a closure that runs during this same render, and a const referenced
@@ -74,6 +82,10 @@ export function WorkoutView() {
   const startRest = useSoma((s) => s.startRest);
   const clearRest = useSoma((s) => s.clearRest);
   const saveWorkout = useSoma((s) => s.saveWorkout);
+  const logRestDay = useSoma((s) => s.logRestDay);
+  const restDays = useSoma((s) => s.restDays);
+  /** "Train anyway" on a saved rest day: show the session for this visit. */
+  const [restDismissed, setRestDismissed] = useState(false);
   const resetLive = useSoma((s) => s.resetLive);
   const resumeFinished = useSoma((s) => s.resumeFinished);
   const allExercises = useSoma((s) => s.allExercises);
@@ -159,23 +171,22 @@ export function WorkoutView() {
 
   let totalVol = 0;
   let totalSets = 0;
-  let failSum = 0;
   for (const ex of live.exercises) {
     for (const s of ex.sets) {
       if (s.done && s.type === "normal") {
         totalSets++;
         totalVol += SomaIntelligenceEngine.calculateWorkVolume(Number(s.weight) || 0, Number(s.reps) || 0, ex.isBW);
-        failSum += s.failure || 3;
       }
     }
   }
-  const mins = Math.max(1, Math.round(elapsed / 60));
-  const cals = SomaIntelligenceEngine.calculateCaloriesBurned(
-    mins,
-    totalVol,
-    totalSets,
-    totalSets ? failSum / totalSets : 3,
-  );
+  // The same model the saved session is billed with (lib/training-burn.ts),
+  // so the number here is the number that lands in the day. The old formula
+  // charged a minute's floor for nothing, which read "20 kcal" before a
+  // single set.
+  const cals = sessionBurn(
+    { exercises: live.exercises, totalSets, durationFormatted: `${em}:${String(es).padStart(2, "0")}` },
+    bodyweight || undefined,
+  ).gross;
 
   // Live: it moves as sets are ticked and rated.
   const sessionRating = rateSession(live);
@@ -246,7 +257,7 @@ export function WorkoutView() {
           <>
             <div className="grid grid-cols-2 gap-2">
               <Stat label="Duration" value={past.durationFormatted} />
-              <Stat label="Burn" value={`${past.caloriesBurned} kcal`} />
+              <Stat label="Burn" value={`${sessionBurn(past, bodyweight || undefined).gross} kcal`} />
               <Stat label="Volume" value={past.totalVol.toLocaleString()} />
               <Stat label="Sets" value={String(past.totalSets)} />
             </div>
@@ -306,6 +317,41 @@ export function WorkoutView() {
     );
   }
 
+  // A rest day that was saved looks saved, the way a session does — not like
+  // an empty workout still waiting to be started.
+  const restDay = live.forDate ?? todayKey;
+  const restSaved = !!restDays[restDay] && !live.finished && !restDismissed &&
+    !live.exercises.some((ex) => ex.sets.some((x) => x.done));
+  if (restSaved) {
+    return (
+      <div className="space-y-3 pb-4">
+        <div className="py-4 text-center">
+          <Badge tone="accent">Rest day saved</Badge>
+          <h2 className="mt-2 font-display text-2xl font-extrabold tracking-tight">Recovery</h2>
+          <p className="mt-1 text-sm text-muted">{live.split} · {restDay}</p>
+        </div>
+        <Card className="text-sm text-muted">
+          Logged as rest, not as a missed workout. It doesn't count toward
+          sessions or volume, and the day score leaves the workout out.
+        </Card>
+        <div className="flex gap-2">
+          <Button className="flex-1" onClick={() => setRestDismissed(true)}>
+            Train anyway
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              logRestDay(restDay, false);
+              toast.success("Rest day removed");
+            }}
+          >
+            Undo rest day
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (live.finished) {
     const f = live.finished;
     return (
@@ -317,7 +363,7 @@ export function WorkoutView() {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Stat label="Duration" value={f.durationFormatted} />
-          <Stat label="Burn" value={`${f.caloriesBurned} kcal`} />
+          <Stat label="Burn" value={`${sessionBurn(f, bodyweight || undefined).gross} kcal`} />
           <Stat label="Volume" value={f.totalVol.toLocaleString()} />
           <Stat label="Sets" value={String(f.totalSets)} />
         </div>
@@ -423,6 +469,7 @@ export function WorkoutView() {
       </Card>
       </Sized>
 
+      <WorkoutTimeCard key="time" />
       <div key="date" className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <Button size="icon" variant="ghost" onClick={undo} aria-label="Undo">
@@ -535,9 +582,23 @@ export function WorkoutView() {
             ) {
               return;
             }
+            const day = live.forDate ?? todayKey;
+            const anyDone = live.exercises.some((ex) => ex.sets.some((x) => x.done && x.type !== "warmup"));
+            // A rest and recovery day has no sets to tick, and that is the
+            // point of it: saving one records the rest, not an empty workout.
+            if (!anyDone && (isRestSplit(live.split) || (live.exercises.length === 0 && proj.isRest))) {
+              logRestDay(day, true);
+              toast.success(`Rest day logged for ${day}`, {
+                action: { label: "Undo", onClick: () => logRestDay(day, false) },
+              });
+              return;
+            }
             const saved = saveWorkout();
             if (!saved) toast.error("Tick at least one working set first");
-            else toast.success(`Session saved to ${live.forDate ?? todayKey}`);
+            else {
+              logRestDay(day, false);
+              toast.success(`Session saved to ${day}`);
+            }
           }}
         >
           Save log

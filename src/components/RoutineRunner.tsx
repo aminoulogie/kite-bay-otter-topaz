@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Check, Pause, Play, SkipForward, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, Pause, Play, SkipForward, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { tapLight, tapSuccess } from "@/lib/haptics";
@@ -24,12 +24,21 @@ import { cn } from "@/lib/utils";
  * the ring moves because time is passing, and it turns amber and then red
  * because you are running out of it.
  */
-export function RoutineRunner({
-  routine, onClose,
-}: {
-  routine: Routine;
-  onClose: () => void;
-}) {
+/** Re-renders every `ms` while the run is going, so countdowns move. */
+export function useRunTick(run: RunState | null, ms: number): void {
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!run || run.pausedAt) return;
+    const id = setInterval(() => force((n) => n + 1), ms);
+    return () => clearInterval(id);
+  }, [run, run?.pausedAt, ms]);
+}
+
+/**
+ * Done, skip, pause — shared by the full-screen runner and the mini player,
+ * so finishing a step from either ticks the same habit the same way.
+ */
+export function useRoutineControls(routine: Routine) {
   const run = useSoma((s) => s.dayRoutineRun);
   const setRun = useSoma((s) => s.setDayRoutineRun);
   const toggleHabit = useSoma((s) => s.toggleHabit);
@@ -38,34 +47,9 @@ export function RoutineRunner({
   const todos = useSoma((s) => s.todos);
   const activeDate = useSoma((s) => s.activeDate);
 
-  // Ticks every 200ms rather than every second: a countdown that jumps a whole
-  // second at a time reads as a stutter next to a ring that moves smoothly.
-  const [, force] = useState(0);
-  useEffect(() => {
-    if (!run || run.pausedAt) return;
-    const id = setInterval(() => force((n) => n + 1), 200);
-    return () => clearInterval(id);
-  }, [run, run?.pausedAt]);
-
-  const list = useMemo(() => spans(routine), [routine]);
-  const steps = stepsOf(routine);
-
-  if (!run) return null;
-
-  const done = isFinished(routine, run);
-  const cur = list[run.index];
-  const stepLeft = stepLeftSeconds(routine, run, Date.now());
-  const winLeft = windowLeftSeconds(routine, run, Date.now());
-  const drift = driftSeconds(routine, run, Date.now());
-  const total = Number(routine.windowSeconds) || 1;
-  const winProgress = Math.max(0, Math.min(1, 1 - winLeft / total));
-  const stepTotal = cur ? cur.endSeconds - cur.startSeconds : 1;
-  const stepProgress = Math.max(0, Math.min(1, 1 - stepLeft / stepTotal));
-
-  /** Red when the step has overrun, amber in its last fifth, else the colour. */
-  const tone = stepLeft < 0 ? "var(--color-danger)" : stepLeft <= stepTotal * 0.2 ? "var(--color-warn)" : routine.color;
-
   const finishStep = () => {
+    if (!run) return;
+    const cur = spans(routine)[run.index];
     if (!cur) return;
     tapSuccess();
     // The real thing is ticked here rather than at the end, so a routine
@@ -84,11 +68,115 @@ export function RoutineRunner({
       toast.success(`${routine.name} done in ${duration((Date.now() - run.startedAt) / 1000)}`);
     }
   };
+  const togglePause = () => {
+    if (!run) return;
+    tapLight();
+    setRun(run.pausedAt ? resumeRun(run) : pauseRun(run));
+  };
+  const skip = () => {
+    if (!run) return;
+    tapLight();
+    setRun(skipStep(routine, run, Date.now()));
+  };
+  const stop = () => setRun(null);
+  return { run, finishStep, togglePause, skip, stop };
+}
+
+export function RoutineRunner({
+  routine, onClose, onMinimize,
+}: {
+  routine: Routine;
+  onClose: () => void;
+  /** Shrinks the runner to the mini player above the tab bar. */
+  onMinimize?: () => void;
+}) {
+  const { run, finishStep, togglePause, skip, stop } = useRoutineControls(routine);
+
+  // Ticks every 200ms rather than every second: a countdown that jumps a whole
+  // second at a time reads as a stutter next to a ring that moves smoothly.
+  useRunTick(run, 200);
+
+  const list = useMemo(() => spans(routine), [routine]);
+  const steps = stepsOf(routine);
+
+  // Pulled down past DISMISS, the runner shrinks to the mini player, the way
+  // a music player's full screen does.
+  const [drag, setDrag] = useState(0);
+  const dragFrom = useRef<number | null>(null);
+  const DISMISS = 110;
+
+  if (!run) return null;
+
+  const done = isFinished(routine, run);
+  const cur = list[run.index];
+  const stepLeft = stepLeftSeconds(routine, run, Date.now());
+  const winLeft = windowLeftSeconds(routine, run, Date.now());
+  const drift = driftSeconds(routine, run, Date.now());
+  const total = Number(routine.windowSeconds) || 1;
+  const winProgress = Math.max(0, Math.min(1, 1 - winLeft / total));
+  const stepTotal = cur ? cur.endSeconds - cur.startSeconds : 1;
+  const stepProgress = Math.max(0, Math.min(1, 1 - stepLeft / stepTotal));
+
+  /** Red when the step has overrun, amber in its last fifth, else the colour. */
+  const tone = stepLeft < 0 ? "var(--color-danger)" : stepLeft <= stepTotal * 0.2 ? "var(--color-warn)" : routine.color;
+
+  const canShrink = !!onMinimize && !done;
+  const dragHandlers = canShrink
+    ? {
+        onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+          // A button in the header is a tap, not the start of a pull.
+          if ((e.target as HTMLElement).closest("button")) return;
+          dragFrom.current = e.clientY;
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+        },
+        onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+          if (dragFrom.current == null) return;
+          setDrag(Math.max(0, e.clientY - dragFrom.current));
+        },
+        onPointerUp: () => {
+          if (dragFrom.current == null) return;
+          dragFrom.current = null;
+          if (drag > DISMISS) {
+            tapLight();
+            onMinimize?.();
+          }
+          setDrag(0);
+        },
+        onPointerCancel: () => {
+          dragFrom.current = null;
+          setDrag(0);
+        },
+      }
+    : {};
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+    <div
+      className={cn(
+        "fixed inset-0 z-[80] flex flex-col overflow-hidden bg-bg pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]",
+        drag === 0 && "transition-transform duration-200",
+      )}
+      style={drag ? { transform: `translateY(${drag}px)`, borderRadius: 28 } : undefined}
+    >
+      {/* The grab zone: a handle and the header. Pull it down to shrink the
+          runner into the player above the tab bar. */}
+      <div {...dragHandlers} className={cn(canShrink && "touch-none")}>
+      {canShrink && (
+        <div className="flex justify-center pb-2">
+          <span aria-hidden className="h-1.5 w-10 rounded-full bg-fg/25" />
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 px-4 pb-2">
-        <div className="min-w-0">
+        {canShrink && (
+          <button
+            type="button"
+            onClick={() => onMinimize?.()}
+            aria-label="Shrink to the player"
+            className="grid size-10 shrink-0 place-items-center rounded-full border border-border bg-surface-2"
+          >
+            <ChevronDown className="size-5 text-muted" />
+          </button>
+        )}
+        <div className="min-w-0 flex-1">
           <div className="truncate font-display text-base font-extrabold">{routine.name}</div>
           <div className="text-[0.65rem] font-bold uppercase tracking-wider text-faint">
             {done ? "finished" : `step ${run.index + 1} of ${steps.length}`}
@@ -97,7 +185,7 @@ export function RoutineRunner({
         <button
           type="button"
           onClick={() => {
-            setRun(null);
+            stop();
             onClose();
           }}
           aria-label="Stop the routine"
@@ -105,6 +193,7 @@ export function RoutineRunner({
         >
           <X className="size-5 text-muted" />
         </button>
+      </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 px-5">
@@ -129,7 +218,7 @@ export function RoutineRunner({
         )}
       </div>
 
-      <div className="px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-3">
+      <div className="px-5 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-3">
         {/* The window. A thin bar rather than a second ring: two rings compete
             and you have to work out which is which, and there is no working
             anything out while a timer is running. */}
@@ -151,23 +240,11 @@ export function RoutineRunner({
 
         {!done && (
           <div className="mt-3 flex gap-2">
-            <Button
-              className="flex-1"
-              onClick={() => {
-                tapLight();
-                setRun(run.pausedAt ? resumeRun(run) : pauseRun(run));
-              }}
-            >
+            <Button className="flex-1" onClick={togglePause}>
               {run.pausedAt ? <Play className="size-4" /> : <Pause className="size-4" />}
               {run.pausedAt ? "Resume" : "Pause"}
             </Button>
-            <Button
-              className="flex-1"
-              onClick={() => {
-                tapLight();
-                setRun(skipStep(routine, run, Date.now()));
-              }}
-            >
+            <Button className="flex-1" onClick={skip}>
               <SkipForward className="size-4" /> Skip
             </Button>
             <Button variant="primary" className="flex-[1.4]" onClick={finishStep}>
@@ -181,7 +258,7 @@ export function RoutineRunner({
             variant="primary"
             className="mt-3 w-full"
             onClick={() => {
-              setRun(null);
+              stop();
               onClose();
             }}
           >

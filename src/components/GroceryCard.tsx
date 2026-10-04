@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Check, Plus, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -32,7 +32,7 @@ import { useWidgetSize } from "@/components/WidgetGrid";
  * Unpriced lines are counted and reported rather than estimated. Nothing here
  * guesses what anything costs.
  */
-export function GroceryCard({ money }: { money: (n: number) => string }) {
+export const GroceryCard = memo(function GroceryCard({ money }: { money: (n: number) => string }) {
   const grocery = useSoma((s) => s.grocery);
   const pantry = useSoma((s) => s.pantry);
   const addGroceryLine = useSoma((s) => s.addGroceryLine);
@@ -237,7 +237,7 @@ export function GroceryCard({ money }: { money: (n: number) => string }) {
       )}
     </Card>
   );
-}
+});
 
 /**
  * What is in the cupboard.
@@ -247,7 +247,7 @@ export function GroceryCard({ money }: { money: (n: number) => string }) {
  * — are both money questions. Logging food is where stock LEAVES; this is
  * where it is set up and topped up.
  */
-export function PantryCard() {
+export const PantryCard = memo(function PantryCard() {
   const pantry = useSoma((s) => s.pantry);
   const customFoods = useSoma((s) => s.customFoods);
   const library = useMemo(() => composeLibrary(customFoods), [customFoods]);
@@ -392,7 +392,7 @@ export function PantryCard() {
       )}
     </Card>
   );
-}
+});
 
 function Field({
   label, value, onChange,

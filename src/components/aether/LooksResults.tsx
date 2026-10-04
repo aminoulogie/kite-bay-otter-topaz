@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ChevronRight, RotateCcw, Triangle } from "lucide-react";
-import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card } from "@/components/ui/card";
 import { Face3DView, type Face3DHandle } from "@/components/aether/Face3DView";
 import { compareCyl, faceWindow, mergeCyl, onGrid, type Cylinder } from "@/lib/aether/cylmap";
@@ -298,7 +298,6 @@ export function LooksResults({
                 <div className="h-44" data-no-swipe-nav>
                   <ResponsiveContainer>
                     <ComposedChart data={points.map((p) => ({ ...p, band: [p.lo, p.hi] }))} margin={{ left: -18, right: 6, top: 6 }}>
-                      <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
                       <XAxis
                         dataKey="t"
                         type="number"

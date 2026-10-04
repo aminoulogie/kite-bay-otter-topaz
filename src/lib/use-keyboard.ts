@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { FIELD_SELECTOR, insetFrom, keyboardTopFrom, liftFor } from "@/lib/keyboard";
+import { FIELD_SELECTOR, IOS_ACCESSORY_H, insetFrom, keyboardTopFrom, liftFor } from "@/lib/keyboard";
+import { Capacitor } from "@capacitor/core";
 
 /**
  * Keep the keyboard out of the way of whatever is being typed into.
@@ -74,6 +75,22 @@ export function useKeyboardInset(): void {
       const el = document.activeElement;
       if (!isField(el)) return;
       const rect = el.getBoundingClientRect();
+      // Inside a sheet: put the field in the MIDDLE of what is visible of the
+      // sheet, not merely clear of the keys. A field revealed by the minimum
+      // sat jammed against the keyboard or the sheet's top edge, with the
+      // labels and buttons around it cut off.
+      const sheet = el.closest<HTMLElement>(".soma-expand");
+      if (sheet && sheet.scrollHeight > sheet.clientHeight + 4) {
+        const box = sheet.getBoundingClientRect();
+        const bottom = Math.min(box.bottom, keyboardTopFrom(viewport, window.innerHeight));
+        const mid = (Math.max(box.top, 0) + bottom) / 2;
+        const delta = (rect.top + rect.bottom) / 2 - mid;
+        if (Math.abs(delta) > 12) {
+          const smooth = !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+          sheet.scrollBy({ top: delta, behavior: smooth ? "smooth" : "auto" });
+        }
+        return;
+      }
       const lift = liftFor(
         rect.top,
         rect.bottom,
@@ -87,8 +104,33 @@ export function useKeyboardInset(): void {
       else window.scrollBy(how);
     };
 
+    // Where the VISIBLE part of the screen is while the keys are up. iOS
+    // pans the page up to show the field, so the visible area starts
+    // `offsetTop` down the layout viewport. Sheets are pinned to these two
+    // values — ending at the keys alone left them as tall as the whole screen
+    // minus the keys, and the pan pushed their top (title, close button, the
+    // Expense/Income switch) off the top of the screen.
+    let lastTop = -1;
+    let lastH = -1;
+    const pin = (open: boolean) => {
+      const top = open && viewport ? Math.round(viewport.offsetTop) : 0;
+      const strip = Capacitor.getPlatform() === "ios" ? IOS_ACCESSORY_H : 0;
+      const h = open && viewport ? Math.round(viewport.height) - strip : 0;
+      if (top === lastTop && h === lastH) return;
+      lastTop = top;
+      lastH = h;
+      if (open) {
+        root.style.setProperty("--vv-top", `${top}px`);
+        root.style.setProperty("--vvh", `${h}px`);
+      } else {
+        root.style.removeProperty("--vv-top");
+        root.style.removeProperty("--vvh");
+      }
+    };
+
     const measure = () => {
       const next = insetFrom(viewport, window.innerHeight);
+      pin(next > 0);
       if (next === inset) return;
       inset = next;
       root.style.setProperty("--kb", `${next}px`);
@@ -147,6 +189,8 @@ export function useKeyboardInset(): void {
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("focusout", onFocusOut);
       root.style.removeProperty("--kb");
+      root.style.removeProperty("--vv-top");
+      root.style.removeProperty("--vvh");
       root.classList.remove("soma-kb");
     };
   }, []);

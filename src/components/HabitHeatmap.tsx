@@ -14,6 +14,7 @@
 
 import { addDays, getLocalDateKey } from "@/lib/soma";
 import type { Habit } from "@/lib/types";
+import { canChange } from "@/lib/habit-lock";
 
 const MONTH_DAYS = 28;
 const YEAR_WEEKS = 52;
@@ -62,10 +63,13 @@ export function MonthMatrix({
       <button
         key={dStr}
         type="button"
+        // A missed day stays missed: only today can be ticked, though a done
+        // day can always be cleared.
+        disabled={!canChange(done, dStr)}
         onClick={() => onToggle(dStr)}
         title={`${dStr}: ${done ? `done, ${streak} day streak` : "missed"}`}
         aria-label={`${dStr} ${done ? `completed, ${streak} day streak` : "incomplete"}`}
-        className="aspect-square rounded-[3px] transition-transform active:scale-90"
+        className="aspect-square rounded-[3px] transition-transform active:scale-90 disabled:active:scale-100"
         style={{
           background: done ? habit.color : "var(--color-surface-2)",
           opacity: done ? intensity : 1,
@@ -227,10 +231,13 @@ export function MonthStrip({
       <button
         key={dStr}
         type="button"
+        // A missed day stays missed: only today can be ticked, though a done
+        // day can always be cleared.
+        disabled={!canChange(done, dStr)}
         onClick={() => onToggle(dStr)}
         title={`${dStr}: ${done ? `done, ${streak} day streak` : "missed"}`}
         aria-label={`${dStr} ${done ? `completed, ${streak} day streak` : "incomplete"}`}
-        className="h-5 min-w-0 flex-1 rounded-[2px] transition-transform active:scale-90"
+        className="h-5 min-w-0 flex-1 rounded-[2px] transition-transform active:scale-90 disabled:active:scale-100"
         style={{
           background: done ? habit.color : "var(--color-surface-3)",
           opacity: done ? intensity : 1,

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  Area, CartesianGrid, ComposedChart, Line, ReferenceDot, ReferenceLine, ResponsiveContainer,
+  Area, ComposedChart, Line, ReferenceDot, ReferenceLine, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -238,7 +238,6 @@ export function GraphsView() {
           >
             <ResponsiveContainer>
               <ComposedChart data={data} margin={{ top: 8, right: 10, bottom: 0, left: 0 }}>
-                <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="t"
                   type="number"
@@ -572,7 +571,6 @@ function MicroChart({ m }: { m: ReturnType<typeof microMuscleStrength>[number] }
               the tick labels 18px off the left edge of the chart and clipped
               them — the axis was drawn, it just could not be read. */}
           <ComposedChart data={points} margin={{ top: 6, right: 10, bottom: 0, left: 0 }}>
-            <CartesianGrid stroke="var(--color-border)" strokeDasharray="3 3" vertical={false} />
             <XAxis
               dataKey="t"
               type="number"

@@ -99,7 +99,7 @@ export interface DaySummary {
 
 export function summariseDay(input: DayMarksInput, date: string): DaySummary {
   const onDay = input.ledger.filter((e) => e.date === date);
-  const spend = onDay.filter((e) => e.kind !== "income");
+  const spend = onDay.filter((e) => e.kind === "spend");
   const income = onDay.filter((e) => e.kind === "income");
   const sum = (rows: LedgerEntry[]) =>
     Math.round(rows.reduce((a, e) => a + Math.abs(Number(e.amount) || 0), 0) * 100) / 100;

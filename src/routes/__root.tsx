@@ -31,12 +31,8 @@ export const Route = createRootRoute({
       // should be the app's own.
       { rel: "manifest", href: "/app.webmanifest" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=Manrope:wght@400;500;600;700;800&family=Syne:wght@600;700;800&display=swap",
-      },
+      // No web fonts: the app is set in the system's own San Francisco (see
+      // --font-sans in styles.css), which needs nothing fetched.
     ],
   }),
   component: () => (

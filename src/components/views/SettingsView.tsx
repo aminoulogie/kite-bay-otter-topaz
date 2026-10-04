@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { SyncSettings } from "@/components/SyncSettings";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import { ExercisesView } from "@/components/views/ExercisesView";
 import { ExerciseIcon } from "@/components/ExerciseIcon";
-import { DecimalInput } from "@/components/ui/decimal-input";
+import { DecimalInput, parseDecimal } from "@/components/ui/decimal-input";
+import { colorsOf, ratesOf } from "@/lib/money-model";
 import { Input } from "@/components/ui/input";
-import { ACCENT_PRESETS, SomaIntelligenceEngine, normalizeAccent } from "@/lib/soma";
+import { SomaIntelligenceEngine, getLocalDateKey, normalizeAccent } from "@/lib/soma";
+import { ColorPalette } from "@/components/ColorPalette";
 import {
   buildBackup, parseBackup, restoreExercisePhotos, restorePhotos, restoreScanImages, saveBackupFile,
   type BackupSummary,
@@ -17,6 +20,7 @@ import {
   storageHealth, type StorageHealth,
 } from "@/lib/storage-health";
 import { ProgramBuilder } from "@/components/ProgramBuilder";
+import { BuildSplitSheet } from "@/components/BuildSplitSheet";
 import {
   getStoredVaultFolder, pickVaultFolder, forgetVaultFolder, readVaultFile, readVaultPhotos,
   stripPhotosForVault, supportsVaultFolder, writeVaultFile, writeVaultPhotos,
@@ -32,6 +36,17 @@ import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { ReportSheet } from "@/components/ReportSheet";
 import { DEFAULT_GOAL, GOAL_LIST, goalMode } from "@/lib/goal-mode";
 import { cn } from "@/lib/utils";
+import { widgetStatus } from "@/lib/native/widget-bridge";
+import { ALL_WAYS, WAY_NAMES, diagnoseHaptics, testHaptics, tickWay } from "@/lib/haptics";
+import { lockScreenStatus, type LockScreenStatus } from "@/lib/native/routine-activity";
+import { connectHealth, healthDay, type HealthDay } from "@/lib/native/health";
+import { syncHealthNow } from "@/lib/native/health-sync";
+import { clearGym, gymStatus, setGymHere } from "@/lib/native/focus-gym";
+import {
+  applyLiveNow, checkLive, liveStatus, nativeVersion, onLiveStatus, type LiveStatus,
+} from "@/lib/native/live-update";
+import { forgetNativeVault, isNativeVault, pickNativeVault, storedNativeVault } from "@/lib/native/vault-folder";
+import { localPhotoKeys } from "@/lib/habit-photos";
 
 const GOAL_FIELDS = [
   { key: "cals" as const, label: "Calories" },
@@ -62,6 +77,9 @@ export function SettingsView() {
   const [vaultHandle, setVaultHandleState] = useState<FileSystemDirectoryHandle | null>(null);
   const [vaultBusy, setVaultBusy] = useState(false);
   const [vaultLastSync, setVaultLastSync] = useState<Date | null>(null);
+  // Desktop Chrome through File System Access; the iPhone app through its
+  // own folder picker (lib/native/vault-folder.ts). Safari on the web: neither.
+  const canVault = supportsVaultFolder() || isNativeVault();
   const clearSeededHabitHistory = useSoma((s) => s.clearSeededHabitHistory);
   const applyGoalsToOpenDays = useSoma((s) => s.applyGoalsToOpenDays);
   const activeProgram = useActiveProgram();
@@ -70,11 +88,30 @@ export function SettingsView() {
   const [exercisesOpen, setExercisesOpen] = useState(false);
   // Raw text beside the stored numbers, so a half-typed target is not wiped on
   // every keystroke.
+  const [minDrafts, setMinDrafts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      Object.entries(useSoma.getState().settings.nutrientMins ?? {}).map(([k, v]) => [k, String(v)]),
+    ),
+  );
   const [goalDrafts, setGoalDrafts] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       Object.entries(useSoma.getState().settings.customGoals ?? {}).map(([k, v]) => [k, String(v)]),
     ),
   );
+  const [widget, setWidget] = useState<{ shared: boolean; group: string } | null>(null);
+  const [lock, setLock] = useState<LockScreenStatus | null>(null);
+  const [way, setWay] = useState(tickWay());
+  const [buildingSplit, setBuildingSplit] = useState(false);
+  const [live, setLive] = useState<LiveStatus>(liveStatus());
+  const [installed, setInstalled] = useState<string | null>(null);
+  useEffect(() => {
+    void nativeVersion().then(setInstalled);
+    return onLiveStatus(setLive);
+  }, []);
+  useEffect(() => {
+    void widgetStatus().then(setWidget);
+    void lockScreenStatus().then(setLock);
+  }, []);
   const [localBusy, setBusy] = useState(false);
   const [health, setHealth] = useState<StorageHealth | null>(null);
   const [sinceBackup, setSinceBackup] = useState<number | null>(daysSinceBackup());
@@ -173,7 +210,7 @@ export function SettingsView() {
           // this device's own first sync, before it ever wrote photos out as
           // files) can still carry them embedded, and restorePhotos on an
           // empty array is a no-op.
-          await readVaultPhotos(handle);
+          await readVaultPhotos(handle, await localPhotoKeys());
           await restorePhotos(result.backup.photos);
           await restoreScanImages(result.backup.scanImages);
           await restoreExercisePhotos(result.backup.exercisePhotos);
@@ -197,8 +234,8 @@ export function SettingsView() {
   // once immediately — the closest this can get to "just works" without a
   // server: whatever changed elsewhere shows up the moment Setup is opened.
   useEffect(() => {
-    if (!supportsVaultFolder()) return;
-    void getStoredVaultFolder().then((handle) => {
+    if (!canVault) return;
+    void (isNativeVault() ? storedNativeVault() : getStoredVaultFolder()).then((handle) => {
       if (!handle) return;
       setVaultHandleState(handle);
       void syncVault(handle, { silent: true });
@@ -295,6 +332,22 @@ export function SettingsView() {
       <Sized key="appearance" glance={{ label: "Appearance", short: "Theme", value: String(settings.theme ?? "system").replace(/^./, (c) => c.toUpperCase()) }}>
       <Card>
         <CardTitle>Appearance</CardTitle>
+        <div className="mb-4 hidden items-center justify-between gap-3 rounded-xl border border-border bg-surface-2 p-3 lg:flex">
+          <div>
+            <div className="text-sm font-bold">Workstation layout</div>
+            <div className="text-xs text-muted">The desktop layout on this computer: Overview, project table and board, Ctrl+K.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => patchSettings({ workstation: settings.workstation === false ? undefined : false })}
+            className={cn(
+              "h-9 shrink-0 rounded-xl border px-4 text-sm font-bold",
+              settings.workstation === false ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface",
+            )}
+          >
+            {settings.workstation === false ? "Switch to workstation" : "Use classic layout"}
+          </button>
+        </div>
         <div className="mb-2 text-xs font-bold text-muted">Theme</div>
         <div className="mb-4 grid grid-cols-3 gap-2">
           {(["dark", "light", "system"] as const).map((t) => (
@@ -312,33 +365,100 @@ export function SettingsView() {
           ))}
         </div>
         <div className="mb-2 text-xs font-bold text-muted">Accent</div>
-        <div className="grid grid-cols-5 gap-2">
-          {ACCENT_PRESETS.map((p: { id: string; color: string; label: string }) => (
-            <button
-              key={p.id}
-              type="button"
-              aria-label={p.label}
-              onClick={() => patchSettings({ accent: p.color })}
-              className={cn(
-                "aspect-square rounded-xl border-2",
-                normalizeAccent(settings.accent).toLowerCase() === p.color.toLowerCase()
-                  ? "border-fg"
-                  : "border-transparent",
-              )}
-              style={{ background: p.color }}
-            />
+        <ColorPalette
+          value={normalizeAccent(settings.accent)}
+          onChange={(c) => patchSettings({ accent: c })}
+        />
+        <DisplaySize value={settings.uiScale ?? 1} onChange={(v) => patchSettings({ uiScale: v === 1 ? undefined : v })} />
+        <div className="mt-5 mb-1 text-xs font-bold text-muted">Bottom tab bar</div>
+        <Slider
+          label="Transparency"
+          value={settings.dockTransparency ?? 0.5}
+          min={0}
+          max={1}
+          step={0.05}
+          format={(v) => (v === 0.5 ? "Standard" : `${Math.round(v * 100)}%`)}
+          left="Solid"
+          right="Clear"
+          onChange={(v) => patchSettings({ dockTransparency: v })}
+        />
+        <Slider
+          label="Size"
+          value={settings.dockScale ?? 1}
+          min={0.8}
+          max={1.25}
+          step={0.05}
+          format={(v) => `${Math.round(v * 100)}%`}
+          left="S"
+          right="L"
+          onChange={(v) => patchSettings({ dockScale: v })}
+        />
+      </Card>
+      </Sized>
+
+      <Sized key="money" glance={() => {
+        const r = ratesOf(settings);
+        return { label: "Money", short: "Rates", value: `€1 = ${r.EUR} DA`, sub: `$1 = ${r.USD} DA` };
+      }}>
+      <Card>
+        <CardTitle>Money</CardTitle>
+        <div className="mb-2 text-xs font-bold text-muted">Exchange rates, in dinars</div>
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          {(["EUR", "USD"] as const).map((c) => (
+            <label key={c} className="flex h-11 items-center gap-2 rounded-xl border border-border bg-surface-2 px-3">
+              <span className="text-sm font-bold">{c === "EUR" ? "€1" : "$1"} =</span>
+              <input
+                key={`${c}-${ratesOf(settings)[c]}`}
+                inputMode="decimal"
+                defaultValue={String(ratesOf(settings)[c])}
+                onBlur={(e) => {
+                  const n = parseDecimal(e.target.value);
+                  if (n == null || n <= 0) return;
+                  patchSettings({ moneyRates: { ...ratesOf(settings), [c]: n } });
+                }}
+                className="w-full min-w-0 bg-transparent text-right text-sm font-bold tabular outline-none"
+                aria-label={`${c} rate`}
+              />
+              <span className="text-xs text-muted">DA</span>
+            </label>
           ))}
         </div>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            type="color"
-            value={normalizeAccent(settings.accent)}
-            onChange={(e) => patchSettings({ accent: e.target.value })}
-            className="h-10 w-12 cursor-pointer rounded-lg border border-border bg-surface-2"
-          />
-          <span className="text-xs text-muted">Or pick any colour</span>
+        <div className="mb-2 text-xs font-bold text-muted">Colours</div>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            ["card", "Balance card"],
+            ["income", "Income"],
+            ["expense", "Expense"],
+          ] as const).map(([k, label]) => (
+            <label key={k} className="flex flex-col items-center gap-1.5 rounded-xl border border-border bg-surface-2 p-2">
+              <input
+                type="color"
+                value={colorsOf(settings)[k]}
+                onChange={(e) => patchSettings({ moneyColors: { ...settings.moneyColors, [k]: e.target.value } })}
+                className="h-9 w-full cursor-pointer rounded-lg border border-border bg-transparent"
+              />
+              <span className="text-[0.7rem] font-bold">{label}</span>
+            </label>
+          ))}
         </div>
+        {settings.moneyColors && (
+          <button
+            type="button"
+            onClick={() => patchSettings({ moneyColors: undefined })}
+            className="mt-3 text-xs font-bold text-muted underline"
+          >
+            Back to the default colours
+          </button>
+        )}
       </Card>
+      </Sized>
+
+      <Sized key="automations" glance={{ label: "Automations", short: "Auto", empty: "Gym arrival, Deep Work focus", emptyShort: "Set up" }}>
+      <AutomationsCard />
+      </Sized>
+
+      <Sized key="health" glance={{ label: "Apple Health", short: "Health", empty: "Read sleep, steps and weight", emptyShort: "Connect" }}>
+      <HealthCard />
       </Sized>
 
       <Sized key="training" glance={{ label: "Training", short: "Units", value: settings.unit ?? "kg", sub: "weight unit" }}>
@@ -666,10 +786,11 @@ export function SettingsView() {
           </p>
         )}
         <p className="mb-2 text-[0.7rem] leading-relaxed text-faint">
-          A backup holds everything: every session and correction, all nutrition, water and
-          creatine, habits and their photos at full size, your foods and scanned barcodes, your
-          programmes and weekday splits, saved meals, membership periods, supplements, and
-          every face scan with its photograph.
+          A backup holds everything but pictures: every session and correction, all nutrition,
+          water and creatine, habits, your foods and scanned barcodes, your programmes and
+          weekday splits, saved meals, membership periods, supplements, and every face scan's
+          measurements and 3D data. Photos are kept as ordinary .jpg files in your vault
+          folder (Vault sync, below) — which is what keeps this file small.
         </p>
         <div className="flex flex-col gap-2">
           <Button variant="primary" disabled={busy} onClick={() => void download()}>
@@ -704,14 +825,19 @@ export function SettingsView() {
       </Card>
       </Sized>
 
+      <Sized key="sync" glance={{ label: "Device sync", short: "Sync", empty: "Sync your phone and PC, encrypted", emptyShort: "Open" }}>
+        <SyncSettings />
+      </Sized>
+
       <Sized key="vault" glance={{ label: "Vault sync", short: "Vault", empty: "Sync SOMA with a folder", emptyShort: "Open" }}>
       <Card>
         <CardTitle>Vault sync</CardTitle>
-        {supportsVaultFolder() ? (
+        {canVault ? (
           <>
             <p className="mb-3 text-xs text-muted">
               Point this at a folder synced by iCloud Drive (or Dropbox, or anything else),
-              and open the same folder from SOMA on your other devices. Not instant — it
+              and open the same folder from SOMA on your other devices — on iPhone, pick
+              the iCloud Drive folder your PC's vault is in. Not instant — it
               syncs whenever a device is opened, same as the files themselves sync. Photos
               save into it as ordinary .jpg files, not buried in the sync file's text, so
               they open from Files or Explorer directly and the file itself stays small.
@@ -734,7 +860,7 @@ export function SettingsView() {
                   <Button
                     variant="danger"
                     onClick={() => {
-                      void forgetVaultFolder();
+                      void (isNativeVault() ? forgetNativeVault() : forgetVaultFolder());
                       setVaultHandleState(null);
                       setVaultLastSync(null);
                     }}
@@ -751,7 +877,8 @@ export function SettingsView() {
                 onClick={() => {
                   void (async () => {
                     try {
-                      const handle = await pickVaultFolder();
+                      const handle = isNativeVault() ? await pickNativeVault() : await pickVaultFolder();
+                      if (!handle) return;
                       setVaultHandleState(handle);
                       await syncVault(handle);
                     } catch (err) {
@@ -820,6 +947,14 @@ export function SettingsView() {
       <Sized key="programme" glance={{ label: "Training programme", short: "Programme", value: activeProgram.name, sub: activeProgram.kind === "week" ? "fixed weekdays" : `${activeProgram.days.length}-day cycle` }}>
       <Card>
         <CardTitle>Training programme</CardTitle>
+        <button
+          type="button"
+          onClick={() => setBuildingSplit(true)}
+          className="mb-3 w-full rounded-xl border border-accent/40 bg-accent/10 py-2.5 text-xs font-extrabold text-accent-text"
+        >
+          Build my split from my logged workouts
+        </button>
+        {buildingSplit && <BuildSplitSheet onClose={() => setBuildingSplit(false)} />}
         <p className="mb-3 text-xs text-muted">
           Currently on <b className="text-fg">{activeProgram.name}</b> —{" "}
           {activeProgram.kind === "week"
@@ -909,6 +1044,30 @@ export function SettingsView() {
             </label>
           ))}
         </div>
+        <div className="mt-4 text-[0.7rem] font-bold uppercase tracking-wide text-muted">Minimums</div>
+        <p className="mb-2 mt-0.5 text-xs text-muted">
+          The least that still counts as a good day. Drawn as a second line on the Fuel
+          charts; blank means no minimum.
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          {GOAL_FIELDS.map((g) => (
+            <label key={g.key} className="text-[0.62rem] font-bold uppercase tracking-wide text-faint">
+              {g.label}
+              <DecimalInput
+                className="mt-1"
+                placeholder="None"
+                value={minDrafts[g.key] ?? ""}
+                onValueChange={(n, raw) => {
+                  setMinDrafts({ ...minDrafts, [g.key]: raw });
+                  const next = { ...(settings.nutrientMins ?? {}) };
+                  if (n == null || n <= 0) delete next[g.key];
+                  else next[g.key] = n;
+                  patchSettings({ nutrientMins: next });
+                }}
+              />
+            </label>
+          ))}
+        </div>
         <p className="mt-3 text-[0.68rem] leading-snug text-faint">
           Today and any day with nothing logged follow this as you type. A past day
           with food in it keeps the target it was scored under, so editing this
@@ -961,17 +1120,144 @@ export function SettingsView() {
               what actually shipped the way a hand-edited number does. */}
           <span className="font-bold tabular-nums">{__APP_VERSION__}</span>
         </div>
+        {installed && installed !== __APP_VERSION__ && (
+          <>
+            <div className="mt-1 flex items-center justify-between text-xs">
+              <span className="text-muted">Installed build</span>
+              <span className="font-bold tabular-nums">{installed}</span>
+            </div>
+            {/* Says, in so many words, that the version above came over the
+                air — the proof that live updates work on this phone. */}
+            <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+              <span className="shrink-0 text-muted">Delivered</span>
+              <span className="truncate font-bold text-emerald-400">
+                ⚡ live update, no reinstall
+              </span>
+            </div>
+          </>
+        )}
+        {live.state !== "off" && (
+          <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+            <span className="shrink-0 text-muted">Updates</span>
+            {live.state === "ready" ? (
+              <button type="button" onClick={() => void applyLiveNow()} className="truncate font-bold text-accent-text">
+                {live.version} ready — restart now
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  // The line is cut short on a phone; the whole message goes
+                  // in a toast so an error can actually be read.
+                  if (live.state === "error") toast.error(live.message, { duration: 12000 });
+                  void checkLive(true);
+                }}
+                className={cn(
+                  "truncate font-bold",
+                  live.state === "reinstall" || live.state === "error" ? "text-warn" : "text-emerald-400",
+                )}
+              >
+                {live.state === "checking"
+                  ? "Checking…"
+                  : live.state === "downloading"
+                    ? `Downloading ${live.version}…`
+                    : live.state === "current"
+                      ? `Up to date (checked ${new Date(live.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}) · check`
+                      : live.state === "reinstall"
+                        ? `${live.version} needs a reinstall from SideStore`
+                        : `${live.message} · retry`}
+              </button>
+            )}
+          </div>
+        )}
         <div className="mt-1 flex items-center justify-between text-xs">
           <span className="text-muted">Data</span>
           <span className="font-bold">on this device only</span>
         </div>
+        {widget && (
+          <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+            <span className="shrink-0 text-muted">Home-screen widget</span>
+            <span className={cn("truncate font-bold", widget.shared ? "text-emerald-400" : "text-warn")}>
+              {widget.shared ? "Connected" : "Not connected — reinstall with App Groups"}
+            </span>
+          </div>
+        )}
+        {lock && (
+          <>
+            <StatusRow
+              label="Widget extension"
+              ok={lock.extension}
+              good="Installed"
+              bad="Missing — Sideloadly dropped it"
+            />
+            {lock.extension && lock.extensionSignedRight !== undefined && (
+              <StatusRow
+                label="Widget signing"
+                ok={lock.extensionSignedRight}
+                good="Signed for itself"
+                bad={
+                  lock.extensionSignedFor
+                    ? `Signed for ${lock.extensionSignedFor} — iOS ignores it`
+                    : "No profile of its own — iOS ignores it"
+                }
+              />
+            )}
+            <StatusRow
+              label="Live Activities"
+              ok={lock.activitiesEnabled}
+              good="Allowed"
+              bad="Off — Settings › SOMA › Live Activities"
+            />
+            <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+              <span className="shrink-0 text-muted">Vibration test</span>
+              <span className="flex flex-wrap justify-end gap-1.5">
+                {ALL_WAYS.map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() =>
+                      void testHaptics(w).then((m) => {
+                        setWay(tickWay());
+                        toast(m);
+                      })
+                    }
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 font-bold",
+                      way === w ? "border-accent bg-accent/15 text-accent-text" : "border-border bg-surface-2",
+                    )}
+                  >
+                    {WAY_NAMES[w]}
+                  </button>
+                ))}
+              </span>
+            </div>
+            <p className="mt-1 text-[0.65rem] leading-snug text-faint">
+              Tap each one; the one you feel is what the whole app uses. Feel
+              none? Check Settings › Sounds &amp; Haptics › System Haptics (on)
+              and Haptics (Always Play), and Accessibility › Touch › Vibration.
+            </p>
+            <button
+              type="button"
+              onClick={() => void diagnoseHaptics().then((m) => toast(m, { duration: 12000 }))}
+              className="mt-1.5 self-start rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs font-bold"
+            >
+              Diagnose vibration
+            </button>
+            <StatusRow
+              label="Timer alerts"
+              ok={lock.notifications}
+              good="Allowed"
+              bad="Off — Settings › SOMA › Notifications"
+            />
+          </>
+        )}
       </Card>
       </Sized>
 
       {reportOpen && <ReportSheet onClose={() => setReportOpen(false)} />}
 
       {programsOpen && (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+        <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
           <div className="flex items-center justify-between border-b border-border px-4 pb-3">
             <span className="font-display text-base font-extrabold">Programme</span>
             <button
@@ -1074,7 +1360,7 @@ export function SettingsView() {
       <p className="px-1 text-center text-[0.7rem] text-faint">
         SOMA Smart Coach · converted from the Obsidian suite · data never leaves this device
       </p>
-      <Badge className="mx-auto flex w-fit">v5.1</Badge>
+      <Badge className="mx-auto flex w-fit">v5.2 · live</Badge>
     </WidgetGrid>
   );
 }
@@ -1271,5 +1557,295 @@ function FoodImportCard() {
         </div>
       )}
     </Card>
+  );
+}
+
+/** One line of the phone's own answer to "why isn't it showing?". */
+function StatusRow({ label, ok, good, bad }: { label: string; ok: boolean; good: string; bad: string }) {
+  return (
+    <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+      <span className="shrink-0 text-muted">{label}</span>
+      <span className={cn("truncate font-bold", ok ? "text-emerald-400" : "text-warn")}>{ok ? good : bad}</span>
+    </div>
+  );
+}
+
+/**
+ * Apple Health: ask once, then read today's numbers and fill the gaps.
+ * Read-only — nothing is ever written to Health.
+ */
+function HealthCard() {
+  const nutrition = useSoma((s) => s.nutrition);
+  const logSleep = useSoma((s) => s.logSleep);
+  const logWeight = useSoma((s) => s.logWeight);
+  const setActiveDate = useSoma((s) => s.setActiveDate);
+  const settings = useSoma((s) => s.settings);
+  const patchSettings = useSoma((s) => s.patchSettings);
+  const [day, setDay] = useState<HealthDay | null>(null);
+  const [busy, setBusy] = useState(false);
+  /** What the last Connect said, kept on screen rather than in a toast. */
+  const [status, setStatus] = useState("");
+  const today = getLocalDateKey(new Date());
+  const logged = nutrition[today];
+
+  const read = async () => {
+    setBusy(true);
+    const d = await healthDay(today);
+    setBusy(false);
+    setDay(d);
+    if (!d) toast.error("Apple Health did not answer — is this the new install?");
+    else if (d.errors?.length) toast.error(d.errors[0]!);
+  };
+  const fill = () => {
+    if (!day) return;
+    if (useSoma.getState().activeDate !== today) setActiveDate(today);
+    const done: string[] = [];
+    if (day.sleepHours && logged?.sleep?.hours == null) {
+      logSleep(Math.round(day.sleepHours * 10) / 10);
+      done.push("sleep");
+    }
+    if (day.weightKg && day.weightDate === today && !logged?.bodyWeight) {
+      logWeight(Math.round(day.weightKg * 10) / 10);
+      done.push("weight");
+    }
+    toast.success(done.length ? `Filled today's ${done.join(" and ")}` : "Nothing to fill — today already has it");
+  };
+
+  return (
+    <Card>
+      <CardTitle>Apple Health</CardTitle>
+      <p className="mb-3 text-xs text-muted">
+        Both ways: workouts, sleep and weight you log here go to Health (workouts show in Fitness), and
+        today's sleep and weight from Health fill in here when missing. Nothing leaves the phone.
+      </p>
+      {settings.healthSync && (
+        <div className="mb-3 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2 text-xs">
+          <span className="font-bold text-accent-text">Sync is on</span>
+          <span className="flex gap-3">
+            <button type="button" className="font-bold underline" onClick={() => void syncHealthNow().then((n) => toast(n ? `Synced ${n}` : "Already in sync"))}>
+              Sync now
+            </button>
+            <button type="button" className="font-bold text-muted underline" onClick={() => patchSettings({ healthSync: false })}>
+              Turn off
+            </button>
+          </span>
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          onClick={() =>
+            void connectHealth().then((m) => {
+              setStatus(m);
+              // Connecting is the opt-in: sync runs from here on.
+              if (m.startsWith("Asked")) {
+                patchSettings({ healthSync: true });
+                void syncHealthNow().then((n) => n && toast.success(`Synced ${n} with Apple Health`));
+              }
+            })
+          }
+        >
+          {settings.healthSync ? "Reconnect" : "Connect"}
+        </Button>
+        <Button onClick={() => void read()} disabled={busy}>{busy ? "Reading…" : "Read today"}</Button>
+        {day && <Button variant="primary" onClick={fill}>Fill today</Button>}
+      </div>
+      {status && (
+        <p className="mt-2 rounded-xl bg-surface-2 px-3 py-2 text-[0.72rem] font-semibold">{status}</p>
+      )}
+      {day && (
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+          {[
+            ["Steps", day.steps != null ? Math.round(day.steps).toLocaleString() : "—"],
+            ["Active", day.activeKcal != null ? `${Math.round(day.activeKcal)} kcal` : "—"],
+            ["Sleep", day.sleepHours != null ? `${day.sleepHours.toFixed(1)} h` : "—"],
+            ["Weight", day.weightKg != null ? `${day.weightKg.toFixed(1)} kg${day.weightDate !== today ? ` (${day.weightDate})` : ""}` : "—"],
+          ].map(([k, v]) => (
+            <div key={k} className="rounded-xl bg-surface-2 px-3 py-2">
+              <div className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">{k}</div>
+              <div className="font-bold tabular">{v}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {day && Object.keys(day).length === 0 && (
+        <p className="mt-2 text-[0.7rem] text-faint">
+          Empty — either nothing is in Health for today, or access was refused (Settings › Health › Data Access &amp; Devices › SOMA).
+        </p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * The things that happen without a tap: the gym region and the Deep Work
+ * focus. Each says plainly what it needs from iOS, since both are switched on
+ * outside the app.
+ */
+function AutomationsCard() {
+  const [gym, setGym] = useState<{ set: boolean; always: boolean } | null>(null);
+  const [msg, setMsg] = useState("");
+  const focusToday = useSoma((s) => s.settings.focusByDay?.[getLocalDateKey(new Date())] ?? 0);
+  const focusOn = useSoma((s) => !!s.settings.focusActiveSince);
+  useEffect(() => {
+    void gymStatus().then(setGym);
+  }, []);
+  return (
+    <Card>
+      <CardTitle>Automations</CardTitle>
+
+      <div className="mb-1 text-sm font-bold">Arriving at the gym</div>
+      <p className="mb-2 text-xs text-muted">
+        Stand in your gym and tap the button once. From then on, arriving there sends a nudge and opens
+        Train on today's session.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          onClick={() =>
+            void setGymHere().then((m) => {
+              setMsg(m);
+              void gymStatus().then(setGym);
+            })
+          }
+        >
+          {gym?.set ? "Move gym to here" : "I'm at my gym — save it"}
+        </Button>
+        {gym?.set && (
+          <Button
+            onClick={() =>
+              void clearGym().then(() => {
+                setMsg("Gym removed");
+                void gymStatus().then(setGym);
+              })
+            }
+          >
+            Remove
+          </Button>
+        )}
+      </div>
+      <p className="mt-1.5 text-[0.7rem] text-faint">
+        {gym == null
+          ? "Needs the latest install."
+          : gym.set
+            ? gym.always
+              ? "Gym saved · watching for arrivals"
+              : "Gym saved · set Location to Always for arrivals while SOMA is closed"
+            : "No gym saved yet"}
+      </p>
+      {msg && <p className="mt-1 rounded-xl bg-surface-2 px-3 py-2 text-[0.72rem] font-semibold">{msg}</p>}
+
+      <div className="mb-1 mt-4 text-sm font-bold">Deep work with a Focus</div>
+      <ol className="list-decimal space-y-0.5 pl-4 text-xs text-muted">
+        <li>iPhone Settings › Focus › pick or make a "Deep Work" focus</li>
+        <li>Scroll to Focus Filters › Add Filter › SOMA</li>
+        <li>Turn on "Count as deep work"</li>
+      </ol>
+      <p className="mt-1.5 text-[0.7rem] text-faint">
+        Time in that focus counts here, and a habit set to "Deep Work focus for…" ticks itself.
+        {` Today: ${focusToday} min${focusOn ? " · focus on now" : ""}.`}
+      </p>
+
+      <div className="mb-1 mt-4 text-sm font-bold">Mindful minutes</div>
+      <p className="text-xs text-muted">
+        Read from Apple Health (Mindfulness, Breathe, or any meditation app). Give a habit the "Mindful
+        minutes" rule.
+      </p>
+    </Card>
+  );
+}
+
+/**
+ * Display size, like the phone's own Display Zoom but for SOMA alone. The
+ * slider shows the number while it moves and only applies on release, so the
+ * page does not reflow under the finger.
+ */
+function DisplaySize({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const pct = Math.round(draft * 100);
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-xs font-bold text-muted">Display size</span>
+        <span className="font-display text-sm font-extrabold tabular">{pct}%</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="text-[0.7rem] font-bold text-faint">A</span>
+        <input
+          type="range"
+          min={80}
+          max={130}
+          step={5}
+          value={pct}
+          onChange={(e) => setDraft(Number(e.target.value) / 100)}
+          onPointerUp={() => onChange(draft)}
+          onTouchEnd={() => onChange(draft)}
+          onKeyUp={() => onChange(draft)}
+          className="h-2 flex-1 accent-[var(--color-accent)]"
+          aria-label="Display size"
+        />
+        <span className="text-base font-bold text-faint">A</span>
+      </div>
+      <div className="mt-2 flex gap-1.5">
+        {[0.9, 1, 1.1, 1.2].map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onChange(v)}
+            className={cn(
+              "flex-1 rounded-full border py-1.5 text-xs font-bold",
+              Math.abs(value - v) < 0.001 ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface-2 text-muted",
+            )}
+          >
+            {v === 1 ? "Default" : `${Math.round(v * 100)}%`}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A labelled slider that applies on release, so nothing reflows mid-drag. */
+function Slider({
+  label, value, min, max, step, format, left, right, onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (v: number) => string;
+  left: string;
+  right: string;
+  onChange: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    if (Math.abs(draft - value) > 1e-6) onChange(Math.round(draft * 100) / 100);
+  };
+  return (
+    <div className="mt-3">
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="text-[0.75rem] font-semibold">{label}</span>
+        <span className="text-xs font-extrabold tabular">{format(draft)}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <span className="w-8 text-[0.65rem] font-bold text-faint">{left}</span>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={draft}
+          onChange={(e) => setDraft(Number(e.target.value))}
+          onPointerUp={commit}
+          onTouchEnd={commit}
+          onKeyUp={commit}
+          className="h-2 flex-1 accent-[var(--color-accent)]"
+          aria-label={label}
+        />
+        <span className="w-8 text-right text-[0.65rem] font-bold text-faint">{right}</span>
+      </div>
+    </div>
   );
 }

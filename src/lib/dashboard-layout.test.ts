@@ -101,8 +101,10 @@ test("the six shapes are all different, and all fit four columns", () => {
   assert.equal(new Set(SIZES).size, 6);
   for (const spec of SIZE_SPECS) {
     assert.ok(spec.w === 1 || spec.w === 2 || spec.w === 4, spec.id);
-    assert.ok(spec.h >= 1 && spec.h <= 3, spec.id);
+    // Four rows only full width, and only as the opt-in window size.
+    assert.ok(spec.h >= 1 && (spec.h <= 3 || spec.id === "4x4"), spec.id);
   }
+  assert.ok(!SIZES.includes("4x4"), "4x4 is not on the ladder every widget steps along");
 });
 
 test("a narrow size is a tile, a full-width one is not", () => {
@@ -298,8 +300,9 @@ test("no widget in the registry claims more rows than it wants to fill", () => {
   // needs to be" has to SAY one row, because that is what one row now means.
   for (const [tab, list] of Object.entries(WIDGETS_BY_TAB)) {
     for (const w of list) {
+      // Four rows is for a window scrolled inside, which must offer it.
       assert.ok(
-        rowsFor(w.size) >= 1 && rowsFor(w.size) <= 3,
+        rowsFor(w.size) >= 1 && (rowsFor(w.size) <= 3 || !!w.sizes?.includes("4x4")),
         `${tab}/${w.id} ships at ${w.size}`,
       );
     }
@@ -463,8 +466,21 @@ test("a panel that appears later lands beside its neighbours, not at the bottom"
 test("a card filed under a sibling page is not added to this one", () => {
   // Fuel renders all its cards into whichever page is open; only the
   // registry's own for that page may appear.
-  const l = reconcile(undefined, "nutrition-dash", ["target", "diary", "water", "Bench Press"]);
+  const l = reconcile(undefined, "nutrition-dash", ["target", "diary", "minerals", "Bench Press"]);
   const ids = l.map((p) => p.id);
-  assert.ok(!ids.includes("diary") && !ids.includes("water"), ids.join(","));
+  assert.ok(!ids.includes("diary") && !ids.includes("minerals"), ids.join(","));
   assert.ok(ids.includes("Bench Press"), "a truly invented card still is");
+});
+
+test("water is on Fuel's dashboard as well as its log", () => {
+  assert.ok(reconcile(undefined, "nutrition-dash").some((p) => p.id === "water"));
+  assert.ok(reconcile(undefined, "nutrition-log").some((p) => p.id === "water"));
+});
+
+test("the timeline is a window: medium, large or the tall 4x4, and ships tall", () => {
+  assert.deepEqual(allowedSizes("time", "timeline"), ["2x4", "3x4", "4x4"]);
+  assert.equal(widgetsFor("time").find((w) => w.id === "timeline")?.size, "4x4");
+  assert.equal(asSize("4x4"), "4x4", "a stored 4x4 reads back");
+  // The day ring is a glance now.
+  assert.equal(widgetsFor("time").find((w) => w.id === "ring")?.size, "2x2");
 });

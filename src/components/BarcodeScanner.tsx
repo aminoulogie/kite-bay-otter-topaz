@@ -141,7 +141,7 @@ export function BarcodeScanner({
         aria-label="Scan a barcode"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-3xl border border-border-strong bg-bg p-3 pb-[max(12px,env(safe-area-inset-bottom))] shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+        className="w-full max-w-sm rounded-3xl border border-border-strong bg-bg p-3 pb-[max(12px,var(--safe-bottom,env(safe-area-inset-bottom)))] shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="font-display text-sm font-extrabold">Scan a barcode</span>
@@ -227,6 +227,7 @@ export function BarcodeScanner({
         <div className="flex gap-2">
           <Input
             inputMode="numeric"
+            data-no-calc
             placeholder="Or type the barcode"
             value={manual}
             onChange={(e) => setManual(e.target.value)}

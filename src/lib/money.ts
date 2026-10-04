@@ -6,7 +6,29 @@
  * "what did this month cost" is a second answer waiting to disagree.
  */
 
-import type { LedgerEntry } from "./types.ts";
+import { addDays, getLocalDateKey, parseLocalDateKey } from "./soma/dates.ts";
+import type { LedgerEntry, MoneyCurrency } from "./types.ts";
+
+/** Dinars per euro and per dollar. */
+export type Rates = Partial<Record<"EUR" | "USD", number>>;
+
+export const BASE: MoneyCurrency = "DZD";
+/** Used until rates are set in Settings; editable, never fetched. */
+export const DEFAULT_RATES: Record<"EUR" | "USD", number> = { EUR: 150, USD: 135 };
+
+/** An amount in some currency, in dinars. */
+export function toBase(amount: number, currency: MoneyCurrency | undefined, rates?: Rates): number {
+  if (!currency || currency === "DZD") return amount;
+  const r = rates?.[currency] ?? DEFAULT_RATES[currency];
+  return amount * (r > 0 ? r : DEFAULT_RATES[currency]);
+}
+
+/** Dinars, in another currency. */
+export function fromBase(amount: number, currency: MoneyCurrency, rates?: Rates): number {
+  if (currency === "DZD") return amount;
+  const r = rates?.[currency] ?? DEFAULT_RATES[currency];
+  return amount / (r > 0 ? r : DEFAULT_RATES[currency]);
+}
 
 /**
  * The categories to start from.
@@ -35,7 +57,7 @@ export function categoriesFor(custom: string[] | undefined, entries: LedgerEntry
   const extra: string[] = [];
   for (const e of entries) {
     const c = (e.category || "").trim();
-    if (!c || e.kind === "income" || seen.has(c)) continue;
+    if (!c || e.kind !== "spend" || seen.has(c)) continue;
     seen.add(c);
     extra.push(c);
   }
@@ -65,12 +87,14 @@ export interface MonthTotals {
  * Amounts are stored positive with the direction in `kind`, so nothing here
  * has to guess whether a negative number means a refund or a typo.
  */
-export function totals(entries: LedgerEntry[]): MonthTotals {
+export function totals(entries: LedgerEntry[], rates?: Rates): MonthTotals {
   let spend = 0;
   let income = 0;
   const cats = new Map<string, number>();
   for (const e of entries) {
-    const amount = Math.abs(Number(e.amount) || 0);
+    // Money put towards a savings goal is not spending.
+    if (e.kind === "save") continue;
+    const amount = toBase(Math.abs(Number(e.amount) || 0), e.currency, rates);
     if (e.kind === "income") {
       income += amount;
       continue;
@@ -166,4 +190,57 @@ export function budgetState(
 export function daysInMonth(month: string): number {
   const [y, m] = month.split("-").map(Number);
   return new Date(y ?? 2000, m ?? 1, 0).getDate();
+}
+
+// ------------------------------------------------------------------ balance --
+
+/**
+ * What is actually left, not what moved this month.
+ *
+ * A month's net answers "did I come out ahead in September" — a flow. This
+ * answers "how much do I have right now" — a balance, which needs a starting
+ * point the ledger cannot supply on its own, because nobody logs literally
+ * every dollar that ever passed through their hands. Null with no anchor set,
+ * so the view can tell "zero, on purpose" from "never told me".
+ */
+export function currentBalance(
+  entries: LedgerEntry[],
+  base: number | undefined,
+  baseDate: string | undefined,
+): number | null {
+  if (base == null || !baseDate) return null;
+  let bal = base;
+  for (const e of entries) {
+    if (e.date < baseDate) continue;
+    bal += e.kind === "income" ? Math.abs(Number(e.amount) || 0) : -Math.abs(Number(e.amount) || 0);
+  }
+  return Math.round(bal * 100) / 100;
+}
+
+// -------------------------------------------------------------------- weeks --
+
+/**
+ * The Monday a date's week starts on, as a YYYY-MM-DD key.
+ *
+ * Entries default to this week rather than this month for the same reason a
+ * ledger stops being readable past about a dozen lines: a month of daily
+ * coffee runs is a wall of text by the 20th, and "what did I spend since
+ * Monday" is the question actually worth a glance most days. Older weeks are
+ * one tap back, same as older months already were.
+ */
+export function weekStartOf(date: string): string {
+  const d = parseLocalDateKey(date);
+  // getDay() is 0 for Sunday; shift so Monday starts the week.
+  const offset = (d.getDay() + 6) % 7;
+  return getLocalDateKey(addDays(d, -offset));
+}
+
+/** A week-start key shifted by n weeks, so the picker can walk backwards. */
+export function shiftWeek(weekStart: string, by: number): string {
+  return getLocalDateKey(addDays(parseLocalDateKey(weekStart), by * 7));
+}
+
+export function inWeek(entries: LedgerEntry[], weekStart: string): LedgerEntry[] {
+  const end = getLocalDateKey(addDays(parseLocalDateKey(weekStart), 6));
+  return entries.filter((e) => e.date >= weekStart && e.date <= end);
 }

@@ -2,6 +2,17 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>io.github.aminoulogie.soma</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>soma</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
@@ -33,6 +44,18 @@
 	     as many frames over the same 300ms. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- A running routine on the lock screen and in the Dynamic Island.
+	     See RoutineActivityPlugin.swift and SomaWidgets/RoutineLiveActivity.swift. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSHealthShareUsageDescription</key>
+	<string>SOMA reads your steps, active energy, sleep and weight from Apple Health so you don't have to type them. Nothing leaves your phone.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>SOMA does not write to Apple Health.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SOMA uses your location once, to remember where your gym is.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SOMA notices when you arrive at your gym so today's session is ready. It only watches that one place, and your location never leaves the phone.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>SOMA uses the camera to photograph habits and to take face, posture and hair scans. Photos stay on your device.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

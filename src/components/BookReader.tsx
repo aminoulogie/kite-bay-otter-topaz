@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   ChevronLeft, ChevronRight, Languages, Loader2, Minus, Plus, Rows3, X,
@@ -24,7 +24,7 @@ import {
 } from "@/lib/curl";
 import { linesIn, stepLine, type Rect } from "@/lib/lines";
 import {
-  PAGE_GAP, bookProgress, clampPage, damp, isTurning, pageCount, pageForX, pageOffset,
+  PAGE_GAP, bookPages, bookProgress, clampPage, damp, isTurning, pageCount, pageForX, pageOffset,
   tapAt, turnFrom,
 } from "@/lib/paginate";
 import {
@@ -113,16 +113,23 @@ export function BookReader({
   const [total, setTotal] = useState(book.pages ?? 0);
   /** Page within the current chapter, and the text the rail draws small. */
   const [spread, setSpread] = useState<{
+    /** Which chapter these pages are of: it can lag a jump by a frame. */
+    chapter: number;
     page: number;
     pages: number;
     html: string;
     label: string;
     box: { w: number; h: number };
-  }>({ page: 0, pages: 1, html: "", label: "", box: { w: 0, h: 0 } });
+  }>({ chapter: -1, page: 0, pages: 1, html: "", label: "", box: { w: 0, h: 0 } });
   /** The contents and the searchable book, published by the renderer. */
-  const [index, setIndex] = useState<{ titles: string[]; textOf: (i: number) => string }>({
+  const [index, setIndex] = useState<{
+    titles: string[];
+    textOf: (i: number) => string;
+    partOf: (i: number) => { html: string; title: string } | null;
+  }>({
     titles: [],
     textOf: () => "",
+    partOf: () => null,
   });
   const [panel, setPanel] = useState<"contents" | "search" | "kept" | null>(null);
   /**
@@ -306,11 +313,45 @@ export function BookReader({
   }, [onClose, back, forward]);
 
   const epub = book.fileKind === "epub";
-  const progress = epub
-    ? bookProgress(at - 1, Math.max(1, total), spread.page, spread.pages)
-    : total > 0
-      ? at / total
-      : 0;
+  /** Every chapter's length, once per book, for counting pages across it. */
+  const lengths = useMemo(
+    () => (epub ? index.titles.map((_, i) => index.textOf(i).length) : []),
+    [epub, index],
+  );
+  // Characters per page, from the last chapter long enough to measure it.
+  // Forgotten when the type or the page changes, since that is what it measures.
+  const density = useRef<{ key: string; perPage: number } | null>(null);
+  const typeKey = `${prefs.font}|${prefs.size}|${prefs.lineHeight}|${spread.box.w}x${spread.box.h}`;
+  if (density.current?.key !== typeKey) density.current = null;
+  // Only pages that are really this chapter's: for a frame after a jump the
+  // counts are still the last chapter's, and measuring a two-line copyright
+  // page by a thirty-page chapter's count made the book six times longer.
+  const current = spread.chapter === at - 1;
+  const hereLen = lengths[at - 1] ?? 0;
+  // And never a density no page of text has: the renderer can report the
+  // new chapter a frame before its new page count, and 145 characters over
+  // 34 pages is a stale count, not a page.
+  if (epub && current && spread.pages >= 3 && hereLen / spread.pages >= 250) {
+    density.current = { key: typeKey, perPage: hereLen / spread.pages };
+  }
+  const shown = useRef<{ page: number; total: number } | null>(null);
+  if (epub && current && (spread.pages < 3 || hereLen / spread.pages >= 250 || !hereLen)) {
+    shown.current = bookPages(lengths, at - 1, spread.page, spread.pages, density.current?.perPage);
+  }
+  const pageOfBook = epub ? shown.current : null;
+  /** Pages a chapter the strip has not laid out yet is expected to have. */
+  const perPage = density.current?.perPage;
+  const estimatePages = useCallback(
+    (i: number) => Math.max(1, Math.ceil((lengths[i] ?? 0) / Math.max(250, perPage ?? 1500))),
+    [lengths, perPage],
+  );
+  const progress = pageOfBook
+    ? pageOfBook.total > 1 ? (pageOfBook.page - 1) / (pageOfBook.total - 1) : 1
+    : epub
+      ? bookProgress(at - 1, Math.max(1, total), spread.page, spread.pages)
+      : total > 0
+        ? at / total
+        : 0;
 
   const common = {
     book,
@@ -401,7 +442,9 @@ export function BookReader({
           style={{ color: theme.faint }}
         >
           {epub
-            ? `Chapter ${at} of ${total || "?"} · ${spread.page + 1}/${spread.pages}`
+            ? pageOfBook
+              ? `Page ${pageOfBook.page} of ${pageOfBook.total}`
+              : `Page ${spread.page + 1} of ${spread.pages}`
             : `Page ${at} of ${total || "?"}`}
         </div>
         <div
@@ -423,12 +466,15 @@ export function BookReader({
             <PageScrubber
               theme={theme}
               prefs={prefs}
-              html={spread.html}
-              label={spread.label}
               box={spread.box}
-              pages={spread.pages}
+              chapter={at - 1}
               page={spread.page}
+              pages={spread.chapter === at - 1 ? spread.pages : 1}
+              chapters={total || 1}
+              partOf={index.partOf}
+              estimate={estimatePages}
               onPick={(n) => pager.current?.to(n)}
+              onJump={(c, p) => goTo({ chapter: c, page: p })}
               onScrub={setScrubbing}
             />
           ) : (
@@ -523,6 +569,8 @@ interface Seek {
   rank?: number;
   offset?: number;
   end?: number;
+  /** A page of the chapter, from the page strip. */
+  page?: number;
   /** Changes on every request, so asking for the same place twice works. */
   nonce: number;
 }
@@ -737,6 +785,7 @@ function EpubPages({
    * box it is set in, and where you are in it.
    */
   onSpread: (s: {
+    chapter: number;
     page: number;
     pages: number;
     html: string;
@@ -744,7 +793,11 @@ function EpubPages({
     box: { w: number; h: number };
   }) => void;
   /** The book's contents and its searchable text, once it is open. */
-  onIndex: (ix: { titles: string[]; textOf: (i: number) => string }) => void;
+  onIndex: (ix: {
+    titles: string[];
+    textOf: (i: number) => string;
+    partOf: (i: number) => { html: string; title: string } | null;
+  }) => void;
   seek?: Seek;
   /** Characters into the chapter, written down so the book reopens here. */
   onAnchor: (offset: number) => void;
@@ -880,7 +933,17 @@ function EpubPages({
         // titles are read now because they are cheap and wanted the moment a
         // finger reaches the top-left; the text is a function because it is
         // neither, and nothing should read a hundred chapters to open one.
-        onIndex({ titles: opened.titles(), textOf: (i) => opened.plain(i) });
+        // Chapters for the page strip, kept once read: it lays out the ones
+        // around the cursor and asks again every time it moves.
+        const parts = new Map<number, { html: string; title: string } | null>();
+        onIndex({
+          titles: opened.titles(),
+          textOf: (i) => opened.plain(i),
+          partOf: (i) => {
+            if (!parts.has(i)) parts.set(i, opened.chapter(i));
+            return parts.get(i) ?? null;
+          },
+        });
       } catch (err) {
         if (alive) onError(messageFor(err, "That EPUB would not open."));
       }
@@ -898,7 +961,10 @@ function EpubPages({
   // HTML is the same, only its layout changes, and re-parsing a chapter to
   // make the type one point bigger would blank the screen every tap.
   const opened = useRef(chapter);
-  useEffect(() => {
+  // Before paint, not after: a page curl can now finish INTO the next chapter,
+  // and with the markup swapped a frame late the old chapter's first page
+  // flashed up between the end of the fold and the new chapter arriving.
+  useLayoutEffect(() => {
     if (!ready) return;
     const part = archive.current?.chapter(chapter);
     // A stored offset belongs to ONE chapter — the one that was open when it
@@ -912,6 +978,19 @@ function EpubPages({
     setHtml(part?.html ?? "");
     setLabel(part?.title ?? "");
   }, [ready, chapter]);
+
+  // A chapter entered backwards opens on its LAST page, and that page is
+  // known here, before the first paint of the new markup: measured a couple
+  // of frames later (below), the chapter showed its first page and then
+  // jumped — which, at the end of a fold going back, is a visible flash.
+  useLayoutEffect(() => {
+    const el = column.current;
+    if (!el || !box.w || !landOnLast.current || !paged) return;
+    const count = pageCount(el.scrollWidth, box.w);
+    setPages(count);
+    setPage(count - 1);
+    // landOnLast stays set: the measuring pass below confirms it and clears it.
+  }, [html, box.w, paged]);
 
   // The page box. Measured rather than assumed, because it is the viewport
   // minus the margins and minus whatever the safe area is on this phone.
@@ -1062,6 +1141,10 @@ function EpubPages({
     if (!seek || seek.chapter !== chapter) return;
     const el = column.current;
     if (!el || !box.w || !pages) return;
+    if (seek.page != null) {
+      const id = requestAnimationFrame(() => setPage(clampPage(seek.page!, pages)));
+      return () => cancelAnimationFrame(id);
+    }
     const id = requestAnimationFrame(() => {
       const runs = textRuns(el);
       const whole = runs.map((r) => r.textContent ?? "").join("");
@@ -1111,8 +1194,8 @@ function EpubPages({
   }, [page, pages, box.w, onAnchor]);
 
   useEffect(() => {
-    onSpread({ page, pages, html, label, box });
-  }, [page, pages, html, label, box, onSpread]);
+    onSpread({ chapter, page, pages, html, label, box });
+  }, [chapter, page, pages, html, label, box, onSpread]);
 
   /** Where the strip sits right now: the settled page, plus the finger. */
   const slide = -pageOffset(page, box.w) + (dragX ?? 0);
@@ -1129,9 +1212,28 @@ function EpubPages({
    * and is a great deal less work than keeping two chapters laid out at all
    * times for the sake of one page turn in forty.
    */
+  /**
+   * The chapters either side, for the page under a fold at a chapter's edge.
+   *
+   * A book opens on a run of one-page chapters — cover, title, copyright,
+   * contents — so a curl that stopped at every chapter boundary slid the
+   * first four or five turns of every book and only started curling once a
+   * real chapter began. The page underneath a chapter's last page is the next
+   * chapter's first, so the spare is simply given that chapter to show.
+   */
+  const neighbourParts = useMemo(() => {
+    if (!ready || prefs.turn !== "curl" || !archive.current) return { next: null, prev: null };
+    return {
+      next: chapter + 1 < chapters ? archive.current.chapter(chapter + 1) : null,
+      prev: chapter > 0 ? archive.current.chapter(chapter - 1) : null,
+    };
+  }, [ready, prefs.turn, chapter, chapters]);
+
   const canFold = useCallback(
-    (forward: boolean) => prefs.turn === "curl" && (forward ? page < pages - 1 : page > 0),
-    [prefs.turn, page, pages],
+    (forward: boolean) =>
+      prefs.turn === "curl" &&
+      (forward ? page < pages - 1 || !!neighbourParts.next : page > 0 || !!neighbourParts.prev),
+    [prefs.turn, page, pages, neighbourParts],
   );
 
   const curlRef = useRef(curl);
@@ -1174,6 +1276,16 @@ function EpubPages({
    */
   const held = curl ? curl.from : page;
   const neighbours = { next: held + 1, prev: held - 1 };
+  // Past either end of this chapter, the spare shows the chapter next door:
+  // its first page going forward, its last (page -1) going back.
+  const nextSpare =
+    neighbours.next < pages || !neighbourParts.next
+      ? { html, label, page: neighbours.next, same: true }
+      : { html: neighbourParts.next.html, label: neighbourParts.next.title, page: 0, same: false };
+  const prevSpare =
+    neighbours.prev >= 0 || !neighbourParts.prev
+      ? { html, label, page: neighbours.prev, same: true }
+      : { html: neighbourParts.prev.html, label: neighbourParts.prev.title, page: -1, same: false };
 
   /**
    * One frame of the fold, straight onto the DOM.
@@ -1520,23 +1632,23 @@ function EpubPages({
               frame of every turn — the one frame a gesture cannot afford. */}
           <Sheet
             innerRef={nextSheet}
-            html={html}
-            label={label}
+            html={nextSpare.html}
+            label={nextSpare.label}
             prefs={prefs}
             box={box}
-            page={neighbours.next}
+            page={nextSpare.page}
             style={UNDER_SHEET}
-            ink={ink}
+            ink={nextSpare.same ? ink : undefined}
           />
           <Sheet
             innerRef={prevSheet}
-            html={html}
-            label={label}
+            html={prevSpare.html}
+            label={prevSpare.label}
             prefs={prefs}
             box={box}
-            page={neighbours.prev}
+            page={prevSpare.page}
             style={UNDER_SHEET}
-            ink={ink}
+            ink={prevSpare.same ? ink : undefined}
           />
 
           {/* The flap: the part that has come up off the table, showing its
@@ -1576,11 +1688,11 @@ function EpubPages({
                   there is print on it and you cannot read it, which is what a
                   page held up to the light does. */}
               <Sheet
-                html={html}
-                label={label}
+                html={curl && !curl.forward && curl.from === 0 ? prevSpare.html : html}
+                label={curl && !curl.forward && curl.from === 0 ? prevSpare.label : label}
                 prefs={prefs}
                 box={box}
-                page={curl ? (curl.forward ? curl.from : curl.from - 1) : page}
+                page={curl ? (curl.forward ? curl.from : curl.from === 0 ? prevSpare.page : curl.from - 1) : page}
                 style={theme.dark ? BACK_SHEET_DARK : BACK_SHEET_LIGHT}
               />
               {/* The curve. A sheet lifted off a table is not flat, and a flat
@@ -1775,6 +1887,19 @@ const Sheet = memo(function Sheet({
 }) {
   const theme = themeSpec(prefs.theme);
   const markup = useMemo(() => ({ __html: html }), [html]);
+  // Page -1 is "the last page", for the chapter behind a fold going back:
+  // how many pages it has is only known once it has been laid out here.
+  const strip = useRef<HTMLDivElement>(null);
+  const [lastPage, setLastPage] = useState(0);
+  useEffect(() => {
+    if (page >= 0 || !box.w) return;
+    const raf = requestAnimationFrame(() => {
+      const el = strip.current;
+      if (el) setLastPage(Math.max(0, pageCount(el.scrollWidth, box.w) - 1));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [page, html, box.w, box.h, prefs.size, prefs.font, prefs.lineHeight]);
+  const shown = page < 0 ? lastPage : page;
   return (
     <div
       ref={innerRef}
@@ -1787,8 +1912,9 @@ const Sheet = memo(function Sheet({
       // printed on top of each other.
       style={{ background: theme.bg, ...style }}
     >
-      <InkLayer ink={ink} shift={-pageOffset(Math.max(0, page), box.w)} />
+      <InkLayer ink={ink} shift={-pageOffset(Math.max(0, shown), box.w)} />
       <div
+        ref={strip}
         className="soma-epub"
         style={{
           fontFamily: fontStack(prefs.font),
@@ -1799,7 +1925,7 @@ const Sheet = memo(function Sheet({
           columnWidth: `${box.w}px`,
           columnGap: `${PAGE_GAP}px`,
           columnFill: "auto",
-          transform: `translateX(${-pageOffset(Math.max(0, page), box.w)}px)`,
+          transform: `translateX(${-pageOffset(Math.max(0, shown), box.w)}px)`,
         }}
       >
         {label && <p className="soma-epub-label" style={{ color: theme.faint }}>{label}</p>}
@@ -2457,8 +2583,8 @@ function ReadingSurface({
       style={{
         paddingLeft: prefs.margin,
         paddingRight: prefs.margin,
-        paddingTop: "max(58px, calc(env(safe-area-inset-top) + 46px))",
-        paddingBottom: "max(58px, calc(env(safe-area-inset-bottom) + 46px))",
+        paddingTop: "max(58px, calc(var(--safe-top,env(safe-area-inset-top)) + 46px))",
+        paddingBottom: "max(58px, calc(var(--safe-bottom,env(safe-area-inset-bottom)) + 46px))",
       }}
     >
       {/* The gutter. Always there, on both sides, because a page in a book is
@@ -2767,7 +2893,7 @@ function PdfPages({
           ref={host}
           className="mx-auto w-full [&>canvas]:block"
           style={{
-            paddingTop: "max(64px, calc(env(safe-area-inset-top) + 52px))",
+            paddingTop: "max(64px, calc(var(--safe-top,env(safe-area-inset-top)) + 52px))",
             paddingBottom: "6rem",
           }}
         />
@@ -2830,16 +2956,19 @@ function Bar({
       className={cn(
         "pointer-events-none absolute inset-x-0 z-[70] px-3 transition-opacity duration-200",
         edge === "top"
-          ? "top-0 pb-6 pt-[max(12px,env(safe-area-inset-top))]"
-          : "bottom-0 pt-8 pb-[max(12px,env(safe-area-inset-bottom))]",
+          ? "top-0 pb-6 pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]"
+          : "bottom-0 pt-10 pb-[max(12px,var(--safe-bottom,env(safe-area-inset-bottom)))]",
         show ? "opacity-100" : "opacity-0",
         className,
       )}
       style={{
         background:
           edge === "top"
-            ? `linear-gradient(to bottom, rgba(${fade},0.92), rgba(${fade},0))`
-            : `linear-gradient(to top, rgba(${fade},0.92), rgba(${fade},0))`,
+            ? `linear-gradient(to bottom, rgba(${fade},0.97) calc(100% - 1.5rem), rgba(${fade},0))`
+            // Solid behind the counter and controls, fading only in the strip
+            // above them: a gradient all the way up let the page's last lines
+            // show through the page number.
+            : `linear-gradient(to top, rgba(${fade},1) calc(100% - 1.75rem), rgba(${fade},0))`,
       }}
     >
       {children}
@@ -2901,7 +3030,7 @@ function PrefsSheet({
       onClick={onClose}
     >
       <div
-        className="soma-expand max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4 text-fg"
+        className="soma-expand max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-4 text-fg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">

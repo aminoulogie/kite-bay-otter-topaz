@@ -7,6 +7,10 @@ import { MACRO_COLOR, type MacroKey } from "@/components/MacroStrip";
 import { ProjectsCard } from "@/components/ProjectsCard";
 import { TodoCard } from "@/components/TodoCard";
 import { LogTheGap } from "@/components/LogTheGap";
+import { CheckInButton } from "@/components/EveningCheckIn";
+import { HealthCard } from "@/components/HealthCard";
+import { WeekReviewCard } from "@/components/WeekReviewCard";
+import { SleepClockButton } from "@/components/SleepClockButton";
 import { HabitRings } from "@/components/HabitRings";
 import { ActivityRings } from "@/components/ActivityRings";
 import { WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
@@ -16,8 +20,9 @@ import { ratingTone } from "@/lib/stimulus";
 import { scoreDay } from "@/lib/day-score";
 import { MIN_PAIRS, shortfall, strongestFinding, type Series } from "@/lib/correlate";
 import { totalWaterMl } from "@/lib/hydration";
-import { getLocalDateKey } from "@/lib/soma";
-import { useSoma } from "@/lib/store";
+import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
+import { useActiveProgram, useSoma } from "@/lib/store";
+import { isRestSplit } from "@/lib/programs";
 import { cn } from "@/lib/utils";
 
 /**
@@ -122,9 +127,21 @@ export function DashboardView() {
   const mind = useSoma((s) => s.mind);
   const hunger = useSoma((s) => s.hunger);
   const settings = useSoma((s) => s.settings);
+  const restDays = useSoma((s) => s.restDays);
+  const habits = useSoma((s) => s.habits);
+  const program = useActiveProgram();
 
   const today = getLocalDateKey(new Date());
   const date = activeDate || today;
+
+  const projected = SomaIntelligenceEngine.getProgramProjectedDay(
+    new Date(date + "T12:00:00"),
+    settings.scheduleOverrides,
+    program,
+  );
+  const trainingDay = !projected.isRest && !isRestSplit(projected.split);
+  /** A rest day — planned by the programme or saved — with nothing lifted. */
+  const resting = !history[date] && (!!restDays[date] || !trainingDay);
 
   const { score, lines } = useMemo(() => {
     return scoreDay(
@@ -133,12 +150,18 @@ export function DashboardView() {
         session: history[date] ?? null,
         previous: previousSameSplit(history, date),
         nutrition,
+        // A rest day you saved, or one the programme planned, is rest — not
+        // a missed workout. A planned training day with nothing logged is.
+        isRestDay: !history[date] && (!!restDays[date] || !trainingDay),
+        isTrainingDay: trainingDay,
+        firstSession: Object.keys(history).sort()[0] ?? null,
         bodyweightKg: bodyweightOn(nutrition, date),
         hunger,
         phase: settings.phase,
+        habits,
       }),
     );
-  }, [history, nutrition, date, hunger, settings.phase]);
+  }, [history, nutrition, date, hunger, settings.phase, restDays, habits, trainingDay]);
 
   /**
    * The five things worth comparing, each as a date-keyed series.
@@ -163,7 +186,7 @@ export function DashboardView() {
 
     const spend = new Map<string, number>();
     for (const e of ledger) {
-      if (e.kind === "income") continue;
+      if (e.kind !== "spend") continue;
       spend.set(e.date, (spend.get(e.date) ?? 0) + Math.abs(Number(e.amount) || 0));
     }
 
@@ -222,13 +245,20 @@ export function DashboardView() {
   // Each widget carries the id the layout arranges as its KEY. The page is
   // then just its widgets, in whatever order the user put them.
   return (
+    <>
+    {/* Above the grid rather than a widget in it: a new widget joins a saved
+        layout at the very end, where an evening prompt would never be seen. */}
+    <SleepClockButton />
+    <CheckInButton isTrainingDay={trainingDay} score={score} lines={lines} />
     <WidgetGrid tab="dashboard">
       {/* Not wrapped in a div: the grid stretches a widget's own root to fill
           the box it was given, and a bare wrapper would stretch instead of the
           card, leaving the card floating in a taller empty cell. */}
       <CoachBrief key="brief" horizon="today" />
       <ActivityRings key="rings" />
+      <HealthCard key="health" />
       <ScoreCard key="score" score={score} lines={lines} />
+      <WeekReviewCard key="week" />
 
       {/* The ticked ones are done — that is the whole point of a tile, and it
           is why only CONFIRMED food counts towards them. */}
@@ -240,16 +270,16 @@ export function DashboardView() {
                  value={macros.c} target={goals?.carbs} onClick={() => setTab("nutrition")} />
       <MacroTile key="fat" macro="f" week={weekOf("f")} top={topOf("f")} label="Fat" unit="g"
                  value={macros.f} target={goals?.fat} onClick={() => setTab("nutrition")} />
-      <Tile key="water" icon={Droplet} color="#19e3e3" label="Water" value={water ? (water / 1000).toFixed(1) : null} unit="L"
+      <Tile key="water" icon={Droplet} color="#00d8ff" label="Water" value={water ? (water / 1000).toFixed(1) : null} unit="L"
             sub={`of ${(waterGoal / 1000).toFixed(1)} L`} progress={water / waterGoal} empty="No water logged"
             week={waterWeek} goal={waterGoal / 1000}
             onClick={() => setTab("nutrition")} />
       <Tile key="session" icon={Dumbbell} color="#bf5af2" label="Session"
-            value={lifts.length ? String(lifts.length) : null}
-            unit={lifts.length === 1 ? "lift" : "lifts"}
-            sub={session ? "done today" : lifts.length ? "in progress" : null}
+            value={lifts.length ? String(lifts.length) : resting ? "Recovery" : null}
+            unit={lifts.length ? (lifts.length === 1 ? "lift" : "lifts") : ""}
+            sub={session ? "done today" : lifts.length ? "in progress" : restDays[date] ? "rest day saved" : resting ? "planned rest day" : null}
             lines={lifts.map((n) => ({ text: n }))}
-            empty="No session yet"
+            empty={trainingDay ? `${projected.split} — not started` : "No session yet"}
             onClick={() => setTab("workout")} />
       <HabitRings key="habits" />
 
@@ -286,6 +316,7 @@ export function DashboardView() {
       </Card>
       </Correlate>
     </WidgetGrid>
+    </>
   );
 }
 

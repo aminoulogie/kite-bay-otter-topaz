@@ -15,6 +15,7 @@ import { deltaLabel, deltaTone, tapeHistories } from "@/lib/tape-history";
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
 import { captureImage, getPhoto, savePhoto } from "@/lib/habit-photos";
 import { DecimalInput } from "@/components/ui/decimal-input";
+import { SLEEP_COLOR, SLEEP_SOFT } from "@/lib/sleep-color";
 import {
   EVIDENCE_LABEL, EVIDENCE_TONE, SUPPLEMENTS, loadTaken, saveTaken,
 } from "@/lib/supplements";
@@ -74,7 +75,7 @@ export function BodyView() {
         glance={{
           label: "Sleep",
           icon: Moon,
-          color: "#bf5af2",
+          color: SLEEP_COLOR,
           value: lastNight ? lastNight.hours.toFixed(1) : null,
           unit: "h",
           sub: lastNight ? `${debtLabel(debt)} · ${debt.toFixed(1)}h debt` : null,
@@ -235,12 +236,15 @@ function SleepPanel() {
         <p className="mb-3 text-xs text-muted">Time actually asleep, not time in bed.</p>
         <div className="flex items-center gap-2">
           <Button onClick={() => setHours(Math.max(0, hours - 0.25))}>−</Button>
-          <Input
-            type="number"
-            step="0.25"
+          {/* A decimal field rather than type="number": iOS's number field
+              hands back an empty value for "7,5", which read as 0 hours. */}
+          <DecimalInput
             className="text-center font-display text-2xl"
             value={hours}
-            onChange={(e) => setHours(Number(e.target.value))}
+            aria-label="Hours slept"
+            onValueChange={(n) => {
+              if (n != null) setHours(n);
+            }}
           />
           <Button onClick={() => setHours(hours + 0.25)}>+</Button>
         </div>
@@ -253,8 +257,9 @@ function SleepPanel() {
               onClick={() => setQuality(n)}
               className={cn(
                 "h-11 flex-1 rounded-xl border font-bold",
-                n <= quality ? "border-accent-line bg-accent-soft text-accent-text" : "border-border bg-surface-2 text-faint",
+                n > quality && "border-border bg-surface-2 text-faint",
               )}
+              style={n <= quality ? { borderColor: SLEEP_COLOR, background: SLEEP_SOFT, color: SLEEP_COLOR } : undefined}
             >
               {n}
             </button>
@@ -263,6 +268,7 @@ function SleepPanel() {
         <Button
           variant="primary"
           className="mt-3 w-full"
+          style={{ background: SLEEP_COLOR, color: "#0b0d12" }}
           onClick={() => {
             logSleep(hours, quality);
             toast.success("Sleep saved");
@@ -294,7 +300,7 @@ function SleepPanel() {
             <div className="mt-3 text-[0.6rem] font-bold uppercase tracking-wider text-faint">
               Hours · last {Math.min(14, series.length)} nights
             </div>
-            <Spark points={series.slice(-14).map((s) => s.hours)} className="mt-1" />
+            <Spark points={series.slice(-14).map((s) => s.hours)} className="mt-1" color={SLEEP_COLOR} />
             {/* The debt trace, not just the figure. A single number says
                 nothing about direction, and direction is the whole question:
                 eleven hours down and falling is a good week, eleven hours
@@ -768,7 +774,7 @@ function CreatinePanel() {
   );
 }
 
-function Spark({ points, className }: { points: number[]; className?: string }) {
+function Spark({ points, className, color }: { points: number[]; className?: string; color?: string }) {
   if (points.length < 2) return null;
   const max = Math.max(...points);
   const min = Math.min(...points);
@@ -790,6 +796,7 @@ function Spark({ points, className }: { points: number[]; className?: string }) 
     <svg
       viewBox={`0 0 ${w} ${h}`}
       className={cn("h-20 w-full text-[var(--color-accent-text)]", className)}
+      style={color ? { color } : undefined}
     >
       <path d={d} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
     </svg>

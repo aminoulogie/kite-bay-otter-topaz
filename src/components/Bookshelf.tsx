@@ -588,7 +588,7 @@ function BookSheet({
     >
       <div
         ref={scroller}
-        className="soma-expand max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4"
+        className="soma-expand max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex justify-end">
@@ -729,7 +729,7 @@ function BookFinder({
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
       <div className="flex items-center justify-between border-b border-border px-4 pb-3">
         <span className="font-display text-sm font-extrabold">Add a book</span>
         <button type="button" onClick={onClose} aria-label="Close">

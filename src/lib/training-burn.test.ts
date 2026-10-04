@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  ASSUMED_KG, CLOCK_TRUST, MET_EASY, MET_HARD, MINUTES_PER_SET, SET_SECONDS, averageIntensity,
+  ASSUMED_KG, CLOCK_TRUST, MET_EASY, MET_HARD, MINUTES_PER_SET, averageIntensity,
   credibleMinutes, eatBack, metFor, minutesFrom, sessionBurn,
 } from "./training-burn.ts";
 import type { HistorySession, WorkoutSet } from "./types.ts";
@@ -74,22 +74,18 @@ test("net is always below gross, by exactly the resting cost", () => {
   assert.equal(b.gross - b.net, Math.round(1 * (3.5 / 200) * 80 * 60));
 });
 
-test("an hour of moderate lifting is a plausible figure, not a marathon", () => {
+test("an hour of lifting is what the Compendium says, not a marathon", () => {
   const b = sessionBurn(session(new Array(20).fill(0).map(() => set()), "60:00"), 80);
-  // Twenty sets in an hour at 80kg. The literature puts a hypertrophy session
-  // of this shape at roughly 150-300 kcal gross, not the ~700 the old flat
-  // 6 kcal/min produced.
-  assert.ok(b.gross > 140 && b.gross < 300, `gross was ${b.gross}`);
-  assert.ok(b.net > 60 && b.net < 200, `net was ${b.net}`);
+  // Twenty sets in an hour at 80kg, taken moderately hard: the Compendium's
+  // 3.5–6 METs over the whole hour is 294–504 kcal gross. The old flat
+  // 6 kcal/min with its volume bonus said ~470 on an uncapped clock.
+  assert.ok(b.gross >= 294 && b.gross <= 504, `gross was ${b.gross}`);
+  assert.ok(b.net > 200 && b.net < 420, `net was ${b.net}`);
 });
 
-test("most of a session is rest, and it is billed as rest", () => {
-  const b = sessionBurn(session(new Array(20).fill(0).map(() => set()), "90:00"), 80);
-  assert.equal(b.workMinutes, (20 * SET_SECONDS) / 60, "twenty sets is fifteen minutes of work");
-  assert.ok(b.workMinutes < b.minutes / 4, "the clock is mostly standing about");
-  // Billing the whole clock at the working MET is the error being fixed here.
-  const naive = b.met * (3.5 / 200) * 80 * b.minutes;
-  assert.ok(b.gross < naive * 0.6, `${b.gross} should be well under the flat ${Math.round(naive)}`);
+test("the MET is a whole-session average, rests included", () => {
+  const b = sessionBurn(session(new Array(20).fill(0).map(() => set()), "60:00"), 80);
+  assert.equal(b.gross, Math.round(metFor(3) * (3.5 / 200) * 80 * 60));
 });
 
 test("a session with no rest at all is billed entirely as work", () => {
@@ -99,12 +95,11 @@ test("a session with no rest at all is billed entirely as work", () => {
   assert.ok(b.workMinutes <= b.minutes);
 });
 
-test("the old formula's worst case is cut down to size", () => {
-  // 20 sets, but the session sat open for four hours. The old maths billed
-  // 240 minutes at 6 kcal/min and change; this bills ninety.
+test("a session left open is billed for what the sets support, not the clock", () => {
+  // 20 sets, but the session sat open for four hours: ninety minutes billed.
   const b = sessionBurn(session(new Array(20).fill(0).map(() => set()), "240:00"), 80);
   assert.equal(b.minutes, 90);
-  assert.ok(b.net < 250, `net was ${b.net}`);
+  assert.ok(b.gross < 700, `gross was ${b.gross}`);
 });
 
 test("a heavier lifter burns more for the same session", () => {

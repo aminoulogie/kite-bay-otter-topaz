@@ -23,22 +23,26 @@
 /**
  * How far the row slides to park.
  *
- * Sized for a round 44px button with air either side rather than for a
- * full-height panel — 44 is the smallest target that is reliably hit with a
+ * Sized for a round 44px button with 6px either side — the same gap the
+ * two-button tray keeps — rather than for a full-height panel — 44 is the smallest target that is reliably hit with a
  * thumb, and the gap is what keeps it reading as a button beside the row
  * instead of a block welded to it.
  */
-export const REVEAL_PX = 72;
+export const REVEAL_PX = 58;
 
 /**
  * The same tray with an Edit button beside the Delete one.
  *
- * Not double: the two circles sit closer to each other than either sits to the
- * row, because they are one group of actions rather than two lone buttons. The
- * destructive one stays furthest right, so the finger that overshoots lands on
- * Edit rather than on Delete.
+ * Parked, the row sits exactly as far from Edit as Edit sits from Delete —
+ * the three read as one row of things, the way Mail's actions sit against
+ * the message. It used to stop twenty-odd pixels short, leaving Edit
+ * stranded out on its own. The sum: 8px of edge, two 44px buttons and the
+ * 6px gap between them, then the same 6px again before the row.
+ *
+ * The destructive one stays furthest right, so the finger that overshoots
+ * lands on Edit rather than on Delete.
  */
-export const REVEAL_TWO_PX = 124;
+export const REVEAL_TWO_PX = 8 + 44 + 6 + 44 + 6;
 
 /**
  * Past this share of the row's width, letting go deletes rather than parks.

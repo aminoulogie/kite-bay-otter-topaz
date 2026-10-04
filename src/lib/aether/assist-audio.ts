@@ -38,6 +38,13 @@ export class AssistAudio {
   private current: Guidance | null = null;
   private lastSpoken = "";
   private lastSpokenAt = 0;
+  /**
+   * Until when an announced line (a step, "Captured") is still being said.
+   * Coaching lines used to cancel whatever was playing, so a long "Step 3 of
+   * 5…" was cut off half-way by "Hold still" 2.5 s in. Now nothing
+   * interrupts an announcement; coaching simply waits its turn.
+   */
+  private announcingUntil = 0;
 
   /** Call from a user gesture. Safe to call repeatedly. */
   enable(): void {
@@ -108,10 +115,11 @@ export class AssistAudio {
   announce(text: string): void {
     this.lastSpoken = "";
     this.lastSpokenAt = 0;
-    this.say(text);
+    this.say(text, true);
   }
 
   stop(): void {
+    this.announcingUntil = 0;
     this.clearTimer();
     this.stopHold();
     this.current = null;
@@ -130,19 +138,34 @@ export class AssistAudio {
 
   // -------------------------------------------------------------------------
 
-  private say(text: string): void {
+  private say(text: string, announce = false): void {
     if (!this.voice || !text || !("speechSynthesis" in window)) return;
     const now = Date.now();
     const sinceAny = now - this.lastSpokenAt;
-    if (sinceAny < SPEAK_GAP_MS) return;
-    if (text === this.lastSpoken && sinceAny < REPEAT_MS) return;
+    if (!announce) {
+      if (now < this.announcingUntil) return;
+      if (sinceAny < SPEAK_GAP_MS) return;
+      if (text === this.lastSpoken && sinceAny < REPEAT_MS) return;
+    }
     try {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = "en-US";
       u.rate = 1.05;
       const voice = window.speechSynthesis.getVoices().find((v) => v.lang.startsWith("en"));
       if (voice) u.voice = voice;
-      window.speechSynthesis.cancel();
+      // An announcement queues behind one already playing rather than cutting
+      // it; a coaching line replaces coaching that is out of date anyway.
+      if (!announce || now >= this.announcingUntil) window.speechSynthesis.cancel();
+      if (announce) {
+        // About 2.6 words a second at this rate, plus a beat; onend clears it
+        // early where the browser reports it.
+        const words = text.split(/\s+/).length;
+        const start = Math.max(now, this.announcingUntil);
+        this.announcingUntil = start + (words / 2.6) * 1000 + 400;
+        u.onend = () => {
+          if (!window.speechSynthesis.speaking) this.announcingUntil = 0;
+        };
+      }
       window.speechSynthesis.speak(u);
       this.lastSpoken = text;
       this.lastSpokenAt = now;

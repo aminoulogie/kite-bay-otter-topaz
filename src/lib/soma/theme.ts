@@ -2,17 +2,23 @@
 // Theme engine: light/dark resolution and contrast-aware accent derivation.
 // ==========================================================================
 
+// Twelve hand-picked accents, tuned to glow on the near-black surface and to
+// stay distinct from each other: bright enough to read as "lit", none so
+// saturated it vibrates. Volt stays first and stays the default, so nobody's
+// existing colour changes underneath them. Ink is derived, not stored.
 const ACCENT_PRESETS = [
-  { id: "lime",   label: "Lime",    color: "#d3fd50", ink: "#16210a" },
-  { id: "mint",   label: "Mint",    color: "#10b981", ink: "#04150a" },
-  { id: "cyan",   label: "Cyan",    color: "#22d3ee", ink: "#04191d" },
-  { id: "blue",   label: "Blue",    color: "#3b82f6", ink: "#f8fafc" },
-  { id: "violet", label: "Violet",  color: "#a855f7", ink: "#f8fafc" },
-  { id: "pink",   label: "Pink",    color: "#f472b6", ink: "#2a0a1a" },
-  { id: "orange", label: "Orange",  color: "#fb923c", ink: "#241002" },
-  { id: "amber",  label: "Amber",   color: "#fbbf24", ink: "#231803" },
-  { id: "red",    label: "Red",     color: "#f87171", ink: "#2a0808" },
-  { id: "slate",  label: "Slate",   color: "#94a3b8", ink: "#0b1220" }
+  { id: "volt",      label: "Volt",      color: "#d3fd50" },
+  { id: "mint",      label: "Mint",      color: "#34e0a1" },
+  { id: "aqua",      label: "Aqua",      color: "#3dd6f5" },
+  { id: "azure",     label: "Azure",     color: "#4c8dff" },
+  { id: "indigo",    label: "Indigo",    color: "#6e6bff" },
+  { id: "violet",    label: "Violet",    color: "#a77bff" },
+  { id: "orchid",    label: "Orchid",    color: "#e879f9" },
+  { id: "rose",      label: "Rose",      color: "#ff5c8a" },
+  { id: "coral",     label: "Coral",     color: "#ff6b57" },
+  { id: "tangerine", label: "Tangerine", color: "#ff9e3d" },
+  { id: "gold",      label: "Gold",      color: "#ffcf4a" },
+  { id: "pearl",     label: "Pearl",     color: "#e9e4da" },
 ];
 
 const DEFAULT_ACCENT = ACCENT_PRESETS[0].color;

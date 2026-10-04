@@ -97,6 +97,17 @@ def patch_bundles(assets: pathlib.Path, base: str) -> None:
             )
             if n_pub:
                 public_href_hit = True
+
+            # Vite's lazy-chunk preloader prefixes every dependency with "/"
+            # (`h_=function(e){return`/`+e}` after the "modulepreload" string).
+            # Under a subpath that sends each preload to the site root: script
+            # preloads merely 404, but a lazily loaded chunk's CSS REJECTS and
+            # the route errors out ("Unable to preload CSS"). Re-base it.
+            patched = re.sub(
+                r"(`modulepreload`,[\w$]+=function\((\w)\)\{return)`/`\+\2\}",
+                lambda m: f"{m.group(1)}`{base}/`+{m.group(2)}}}",
+                patched,
+            )
         else:
             # Served from the webview root, so root-relative is already right.
             asset_href_hit = True

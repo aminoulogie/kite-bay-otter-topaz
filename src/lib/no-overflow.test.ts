@@ -56,7 +56,7 @@ test("the dock clears the home indicator without stranding itself above it", () 
   // line in the middle of it. Clearing the whole 34px left the dock visibly
   // floating away from the bottom of the screen.
   assert.ok(
-    /env\(safe-area-inset-bottom\)-16px/.test(CLASSES.replace(/\s+/g, "")),
+    /env\(safe-area-inset-bottom\)\)-16px/.test(CLASSES.replace(/\s+/g, "")),
     "the dock's bottom offset no longer trims the safe-area inset",
   );
 });

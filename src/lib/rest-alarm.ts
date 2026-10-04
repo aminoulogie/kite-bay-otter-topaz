@@ -1,3 +1,5 @@
+import { tapAlarm } from "./haptics.ts";
+
 /**
  * Telling the user their rest is over, by whatever route the device allows.
  *
@@ -65,10 +67,14 @@ export async function chime(): Promise<void> {
   }
 }
 
-/** A short buzz. Ignored by iOS Safari, which has no Vibration API. */
+/**
+ * The rest-over buzz. On the phone this is the full vibration through the
+ * native plugin — navigator.vibrate does not exist in an iOS web view, so the
+ * old call here never buzzed an iPhone at all.
+ */
 export function buzz(): void {
   try {
-    navigator.vibrate?.([120, 60, 120]);
+    tapAlarm();
   } catch {
     /* not worth breaking the timer over */
   }

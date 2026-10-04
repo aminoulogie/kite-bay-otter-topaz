@@ -158,3 +158,32 @@ export function bookProgress(
   const done = Math.min(chapters, Math.max(0, chapter)) + within;
   return Math.min(1, done / chapters);
 }
+
+/**
+ * Where you are in the whole book, in pages: "page 212 of 480".
+ *
+ * Only the chapter on screen is laid out, so the others are counted from
+ * their length at the density of this one — how many characters its pages
+ * actually hold at your font, size and spacing. The chapter you are in counts
+ * its real pages. The number is an estimate for the rest of the book and
+ * settles as you read; it moves when the type size does, as a book's should.
+ */
+export function bookPages(
+  lengths: readonly number[], chapter: number, page: number, pages: number,
+  /**
+   * Characters per page learnt from a chapter long enough to say. A short
+   * chapter (a copyright page, a dedication) is mostly white space, and
+   * measuring the book by it turned a 54-page book into "Page 3 of 314".
+   */
+  learnt?: number,
+): { page: number; total: number } | null {
+  const here = lengths[chapter] ?? 0;
+  if (!lengths.length || here <= 0 || pages < 1) return null;
+  const perPage = Math.max(250, pages >= 3 || !learnt ? here / pages : learnt);
+  const count = (i: number) => (i === chapter ? pages : Math.max(1, Math.ceil((lengths[i] ?? 0) / perPage)));
+  let before = 0;
+  for (let i = 0; i < chapter && i < lengths.length; i++) before += count(i);
+  let total = before;
+  for (let i = chapter; i < lengths.length; i++) total += count(i);
+  return { page: before + Math.min(page, pages - 1) + 1, total };
+}

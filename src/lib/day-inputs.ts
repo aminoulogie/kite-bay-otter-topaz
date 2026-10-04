@@ -1,7 +1,8 @@
 import { checkPreWorkout, preTargets, PRE_WINDOWS } from "./preworkout.ts";
 import { totalWaterMl } from "./hydration.ts";
 import type { DayInputs } from "./day-score.ts";
-import type { HistorySession, NutritionDay } from "./types.ts";
+import type { Habit, HistorySession, NutritionDay } from "./types.ts";
+import { habitDayScore } from "./habit-score.ts";
 import { hungerOn, hungerPenalty, type HungerEntry, type Phase } from "./hunger.ts";
 
 /**
@@ -19,7 +20,7 @@ import { hungerOn, hungerPenalty, type HungerEntry, type Phase } from "./hunger.
  */
 
 /** A day counts as having eaten only if something was actually logged. */
-function foodTotals(day: NutritionDay | undefined) {
+export function foodTotals(day: NutritionDay | undefined) {
   const items = day?.items ?? [];
   return items.reduce(
     (t, i) => ({ cals: t.cals + (i.cals || 0), p: t.p + (i.p || 0) }),
@@ -61,11 +62,19 @@ export interface BuildDayInputsArgs {
   /** Hunger logged on this day, and how you are eating. */
   hunger?: HungerEntry[];
   phase?: Phase;
+  /** Every habit, for the day's weighted habit score. */
+  habits?: Habit[];
+  /** True when the programme had this day down for training. */
+  isTrainingDay?: boolean;
+  /** The first day any workout was logged — skips before it are not counted. */
+  firstSession?: string | null;
 }
 
 export function buildDayInputs({
-  date, session, previous, nutrition, isRestDay, bodyweightKg = 0, hunger, phase,
+  date, session, previous, nutrition, isRestDay, bodyweightKg = 0, hunger, phase, habits,
+  isTrainingDay, firstSession,
 }: BuildDayInputsArgs): DayInputs {
+  const hs = habits ? habitDayScore(habits, date) : null;
   const day = nutrition[date];
   const logged = (day?.items?.length ?? 0) > 0;
   const totals = foodTotals(day);
@@ -74,12 +83,16 @@ export function buildDayInputs({
     session,
     previous,
     isRestDay,
+    missedWorkout: !session && !isRestDay && !!isTrainingDay && !!firstSession && date >= firstSession,
     protein:
       logged && day?.goals?.protein ? { grams: totals.p, target: day.goals.protein } : null,
     calories: logged && day?.goals?.cals ? { kcal: totals.cals, target: day.goals.cals } : null,
     sleepHours: day?.sleep?.hours ?? null,
     creatineG: day?.creatine ?? null,
     preworkout: isRestDay ? null : preworkoutShare(day, bodyweightKg),
+    habits: hs && hs.score != null
+      ? { score: hs.score, done: hs.rows.filter((r) => r.done).length, due: hs.rows.length }
+      : null,
     // Computed here so every screen reading a day score gets the same
     // deduction — the calendar square and the day card disagreeing about a
     // score is a bug this file already exists to prevent.

@@ -13,35 +13,21 @@ import {
 import { SomaIntelligenceEngine } from "@/lib/soma";
 import { useSideStoreRevision } from "@/lib/use-side-stores";
 import {
-  DOMAINS, DOMAIN_DOT, DOMAIN_LABEL, buildDayMarks, domainsOn, summariseDay,
+  DOMAIN_DOT, DOMAIN_LABEL, buildDayMarks, domainsOn, summariseDay,
   type DayMarksInput,
 } from "@/lib/day-marks";
-import { useSwipeToClose } from "@/lib/use-edge-swipe";
+import { useDragPanel } from "@/lib/use-drag-panel";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import type { HistorySession, NutritionDay } from "@/lib/types";
 import { useSheet } from "@/lib/use-sheet";
 import { cn } from "@/lib/utils";
+import { RingSet } from "@/components/RingSet";
+import { RING_DEFS, latestWeight, ringValues, share } from "@/lib/rings";
 
 /** The habit progress photos are filed under — the same one Habits → Train uses. */
 const TRAIN_HABIT_ID = "gym-movement";
 
 const WEEKDAYS = ["M", "T", "W", "T", "F", "S", "S"];
-
-/**
- * "Legs B (Posterior Chain & Glute Bias)" will not fit in a calendar cell, so
- * it is reduced to the word that identifies the day.
- */
-function shortSplit(split: string): string {
-  const s = split.toLowerCase();
-  if (s.includes("rest")) return "REST";
-  if (s.includes("push")) return "PUSH";
-  if (s.includes("pull")) return "PULL";
-  if (s.includes("leg")) return "LEGS";
-  if (s.includes("upper")) return "UPPER";
-  if (s.includes("lower")) return "LOWER";
-  if (s.includes("full")) return "FULL";
-  return split.split(/[\s(]/)[0]!.slice(0, 5).toUpperCase();
-}
 
 function monthMatrix(year: number, month: number): (string | null)[] {
   const first = new Date(year, month, 1);
@@ -54,15 +40,32 @@ function monthMatrix(year: number, month: number): (string | null)[] {
   return cells;
 }
 
-export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function TrainCalendar({
+  open, onClose, onOpen, swipeEnabled = true,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpen?: () => void;
+  swipeEnabled?: boolean;
+}) {
   // Passing `open`: this sheet stays mounted so it can slide both ways, so it
   // must only hold the scroll lock while it is actually showing.
   const sheetRef = useSheet(onClose, open);
   // Swiping right sends it back off the right edge it came in from. The month
   // grid opts out below, because a horizontal swipe there already means
   // "previous / next month".
-  const swipeRef = useSwipeToClose(onClose, "right", open);
+  const { panelRef, backdropRef } = useDragPanel({
+    side: "right",
+    open,
+    setOpen: (o) => (o ? onOpen?.() : onClose()),
+    enabled: swipeEnabled,
+  });
+  const setPanel = (el: HTMLDivElement | null) => {
+    (sheetRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
+    panelRef.current = el;
+  };
   const history = useSoma((s) => s.history);
+  const restDays = useSoma((s) => s.restDays);
   const habits = useSoma((s) => s.habits);
   const nutrition = useSoma((s) => s.nutrition);
   const ledger = useSoma((s) => s.ledger);
@@ -70,6 +73,8 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
   const hunger = useSoma((s) => s.hunger);
   const settings = useSoma((s) => s.settings);
   const program = useActiveProgram();
+  const weight = useMemo(() => latestWeight(nutrition), [nutrition]);
+  const ringsOn = (d: string) => ringValues(nutrition[d], history[d], weight, settings.customGoals ?? {});
 
   const today = isoDate(new Date());
   const [cursor, setCursor] = useState(() => {
@@ -112,21 +117,10 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
     return m;
   }, [history]);
 
-  const trainHabit = habits.find((h) => h.id === TRAIN_HABIT_ID);
   const cells = useMemo(() => monthMatrix(cursor.y, cursor.m), [cursor]);
 
-  /**
-   * What happened on every day, across all five domains.
-   *
-   * Built once for the whole grid rather than per cell: the ledger and the
-   * mind log are flat arrays, and asking them 42 times a render would walk
-   * every entry 42 times.
-   */
+  /** Everything the day card under the grid reads for the picked day. */
   const marksInput = { history, nutrition, ledger, mind, habits };
-  const dayMarks = useMemo(
-    () => buildDayMarks({ history, nutrition, ledger, mind, habits }),
-    [history, nutrition, ledger, mind, habits],
-  );
 
   /**
    * Each day's completion score, for the number shown in its square.
@@ -138,6 +132,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
    * Future days are skipped — a day that has not happened cannot be scored,
    * and showing 0 for tomorrow would read as a failure rather than as nothing.
    */
+  const firstSession = useMemo(() => Object.keys(history).sort()[0] ?? null, [history]);
   const scores = useMemo(() => {
     const out = new Map<string, number>();
     for (const date of cells) {
@@ -156,17 +151,20 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           nutrition,
           // A rest day with no session is not a missed workout. Without this
           // every programmed rest day scored as a failure to train.
-          isRestDay: !session && (projected.isRest || isRestSplit(projected.split)),
+          isRestDay: !session && (!!restDays[date] || projected.isRest || isRestSplit(projected.split)),
+          isTrainingDay: !projected.isRest && !isRestSplit(projected.split),
+          firstSession,
           bodyweightKg: bodyweightOn(nutrition, date),
         hunger,
         phase: settings.phase,
+        habits,
         }),
       );
       // Nothing tracked at all is not a zero-scoring day, it is an unscored one.
       if (s.tracked > 0) out.set(date, s.score);
     }
     return out;
-  }, [cells, sessionsByDate, nutrition, today, history, settings.scheduleOverrides, program]);
+  }, [cells, sessionsByDate, nutrition, today, history, settings.scheduleOverrides, program, restDays, habits, firstSession]);
 
   const shift = (delta: number) =>
     setCursor((c) => {
@@ -193,15 +191,16 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           the history drawer already slides both ways, so the two gestures felt
           like different apps. */}
       <div
+        ref={backdropRef}
         aria-hidden
         onClick={onClose}
         className={cn(
-          "fixed inset-0 z-[56] bg-black/60 transition-opacity duration-150",
+          "fixed inset-0 z-[56] bg-black/60 transition-opacity duration-300",
           open ? "opacity-100" : "pointer-events-none opacity-0",
         )}
       />
       <div
-        ref={sheetRef}
+        ref={setPanel}
         role="dialog"
         aria-modal="true"
         aria-label="Training calendar"
@@ -211,8 +210,8 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         // calendar was readable by VoiceOver while the user was on Train.
         aria-hidden={!open}
         className={cn(
-          "glass-panel fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong pt-[max(12px,env(safe-area-inset-top))]",
-          "transition-transform duration-150 ease-out",
+          "glass-panel fixed inset-y-0 right-0 z-[57] flex w-full flex-col border-l border-border-strong pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]",
+          "transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform",
           open ? "translate-x-0" : "translate-x-full",
         )}
       >
@@ -245,8 +244,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           flex child refuses to go below its content height and the column
           overflows the screen instead of scrolling inside it. */}
       <div
-        ref={swipeRef}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-[max(16px,env(safe-area-inset-bottom))] pt-3"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-[max(16px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-3"
       >
         {/* The month-changing swipe lives on the grid alone, and the grid opts
             out of swipe-to-close. Both gestures are horizontal, so sharing an
@@ -279,30 +277,16 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-1">
+        {/* Keyed on opening and on the month, so the rings fill every time
+            the calendar is opened or turned, not once at app start while it
+            waits off-screen. */}
+        <div key={`${open}-${JSON.stringify(cursor)}`} className="grid grid-cols-7 gap-1">
           {cells.map((date, i) => {
             if (!date) return <div key={i} />;
-            const session = sessionsByDate.get(date);
-            const trained = !!session || !!trainHabit?.history?.[date];
             const future = date > today;
             const covered = isCovered(periods, date);
             const isEnd = status.period?.end === date;
             const score = scores.get(date);
-            // What was trained, or what is scheduled for a day still to come —
-            // a grid of bare numbers says nothing about the week ahead.
-            // Every day is labelled, not only trained and future ones: a past
-            // day with no session still had a split scheduled, and leaving it
-            // blank hides whether it was a rest day or a missed one.
-            const label = session
-              ? shortSplit(session.split)
-              : shortSplit(
-                  SomaIntelligenceEngine.getProgramProjectedDay(
-                    new Date(date + "T12:00:00"),
-                    settings.scheduleOverrides,
-                    program,
-                  ).split,
-                );
-
             return (
               <button
                 key={date}
@@ -310,7 +294,7 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
                 onClick={() => setSelected(date)}
                 aria-pressed={date === selected}
                 className={cn(
-                  "relative flex aspect-square flex-col items-center justify-center rounded-xl border text-[0.75rem] font-bold transition-colors",
+                  "relative flex flex-col items-center justify-center rounded-xl border py-1.5 text-[0.7rem] font-bold transition-colors",
                   // Selection and "today" are different things and need to stay
                   // distinguishable: today keeps its outline, the day you are
                   // reading is filled. Without the fill, tapping around the
@@ -325,53 +309,29 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
                   future && date !== selected ? "text-faint" : "text-fg",
                 )}
               >
-                <span className="leading-none">{Number(date.slice(8, 10))}</span>
-                {/* One dot per domain that has something on this day. A cell
-                    is forty pixels wide: it can carry "there is something
-                    here" for five things and not how much, which is what the
-                    card below is for. A past day with nothing at all keeps the
-                    old dashed outline, so empty and unrecorded stay distinct
-                    from a day still to come. */}
-                <span className="mt-0.5 flex h-1 items-center gap-[2px]">
-                  {domainsOn(dayMarks, date).map((d) => (
-                    <span key={d} className={cn("size-1 rounded-full", DOMAIN_DOT[d])} />
-                  ))}
-                  {domainsOn(dayMarks, date).length === 0 && !future && (
-                    <span className="size-1 rounded-full border border-dashed border-faint/50" />
-                  )}
+                {/* The day as its rings, as the Fitness app's month does. What was
+                    trained, the score and the rest are on the card under the
+                    grid for whichever day is picked. */}
+                <span className={cn("leading-none", date === today && "text-[#ff2d7a]")}>
+                  {Number(date.slice(8, 10))}
                 </span>
-                {score != null && (
-                  <span
-                    className={cn(
-                      "absolute right-1 top-1 text-[0.5rem] font-extrabold tabular-nums",
-                      score >= 80
-                        ? "text-emerald-400"
-                        : score >= 55
-                          ? "text-warn"
-                          : "text-orange-400/80",
-                    )}
-                  >
-                    {score}
-                  </span>
+                <span className={cn("mt-1", future && "opacity-30")}>
+                  <RingSet
+                    rings={RING_DEFS.map((r) => ({ f: share(ringsOn(date)[r.id]), from: r.from, to: r.to }))}
+                    px={38}
+                    shadow={false}
+                    delay={i * 12}
+                    // Only closed rings are vivid; today is still in progress,
+                    // so it keeps its colour either way.
+                    muteUnfilled={date !== today}
+                  />
+                </span>
+                {isEnd && <span className="absolute right-1 top-1 size-1.5 rounded-full bg-amber-400" aria-label="Membership ends" />}
+                {restDays[date] && (
+                  <span className="absolute left-1 top-1 size-1.5 rounded-full bg-sky-400" aria-label="Rest day saved" />
                 )}
-                {label && !isEnd && (
-                  <span
-                    className={cn(
-                      "mt-0.5 max-w-full truncate rounded px-1 text-[0.45rem] font-extrabold uppercase tracking-wide",
-                      trained
-                        ? "bg-emerald-500/20 text-emerald-300"
-                        : label === "REST"
-                          ? "bg-surface-3 text-faint"
-                          : "bg-surface-3 text-muted",
-                    )}
-                  >
-                    {label}
-                  </span>
-                )}
-                {isEnd && (
-                  <span className="mt-0.5 rounded bg-amber-500/20 px-1 text-[0.45rem] font-extrabold text-amber-400">
-                    EXPIRY
-                  </span>
+                {score != null && !isEnd && (
+                  <span className="sr-only">score {score}</span>
                 )}
               </button>
             );
@@ -381,16 +341,17 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[0.65rem] text-muted">
-          {/* One entry per domain, from the same table the grid draws from, so
-              the legend cannot describe a colour the cells no longer use. */}
-          {DOMAINS.map((d) => (
-            <span key={d} className="flex items-center gap-1.5">
-              <span className={cn("size-1.5 rounded-full", DOMAIN_DOT[d])} />
-              {DOMAIN_LABEL[d].toLowerCase()}
+          {RING_DEFS.map((r) => (
+            <span key={r.id} className="flex items-center gap-1.5">
+              <span className="size-1.5 rounded-full" style={{ background: r.from }} />
+              {r.label.toLowerCase()}
             </span>
           ))}
           <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full border border-dashed border-faint/50" /> nothing logged
+            <span className="size-1.5 rounded-full bg-amber-400" /> membership ends
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-sky-400" /> rest day
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2 rounded bg-surface-2" /> membership active
@@ -415,14 +376,23 @@ export function TrainCalendar({ open, onClose }: { open: boolean; onClose: () =>
           previous={previousSameSplit(history, selected)}
           isRestDay={
             !sessionsByDate.get(selected) &&
-            isRestSplit(
+            (!!restDays[selected] || isRestSplit(
               SomaIntelligenceEngine.getProgramProjectedDay(
                 new Date(selected + "T12:00:00"),
                 settings.scheduleOverrides,
                 program,
               ).split,
-            )
+            ))
           }
+          isTrainingDay={(() => {
+            const p = SomaIntelligenceEngine.getProgramProjectedDay(
+              new Date(selected + "T12:00:00"),
+              settings.scheduleOverrides,
+              program,
+            );
+            return !p.isRest && !isRestSplit(p.split);
+          })()}
+          firstSession={firstSession}
           nutrition={nutrition}
           onBackToToday={() => setSelected(today)}
           onMoved={(to) => setSelected(to)}
@@ -540,13 +510,15 @@ function DayEverything({ date, input }: { date: string; input: DayMarksInput }) 
 }
 
 function DayCard({
-  date, isToday, session, previous, isRestDay, nutrition, onBackToToday, onMoved, onClosePanel,
+  date, isToday, session, previous, isRestDay, isTrainingDay, firstSession, nutrition, onBackToToday, onMoved, onClosePanel,
 }: {
   date: string;
   isToday: boolean;
   session: HistorySession | null;
   previous: HistorySession | null;
   isRestDay: boolean;
+  isTrainingDay: boolean;
+  firstSession: string | null;
   nutrition: Record<string, NutritionDay>;
   onBackToToday: () => void;
   onMoved: (to: string) => void;
@@ -554,10 +526,13 @@ function DayCard({
 }) {
   const [photo, setPhoto] = useState<string | null>(null);
   const renameSession = useSoma((s) => s.renameSession);
+  const restDays = useSoma((s) => s.restDays);
+  const logRestDay = useSoma((s) => s.logRestDay);
   // Read here as well as in the grid above. Both feed the SAME buildDayInputs,
   // which is the point: the card and the square disagreeing about one day is
   // the bug that file was written to end.
   const hunger = useSoma((s) => s.hunger);
+  const habits = useSoma((s) => s.habits);
   const settings = useSoma((s) => s.settings);
   const [renaming, setRenaming] = useState(false);
   const [splitDraft, setSplitDraft] = useState("");
@@ -599,12 +574,15 @@ function DayCard({
           previous,
           nutrition,
           isRestDay,
+          isTrainingDay,
+          firstSession,
           bodyweightKg: bodyweightOn(nutrition, date),
           hunger,
           phase: settings.phase,
+        habits,
         }),
       ),
-    [date, session, previous, nutrition, isRestDay, hunger, settings.phase],
+    [date, session, previous, nutrition, isRestDay, isTrainingDay, firstSession, hunger, settings.phase, habits],
   );
 
   return (
@@ -704,6 +682,20 @@ function DayCard({
                 );
               })}
             </ul>
+          </div>
+        ) : restDays[date] ? (
+          <div className="mb-3 flex items-center justify-between gap-2 rounded-2xl border border-sky-400/40 bg-sky-400/10 p-3">
+            <div>
+              <div className="text-[0.7rem] font-bold uppercase tracking-wide text-sky-300">Rest day saved</div>
+              <div className="text-[0.65rem] text-faint">Recovery — not counted as a missed workout</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => logRestDay(date, false)}
+              className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[0.65rem] font-bold text-muted"
+            >
+              Undo
+            </button>
           </div>
         ) : (
           <p className="mb-3 rounded-2xl border border-border bg-surface-2 p-3 text-[0.72rem] text-muted">
@@ -968,7 +960,7 @@ function RenewalSheet({
   return (
     <div className="fixed inset-0 z-[59] flex flex-col justify-end bg-black/60" onClick={onClose}>
       <div
-        className="glass-panel rounded-t-3xl border-t border-border px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-2"
+        className="glass-panel rounded-t-3xl border-t border-border px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-2"
         ref={sheetRef}
         role="dialog"
         aria-modal="true"

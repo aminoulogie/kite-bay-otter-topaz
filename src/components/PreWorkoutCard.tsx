@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { PortionSheet } from "@/components/PortionSheet";
 import {
@@ -12,6 +12,9 @@ import { tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import { Glance, isGlance } from "@/components/Glance";
 import { useWidgetSize } from "@/components/WidgetGrid";
+import { usePlannedSession } from "@/lib/use-workout-slot";
+import { PRE_BEFORE_MIN, hhmmOf, minutesUntil } from "@/lib/workout-time";
+import { getLocalDateKey } from "@/lib/soma";
 
 /**
  * Fuelling the session that is coming.
@@ -23,13 +26,30 @@ import { useWidgetSize } from "@/components/WidgetGrid";
  * Targets scale with bodyweight, because a fixed gram figure is wrong for
  * everyone except whoever it was written for.
  */
-export function PreWorkoutCard() {
+/**
+ * Memoised: it sits on the Fuel page beside the food search, and without
+ * this every letter typed there redrew it too.
+ */
+export const PreWorkoutCard = memo(function PreWorkoutCard() {
   const nutrition = useSoma((s) => s.nutrition);
   const activeDate = useSoma((s) => s.activeDate);
   const customFoods = useSoma((s) => s.customFoods);
   const addFood = useSoma((s) => s.addFood);
 
-  const [windowId, setWindowId] = useState<string>("snack");
+  /**
+   * The window follows the session time unless one is picked by hand. Hours
+   * out it is the planned pre-workout meal (an hour before, the light-meal
+   * window); inside two hours it is whatever window "now" falls in.
+   */
+  const [picked, setWindowId] = useState<string | null>(null);
+  const session = usePlannedSession(activeDate);
+  const isToday = activeDate === getLocalDateKey();
+  const until = isToday ? minutesUntil(session.slot, new Date()) : null;
+  const autoWindow =
+    until !== null && until > 0 && until < 120
+      ? (PRE_WINDOWS.find((w) => until >= w.fromMin && until < w.toMin)?.id ?? "snack")
+      : "snack";
+  const windowId = picked ?? autoWindow;
   /**
    * The suggestion being sized, if any.
    *
@@ -99,6 +119,18 @@ export function PreWorkoutCard() {
   return (
     <Card>
       <CardTitle>Pre-workout</CardTitle>
+      {session.slot ? (
+        <p className="mb-1.5 text-xs font-bold">
+          {session.split} at {session.slot.time} · eat at {hhmmOf(session.slot.start - PRE_BEFORE_MIN)}
+          {until !== null && until > 0 && (
+            <span className="font-semibold text-muted">
+              {" "}· in {until >= 60 ? `${Math.floor(until / 60)}h ${until % 60}m` : `${until}m`}
+            </span>
+          )}
+        </p>
+      ) : (
+        <p className="mb-1.5 text-xs font-bold text-muted">Rest day — no session planned</p>
+      )}
       <p className="mb-2 text-[0.68rem] leading-snug text-muted">
         Scaled to {bodyweight ? `${bodyweight}kg` : "75kg (no weight logged)"}. Pick how long
         before you train — what helps three hours out is not what helps twenty minutes out.
@@ -218,7 +250,7 @@ export function PreWorkoutCard() {
       )}
     </Card>
   );
-}
+});
 
 /**
  * A target as a bar rather than a pair of numbers.

@@ -44,7 +44,7 @@ export function CompareSheet({
   const deltas = left && right && check?.ok ? compareScans(left, right) : [];
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,env(safe-area-inset-top))]">
+    <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
       <div className="flex items-center justify-between border-b border-border px-4 pb-3">
         <div className="min-w-0">
           <div className="truncate font-display text-sm font-extrabold">Compare</div>
@@ -57,7 +57,7 @@ export function CompareSheet({
         </button>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3 pb-[max(16px,env(safe-area-inset-bottom))]">
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3 pb-[max(16px,var(--safe-bottom,env(safe-area-inset-bottom)))]">
         <div className="grid grid-cols-2 gap-2">
           <Side scan={left} label="Before" onPick={() => setPicking("left")} />
           <Side scan={right} label="After" onPick={() => setPicking("right")} />

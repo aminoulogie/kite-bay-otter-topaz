@@ -4,15 +4,19 @@ import { Button } from "@/components/ui/button";
 import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { MAX_TARGET, newStepId, targetOf } from "@/lib/habit-steps";
-import { formatAmount, isBuild, totalRungs, type RampAdvance, type RampUnit } from "@/lib/habit-ramp";
+import { TIME_STEPS, convertRamp, formatAmount, isBuild, totalRungs, type RampAdvance, type RampUnit } from "@/lib/habit-ramp";
 import { getLocalDateKey } from "@/lib/soma";
 import { cn } from "@/lib/utils";
+import { COEF_LABELS, coefOf } from "@/lib/habit-score";
+import { AUTO_LABELS, suggestAuto } from "@/lib/habit-auto";
+import type { HabitAuto } from "@/lib/types";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
 
 type Shape = "simple" | "checklist" | "ramp";
 
 const UNITS: { id: RampUnit; label: string }[] = [
   { id: "min", label: "Minutes" },
+  { id: "sec", label: "Seconds" },
   { id: "count", label: "Times" },
   { id: "page", label: "Pages" },
 ];
@@ -32,7 +36,7 @@ function shapeOf(habit: Habit): Shape {
  * to that question and no way to choose between them.
  */
 export function HabitSetupSheet({
-  habit, onClose, onSaveSteps, onSaveRamp, onSaveSeconds,
+  habit, onClose, onSaveSteps, onSaveRamp, onSaveSeconds, onSaveCoef, onSaveAuto,
 }: {
   habit: Habit;
   onClose: () => void;
@@ -42,6 +46,10 @@ export function HabitSetupSheet({
       nothing to validate, so holding it until Save would only be a way to
       lose it. */
   onSaveSeconds: (seconds: number | null) => void;
+  /** How much it counts in the habit score, 1-5. Written at once, like the time. */
+  onSaveCoef: (coef: number) => void;
+  /** Its automatic rule, or null for none. Written at once. */
+  onSaveAuto: (auto: HabitAuto | null) => void;
 }) {
   const [shape, setShape] = useState<Shape>(() => shapeOf(habit));
   const [draft, setDraft] = useState<HabitStep[]>(() =>
@@ -92,7 +100,7 @@ export function HabitSetupSheet({
       onClick={onClose}
     >
       <div
-        className="soma-expand max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4"
+        className="soma-expand max-h-[88vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -100,6 +108,36 @@ export function HabitSetupSheet({
           <button type="button" onClick={onClose} aria-label="Close">
             <X className="size-5 text-muted" />
           </button>
+        </div>
+
+        <AutoRule habit={habit} onSave={onSaveAuto} />
+
+        {/* How much it matters: its coefficient in the day's habit score,
+            like a subject's in a school average. */}
+        <div className="mb-3">
+          <div className="mb-1.5 flex items-baseline justify-between">
+            <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">
+              Importance
+            </span>
+            <span className="text-[0.62rem] text-faint">{COEF_LABELS[coefOf(habit)]} · coefficient {coefOf(habit)}</span>
+          </div>
+          <div className="grid grid-cols-5 gap-1.5">
+            {[1, 2, 3, 4, 5].map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => onSaveCoef(c)}
+                className={cn(
+                  "h-9 rounded-xl border text-sm font-extrabold tabular",
+                  coefOf(habit) === c
+                    ? "border-accent bg-accent text-accent-ink"
+                    : "border-border bg-surface-2 text-muted",
+                )}
+              >
+                ×{c}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* How long it takes, which is not a target and is never scored.
@@ -225,19 +263,23 @@ export function HabitSetupSheet({
             </p>
 
             <div className="mt-3 grid grid-cols-3 gap-2">
-              <Field label="Start at">
+              <Field label={ramp.unit === "min" ? "Start (min)" : ramp.unit === "sec" ? "Start (sec)" : "Start at"}>
                 <DecimalInput
                   value={String(ramp.start)}
                   onValueChange={(n) => setRamp((r) => ({ ...r, start: n ?? 0 }))}
                 />
               </Field>
-              <Field label="Each day">
+              {/* A time ramp's step is typed in SECONDS: "30" is half a minute
+                  a day, which a minutes field could only say as 0.5. */}
+              <Field label={ramp.unit === "min" || ramp.unit === "sec" ? "Each day (sec)" : "Each day"}>
                 <DecimalInput
-                  value={String(ramp.step)}
-                  onValueChange={(n) => setRamp((r) => ({ ...r, step: n ?? 0 }))}
+                  value={String(ramp.unit === "min" ? Math.round(ramp.step * 60) : ramp.step)}
+                  onValueChange={(n) =>
+                    setRamp((r) => ({ ...r, step: r.unit === "min" ? (n ?? 0) / 60 : (n ?? 0) }))
+                  }
                 />
               </Field>
-              <Field label="Until">
+              <Field label={ramp.unit === "min" ? "Until (min)" : ramp.unit === "sec" ? "Until (sec)" : "Until"}>
                 <DecimalInput
                   value={String(ramp.target)}
                   onValueChange={(n) => setRamp((r) => ({ ...r, target: n ?? 0 }))}
@@ -245,12 +287,34 @@ export function HabitSetupSheet({
               </Field>
             </div>
 
+            {(ramp.unit === "min" || ramp.unit === "sec") && (
+              <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="How much it moves each day">
+                {TIME_STEPS.map((st) => {
+                  // The same steps either way, held in the ramp's own unit.
+                  const v = ramp.unit === "sec" ? Math.round(st * 60) : st;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => setRamp((r) => ({ ...r, step: v }))}
+                      className={cn(
+                        "h-8 rounded-full px-3 text-[0.7rem] font-bold tabular transition-colors",
+                        Math.abs(ramp.step - v) < 1e-6 ? "bg-accent text-accent-ink" : "bg-surface-2 text-muted",
+                      )}
+                    >
+                      {formatAmount(st, "min")}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="mt-2 flex gap-1">
               {UNITS.map((u) => (
                 <button
                   key={u.id}
                   type="button"
-                  onClick={() => setRamp((r) => ({ ...r, unit: u.id }))}
+                  onClick={() => setRamp((r) => convertRamp(r, u.id))}
                   className={cn(
                     "h-8 flex-1 rounded-full text-[0.7rem] font-bold transition-colors",
                     ramp.unit === u.id ? "bg-surface-3 text-fg" : "bg-surface-2 text-faint",
@@ -335,5 +399,80 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {label}
       <span className="mt-1 block">{children}</span>
     </label>
+  );
+}
+
+/** A default for each rule's number, so picking a rule is one tap. */
+function withDefaults(kind: HabitAuto["kind"]): HabitAuto {
+  switch (kind) {
+    case "calories": return { kind, within: 10 };
+    case "sleep": return { kind, hours: 7 };
+    case "bedtime": return { kind, before: "23:30" };
+    case "steps": return { kind, min: 8000 };
+    case "activeKcal": return { kind, min: 400 };
+    case "reading": return { kind, minutes: 20 };
+    case "mind": return { kind, mindKind: "idea" };
+    case "screen": return { kind, under: 180 };
+    case "mindful": return { kind, minutes: 10 };
+    case "focus": return { kind, minutes: 90 };
+    default: return { kind } as HabitAuto;
+  }
+}
+
+/**
+ * "Tick automatically when…": the rule this habit is ticked by, and its
+ * number. Written straight away, like the time and the importance.
+ */
+function AutoRule({ habit, onSave }: { habit: Habit; onSave: (a: HabitAuto | null) => void }) {
+  const rule = habit.auto ?? null;
+  const suggested = !rule ? suggestAuto(habit.name) : null;
+  const num = (v: string) => {
+    const n = Number(v.replace(",", "."));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const field = "h-9 w-24 rounded-xl border border-border bg-surface-2 px-2 text-center text-sm font-bold";
+  return (
+    <div className="mb-3">
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">Tick automatically when</span>
+        {suggested && (
+          <button type="button" onClick={() => onSave(suggested)} className="text-[0.65rem] font-bold text-accent-text underline">
+            Suggest: {AUTO_LABELS[suggested.kind]}
+          </button>
+        )}
+      </div>
+      <select
+        value={rule?.kind ?? ""}
+        onChange={(e) => onSave(e.target.value ? withDefaults(e.target.value as HabitAuto["kind"]) : null)}
+        className="h-10 w-full rounded-xl border border-border bg-surface-2 px-3 text-sm font-semibold"
+      >
+        <option value="">Never — I tick it myself</option>
+        {(Object.keys(AUTO_LABELS) as HabitAuto["kind"][]).map((k) => (
+          <option key={k} value={k}>{AUTO_LABELS[k]}</option>
+        ))}
+      </select>
+      {rule && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+          {rule.kind === "sleep" && (<><input inputMode="decimal" defaultValue={rule.hours} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, hours: n }); }} /> hours or more</>)}
+          {rule.kind === "steps" && (<><input inputMode="numeric" defaultValue={rule.min} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, min: Math.round(n) }); }} /> steps</>)}
+          {rule.kind === "activeKcal" && (<><input inputMode="numeric" defaultValue={rule.min} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, min: Math.round(n) }); }} /> active kcal</>)}
+          {rule.kind === "reading" && (<><input inputMode="numeric" defaultValue={rule.minutes} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, minutes: Math.round(n) }); }} /> minutes of reading</>)}
+          {rule.kind === "calories" && (<>within <input inputMode="numeric" defaultValue={rule.within} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, within: n }); }} /> % of target</>)}
+          {rule.kind === "screen" && (<>under <input inputMode="numeric" defaultValue={rule.under} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, under: Math.round(n) }); }} /> minutes</>)}
+          {rule.kind === "bedtime" && (<>tapped "Going to sleep" before <input type="time" defaultValue={rule.before} className={field} onChange={(e) => e.target.value && onSave({ ...rule, before: e.target.value })} /></>)}
+          {rule.kind === "mind" && (
+            <select value={rule.mindKind} onChange={(e) => onSave({ ...rule, mindKind: e.target.value as "idea" })} className={field + " w-32"}>
+              <option value="idea">an idea</option>
+              <option value="book">reading</option>
+              <option value="language">a language drill</option>
+              <option value="research">research</option>
+            </select>
+          )}
+          {rule.kind === "mindful" && (<><input inputMode="numeric" defaultValue={rule.minutes} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, minutes: Math.round(n) }); }} /> mindful minutes</>)}
+          {rule.kind === "focus" && (<><input inputMode="numeric" defaultValue={rule.minutes} className={field} onBlur={(e) => { const n = num(e.target.value); if (n) onSave({ ...rule, minutes: Math.round(n) }); }} /> minutes in Focus <span className="w-full text-[0.65rem] text-faint">Set up in Settings › Automations.</span></>)}
+          {(rule.kind === "steps" || rule.kind === "activeKcal" || rule.kind === "mindful") && <span className="w-full text-[0.65rem] text-faint">Needs Apple Health connected (Settings).</span>}
+        </div>
+      )}
+    </div>
   );
 }

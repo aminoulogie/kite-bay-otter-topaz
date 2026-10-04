@@ -65,7 +65,7 @@ export function ScreenTimeCard({ flexibleHours }: { flexibleHours: number }) {
         <div className="min-w-0">
           <CardTitle className="mb-0">Screen time</CardTitle>
           <p className="mt-0.5 text-[0.68rem] leading-snug text-faint">
-            {line ?? "Read it off Settings → Screen Time and put it here."}
+            {line ?? "Run the Screen Time shortcut on that page, or type it in."}
           </p>
         </div>
         <button
@@ -185,7 +185,7 @@ function LogSheet({
       onClick={onClose}
     >
       <div
-        className="soma-expand max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4"
+        className="soma-expand max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between gap-2">

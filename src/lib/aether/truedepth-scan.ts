@@ -240,7 +240,7 @@ export async function runTrueDepthScan(
   });
   let result: FaceDepthResult;
   try {
-    if (sweep) audio.announce("Look straight at the screen, then slowly circle your head.");
+    if (sweep) audio.announce("Look straight at the screen and hold still. Then four slow head moves.");
     result = sweep
       ? await FaceDepth.scan({
           mode: "sweep",

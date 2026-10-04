@@ -12,11 +12,23 @@ import { cn } from "@/lib/utils";
  * a filled shape at this size competes with the number beside it, and the
  * number is the thing being read.
  */
+// Calories and protein wear their rings' colours, so the tile and the ring
+// for the same number never disagree.
 export const MACRO_COLOR = {
-  cals: "#f59e0b",
-  p: "#a3e635",
+  cals: "#fa114f",
+  p: "#7dff00",
   f: "#ef4444",
   c: "#3b82f6",
+} as const;
+
+/** Every nutrient Fuel charts, by the name the goals use, in its colour. */
+export const NUTRIENT_COLOR = {
+  cals: MACRO_COLOR.cals,
+  protein: MACRO_COLOR.p,
+  carbs: MACRO_COLOR.c,
+  fat: MACRO_COLOR.f,
+  fiber: "#b18cff",
+  water: "#00d8ff",
 } as const;
 
 export const MACRO_LABEL = {

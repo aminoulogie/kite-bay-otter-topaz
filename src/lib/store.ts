@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { asFindings, isClosed, newFindingId, type Finding } from "./findings";
+import { asTimeEntries, newTimeId, type TimeEntry } from "./time-tracking";
 import { persist, type PersistStorage } from "zustand/middleware";
 import msExercises from "./ms-exercises.json";
 import {
@@ -14,6 +16,7 @@ import type {
   FoodItem,
   Habit,
   HabitStep,
+  HabitAuto,
   HabitRamp,
   ScreenTimeDay,
   HistorySession,
@@ -25,9 +28,15 @@ import type {
   MindEntry,
   TabId,
   TodoItem,
+  TodoSlot,
   WorkoutSet,
 } from "./types";
 import CUSTOM_FOOD_SEED from "./custom-foods-seed.json";
+import { correctCustomFoods } from "./food-corrections";
+import { liveIsUntouched, withRescue } from "./live-guard";
+import { cleanSlot } from "./timeline";
+import { asGoals, type Goal } from "./life-goals";
+import { sessionBurn } from "./training-burn";
 import {
   defaultProgram, loadActiveId, loadPrograms, resolveActiveProgram, saveActiveId,
   savePrograms, type Program,
@@ -35,6 +44,7 @@ import {
 import { collectSideStores, restoreSideStores, type SideStores } from "./side-stores";
 import { bumpStep, setAll as setAllSteps, setSteps } from "./habit-steps";
 import { logAmount, rungOn, setRamp } from "./habit-ramp";
+import { canTickOn } from "./habit-lock";
 import { followsSettings, resolveGoals, sameGoals } from "./goals";
 import { learn, unlearn, type LangTrack } from "./lang/study";
 import type { LangCode, Level } from "./lang/words";
@@ -86,7 +96,7 @@ import { HOME_TAB } from "./tab-order";
 import type { ScanRecord } from "./aether/scan-store";
 import type { HungerEntry } from "./hunger";
 import {
-  deduct, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
+  deduct, giveBack, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
 } from "./pantry";
 import { deloadSetCount, feederRamp } from "./autoregulate";
 import { cleanDue } from "./due";
@@ -288,10 +298,31 @@ export interface SomaStore {
   setDayRoutineRun: (run: RunState | null) => void;
   /** Things with a finish line. See lib/projects.ts. */
   projects: Project[];
+  /** Goals for the week, month and year. See lib/life-goals.ts. */
+  goals: Goal[];
+  addGoal: (goal: Omit<Goal, "id" | "createdAt" | "done">) => string;
+  patchGoal: (id: string, patch: Partial<Omit<Goal, "id">>) => void;
+  removeGoal: (id: string) => void;
+  restoreGoal: (idx: number, goal: Goal) => void;
   /** The trading journal. See lib/trading.ts for the rules it enforces. */
   trades: Trade[];
   addProject: (name: string, color: string) => string;
   patchProject: (id: string, patch: Partial<Omit<Project, "id">>) => void;
+  /** Audit findings, each on a project. See lib/findings.ts. */
+  findings: Finding[];
+  addFinding: (f: Omit<Finding, "id" | "createdAt">) => string;
+  patchFinding: (id: string, patch: Partial<Omit<Finding, "id">>) => void;
+  removeFinding: (id: string) => void;
+  restoreFinding: (idx: number, f: Finding) => void;
+  /** Hours on projects. See lib/time-tracking.ts. */
+  timeEntries: TimeEntry[];
+  /** Starts a timer on a project, stopping any that is running. */
+  startTimer: (projectId: string, note?: string) => void;
+  stopTimer: () => void;
+  addTimeEntry: (e: Omit<TimeEntry, "id">) => void;
+  patchTimeEntry: (id: string, patch: Partial<Omit<TimeEntry, "id">>) => void;
+  removeTimeEntry: (id: string) => void;
+  restoreTimeEntry: (idx: number, e: TimeEntry) => void;
   removeProject: (id: string) => void;
   restoreProject: (idx: number, project: Project) => void;
   /** Opens a trade. The gate runs in the view; this records what was decided. */
@@ -311,6 +342,10 @@ export interface SomaStore {
   renameTodo: (id: string, text: string) => void;
   /** Set or clear a to-do's deadline. Null clears it. */
   setTodoDue: (id: string, due: string | null) => void;
+  /** Puts a to-do on the timeline at a time, or takes it off (null). */
+  setTodoSlot: (id: string, slot: TodoSlot | null) => void;
+  /** A new to-do, straight onto the timeline. */
+  addTodoAt: (text: string, slot: TodoSlot) => void;
   /** Move it onto the other list, dated as of right now. */
   setTodoScope: (id: string, scope: TodoScope) => void;
   removeTodo: (id: string) => void;
@@ -341,11 +376,18 @@ export interface SomaStore {
   planFood: (item: FoodItem, date?: string) => void;
   /** Move a planned item into the day's real intake. */
   confirmPlanned: (idx: number, date?: string) => void;
+  /**
+   * The reverse of confirmPlanned: an eaten item goes back to the plan
+   * (grayed, uncounted) and its portion back into the cupboard.
+   */
+  unconfirmFood: (idx: number, date?: string) => void;
   /** Everything still on the plan, eaten at once. */
   confirmAllPlanned: (date?: string) => void;
   removePlanned: (idx: number, date?: string) => void;
   restorePlanned: (idx: number, item: FoodItem, date?: string) => void;
   removeFood: (idx: number) => void;
+  /** Record meal verdicts. Only keys not already there are written: a verdict is final. */
+  lockMealVerdicts: (date: string, verdicts: Record<string, import("./meal-verdict.ts").MealVerdict>) => void;
   restoreFood: (idx: number, item: FoodItem, date?: string) => void;
   addWater: (ml: number) => void;
   setWater: (ml: number) => void;
@@ -371,7 +413,17 @@ export interface SomaStore {
   addHabit: (h: Omit<Habit, "id" | "history">) => void;
   /** Roughly how long the habit takes, for building routines out of habits. */
   setHabitSeconds: (id: string, seconds: number | null) => void;
+  /** How much the habit counts in the habit score, 1-5. */
+  setHabitCoef: (id: string, coef: number) => void;
+  /** Tick it automatically when today's data meets the rule; null turns it off. */
+  setHabitAuto: (id: string, auto: HabitAuto | null) => void;
   removeHabit: (id: string) => void;
+  addHabitNote: (id: string, text: string) => void;
+  setHabitColor: (id: string, color: string) => void;
+  removeHabitNote: (id: string, noteId: string) => void;
+  /** The habits side panel. Not persisted: it is where you are, not data. */
+  habitsOpen: boolean;
+  setHabitsOpen: (open: boolean) => void;
   /**
    * Put a deleted habit back where it was, history and all.
    *
@@ -430,6 +482,14 @@ export interface SomaStore {
    */
   dayNotes: Record<string, string>;
   setDayNote: (date: string, note: string) => void;
+  /**
+   * Days saved as rest and recovery, with when. Kept apart from history on
+   * purpose: everything that counts sessions — streaks, weekly frequency,
+   * volume, progression — reads history, and an empty session there would
+   * count as a workout that never happened.
+   */
+  restDays: Record<string, number>;
+  logRestDay: (date: string, on: boolean) => void;
   /**
    * Face and posture scans, analysis and all.
    *
@@ -555,12 +615,54 @@ const somaStorage: PersistStorage<unknown> = {
     }
   },
   setItem: (_name, value) => {
-    localStorage.setItem(PERSIST_KEY, JSON.stringify(value));
+    pendingSave = value;
+    if (saveTimer === null) saveTimer = setTimeout(flushSave, SAVE_EVERY_MS);
   },
   removeItem: () => {
+    pendingSave = null;
+    if (saveTimer !== null) clearTimeout(saveTimer);
+    saveTimer = null;
     localStorage.removeItem(PERSIST_KEY);
   },
 };
+
+/**
+ * Saving, batched.
+ *
+ * Every change to the store used to re-encode the WHOLE of it — months of
+ * history, every food day, every scan — and write it to localStorage before
+ * the screen could update. A keystroke in a set's weight field is a change to
+ * the store, so typing paid for that full encode on every letter, and paid
+ * more the longer the app had been used. That was the lag in every field.
+ *
+ * Now the latest state is held and written once things go quiet for a
+ * moment. The moment the app is hidden — switched away from, locked, closed —
+ * whatever is pending is written at once, so nothing typed can be lost to the
+ * delay.
+ */
+const SAVE_EVERY_MS = 300;
+let pendingSave: unknown = null;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function flushSave(): void {
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = null;
+  if (pendingSave === null) return;
+  const value = pendingSave;
+  pendingSave = null;
+  try {
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(value));
+  } catch {
+    // Full or blocked: the same outcome the direct write had.
+  }
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushSave);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushSave();
+  });
+}
+/** Write any pending save now — before a backup is read, for one. */
+export const flushStore = flushSave;
 
 export const useSoma = create<SomaStore>()(
   persist(
@@ -575,6 +677,7 @@ export const useSoma = create<SomaStore>()(
       customFoods: [],
       logOverrides: {},
       dayNotes: {},
+      restDays: {},
       hunger: [],
       scans: [],
       ledger: [],
@@ -583,6 +686,9 @@ export const useSoma = create<SomaStore>()(
       grocery: [],
       todos: [],
       projects: [],
+      timeEntries: [],
+      findings: [],
+      goals: [],
       trades: [],
       dayRoutines: [],
       dayRoutineRun: null,
@@ -653,14 +759,13 @@ export const useSoma = create<SomaStore>()(
           // exactly where this session belongs.
           saved = !!get().saveWorkout();
         }
-        const rescue =
-          !saved && !hasDone && live.exercises.length > 0 ? [JSON.stringify(live.exercises)] : [];
-
         set({ activeDate: today });
         get().ensureDay(today);
         // The new day has its own programmed split; carrying yesterday's label
-        // over was only ever a placeholder.
-        set({ live: { ...defaultLive(live.split, today), undoStack: rescue } });
+        // over was only ever a placeholder. Anything of the user's that was not
+        // saved rides over one Undo away.
+        const fresh = defaultLive(live.split, today);
+        set({ live: saved ? fresh : withRescue(fresh, live) });
         get().refreshScheduledDay();
         return { rolled: true, saved };
       },
@@ -695,7 +800,8 @@ export const useSoma = create<SomaStore>()(
         if (belongsTo !== today) {
           const hasWork = live.exercises.some((ex) => ex.sets.some((st) => st.done));
           if (!live.forDate && (live.finished || !hasWork)) {
-            live = defaultLive(live.split, today);
+            const fresh = defaultLive(live.split, today);
+            live = live.finished ? fresh : withRescue(fresh, live);
             set({ live });
           }
         }
@@ -994,9 +1100,11 @@ export const useSoma = create<SomaStore>()(
           get().activeProgram(),
         );
         const live = get().live;
-        const untouched = !live.exercises.some((ex) => ex.sets.some((st) => st.done));
-        if ((untouched || force) && !live.finished) {
-          set({ live: defaultLive(proj.split) });
+        // "Untouched" is the sheet exactly as the app made it — not merely
+        // "no set ticked", which threw away sessions typed in and not yet
+        // ticked every time the app relaunched. See lib/live-guard.ts.
+        if ((liveIsUntouched(live) || force) && !live.finished) {
+          set({ live: withRescue(defaultLive(proj.split), live) });
           if (!proj.isRest) get().loadSplit(proj.split);
         }
       },
@@ -1027,7 +1135,12 @@ export const useSoma = create<SomaStore>()(
       // Leaving a page leaves its edit mode. Coming back a day later to find
       // every card wearing a dashed border reads as a bug — and an edit mode
       // that survived a tab change would be editing the wrong page's layout.
-      setTab: (tab) => set({ tab: resolveTab(tab), editingDashboard: false }),
+      // Habits is a side panel now rather than a tab: everything that still
+      // asks for the tab (the Home rings, the coach) opens the panel instead.
+      setTab: (tab) =>
+        tab === "habits"
+          ? set({ habitsOpen: true })
+          : set({ tab: resolveTab(tab), editingDashboard: false, habitsOpen: false }),
       setActiveDate: (d) => set({ activeDate: d }),
       /**
        * Change a setting, and let the open days follow it.
@@ -1073,9 +1186,16 @@ export const useSoma = create<SomaStore>()(
         const k = get().activeDate;
         get().ensureDay(k);
         const day = get().nutrition[k]!;
-        get().patchDay(k, { items: [...day.items, item] });
-        // Eaten, so it leaves the cupboard. Planning does not — see planFood.
-        get().takeFromPantry(item, k);
+        if (k === getLocalDateKey(new Date())) {
+          // Logged today: it waits grey, stamped with when it was logged,
+          // until a swipe confirms it was eaten — that swipe is what times the
+          // meal (see confirmPlanned and lib/meal-verdict.ts).
+          get().patchDay(k, { planned: [...(day.planned ?? []), { ...item, loggedAt: Date.now() }] });
+        } else {
+          get().patchDay(k, { items: [...day.items, item] });
+          // Eaten, so it leaves the cupboard. Planning does not — see planFood.
+          get().takeFromPantry(item, k);
+        }
 
         // Count the logging. `usageCount` is read by the search tie-break and
         // by the pre-workout picker, and nothing had ever incremented it — so
@@ -1095,7 +1215,16 @@ export const useSoma = create<SomaStore>()(
         const k = get().activeDate;
         const day = get().nutrition[k];
         if (!day) return;
+        if (day.items[idx]?.eatenAt) return; // confirmed and timed: locked
         get().patchDay(k, { items: day.items.filter((_, i) => i !== idx) });
+      },
+      lockMealVerdicts: (date, verdicts) => {
+        const day = get().nutrition[date];
+        if (!day) return;
+        const have = day.mealVerdicts ?? {};
+        const fresh = Object.entries(verdicts).filter(([key]) => !have[key]);
+        if (!fresh.length) return;
+        get().patchDay(date, { mealVerdicts: { ...have, ...Object.fromEntries(fresh) } });
       },
 
       /**
@@ -1120,18 +1249,37 @@ export const useSoma = create<SomaStore>()(
         if (!day || !item) return;
         // Removed from the plan in the same patch that adds it to the intake.
         // Two patches would leave a frame where the food is in both, and the
-        // day score reads the store on every change.
+        // day score reads the store on every change. Confirmed today, it is
+        // stamped with when — the time the meal verdicts read.
+        const eaten = k === getLocalDateKey(new Date()) ? { ...item, eatenAt: Date.now() } : item;
         get().patchDay(k, {
-          items: [...day.items, item],
+          items: [...day.items, eaten],
           planned: day.planned!.filter((_, i) => i !== idx),
         });
         get().takeFromPantry(item, k);
+      },
+      unconfirmFood: (idx, date) => {
+        const k = date ?? get().activeDate;
+        const day = get().nutrition[k];
+        const item = day?.items?.[idx];
+        if (!day || !item) return;
+        if (item.eatenAt) return; // confirmed and timed: locked
+        // One patch, for the same reason as confirmPlanned.
+        get().patchDay(k, {
+          items: day.items.filter((_, i) => i !== idx),
+          planned: [...(day.planned ?? []), item],
+        });
+        set({
+          pantry: giveBack(get().pantry, item.name, Number(item.serving) || 0, String(item.unit ?? ""), k),
+        });
       },
       confirmAllPlanned: (date) => {
         const k = date ?? get().activeDate;
         const day = get().nutrition[k];
         if (!day?.planned?.length) return;
-        const eaten = day.planned;
+        const now = Date.now();
+        const today = k === getLocalDateKey(new Date());
+        const eaten = day.planned.map((it) => (today ? { ...it, eatenAt: now } : it));
         get().patchDay(k, { items: [...day.items, ...eaten], planned: [] });
         for (const item of eaten) get().takeFromPantry(item, k);
       },
@@ -1327,6 +1475,71 @@ export const useSoma = create<SomaStore>()(
           projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)),
         })),
       removeProject: (id) => set((s) => ({ projects: s.projects.filter((p) => p.id !== id) })),
+      startTimer: (projectId, note) => {
+        const now = Date.now();
+        set((s) => ({
+          timeEntries: [
+            ...s.timeEntries.map((e) => (e.end === undefined ? { ...e, end: now } : e)),
+            { id: newTimeId(), projectId, start: now, note: note?.trim() || undefined },
+          ],
+        }));
+      },
+      addFinding: (f) => {
+        const id = newFindingId();
+        set((s) => ({ findings: [...s.findings, { ...f, id, createdAt: Date.now() }] }));
+        return id;
+      },
+      patchFinding: (id, patch) =>
+        set((s) => ({
+          findings: s.findings.map((f) => {
+            if (f.id !== id) return f;
+            const next = { ...f, ...patch };
+            // Closing stamps when; reopening clears it.
+            if (patch.status) next.closedAt = isClosed(next) ? (isClosed(f) ? f.closedAt : Date.now()) : undefined;
+            return next;
+          }),
+        })),
+      removeFinding: (id) => set((s) => ({ findings: s.findings.filter((f) => f.id !== id) })),
+      restoreFinding: (idx, f) =>
+        set((s) => {
+          const next = [...s.findings];
+          next.splice(Math.max(0, Math.min(idx, next.length)), 0, f);
+          return { findings: next };
+        }),
+      stopTimer: () => {
+        const now = Date.now();
+        set((s) => ({ timeEntries: s.timeEntries.map((e) => (e.end === undefined ? { ...e, end: now } : e)) }));
+      },
+      addTimeEntry: (e) => set((s) => ({ timeEntries: [...s.timeEntries, { ...e, id: newTimeId() }] })),
+      patchTimeEntry: (id, patch) =>
+        set((s) => ({ timeEntries: s.timeEntries.map((e) => (e.id === id ? { ...e, ...patch } : e)) })),
+      removeTimeEntry: (id) => set((s) => ({ timeEntries: s.timeEntries.filter((e) => e.id !== id) })),
+      restoreTimeEntry: (idx, e) =>
+        set((s) => {
+          const next = [...s.timeEntries];
+          next.splice(Math.max(0, Math.min(idx, next.length)), 0, e);
+          return { timeEntries: next };
+        }),
+      addGoal: (goal) => {
+        const id = newId();
+        set((s) => ({ goals: [...s.goals, { ...goal, id, done: false, createdAt: Date.now() }] }));
+        return id;
+      },
+      patchGoal: (id, patch) =>
+        set((s) => ({ goals: s.goals.map((g) => (g.id === id ? { ...g, ...patch } : g)) })),
+      removeGoal: (id) =>
+        set((s) => ({
+          // The goals that served it lose the link rather than vanishing with it.
+          goals: s.goals
+            .filter((g) => g.id !== id)
+            .map((g) => (g.parentId === id ? { ...g, parentId: undefined } : g)),
+        })),
+      restoreGoal: (idx, goal) =>
+        set((s) => {
+          const next = [...s.goals];
+          next.splice(Math.max(0, Math.min(next.length, idx)), 0, goal);
+          return { goals: next };
+        }),
       restoreProject: (idx, project) =>
         set((s) => {
           const next = [...s.projects];
@@ -1434,6 +1647,27 @@ export const useSoma = create<SomaStore>()(
             t.id === id ? { ...t, due: cleanDue(due ?? undefined) } : t,
           ),
         }),
+      setTodoSlot: (id, slot) =>
+        set({
+          todos: get().todos.map((t) => {
+            if (t.id !== id) return t;
+            if (!slot) {
+              const { slot: _gone, ...rest } = t;
+              void _gone;
+              return rest;
+            }
+            // A to-do placed on a day is that day's to-do: it moves onto the
+            // day list for that date, so it shows up where it is done.
+            return { ...t, slot: cleanSlot(slot), scope: "day", date: slot.date, cleared: false };
+          }),
+        }),
+      addTodoAt: (text, slot) => {
+        const t = text.trim();
+        if (!t) return;
+        get().addTodo(t, "day");
+        const added = get().todos[get().todos.length - 1];
+        if (added && added.text === t) get().setTodoSlot(added.id, slot);
+      },
       setTodoScope: (id, scope) =>
         set({
           todos: get().todos.map((t) =>
@@ -1576,7 +1810,7 @@ export const useSoma = create<SomaStore>()(
       updateFood: (idx, item) => {
         const k = get().activeDate;
         const items = [...(get().nutrition[k]?.items || [])];
-        if (!items[idx]) return;
+        if (!items[idx] || items[idx]!.eatenAt) return; // locked once confirmed
         items[idx] = item;
         get().patchDay(k, { items });
       },
@@ -1675,6 +1909,8 @@ export const useSoma = create<SomaStore>()(
           habits: get().habits.map((h) => {
             if (h.id !== id) return h;
             const on = !h.history[key];
+            // Only today can be ticked; any day can be cleared.
+            if (on && !canTickOn(key)) return h;
             // A ramping habit has no separate notion of done either: ticking it
             // means "I did exactly what today asked for", so it writes that
             // number rather than a mark the log would contradict.
@@ -1685,6 +1921,7 @@ export const useSoma = create<SomaStore>()(
       },
       logHabitAmount: (id, value, date) => {
         const key = date || get().activeDate;
+        if (value !== null && !canTickOn(key)) return;
         set({ habits: get().habits.map((h) => (h.id === id ? logAmount(h, key, value) : h)) });
       },
       setHabitRamp: (id, ramp) => {
@@ -1692,6 +1929,7 @@ export const useSoma = create<SomaStore>()(
       },
       bumpHabitStep: (id, stepId, date) => {
         const key = date || get().activeDate;
+        if (!canTickOn(key)) return;
         set({
           habits: get().habits.map((h) => (h.id === id ? bumpStep(h, key, stepId) : h)),
         });
@@ -1705,7 +1943,12 @@ export const useSoma = create<SomaStore>()(
         set({
           habits: [
             ...get().habits,
-            { ...h, id: `habit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, history: {} },
+            {
+              since: getLocalDateKey(new Date()),
+              ...h,
+              id: `habit-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              history: {},
+            },
           ],
         });
       },
@@ -1717,7 +1960,39 @@ export const useSoma = create<SomaStore>()(
               : h,
           ),
         }),
+      setHabitAuto: (id, auto) =>
+        set({
+          habits: get().habits.map((h) => (h.id === id ? { ...h, auto: auto ?? undefined } : h)),
+        }),
+      setHabitCoef: (id, coef) =>
+        set({
+          habits: get().habits.map((h) =>
+            h.id === id ? { ...h, coef: Math.max(1, Math.min(5, Math.round(coef))) } : h,
+          ),
+        }),
       removeHabit: (id) => set({ habits: get().habits.filter((h) => h.id !== id) }),
+      setHabitColor: (id, color) =>
+        set({ habits: get().habits.map((h) => (h.id === id ? { ...h, color } : h)) }),
+      addHabitNote: (id, text) => {
+        const t = text.trim();
+        if (!t) return;
+        const note = {
+          id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          date: getLocalDateKey(new Date()),
+          text: t,
+        };
+        set({
+          habits: get().habits.map((h) => (h.id === id ? { ...h, notes: [note, ...(h.notes ?? [])] } : h)),
+        });
+      },
+      removeHabitNote: (id, noteId) =>
+        set({
+          habits: get().habits.map((h) =>
+            h.id === id ? { ...h, notes: (h.notes ?? []).filter((n) => n.id !== noteId) } : h,
+          ),
+        }),
+      habitsOpen: false,
+      setHabitsOpen: (open) => set({ habitsOpen: open }),
       restoreHabit: (idx, habit) =>
         set((st) => {
           if (st.habits.some((h) => h.id === habit.id)) return {};
@@ -1798,6 +2073,7 @@ export const useSoma = create<SomaStore>()(
             // one for the other mid-session would make them disagree.
             split: name,
             exercises,
+            pristine: JSON.stringify(exercises),
             finished: null,
             startTime: Date.now(),
             firstSetAt: null,
@@ -1981,6 +2257,9 @@ export const useSoma = create<SomaStore>()(
       },
       snapshot: () => {
         const live = get().live;
+        // An empty sheet is not worth an Undo step: stepping back onto nothing
+        // only buries the step before it, which may be a rescued session.
+        if (!live.exercises.length) return;
         const undoStack = [...live.undoStack, JSON.stringify(live.exercises)].slice(-25);
         set({ live: { ...live, undoStack, redoStack: [] } });
       },
@@ -2016,7 +2295,6 @@ export const useSoma = create<SomaStore>()(
         const settings = get().settings;
         let totalVol = 0;
         let totalSets = 0;
-        let sumIntensity = 0;
         let axialVolume = 0;
         // Split by where the stimulus actually landed: a set the triceps ended
         // is not full chest work, and counting it as such both overstates the
@@ -2031,19 +2309,25 @@ export const useSoma = create<SomaStore>()(
             const vol = SomaIntelligenceEngine.calculateWorkVolume(w, r, ex.isBW);
             totalVol += vol;
             if (ex.isAxial) axialVolume += vol;
-            sumIntensity += s.failure || 3;
           }
         }
 
         const clockFrom = live.firstSetAt ?? live.startTime;
         const elapsedMinutes = Math.max(1, Math.round((Date.now() - clockFrom) / 60000));
-        const avgIntensity = totalSets ? sumIntensity / totalSets : 3;
-        const caloriesBurned = SomaIntelligenceEngine.calculateCaloriesBurned(
-          elapsedMinutes,
-          totalVol,
-          totalSets,
-          avgIntensity,
-        );
+        // Stored for the record, from the same model the rings and the Train
+        // tab read (lib/training-burn.ts) — the old flat 6 kcal/min figure
+        // here disagreed with both.
+        const nutritionNow = get().nutrition;
+        const weighed = Object.keys(nutritionNow).filter((k) => nutritionNow[k]?.bodyWeight).sort();
+        const bodyweight = weighed.length ? nutritionNow[weighed[weighed.length - 1]!]!.bodyWeight : undefined;
+        const caloriesBurned = sessionBurn(
+          {
+            exercises: live.exercises,
+            totalSets,
+            durationFormatted: `${Math.floor(elapsedMinutes)}:00`,
+          },
+          bodyweight,
+        ).gross;
         const mins = Math.floor(elapsedMinutes);
         const secs = Math.round(((Date.now() - clockFrom) / 1000) % 60);
         const session: HistorySession = {
@@ -2095,7 +2379,7 @@ export const useSoma = create<SomaStore>()(
           get().activeProgram(),
         );
         set({
-          live: { ...defaultLive(split ?? proj.split), forDate: date },
+          live: { ...withRescue(defaultLive(split ?? proj.split), live), forDate: date },
           activeDate: date,
         });
         // Load that day's programmed exercises so backfilling is filling in
@@ -2305,7 +2589,7 @@ export const useSoma = create<SomaStore>()(
         const today = getLocalDateKey(new Date());
         const exercises = session.exercises.map((ex) => makeSessionEx(ex.name, db, get()));
         set({
-          live: { ...defaultLive(session.split, today), exercises },
+          live: { ...withRescue(defaultLive(session.split, today), live), exercises },
           activeDate: today,
         });
         return true;
@@ -2346,6 +2630,12 @@ export const useSoma = create<SomaStore>()(
         if (text) next[date] = text;
         else delete next[date];
         set({ dayNotes: next });
+      },
+      logRestDay: (date, on) => {
+        const next = { ...get().restDays };
+        if (on) next[date] = Date.now();
+        else delete next[date];
+        set({ restDays: next });
       },
       logHunger: (level, note) => {
         set({
@@ -2432,6 +2722,7 @@ export const useSoma = create<SomaStore>()(
             customFoods: get().customFoods,
             logOverrides: get().logOverrides,
             dayNotes: get().dayNotes,
+            restDays: get().restDays,
             hunger: get().hunger,
             scans: get().scans,
             ledger: get().ledger,
@@ -2440,6 +2731,9 @@ export const useSoma = create<SomaStore>()(
             grocery: get().grocery,
             todos: get().todos,
             projects: get().projects,
+            timeEntries: get().timeEntries,
+            findings: get().findings,
+            goals: get().goals,
             trades: get().trades,
             dayRoutines: get().dayRoutines,
             dayPlans: get().dayPlans,
@@ -2485,6 +2779,7 @@ export const useSoma = create<SomaStore>()(
               customFoods: data.customFoods || [],
               logOverrides: data.logOverrides || {},
               dayNotes: data.dayNotes || {},
+              restDays: data.restDays || {},
               hunger: data.hunger || [],
               scans: data.scans || [],
               ledger: data.ledger || [],
@@ -2493,6 +2788,9 @@ export const useSoma = create<SomaStore>()(
               grocery: data.grocery || [],
               todos: data.todos || [],
               projects: asProjects(data.projects),
+              timeEntries: asTimeEntries(data.timeEntries),
+              findings: asFindings(data.findings),
+              goals: asGoals(data.goals),
               trades: asTrades(data.trades),
               dayRoutines: asRoutines(data.dayRoutines),
               dayPlans: data.dayPlans || {},
@@ -2580,6 +2878,7 @@ export const useSoma = create<SomaStore>()(
             // rest of the restore follows.
             // Incoming notes fill gaps; a note on the device is the newer edit.
             dayNotes: { ...(data.dayNotes || {}), ...cur.dayNotes },
+            restDays: { ...(data.restDays || {}), ...cur.restDays },
             // Keyed on the timestamp, which is unique per entry.
             hunger: (() => {
               const seen = new Set(cur.hunger.map((h) => h.at));
@@ -2594,6 +2893,9 @@ export const useSoma = create<SomaStore>()(
             grocery: mergeById(data.grocery || [], cur.grocery),
             todos: mergeById(data.todos || [], cur.todos),
             projects: mergeById(asProjects(data.projects), cur.projects),
+            timeEntries: mergeById(asTimeEntries(data.timeEntries), cur.timeEntries),
+            findings: mergeById(asFindings(data.findings), cur.findings),
+            goals: mergeById(asGoals(data.goals), cur.goals),
             trades: mergeById(asTrades(data.trades), cur.trades),
             dayRoutines: mergeById(asRoutines(data.dayRoutines), cur.dayRoutines),
             // Incoming days fill gaps; a plan on the device is the newer edit.
@@ -2657,7 +2959,7 @@ export const useSoma = create<SomaStore>()(
        * runs on every load is not a migration, it is a rule — and this one as
        * a rule would mean nobody could ever set a tab bar to 2x4 again.
        */
-      version: 2,
+      version: 4,
       /**
        * The same localStorage, with one thing put right on the way in.
        *
@@ -2673,13 +2975,29 @@ export const useSoma = create<SomaStore>()(
        */
       storage: somaStorage,
       migrate: (state, from) => {
-        const s = state as { layouts?: Record<string, WidgetPlacement[]> } | undefined;
-        if (!s || from >= 2) return s;
+        let s = state as { layouts?: Record<string, WidgetPlacement[]>; customFoods?: FoodItem[] } | undefined;
+        if (!s) return s;
         // v2: page furniture went from a 2x4 default to a 1x4 one. A stored
         // layout holds sizes, so the new default does not reach anyone who
         // has ever arranged a tab — they would keep a 48px tab bar in a 176px
         // cell, which is the hole this change exists to close.
-        return { ...s, layouts: migrateToOneRow(s.layouts) };
+        if (from < 2) s = { ...s, layouts: migrateToOneRow(s.layouts) };
+        // v3: the imported custom foods whose own numbers contradicted each
+        // other, put right — only where the wrong figure is still there, so
+        // a food already fixed by hand keeps its fix. See food-corrections.ts.
+        if (from < 3 && Array.isArray(s.customFoods)) s = { ...s, customFoods: correctCustomFoods(s.customFoods) };
+        // v4: the day ring became a glance (2x2) once the Timeline took over
+        // planning the day. Only the old default moves; a size you chose stays.
+        if (from < 4 && s.layouts?.time) {
+          s = {
+            ...s,
+            layouts: {
+              ...s.layouts,
+              time: s.layouts.time.map((p) => (p.id === "ring" && p.size === "2x4" ? { ...p, size: "2x2" } : p)),
+            },
+          };
+        }
+        return s;
       },
       partialize: (s) => ({
         seeded: s.seeded,
@@ -2691,6 +3009,7 @@ export const useSoma = create<SomaStore>()(
         customFoods: s.customFoods,
         logOverrides: s.logOverrides,
         dayNotes: s.dayNotes,
+        restDays: s.restDays,
         hunger: s.hunger,
         scans: s.scans,
         ledger: s.ledger,
@@ -2699,6 +3018,9 @@ export const useSoma = create<SomaStore>()(
         grocery: s.grocery,
         todos: s.todos,
         projects: s.projects,
+        timeEntries: s.timeEntries,
+        findings: s.findings,
+        goals: s.goals,
         trades: s.trades,
         dayRoutines: s.dayRoutines,
         dayPlans: s.dayPlans,

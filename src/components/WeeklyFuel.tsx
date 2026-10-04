@@ -1,12 +1,14 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardTitle } from "@/components/ui/card";
 import { DEFAULT_GOALS } from "@/lib/soma/data";
 import { getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
-import { barHeights, summariseWeek, type WeekRow } from "@/lib/week-fuel";
+import { summariseWeek, type DayTotals, type WeekRow } from "@/lib/week-fuel";
 import { useSoma } from "@/lib/store";
+import { totalWaterMl } from "@/lib/hydration";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { hasDetailRoom, hasFullRoom } from "@/lib/dashboard-layout";
 import { cn } from "@/lib/utils";
+import { MACRO_COLOR, NUTRIENT_COLOR } from "@/components/MacroStrip";
 import { Glance, isGlance } from "@/components/Glance";
 
 /**
@@ -20,6 +22,17 @@ import { Glance, isGlance } from "@/components/Glance";
  * Averages are over the days that were LOGGED — see lib/week-fuel.ts for why
  * dividing a four-day week by seven is a lie about a deficit nobody ran.
  */
+const PICKS: { id: keyof DayTotals; label: string; unit: string }[] = [
+  { id: "cals", label: "Calories", unit: "kcal" },
+  { id: "protein", label: "Protein", unit: "g" },
+  { id: "carbs", label: "Carbs", unit: "g" },
+  { id: "fat", label: "Fat", unit: "g" },
+  { id: "fiber", label: "Fiber", unit: "g" },
+  { id: "water", label: "Water", unit: "L" },
+];
+/** The bright colours take dark type on a chosen chip. */
+const DARK_TEXT = new Set<keyof DayTotals>(["protein", "water"]);
+
 export function WeeklyFuel() {
   const nutrition = useSoma((s) => s.nutrition);
   const settings = useSoma((s) => s.settings);
@@ -45,7 +58,7 @@ export function WeeklyFuel() {
           fiber: a.fiber + (i.fiber || 0),
           water: a.water,
         }),
-        { cals: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, water: day?.water || 0 },
+        { cals: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, water: totalWaterMl(day) },
       );
       out.push({ date, totals, logged: items.length > 0 || (day?.water ?? 0) > 0 });
     }
@@ -56,7 +69,7 @@ export function WeeklyFuel() {
     () => summariseWeek(rows, { cals: goals.cals, protein: goals.protein, water: goals.water }),
     [rows, goals.cals, goals.protein, goals.water],
   );
-  const bars = useMemo(() => barHeights(rows, (t) => t.cals), [rows]);
+  const [picked, setPicked] = useState<keyof DayTotals>("cals");
 
   if (isGlance(size)) {
     return (
@@ -65,11 +78,11 @@ export function WeeklyFuel() {
         spec={{
           label: "The last seven days",
           short: "7 days",
-          color: "#ff9f0a",
+          color: MACRO_COLOR.cals,
           value: week.loggedDays ? String(week.avg.cals) : null,
           unit: "kcal avg",
           sub: week.loggedDays ? `${week.onTarget}/${week.loggedDays} days on target · protein ${week.proteinHit}/${week.loggedDays}` : null,
-          chart: { values: rows.map((r) => (r.logged ? r.totals.cals : null)), target: goals.cals },
+          chart: { values: rows.map((r) => (r.logged ? r.totals.cals : null)) },
           empty: "Nothing logged this week",
           emptyShort: "No data",
         }}
@@ -88,35 +101,73 @@ export function WeeklyFuel() {
     );
   }
 
+  const pick = PICKS.find((x) => x.id === picked)!;
+  const color = NUTRIENT_COLOR[picked];
+  // The same target the chart below draws: yours if you set one, else the
+  // one the latest logged day was scored under, else the default.
+  const latestGoal = [...rows].reverse().map((r) => nutrition[r.date]?.goals?.[picked]).find((g) => (g ?? 0) > 0);
+  const goal = settings.customGoals?.[picked] || latestGoal || goals[picked] || 0;
+  const minimum = settings.nutrientMins?.[picked] ?? 0;
+  const values = rows.map((r) => (r.logged ? r.totals[picked] : 0));
+  const top = Math.max(...values, 1) * 1.08;
+  const hit = (v: number) =>
+    minimum > 0
+      ? v >= minimum
+      : picked === "cals"
+        ? goal > 0 && Math.abs(v - goal) <= goal * 0.1
+        : goal > 0 && v >= goal * 0.9;
+  const shown = (v: number) => (picked === "water" ? `${(v / 1000).toFixed(1)}` : String(Math.round(v)));
+
   return (
     <Card>
       <CardTitle>
         <span>The last seven days</span>
-        <span className="tabular text-sm font-bold text-accent-text">
-          {week.avg.cals} kcal
+        <span className="tabular text-sm font-bold" style={{ color }}>
+          {shown(week.avg[picked])} {pick.unit}
+          <span className="ml-1 text-[0.6rem] font-bold text-faint">avg</span>
         </span>
       </CardTitle>
 
-      {/* Seven bars against the week's own biggest day, not against the goal:
-          the question here is consistency, and a row of bars the same height
-          answers it at a glance whatever the level was. The target line is
-          what says whether the level was right. */}
-      <div className="flex h-16 items-end gap-1.5">
-        {rows.map((r, i) => {
-          const on =
-            goals.cals > 0 && Math.abs(r.totals.cals - goals.cals) <= goals.cals * 0.1;
+      {/* One nutrient at a time, each in its own colour: the week of protein
+          and the week of calories are different questions. */}
+      <div className="-mx-1 mb-3 flex gap-1 overflow-x-auto px-1 pb-0.5" data-no-swipe-nav>
+        {PICKS.map((x) => {
+          const on = x.id === picked;
           return (
-            <div key={r.date} className="flex flex-1 flex-col items-center gap-1">
-              <div className="flex h-full w-full items-end">
+            <button
+              key={x.id}
+              type="button"
+              onClick={() => setPicked(x.id)}
+              aria-pressed={on}
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-1 text-[0.66rem] font-bold transition-colors",
+                !on && "border-border bg-surface-2 text-muted",
+              )}
+              style={on ? { background: NUTRIENT_COLOR[x.id], borderColor: NUTRIENT_COLOR[x.id], color: DARK_TEXT.has(x.id) ? "#0b0d12" : "#fff" } : undefined}
+            >
+              {x.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Seven bars, no lines across them: a day that made it is solid, one
+          that did not is faded, and that says it without a ruler. */}
+      <div className="relative flex h-24 gap-1.5">
+        {rows.map((r, i) => {
+          const v = values[i]!;
+          return (
+            <div key={r.date} className="flex min-h-0 flex-1 flex-col items-center gap-1">
+              <div className="flex min-h-0 w-full flex-1 items-end">
                 <div
-                  className={cn(
-                    "w-full rounded-t-md transition-[height]",
-                    !r.logged ? "bg-surface-3" : on ? "bg-accent" : "bg-info",
-                  )}
-                  style={{ height: `${Math.max(r.logged ? 8 : 4, bars[i]! * 100)}%` }}
+                  className={cn("w-full rounded-t-md transition-[height]", !r.logged && "bg-surface-3")}
+                  style={{
+                    height: `${r.logged ? Math.max(6, (v / top) * 100) : 4}%`,
+                    ...(r.logged ? { background: color, opacity: hit(v) ? 1 : 0.4 } : {}),
+                  }}
                 />
               </div>
-              <span className="text-[0.55rem] font-bold uppercase text-faint">
+              <span className="h-[14px] text-[0.55rem] font-bold uppercase leading-[14px] text-faint">
                 {parseLocalDateKey(r.date).toLocaleDateString(undefined, { weekday: "narrow" })}
               </span>
             </div>
@@ -130,18 +181,18 @@ export function WeeklyFuel() {
       {hasDetailRoom(size) && (
         <div className="mt-3 grid grid-cols-4 gap-2">
           <Count n={week.loggedDays} of={7} label="Logged" />
-          <Count n={week.onTarget} of={week.loggedDays} label="On target" />
-          <Count n={week.proteinHit} of={week.loggedDays} label="Protein" />
-          <Count n={week.waterHit} of={week.loggedDays} label="Water" />
+          <Count n={week.onTarget} of={week.loggedDays} label="On target" color={MACRO_COLOR.cals} />
+          <Count n={week.proteinHit} of={week.loggedDays} label="Protein" color={MACRO_COLOR.p} />
+          <Count n={week.waterHit} of={week.loggedDays} label="Water" color="#00d8ff" />
         </div>
       )}
 
       {hasFullRoom(size) && (
         <div className="mt-3 grid grid-cols-4 gap-2 border-t border-border pt-3">
-          <Avg n={week.avg.protein} label="Protein" unit="g" />
-          <Avg n={week.avg.carbs} label="Carbs" unit="g" />
-          <Avg n={week.avg.fat} label="Fat" unit="g" />
-          <Avg n={week.avg.fiber} label="Fiber" unit="g" />
+          <Avg n={week.avg.protein} label="Protein" unit="g" color={MACRO_COLOR.p} />
+          <Avg n={week.avg.carbs} label="Carbs" unit="g" color={MACRO_COLOR.c} />
+          <Avg n={week.avg.fat} label="Fat" unit="g" color={MACRO_COLOR.f} />
+          <Avg n={week.avg.fiber} label="Fiber" unit="g" color="#b18cff" />
         </div>
       )}
 
@@ -156,10 +207,13 @@ export function WeeklyFuel() {
   );
 }
 
-function Count({ n, of, label }: { n: number; of: number; label: string }) {
+function Count({ n, of, label, color }: { n: number; of: number; label: string; color?: string }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-2 px-2 py-1.5 text-center">
-      <div className="font-display text-base font-extrabold tabular leading-none">
+    <div
+      className="rounded-xl border border-border bg-surface-2 px-2 py-1.5 text-center"
+      style={color ? { background: `linear-gradient(160deg, ${color}1f, transparent 70%), var(--color-surface-2)` } : undefined}
+    >
+      <div className="font-display text-base font-extrabold tabular leading-none" style={{ color }}>
         {n}
         <span className="text-[0.6rem] font-bold text-faint">/{of}</span>
       </div>
@@ -170,10 +224,10 @@ function Count({ n, of, label }: { n: number; of: number; label: string }) {
   );
 }
 
-function Avg({ n, label, unit }: { n: number; label: string; unit: string }) {
+function Avg({ n, label, unit, color }: { n: number; label: string; unit: string; color: string }) {
   return (
     <div className="text-center">
-      <div className="font-display text-sm font-extrabold tabular leading-none">
+      <div className="font-display text-sm font-extrabold tabular leading-none" style={{ color }}>
         {n}
         <span className="text-[0.6rem] font-bold text-faint">{unit}</span>
       </div>

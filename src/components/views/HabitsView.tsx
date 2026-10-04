@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { canChange, canTickOn } from "@/lib/habit-lock";
 import { CalendarDays, Camera, Check, ListChecks, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
@@ -20,7 +21,11 @@ import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { TopTabs } from "@/components/TopTabs";
 import { useSoma } from "@/lib/store";
+import { tapLight, tapMedium } from "@/lib/haptics";
+import { describeAuto, suggestAuto } from "@/lib/habit-auto";
+import { COEF_LABELS, KEEP_AT, coefOf, habitConsistency, habitDayScore, habitStreak, type HabitDayScore } from "@/lib/habit-score";
 import { cn } from "@/lib/utils";
+import { nextHabitColor } from "@/lib/habit-colors";
 import type { Habit, HabitRamp, HabitStep } from "@/lib/types";
 
 type HabitTab = "today" | "month" | "year";
@@ -34,32 +39,47 @@ const TABS: { id: HabitTab; label: string }[] = [
 export function HabitsView() {
   const habits = useSoma((s) => s.habits);
   const toggleHabit = useSoma((s) => s.toggleHabit);
-  const addHabit = useSoma((s) => s.addHabit);
   const removeHabit = useSoma((s) => s.removeHabit);
   const activeDate = useSoma((s) => s.activeDate);
 
   const [tab, setTab] = useState<HabitTab>("today");
-  const [name, setName] = useState("");
   const doneToday = habits.filter((h) => h.history[activeDate]).length;
   const habitLines = habits.map((h) => ({ text: h.name, done: !!h.history[activeDate], color: h.color }));
+  const today = getLocalDateKey(new Date());
+  const day = useMemo(() => habitDayScore(habits, activeDate), [habits, activeDate]);
+  const streak = useMemo(() => habitStreak(habits, today), [habits, today]);
+  const consistency = useMemo(() => habitConsistency(habits, today), [habits, today]);
+  const kept = day.score != null && day.score >= KEEP_AT;
 
   return (
     <WidgetGrid tab="habits">
       <Sized key="header" glance={{
           label: "Consistency",
           short: "Habits",
-          value: `${doneToday}/${habits.length}`,
-          sub: habits.length === doneToday && habits.length ? "all done today" : `${habits.length - doneToday} to go today`,
-          progress: habits.length ? doneToday / habits.length : null,
-          done: habits.length > 0 && doneToday === habits.length,
+          value: day.score != null ? `${day.score}%` : `${doneToday}/${habits.length}`,
+          sub: `${streak} day streak · ${consistency ?? "–"}% over 30 days`,
+          progress: day.score != null ? day.score / 100 : null,
+          done: kept,
           lines: habitLines,
           empty: "No habits yet",
         }}>
       <Card className="overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--color-accent)_16%,transparent),transparent_55%),var(--color-surface)]">
         <Badge tone="accent">Habits · {activeDate}</Badge>
         <h1 className="mt-2 font-display text-xl font-extrabold tracking-tight">Consistency</h1>
-        <p className="mt-1 text-xs text-muted">
-          {habits.length} tracked · {habits.filter((h) => h.history[activeDate]).length} done today
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <Stat
+            label={activeDate === today ? "Today" : "That day"}
+            value={day.score != null ? `${day.score}%` : "–"}
+            tone={day.score == null ? undefined : kept ? "good" : "warn"}
+          />
+          <Stat label="Streak" value={`${streak}d`} sub={`days ≥ ${KEEP_AT}%`} />
+          <Stat label="30 days" value={consistency != null ? `${consistency}%` : "–"} sub="average" />
+        </div>
+        <p className="mt-2 text-xs text-muted">
+          {doneToday}/{habits.length} done · weighted by importance
+          {day.score != null && !kept && activeDate === today
+            ? ` · ${needFor(day)} more to keep the streak`
+            : ""}
         </p>
       </Card>
       </Sized>
@@ -71,6 +91,7 @@ export function HabitsView() {
         glance={{ label: "The habits", short: "Today", lines: habitLines, empty: "No habits yet", emptyShort: "None" }}
       >
       <div className="space-y-3">
+      {tab === "today" && <AutoSuggest />}
       {tab === "today" && <TodayPanel />}
 
       {tab === "month" && (
@@ -87,7 +108,7 @@ export function HabitsView() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="truncate font-display text-sm font-bold">{h.name}</h3>
-                  <p className="text-[0.7rem] text-faint">Tap a pixel to toggle</p>
+                  <p className="text-[0.7rem] text-faint">Only today can be changed</p>
                 </div>
               </div>
               <MonthMatrix habit={h} onToggle={(d) => toggleHabit(h.id, d)} />
@@ -112,75 +133,7 @@ export function HabitsView() {
       <Sized key="new" glance={{ label: "New habit", short: "New", empty: "Tap to add a habit", emptyShort: "Add" }}>
       <Card>
         <CardTitle>New habit</CardTitle>
-        <div className="flex gap-2">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Walk 8k steps"
-          />
-          <Button
-            variant="primary"
-            onClick={() => {
-              if (!name.trim()) return;
-              addHabit({ name: name.trim(), desc: "", color: "#d3fd50", goalDaysPerWeek: 7 });
-              setName("");
-            }}
-          >
-            Add
-          </Button>
-        </div>
-        {/* The two checklists everyone writes out by hand, and both are exactly
-            what steps are for. One tap rather than six. */}
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {STEP_PRESETS.filter(
-            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
-          ).map((t) => (
-            <button
-              key={t.name}
-              type="button"
-              onClick={() => {
-                addHabit({
-                  name: t.name,
-                  desc: t.desc,
-                  color: t.color,
-                  goalDaysPerWeek: 7,
-                  steps: t.steps.map((x) => ({ ...x, id: newStepId() })),
-                });
-                toast.success(`Added ${t.name} with ${t.steps.length} steps`);
-              }}
-              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
-            >
-              <ListChecks className="size-3.5" style={{ color: t.color }} />
-              {t.name}
-            </button>
-          ))}
-          {RAMP_PRESETS.filter(
-            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
-          ).map((t) => (
-            <button
-              key={t.name}
-              type="button"
-              onClick={() => {
-                addHabit({
-                  name: t.name,
-                  desc: t.desc,
-                  color: t.color,
-                  goalDaysPerWeek: 7,
-                  ramp: { ...t.ramp, from: activeDate },
-                });
-                toast.success(`${t.name}: ${t.desc.toLowerCase()}`);
-              }}
-              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
-            >
-              {t.ramp.target >= t.ramp.start ? (
-                <TrendingUp className="size-3.5" style={{ color: t.color }} />
-              ) : (
-                <TrendingDown className="size-3.5" style={{ color: t.color }} />
-              )}
-              {t.name}
-            </button>
-          ))}
-        </div>
+        <NewHabitBody />
 
         {habits.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -212,6 +165,8 @@ function TodayPanel() {
   const logHabitAmount = useSoma((s) => s.logHabitAmount);
   const removeHabit = useSoma((s) => s.removeHabit);
   const setHabitSeconds = useSoma((s) => s.setHabitSeconds);
+  const setHabitCoef = useSoma((s) => s.setHabitCoef);
+  const setHabitAuto = useSoma((s) => s.setHabitAuto);
   const restoreHabit = useSoma((s) => s.restoreHabit);
   const activeDate = useSoma((s) => s.activeDate);
   const today = parseLocalDateKey(activeDate);
@@ -360,6 +315,17 @@ function TodayPanel() {
                   />
                 </button>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                  <span
+                    className="rounded-full border border-border px-1.5 py-0.5 text-[0.62rem] font-extrabold tabular text-muted"
+                    title={COEF_LABELS[coefOf(h)]}
+                  >
+                    ×{coefOf(h)}
+                  </span>
+                  {h.auto && (
+                    <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[0.62rem] font-extrabold text-accent-text">
+                      ⚡ {describeAuto(h.auto)}
+                    </span>
+                  )}
                   {streak > 0 && <Badge tone="accent">{streak} day streak</Badge>}
                   <span className="text-[0.7rem] text-faint">
                     {weekDone}/{h.goalDaysPerWeek} this week
@@ -390,9 +356,14 @@ function TodayPanel() {
                     never claims more than the steps say. */}
                 <button
                   type="button"
-                  onClick={() => toggleHabit(h.id)}
+                  disabled={!canChange(done, activeDate)}
+                  onClick={() => {
+                    toggleHabit(h.id);
+                    if (!done) tapMedium();
+                    else tapLight();
+                  }}
                   className={cn(
-                    "flex size-11 items-center justify-center rounded-full border transition-transform active:scale-90",
+                    "flex size-11 items-center justify-center rounded-full border transition-transform active:scale-90 disabled:opacity-40",
                     done
                       ? "border-accent bg-accent text-accent-ink"
                       : steps.length && list.done > 0
@@ -436,6 +407,7 @@ function TodayPanel() {
                     <button
                       key={st.id}
                       type="button"
+                      disabled={!canTickOn(activeDate)}
                       onClick={() => bumpHabitStep(h.id, st.id)}
                       className={cn(
                         "flex w-full items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-colors active:scale-[0.99]",
@@ -502,6 +474,8 @@ function TodayPanel() {
           onSaveSteps={(next: HabitStep[]) => setHabitSteps(setupFor.id, next)}
           onSaveRamp={(next: HabitRamp | null) => setHabitRamp(setupFor.id, next)}
           onSaveSeconds={(next) => setHabitSeconds(setupFor.id, next)}
+          onSaveCoef={(next) => setHabitCoef(setupFor.id, next)}
+          onSaveAuto={(next) => setHabitAuto(setupFor.id, next)}
         />
       )}
 
@@ -532,7 +506,7 @@ function TodayPanel() {
  * buttons add rather than set: you log minutes as they happen, not once at
  * midnight when you are trying to remember.
  */
-function RampRow({
+export function RampRow({
   habit, ramp, state, onLog,
 }: {
   habit: Habit;
@@ -586,9 +560,9 @@ function RampRow({
             type="button"
             onClick={() => onLog(soFar + n)}
             className="h-8 min-w-12 rounded-full border border-border bg-surface-3 px-2.5 text-xs font-bold tabular"
-            aria-label={`Add ${n} to ${habit.name}`}
+            aria-label={`Add ${formatAmount(n, ramp.unit)} to ${habit.name}`}
           >
-            +{n}
+            +{ramp.unit === "count" ? n : formatAmount(n, ramp.unit).replace(/ pages?$/, "")}
           </button>
         ))}
         <button
@@ -609,5 +583,170 @@ function RampRow({
         )}
       </div>
     </div>
+  );
+}
+
+export function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "good" | "warn" }) {
+  return (
+    <div className="rounded-2xl bg-surface-2/70 px-3 py-2">
+      <div className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">{label}</div>
+      <div
+        className={cn(
+          "font-display text-xl font-extrabold tabular",
+          tone === "good" && "text-accent",
+          tone === "warn" && "text-warn",
+        )}
+      >
+        {value}
+      </div>
+      {sub && <div className="text-[0.62rem] text-faint">{sub}</div>}
+    </div>
+  );
+}
+
+/** The unticked habits, heaviest first, that would carry today past the bar. */
+export function needFor(day: HabitDayScore): string {
+  const open = day.rows.filter((r) => !r.done).sort((a, b) => b.coef - a.coef);
+  let earned = day.earned;
+  const names: string[] = [];
+  for (const r of open) {
+    if (day.possible && (earned / day.possible) * 100 >= KEEP_AT) break;
+    earned += r.coef;
+    names.push(r.name);
+  }
+  return names.join(", ");
+}
+
+/**
+ * The name box, with its own state. Held up in HabitsView it redrew every
+ * habit card and heatmap on each letter typed.
+ */
+export function NewHabitField({ onAdd }: { onAdd: (name: string) => void }) {
+  const [name, setName] = useState("");
+  const add = () => {
+    if (!name.trim()) return;
+    onAdd(name.trim());
+    setName("");
+  };
+  return (
+    <div className="flex gap-2">
+      <Input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && add()}
+        placeholder="e.g. Walk 8k steps"
+      />
+      <Button variant="primary" onClick={add}>
+        Add
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Habits whose names say what SOMA already measures — "Train", "Hit
+ * protein", "Hydrate" — offered their rule in one tap.
+ */
+export function AutoSuggest() {
+  const habits = useSoma((s) => s.habits);
+  const setHabitAuto = useSoma((s) => s.setHabitAuto);
+  const offers = habits
+    .filter((h) => !h.auto)
+    .map((h) => ({ h, rule: suggestAuto(h.name) }))
+    .filter((o): o is { h: Habit; rule: NonNullable<ReturnType<typeof suggestAuto>> } => !!o.rule);
+  if (!offers.length) return null;
+  return (
+    <Card className="border-accent/30 bg-accent/5">
+      <div className="text-sm font-extrabold">⚡ {offers.length} {offers.length === 1 ? "habit" : "habits"} can tick themselves</div>
+      <ul className="mt-1.5 space-y-0.5 text-xs text-muted">
+        {offers.map(({ h, rule }) => (
+          <li key={h.id}>
+            <b className="text-fg">{h.name}</b> — when {describeAuto(rule).toLowerCase()}
+          </li>
+        ))}
+      </ul>
+      <Button
+        variant="primary"
+        className="mt-3 w-full"
+        onClick={() => {
+          for (const { h, rule } of offers) setHabitAuto(h.id, rule);
+          toast.success("Done — they tick themselves from now on");
+        }}
+      >
+        Turn on
+      </Button>
+    </Card>
+  );
+}
+
+/** The name box plus the one-tap checklist and ramp presets. */
+export function NewHabitBody({ onAdded }: { onAdded?: () => void }) {
+  const habits = useSoma((s) => s.habits);
+  const addHabit = useSoma((s) => s.addHabit);
+  const activeDate = useSoma((s) => s.activeDate);
+  return (
+    <>
+        <NewHabitField
+          onAdd={(n) => {
+            addHabit({ name: n, desc: "", color: nextHabitColor(habits), goalDaysPerWeek: 7 });
+            onAdded?.();
+          }}
+        />
+        {/* The two checklists everyone writes out by hand, and both are exactly
+            what steps are for. One tap rather than six. */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {STEP_PRESETS.filter(
+            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
+          ).map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              onClick={() => {
+                addHabit({
+                  name: t.name,
+                  desc: t.desc,
+                  color: t.color,
+                  goalDaysPerWeek: 7,
+                  steps: t.steps.map((x) => ({ ...x, id: newStepId() })),
+                });
+                toast.success(`Added ${t.name} with ${t.steps.length} steps`);
+                onAdded?.();
+              }}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
+            >
+              <ListChecks className="size-3.5" style={{ color: t.color }} />
+              {t.name}
+            </button>
+          ))}
+          {RAMP_PRESETS.filter(
+            (t) => !habits.some((h) => h.name.trim().toLowerCase() === t.name.toLowerCase()),
+          ).map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              onClick={() => {
+                addHabit({
+                  name: t.name,
+                  desc: t.desc,
+                  color: t.color,
+                  goalDaysPerWeek: 7,
+                  ramp: { ...t.ramp, from: activeDate },
+                });
+                toast.success(`${t.name}: ${t.desc.toLowerCase()}`);
+                onAdded?.();
+              }}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[0.7rem] font-bold text-muted"
+            >
+              {t.ramp.target >= t.ramp.start ? (
+                <TrendingUp className="size-3.5" style={{ color: t.color }} />
+              ) : (
+                <TrendingDown className="size-3.5" style={{ color: t.color }} />
+              )}
+              {t.name}
+            </button>
+          ))}
+        </div>
+
+    </>
   );
 }

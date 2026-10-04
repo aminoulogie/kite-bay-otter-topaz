@@ -20,8 +20,10 @@ test("the workout weights sum to the workout share", () => {
   assert.equal(sum, SCORE_WEIGHTS.workout, "the four parts must add up to 40");
 });
 
-test("all weights sum to 100", () => {
-  assert.equal(Object.values(SCORE_WEIGHTS).reduce((a, b) => a + b, 0), 100);
+test("the original weights sum to 100, with habits on top", () => {
+  const { habits, ...rest } = SCORE_WEIGHTS;
+  assert.equal(Object.values(rest).reduce((a, b) => a + b, 0), 100);
+  assert.equal(habits, 15);
 });
 
 test("unlogged food is not logged, not zero", () => {
@@ -112,4 +114,12 @@ test("progression rewards holding or beating the last session", () => {
     better.lines.find((l) => l.id === "progression")!.earned! >
       worse.lines.find((l) => l.id === "progression")!.earned!,
   );
+});
+
+test("a skipped planned training day scores the workout 0, a rest day leaves it out", () => {
+  const skipped = scoreDay({ missedWorkout: true, sleepHours: 8 });
+  assert.equal(skipped.lines.find((l) => l.id === "workout")?.earned, 0);
+  assert.equal(skipped.tracked, 40 + 13);
+  const rest = scoreDay({ missedWorkout: true, isRestDay: true, sleepHours: 8 });
+  assert.equal(rest.lines.find((l) => l.id === "workout")?.earned, null);
 });

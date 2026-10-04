@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Droplet, NotebookPen, Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
+import { Droplet, Lock, NotebookPen, Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { PortionSheet } from "@/components/PortionSheet";
@@ -16,9 +16,11 @@ import { DecimalInput } from "@/components/ui/decimal-input";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { foodWaterMl, totalWaterMl } from "@/lib/hydration";
-import { DEFAULT_GOALS, SomaIntelligenceEngine } from "@/lib/soma";
+import { DEFAULT_GOALS, SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { composeLibrary, searchFoods } from "@/lib/foods";
 import { Sized, WidgetGrid, useWidgetSize } from "@/components/WidgetGrid";
+import { GroceryCard, PantryCard } from "@/components/GroceryCard";
+import { formatMoney } from "@/lib/money-model";
 import { Glance, isGlance } from "@/components/Glance";
 import { TopTabs } from "@/components/TopTabs";
 import { WeeklyFuel } from "@/components/WeeklyFuel";
@@ -27,7 +29,8 @@ import { useSoma } from "@/lib/store";
 import { useLongPressMove } from "@/lib/use-long-press-move";
 import { SwipeRow } from "@/components/SwipeRow";
 import { PlatePhoto } from "@/components/PlatePhoto";
-import { MacroStrip } from "@/components/MacroStrip";
+import { MACRO_COLOR, MacroStrip } from "@/components/MacroStrip";
+import { RING_DEFS } from "@/lib/rings";
 import { rebalance } from "@/lib/rebalance";
 import { eatBack, sessionBurn } from "@/lib/training-burn";
 import { nextDates, suggestDay, suggestWeek } from "@/lib/meal-suggest";
@@ -36,6 +39,7 @@ import { lastMealDate, mealItems, recentFoods } from "@/lib/food-recents";
 import { HUNGER_LABEL, hungerNote, hungerOn, type HungerEntry } from "@/lib/hunger";
 import { tapLight, tapMedium } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
+import { MealPace } from "@/components/MealPace";
 import type { FoodItem, Goals } from "@/lib/types";
 
 // Pre-Workout was missing, so anything logged under it — including
@@ -56,8 +60,10 @@ const FUEL_TABS = [
   { id: "weight" as const, label: "Weight" },
 ];
 
-export function NutritionView() {
-  const [sub, setSub] = useState<"dash" | "week" | "log" | "weight">("dash");
+const formatDZD = (n: number) => formatMoney(n, "DZD");
+
+export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "week" | "log" | "weight" } = {}) {
+  const [sub, setSub] = useState<"dash" | "week" | "log" | "weight">(initialSub);
   const nutrition = useSoma((s) => s.nutrition);
   const history = useSoma((s) => s.history);
   const activeDate = useSoma((s) => s.activeDate);
@@ -67,6 +73,7 @@ export function NutritionView() {
   const restoreFood = useSoma((s) => s.restoreFood);
   const planFood = useSoma((s) => s.planFood);
   const confirmPlanned = useSoma((s) => s.confirmPlanned);
+  const unconfirmFood = useSoma((s) => s.unconfirmFood);
   const confirmAllPlanned = useSoma((s) => s.confirmAllPlanned);
   const removePlanned = useSoma((s) => s.removePlanned);
   const restorePlanned = useSoma((s) => s.restorePlanned);
@@ -284,7 +291,7 @@ export function NutritionView() {
       <Sized key="target" glance={{
           label: "Calories",
           short: "Calories",
-          color: "#ff9f0a",
+          color: "#fa114f",
           value: totals.cals > 0 ? String(Math.round(totals.cals)) : null,
           unit: "kcal",
           sub: `of ${goalCals}${plannedTotals.cals > 0 ? ` · +${Math.round(plannedTotals.cals)} planned` : ""}`,
@@ -327,15 +334,18 @@ export function NutritionView() {
         </div>
         <div className="mt-4">
           <div className="mb-1 flex justify-between text-xs font-bold">
-            <span className="text-muted">Calories</span>
-            <span className="tabular">
+            <span className="flex items-center gap-1.5 text-muted">
+              <span aria-hidden className="h-2.5 w-[3px] rounded-full" style={{ background: CALS.from }} />
+              Calories
+            </span>
+            <span className="tabular" style={{ color: CALS.from }}>
               {Math.round(totals.cals)} / {goalCals}
               {plannedTotals.cals > 0 && (
                 <span className="ml-1 text-faint">+{Math.round(plannedTotals.cals)}</span>
               )}
             </span>
           </div>
-          <Progress value={(totals.cals / goalCals) * 100} />
+          <Progress value={(totals.cals / goalCals) * 100} color={ringFill(CALS)} track={`${CALS.from}2e`} />
         </div>
 
         {/* The mode everything you add next will obey. Stated where the day is
@@ -405,6 +415,13 @@ export function NutritionView() {
       </Card>
       </Sized>
 
+      <MealPace
+        key="pace"
+        eaten={{ cals: totals.cals, protein: totals.p }}
+        goal={{ cals: goalCals, protein: goals.protein }}
+        isToday={activeDate === getLocalDateKey()}
+        date={activeDate}
+      />
       <SuggestFromPantry key="suggest" meal={meal} target={planTarget} />
 
       <Sized
@@ -432,15 +449,15 @@ export function NutritionView() {
       </Sized>
 
       <div key="actions" className="grid grid-cols-3 gap-2">
-        <Macro label="Protein" used={totals.p} goal={goals.protein} unit="g" />
-        <Macro label="Carbs" used={totals.c} goal={goals.carbs} unit="g" />
-        <Macro label="Fat" used={totals.f} goal={goals.fat} unit="g" />
+        <Macro label="Protein" used={totals.p} goal={goals.protein} unit="g" color={MACRO_COLOR.p} />
+        <Macro label="Carbs" used={totals.c} goal={goals.carbs} unit="g" color={MACRO_COLOR.c} />
+        <Macro label="Fat" used={totals.f} goal={goals.fat} unit="g" color={MACRO_COLOR.f} />
       </div>
 
       <Sized key="water" glance={{
           label: "Water",
           icon: Droplet,
-          color: "#19e3e3",
+          color: "#00d8ff",
           value: water > 0 ? (water / 1000).toFixed(1) : null,
           unit: "L",
           sub: `of ${((goals.water || 3500) / 1000).toFixed(1)} L`,
@@ -450,12 +467,15 @@ export function NutritionView() {
         }}>
       <Card>
         <CardTitle>
-          <span>Water</span>
-          <span className="tabular text-sm font-bold text-accent-text">
+          <span className="flex items-center gap-2">
+            <Droplet aria-hidden className="size-4" style={{ color: WATER.from }} />
+            Water
+          </span>
+          <span className="tabular text-sm font-bold" style={{ color: WATER.from }}>
             {water} / {goals.water} ml
           </span>
         </CardTitle>
-        <Progress value={waterPct} barClassName="bg-info" />
+        <Progress value={waterPct} color={ringFill(WATER)} track={`${WATER.from}2e`} />
         {fromFood > 0 && (
           <p className="mt-1.5 text-[0.65rem] text-muted">
             {fromFood} ml of that came from what you drank — juice, milk and anything else
@@ -767,6 +787,10 @@ export function NutritionView() {
 
       <PreWorkoutCard key="preworkout" />
 
+      <GroceryCard key="grocery" money={formatDZD} />
+
+      <PantryCard key="pantry" />
+
       {/* The diary and its hint move as one: a "swipe left to delete" note
           parked three cards above the rows it describes explains nothing. */}
       <Sized key="diary" glance={() => ({
@@ -788,10 +812,11 @@ export function NutritionView() {
         })}>
       <div className="space-y-3">
       {/* The gesture is invisible without this. */}
-      {items.length > 0 && (
+      {(items.length > 0 || planned.length > 0) && (
         <p className="px-1 text-[0.62rem] leading-snug text-faint">
-          Tap a food to edit it. Swipe left to delete. Press and hold, then drag it onto
-          another meal to move it there.
+          Food you log today waits gray — swipe it right once you have eaten it. That swipe times the meal
+          (on time, late or skipped) and locks the food: it cannot be edited, deleted or un-eaten after.
+          Gray food can still be edited, or swiped left to delete.
         </p>
       )}
 
@@ -882,7 +907,14 @@ export function NutritionView() {
                   </SwipeRow>
                 ))}
 
-                {group.map(({ it, idx }) => (
+                {group.map(({ it, idx }) => it.eatenAt ? (
+                  // Confirmed and timed: final. No swipe, no edit, no delete.
+                  <FoodRow
+                    key={idx}
+                    item={it}
+                    onEdit={() => toast(`${it.name} is locked — eaten at ${clockOf(it.eatenAt!)}`)}
+                  />
+                ) : (
                   <SwipeRow
                     key={idx}
                     id={String(idx)}
@@ -891,6 +923,24 @@ export function NutritionView() {
                     // While a row is held for a drag it belongs to that
                     // gesture; two meanings for one finger is one too many.
                     disabled={mealDrag.dragging !== null}
+                    // Swipe right: not eaten after all. It goes gray, back
+                    // to the plan, out of every total — and a swipe right on
+                    // the gray row counts it again.
+                    confirmTone="muted"
+                    confirmLabel={`Not eaten yet: ${it.name}`}
+                    onConfirm={() => {
+                      unconfirmFood(idx, activeDate);
+                      toast.success(`${it.name} grayed out — swipe right to count it`, {
+                        action: {
+                          label: "Undo",
+                          onClick: () => {
+                            const plan = useSoma.getState().nutrition[activeDate]?.planned ?? [];
+                            const at = plan.lastIndexOf(it);
+                            if (at >= 0) confirmPlanned(at, activeDate);
+                          },
+                        },
+                      });
+                    }}
                     onEdit={() => setPortion({ item: it, meal: m, mode: "edit", idx })}
                     onDelete={() => deleteFood(idx, it)}
                   >
@@ -1029,18 +1079,32 @@ export function NutritionView() {
   );
 }
 
-function Macro({ label, used, goal, unit }: { label: string; used: number; goal: number; unit: string }) {
+// The rings' own colours, so a bar here and the ring on Home for the same
+// number are one colour — and a gradient, as the ring is.
+const CALS = RING_DEFS.find((r) => r.id === "cals")!;
+const WATER = RING_DEFS.find((r) => r.id === "water")!;
+const ringFill = (r: { from: string; to: string }) => `linear-gradient(90deg, ${r.from}, ${r.to})`;
+
+function Macro({ label, used, goal, unit, color }: { label: string; used: number; goal: number; unit: string; color: string }) {
   return (
-    <div className="rounded-2xl border border-border bg-surface-2 p-3">
-      <div className="text-[0.62rem] font-bold uppercase tracking-wider text-faint">{label}</div>
-      <div className="mt-0.5 font-display text-lg font-extrabold tabular">
+    <div
+      className="rounded-2xl border border-border p-3"
+      // A wash of the macro's colour from the top corner: enough to tell the
+      // three apart at a glance, not so much that the number fights it.
+      style={{ background: `linear-gradient(160deg, ${color}1f, transparent 70%), var(--color-surface-2)` }}
+    >
+      <div className="flex items-center gap-1.5 text-[0.62rem] font-bold uppercase tracking-wider text-faint">
+        <span aria-hidden className="h-2.5 w-[3px] rounded-full" style={{ background: color }} />
+        {label}
+      </div>
+      <div className="mt-0.5 font-display text-lg font-extrabold tabular" style={{ color }}>
         {Math.round(used)}
         <span className="text-xs font-bold text-muted">
           /{goal}
           {unit}
         </span>
       </div>
-      <Progress className="mt-2" value={(used / goal) * 100} />
+      <Progress className="mt-2" value={(used / goal) * 100} color={color} track={`${color}2e`} />
     </div>
   );
 }
@@ -1152,6 +1216,11 @@ function RepeatMeal({ meal }: { meal: string }) {
   );
 }
 
+function clockOf(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 function FoodRow({
   item, onEdit, held, dragHandlers, planned,
 }: {
@@ -1194,6 +1263,11 @@ function FoodRow({
           {item.serving}
           {item.unit}
           {item.waterMl ? <span className="text-info"> · {item.waterMl} ml water</span> : null}
+          {item.eatenAt ? (
+            <span className="text-emerald-400/80"> · eaten {clockOf(item.eatenAt)}</span>
+          ) : item.loggedAt ? (
+            <span> · logged {clockOf(item.loggedAt)} — swipe right once eaten</span>
+          ) : null}
         </div>
         <MacroStrip
           className="mt-1"
@@ -1204,7 +1278,7 @@ function FoodRow({
           dim={planned}
         />
       </div>
-      <Pencil className="size-4 shrink-0 text-faint" />
+      {item.eatenAt ? <Lock className="size-4 shrink-0 text-faint" /> : <Pencil className="size-4 shrink-0 text-faint" />}
     </button>
   );
 }
@@ -1494,7 +1568,7 @@ function BurnSheet({
       onClick={onClose}
     >
       <div
-        className="soma-expand max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,env(safe-area-inset-bottom))] pt-4"
+        className="soma-expand max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-border bg-bg px-4 pb-[max(20px,var(--safe-bottom,env(safe-area-inset-bottom)))] pt-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between gap-2">

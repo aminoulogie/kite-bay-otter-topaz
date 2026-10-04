@@ -1,3 +1,4 @@
+import AVFoundation
 import UIKit
 import Capacitor
 
@@ -7,7 +8,27 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Vibrations are allowed while the app's audio is live. The web view's
+        // sounds (the rest timer's chime) hold an audio session, and iOS
+        // mutes haptics under an active session unless told otherwise.
+        if #available(iOS 13.0, *) {
+            try? AVAudioSession.sharedInstance().setAllowHapticsAndSystemSoundsDuringRecording(true)
+        }
+        // The gym region's delegate, in place before iOS delivers an arrival
+        // to a background relaunch.
+        _ = GymMonitor.shared
+        // Apple's own tab bar and navigation bars around the web app, so the
+        // chrome is real Liquid Glass. See NativeChrome.swift.
+        if let old = window, let bridge = old.rootViewController as? CAPBridgeViewController {
+            old.rootViewController = nil
+            old.isHidden = true
+            let chrome = ChromeController(bridge: bridge)
+            let w = ChromeWindow(frame: UIScreen.main.bounds)
+            w.backgroundColor = UIColor(red: 0.043, green: 0.047, blue: 0.063, alpha: 1)
+            w.rootViewController = chrome
+            window = w
+            w.makeKeyAndVisible()
+        }
         return true
     }
 

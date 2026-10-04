@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, UtensilsCrossed } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,11 @@ import { useWidgetSize } from "@/components/WidgetGrid";
  * Logging a recipe produces an ordinary FoodItem, so day totals, the day
  * score and the CSV export need no idea that recipes exist.
  */
-export function MealBuilder({ meal }: { meal: string }) {
+/**
+ * Memoised: it sits on the Fuel page beside the food search, and without
+ * this every letter typed there redrew it too.
+ */
+export const MealBuilder = memo(function MealBuilder({ meal }: { meal: string }) {
   const customFoods = useSoma((s) => s.customFoods);
   const addFood = useSoma((s) => s.addFood);
 
@@ -271,4 +275,4 @@ export function MealBuilder({ meal }: { meal: string }) {
       )}
     </Card>
   );
-}
+});

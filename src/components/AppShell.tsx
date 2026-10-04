@@ -1,17 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, BrainCircuit, CalendarDays, Check, Clock, CornerDownLeft, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, PanelLeft, Pencil, Search, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
+import { Workstation } from "@/workstation/Workstation";
+import { useWorkstation } from "@/workstation/mode";
+import { SyncRunner } from "@/components/SyncRunner";
+import { MealReminderSync } from "@/components/MealReminderSync";
+import { Activity, BrainCircuit, CalendarDays, Check, Clock, CornerDownLeft, Download, Dumbbell, FolderKanban, LayoutGrid, LineChart, Loader2, Pencil, Search, Settings as SettingsIcon, Target, TrendingUp, ScanFace, Utensils, Wallet } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { DateDrawer } from "@/components/DateDrawer";
+import { CalcBar } from "@/components/CalcBar";
+import { startHealthSync } from "@/lib/native/health-sync";
+import { startSleepClock } from "@/lib/native/sleep-clock-sync";
+import { startHabitAuto } from "@/lib/native/habit-auto-run";
+import { startFocusGym } from "@/lib/native/focus-gym";
+import { HabitsPanel } from "@/components/habits/HabitsPanel";
+import { DateNav } from "@/components/DateNav";
+import { chromeAvailable, chromeListen, chromeReady, chromeSetState, chromeSetTabs, watchOverlays } from "@/lib/native/chrome";
+import { dateLabel, shiftDate } from "@/lib/date-label";
+import { ScreenTimeImport } from "@/components/ScreenTimeImport";
 import { getLocalDateKey } from "@/lib/soma";
 import { NUTRITION_KEEP_FROM } from "@/lib/seed";
 import { requestPersistence } from "@/lib/storage-health";
 import { TrainCalendar } from "@/components/TrainCalendar";
-import { useEdgeSwipe, useRightEdgeSwipe } from "@/lib/use-edge-swipe";
+import { ChartsSheet } from "@/components/ChartsSheet";
 import { useKeyboardInset } from "@/lib/use-keyboard";
 import { useLiquidGlass } from "@/lib/use-liquid-glass";
 import { useBackupDownload } from "@/lib/use-backup";
 import { BodyView } from "@/components/views/BodyView";
-import { HabitsView } from "@/components/views/HabitsView";
 import { InsightsView } from "@/components/views/InsightsView";
 import { NutritionView } from "@/components/views/NutritionView";
 import { EstimatesView } from "@/components/views/EstimatesView";
@@ -29,6 +41,9 @@ import { MindView } from "@/components/views/MindView";
 import { ProjectsView } from "@/components/views/ProjectsView";
 import { LooksView } from "@/components/views/LooksView";
 import { TimeView } from "@/components/views/TimeView";
+import { pushWidgetSnapshot } from "@/lib/native/widget-bridge";
+import { applyLiveNow, checkLive, liveReady, onLiveStatus } from "@/lib/native/live-update";
+import { RoutineDock } from "@/components/RoutineDock";
 
 /**
  * The dock, drawn in TAB_ORDER so it can never disagree with the direction a
@@ -184,19 +199,63 @@ export function AppShell() {
   // The tilt parallax behind every glass surface. One hook, root-level CSS
   // vars, two composited layers — see lib/use-liquid-glass.ts.
   useLiquidGlass();
+  useEffect(() => startHealthSync(), []);
+  useEffect(() => startSleepClock(), []);
+  useEffect(() => startHabitAuto(), []);
+  useEffect(() => startFocusGym(), []);
 
   // Everything in this app lives on this one device, so the backup file is the
   // only copy that survives losing it. Burying the one control that writes it
   // three screens deep in Setup made the safest habit the least convenient
   // one; it is now two taps from wherever you are.
   const { busy: savingBackup, download: saveBackup } = useBackupDownload();
+  const saveBackupRef = useRef(saveBackup);
+  saveBackupRef.current = saveBackup;
 
   const [ready, setReady] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const openDrawer = useCallback(() => setDrawerOpen(true), []);
-  useEdgeSwipe(openDrawer, ready && !drawerOpen);
+  // Swiping in from the left edge opens Habits.
+  const drawerOpen = useSoma((s) => s.habitsOpen);
+  const setHabitsOpen = useSoma((s) => s.setHabitsOpen);
+  const openDrawer = useCallback(() => setHabitsOpen(true), [setHabitsOpen]);
 
   const hydrated = useSoma((s) => s.hydrated);
+
+  // The home-screen widget's rings, kept current with the app's own. Only
+  // once the saved data has loaded: before that the store holds an empty day,
+  // and the widget would briefly empty with it.
+  const nutrition = useSoma((s) => s.nutrition);
+  const history = useSoma((s) => s.history);
+  const customGoals = useSoma((s) => s.settings.customGoals);
+  useEffect(() => {
+    if (hydrated) pushWidgetSnapshot({ nutrition, history, customGoals });
+  }, [hydrated, nutrition, history, customGoals]);
+
+  // Live updates (lib/native/live-update.ts): say this layer started, then
+  // look for a newer one shortly after launch and whenever the app comes back.
+  // A downloaded one is used from the next launch; the toast offers it now.
+  useEffect(() => {
+    void liveReady();
+    const first = setTimeout(() => void checkLive(true), 4000);
+    const back = () => {
+      if (document.visibilityState === "visible") void checkLive();
+    };
+    document.addEventListener("visibilitychange", back);
+    let told = "";
+    const off = onLiveStatus((st) => {
+      if (st.state !== "ready" || told === st.version) return;
+      told = st.version;
+      toast.success(`SOMA ${st.version} is ready`, {
+        description: "It starts the next time you open the app.",
+        action: { label: "Restart now", onClick: () => void applyLiveNow() },
+        duration: 10000,
+      });
+    });
+    return () => {
+      clearTimeout(first);
+      document.removeEventListener("visibilitychange", back);
+      off();
+    };
+  }, []);
   // Resolved on the way out, not only in setTab: the last-open tab is restored
   // straight from storage on boot, so a phone closed on Body would otherwise
   // reopen to a tab that is no longer in the dock.
@@ -206,7 +265,9 @@ export function AppShell() {
   // where it was asked for, and the 40px edge is wide enough for a thumb
   // coming in off the bezel.
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [chartsOpen, setChartsOpen] = useState(false);
   const editingDashboard = useSoma((s) => s.editingDashboard);
+  const workstation = useWorkstation();
   const setEditingDashboard = useSoma((s) => s.setEditingDashboard);
 
   // Measured rather than computed from an index, because the dock scrolls and
@@ -230,6 +291,8 @@ export function AppShell() {
     const el = navRef.current;
     if (!el) return;
     const publish = () => {
+      // The native tab bar publishes its own height instead.
+      if (document.documentElement.classList.contains("soma-native-chrome")) return;
       // offsetHeight, not getBoundingClientRect().height: the rect follows
       // the VISUAL viewport, which iOS moves while the URL bar collapses or
       // the keyboard opens — publishing it made --dock-h wobble and the page
@@ -291,11 +354,6 @@ export function AppShell() {
       window.removeEventListener("resize", move);
     };
   }, [tab, ready]);
-  useRightEdgeSwipe(
-    () => setCalendarOpen(true),
-    ready && !drawerOpen && !calendarOpen && tab === "workout",
-    40,
-  );
   const setTab = useSoma((s) => s.setTab);
 
   /**
@@ -319,6 +377,85 @@ export function AppShell() {
   const normalizeLive = useSoma((s) => s.normalizeLive);
   const rollDayIfNeeded = useSoma((s) => s.rollDayIfNeeded);
   const markHydrated = useSoma((s) => s.markHydrated);
+
+  // Apple's own Liquid Glass bars, when the native build has them: the page
+  // hides its header and dock and answers the bars instead.
+  const [nativeChrome, setNativeChrome] = useState(false);
+  useEffect(() => {
+    if (!ready || !chromeAvailable()) return;
+    let alive = true;
+    let offWatch: (() => void) | null = null;
+    const offListen = chromeListen((a) => {
+      const st = useSoma.getState();
+      switch (a.type) {
+        case "tab":
+          st.setTab(a.tab as TabId);
+          break;
+        case "habits":
+          st.setHabitsOpen(true);
+          break;
+        case "calendar":
+          setCalendarOpen(true);
+          break;
+        case "charts":
+          setChartsOpen(true);
+          break;
+        case "edit":
+          st.setEditingDashboard(!st.editingDashboard);
+          break;
+        case "backup":
+          void saveBackupRef.current();
+          break;
+        case "date":
+          st.setActiveDate(a.date);
+          break;
+        case "step":
+          st.setActiveDate(shiftDate(st.activeDate, a.by));
+          break;
+        case "insets": {
+          const root = document.documentElement;
+          root.style.setProperty("--chrome-top", `${Math.round(a.top)}px`);
+          root.style.setProperty("--chrome-bottom", `${Math.round(a.bottom)}px`);
+          root.style.setProperty("--dock-h", `${Math.round(a.bottom)}px`);
+          // The web view's own env() safe area is not reliable inside the
+          // native chrome; these are the window's, measured natively.
+          if (a.safeTop != null) root.style.setProperty("--safe-top", `${Math.round(a.safeTop)}px`);
+          if (a.safeBottom != null) root.style.setProperty("--safe-bottom", `${Math.round(a.safeBottom)}px`);
+          break;
+        }
+      }
+    });
+    void chromeReady().then((on) => {
+      if (!alive || !on) return;
+      document.documentElement.classList.add("soma-native-chrome");
+      setNativeChrome(true);
+      void chromeSetTabs(TABS);
+      offWatch = watchOverlays();
+    });
+    return () => {
+      alive = false;
+      offListen();
+      offWatch?.();
+    };
+  }, [ready]);
+
+  // The bars show what the page is on.
+  useEffect(() => {
+    if (!nativeChrome) return;
+    const today = getLocalDateKey();
+    chromeSetState({
+      tab,
+      title: dateLabel(activeDate, today),
+      date: activeDate,
+      isToday: activeDate === today,
+      canEdit: isArrangeable(tab),
+      editing: editingDashboard,
+      accent: normalizeAccent(settings.accent),
+      theme: resolveTheme(settings.theme),
+      dockTransparency: settings.dockTransparency ?? 0.5,
+      dockScale: settings.dockScale ?? 1,
+    });
+  }, [nativeChrome, tab, activeDate, editingDashboard, settings.accent, settings.theme, settings.dockTransparency, settings.dockScale]);
 
   useEffect(() => {
     const result = useSoma.persist.rehydrate();
@@ -405,9 +542,25 @@ export function AppShell() {
     root.style.setProperty("--color-accent-text", accentText(accent, theme));
     root.style.setProperty("--color-accent-soft", `color-mix(in srgb, ${accent} 16%, transparent)`);
     root.style.setProperty("--color-accent-line", `color-mix(in srgb, ${accent} 38%, transparent)`);
+    // Display size: the app is sized in rem, so the root font size scales
+    // the whole layout — type, spacing and controls — together.
+    const scale = Math.min(1.3, Math.max(0.8, Number(settings.uiScale) || 1));
+    if (scale === 1) root.style.removeProperty("font-size");
+    else root.style.fontSize = `${(16 * scale).toFixed(2)}px`;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute("content", theme === "light" ? "#f4f6f9" : "#0b0c10");
-  }, [settings.accent, settings.theme, hydrated]);
+  }, [settings.accent, settings.theme, settings.uiScale, hydrated]);
+
+  if (ready && workstation) {
+    return (
+      <>
+        <Workstation />
+        <SyncRunner />
+        <MealReminderSync />
+        <Toaster position="bottom-right" theme={settings.theme === "light" ? "light" : "dark"} />
+      </>
+    );
+  }
 
   if (!ready) {
     return (
@@ -423,7 +576,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="soma-page relative mx-auto min-h-dvh max-w-lg bg-bg pb-[calc(var(--dock-h,7rem)+0.75rem)] lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
+    <div className="soma-page relative mx-auto min-h-dvh max-w-lg bg-bg pb-[calc(var(--dock-h,7rem)+var(--player-h,0px)+0.75rem)] lg:flex lg:max-w-none lg:gap-6 lg:pb-0 lg:pl-0">
       {/* The ambient light behind every glass surface. Fixed, pointer-dead,
           and the only layer the tilt parallax moves — the glass refracts it,
           the content never does. It sits at z-0; the rail and the content
@@ -489,17 +642,17 @@ export function AppShell() {
           left with the Calendar button hanging past the edge. A media query
           cannot see this coming, because the trigger is the text size rather
           than the viewport. */}
-      <header className="glass-header sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
+      <header className="glass-header sticky top-0 z-30 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border px-4 pb-3 pt-[max(12px,var(--safe-top,env(safe-area-inset-top)))]">
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
           {/* The swipe is not discoverable on its own, so the drawer also has
               a visible control. */}
           <button
             type="button"
             onClick={openDrawer}
-            aria-label="Open logged days"
+            aria-label="Open habits"
             className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-border bg-surface-2 text-muted"
           >
-            <PanelLeft className="size-4" />
+            <Target className="size-4" />
           </button>
           {/* The rail carries the lockup on a desktop, so the header says where
               you are instead of repeating the app's own name at you. */}
@@ -515,11 +668,7 @@ export function AppShell() {
               screen has already said the rest. */}
           {/* shrink-0: four characters have no sensible truncation, and the
               flex row was clipping the last one by a pixel on a 360px phone. */}
-          <div className="min-w-0 lg:hidden">
-            <div className="truncate font-display text-lg font-extrabold leading-tight tracking-tight text-fg">
-              SOMA
-            </div>
-          </div>
+          <DateNav />
           <TabJump tab={tab} setTab={setTab} />
         </div>
         {/* Was a static "Local" badge, which said something the user already
@@ -535,14 +684,14 @@ export function AppShell() {
               onClick={() => setEditingDashboard(!editingDashboard)}
               aria-label={editingDashboard ? "Finish editing the layout" : "Edit the layout"}
               className={cn(
-                "flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-wider",
+                "flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-full border px-2 sm:px-3 text-[0.65rem] font-bold uppercase tracking-wider",
                 editingDashboard
                   ? "border-accent bg-accent text-accent-ink"
                   : "border-border bg-surface-2 text-muted active:bg-surface-3",
               )}
             >
               {editingDashboard ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
-              {editingDashboard ? "Done" : "Edit"}
+              {editingDashboard ? "Done" : <span className="hidden sm:inline">Edit</span>}
             </button>
           )}
           {/* Icon only. The header already carries two labelled controls and a
@@ -565,17 +714,35 @@ export function AppShell() {
           </button>
           <button
             type="button"
+            onClick={() => setChartsOpen(true)}
+            aria-label="Open charts"
+            title="Charts"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2 text-muted active:bg-surface-3"
+          >
+            <LineChart className="size-3.5" />
+          </button>
+          <button
+            type="button"
             onClick={() => setCalendarOpen(true)}
             aria-label="Open training calendar"
-            className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-muted active:bg-surface-3"
+            className="flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-full border border-border bg-surface-2 px-2 text-[0.65rem] font-bold uppercase tracking-wider text-muted active:bg-surface-3 sm:px-3"
           >
             <CalendarDays className="size-3.5" />
-            Calendar
+            {/* The date sits in the header now, so on a phone this is an icon. */}
+            <span className="hidden sm:inline">Calendar</span>
           </button>
         </div>
       </header>
 
-      <TrainCalendar open={calendarOpen} onClose={() => setCalendarOpen(false)} />
+      <TrainCalendar
+        open={calendarOpen}
+        onClose={() => setCalendarOpen(false)}
+        // Swiping in from the right edge opens it on every tab, following the
+        // finger; the habits panel takes the left edge.
+        onOpen={() => setCalendarOpen(true)}
+        swipeEnabled={ready && !drawerOpen}
+      />
+      {chartsOpen && <ChartsSheet onClose={() => setChartsOpen(false)} />}
 
       {/* Selecting a past day changes what every tab reads. Without a standing
           indicator that is invisible, and the app looks like it ignored the tap. */}
@@ -583,16 +750,23 @@ export function AppShell() {
         <button
           type="button"
           onClick={() => setActiveDate(getLocalDateKey())}
-          className="sticky top-0 z-20 flex w-full items-center justify-between gap-2 border-b border-warn/30 bg-warn/15 px-4 py-1.5 text-[0.68rem] font-bold text-warn"
+          className="soma-viewing-banner sticky top-0 z-20 flex w-full items-center justify-between gap-2 border-b border-warn/30 bg-warn/15 px-4 py-1.5 text-[0.68rem] font-bold text-warn"
         >
           <span className="truncate">Viewing {activeDate}</span>
           <span className="shrink-0 underline">Back to today</span>
         </button>
       )}
 
-      <DateDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <HabitsPanel />
+      <ScreenTimeImport />
+      <MealReminderSync />
+      <SyncRunner />
 
-      <main key={tab} className="soma-scroll px-4 pt-4 soma-view soma-stagger">
+      {/* A running routine: full screen, or shrunk to a player above the
+          dock that follows you across tabs. */}
+      <RoutineDock />
+
+      <main key={tab} className="soma-main soma-scroll px-4 pt-4 soma-view soma-stagger">
         {tab === "dashboard" && <DashboardView />}
         {tab === "money" && <MoneyView />}
         {tab === "mind" && <MindView />}
@@ -600,7 +774,6 @@ export function AppShell() {
         {tab === "looks" && <LooksView />}
         {tab === "workout" && <WorkoutView />}
         {tab === "nutrition" && <NutritionView />}
-        {tab === "habits" && <HabitsView />}
         {tab === "time" && <TimeView />}
         {tab === "body" && <BodyView />}
         {tab === "insights" && <InsightsView />}
@@ -617,7 +790,7 @@ export function AppShell() {
           puts it where a floating bar belongs and still never touches it. */}
       <nav
         ref={navRef}
-        className="soma-dock pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(10px,calc(env(safe-area-inset-bottom)-16px))] transition-opacity duration-150 lg:hidden"
+        className="soma-dock pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(10px,calc(var(--safe-bottom,env(safe-area-inset-bottom))-16px))] transition-opacity duration-150 lg:hidden"
       >
         {/* Scrollable: seven tabs no longer fit at a legible size, and
             shrinking them further would make the labels unreadable before it
@@ -672,7 +845,16 @@ export function AppShell() {
         </div>
       </nav>
       </div>
-      <Toaster position="top-center" theme={settings.theme === "light" ? "light" : "dark"} />
+      {/* Below the header, not over it: at the very top a toast sat on the
+          status bar and covered the header's own buttons, so the Undo in it
+          and the Edit/Calendar under it fought for the same spot. */}
+      <CalcBar />
+      <Toaster
+        position="top-center"
+        theme={settings.theme === "light" ? "light" : "dark"}
+        offset={{ top: "calc(var(--safe-top,env(safe-area-inset-top)) + 64px)" }}
+        mobileOffset={{ top: "calc(var(--safe-top,env(safe-area-inset-top)) + 64px)" }}
+      />
     </div>
   );
 }
