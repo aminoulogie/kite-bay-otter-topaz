@@ -109,6 +109,7 @@ import {
   addStep, cleanProject, moveStep, newProjectId, removeStep, setStep, stepsOf, type Project,
 } from "./projects";
 import { cleanTrade, newTradeId, type Trade, type TradeDraft } from "./trading";
+import { exercisesToAdd, planImport, type ImportPlan, type RoutineCode } from "./routine-code";
 import { lastSetAt, lastTimeFor } from "./last-time";
 
 /**
@@ -474,6 +475,11 @@ export interface SomaStore {
   routineFromSession: (date: string, name: string) => string | null;
   repeatSession: (date: string) => boolean;
   saveRoutine: (name: string, list: { name: string }[], original?: string) => string | null;
+  /**
+   * Apply a pasted routine code: its exercise definitions first, then its
+   * routines. See lib/routine-code.ts for why the definitions travel with it.
+   */
+  importRoutineCode: (code: RoutineCode) => ImportPlan;
   deleteRoutine: (name: string) => void;
   /**
    * A line about a day, for anything the app has no field for — an
@@ -2593,6 +2599,29 @@ export const useSoma = create<SomaStore>()(
           activeDate: today,
         });
         return true;
+      },
+
+      importRoutineCode: (code) => {
+        const plan = planImport(code, get().routines(), get().allExercises());
+        // Definitions first. A routine saved before the exercises it names
+        // exist would spend the moment in between resolving to stubs, and
+        // anything that read it in that window (the glance, a session loaded
+        // from it) would cache the stub.
+        const fresh = exercisesToAdd(code, get().allExercises());
+        if (fresh.length) set({ customExercises: [...get().customExercises, ...fresh] });
+
+        const custom = { ...get().settings.customRoutines };
+        const removed = [...get().settings.customRoutinesRemoved];
+        for (const [rname, list] of Object.entries(code.routines)) {
+          custom[rname] = SomaIntelligenceEngine.normalizeRoutine(list);
+          // A routine that was deleted here once is on the tombstone list,
+          // and mergeRoutines would hide the imported one under the same
+          // name for ever. Importing it is saying you want it back.
+          const at = removed.indexOf(rname);
+          if (at >= 0) removed.splice(at, 1);
+        }
+        get().patchSettings({ customRoutines: custom, customRoutinesRemoved: removed });
+        return plan;
       },
 
       saveRoutine: (name, list, original) => {

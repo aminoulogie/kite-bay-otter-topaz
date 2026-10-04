@@ -11,6 +11,7 @@ import { colorsOf, ratesOf } from "@/lib/money-model";
 import { Input } from "@/components/ui/input";
 import { SomaIntelligenceEngine, getLocalDateKey, normalizeAccent } from "@/lib/soma";
 import { ColorPalette } from "@/components/ColorPalette";
+import { RoutineCodeSheet } from "@/components/RoutineCodeSheet";
 import {
   buildBackup, parseBackup, restoreExercisePhotos, restorePhotos, restoreScanImages, saveBackupFile,
   type BackupSummary,
@@ -68,6 +69,7 @@ export function SettingsView() {
   const resetAll = useSoma((s) => s.resetAll);
   const routines = routinesFn();
   const [editing, setEditing] = useState<string | null>(null);
+  const [codeSheet, setCodeSheet] = useState(false);
   const [rtName, setRtName] = useState("");
   const [rtList, setRtList] = useState<{ name: string }[]>([]);
   const [addEx, setAddEx] = useState("");
@@ -535,21 +537,30 @@ export function SettingsView() {
       </Card>
       </Sized>
 
+      {codeSheet && <RoutineCodeSheet onClose={() => setCodeSheet(false)} />}
+
       <Sized key="routines" glance={() => ({ label: "Routines", lines: Object.keys(routines).map((name) => ({ text: name, value: `${routines[name]?.length || 0}` })), empty: "No routines", emptyShort: "None" })}>
       <Card>
         <CardTitle>
           <span>Routines</span>
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={() => {
-              setEditing("__new");
-              setRtName("");
-              setRtList([]);
-            }}
-          >
-            New
-          </Button>
+          {/* Code before New. Pasting a programme someone sent is the common
+              errand; building one by hand is the rare one. */}
+          <span className="flex shrink-0 gap-1.5">
+            <Button size="sm" onClick={() => setCodeSheet(true)}>
+              Code
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={() => {
+                setEditing("__new");
+                setRtName("");
+                setRtList([]);
+              }}
+            >
+              New
+            </Button>
+          </span>
         </CardTitle>
         {editing === null ? (
           <div className="space-y-1">
