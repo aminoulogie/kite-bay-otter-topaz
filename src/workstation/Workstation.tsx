@@ -21,7 +21,6 @@ import type { SyncMeta } from "@/lib/sync/engine";
 import { Overview } from "./Overview";
 import { ProjectsPage } from "./ProjectsPage";
 import { projectStats } from "./metrics";
-import "./ws.css";
 
 type Icon = ComponentType<{ className?: string }>;
 export type PageId =

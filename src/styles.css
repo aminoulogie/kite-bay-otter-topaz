@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./glass.css";
+@import "./workstation/ws.css";
 
 @theme {
   /* San Francisco, Apple's system face — what iOS and macOS draw their own

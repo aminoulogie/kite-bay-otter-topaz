@@ -1,4 +1,6 @@
-/* SOMA Workstation — the desktop look. Scoped under .ws so nothing here leaks
+/* SOMA Workstation — the desktop look (imported by styles.css: a separate CSS
+   chunk would be preloaded from the site root and 404 under GitHub Pages).
+   Scoped under .ws so nothing here leaks
    into the phone layout. Flat panels, hairlines, compact type: a tool you sit
    at, not a phone held at arm's length. */
 .ws {
