@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import { reminders } from "@/lib/meal-pace";
+import { sessionOn } from "@/lib/use-workout-slot";
+import { mealsAround } from "@/lib/workout-time";
 import { clearMealReminders, scheduleMealReminders } from "@/lib/native/meal-reminders";
 import { DEFAULT_GOALS, getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -16,6 +18,8 @@ export function MealReminderSync() {
   const nutrition = useSoma((s) => s.nutrition);
   const history = useSoma((s) => s.history);
   const settings = useSoma((s) => s.settings);
+  const programs = useSoma((s) => s.programs);
+  const activeProgramId = useSoma((s) => s.activeProgramId);
 
   useEffect(() => {
     if (settings.mealReminders === false) {
@@ -33,7 +37,7 @@ export function MealReminderSync() {
         { cals: 0, protein: 0 },
       );
       void scheduleMealReminders(
-        reminders(settings.mealTimes, new Date(), { cals: goals.cals + burn, protein: goals.protein }, eaten),
+        reminders((d) => mealsAround(settings.mealTimes, sessionOn(getLocalDateKey(d)).slot), new Date(), { cals: goals.cals + burn, protein: goals.protein }, eaten),
       );
     };
     const t = window.setTimeout(sync, 1500);
@@ -45,7 +49,7 @@ export function MealReminderSync() {
       window.clearTimeout(t);
       document.removeEventListener("visibilitychange", onShow);
     };
-  }, [nutrition, history, settings.mealTimes, settings.mealReminders, settings.eatBackTraining]);
+  }, [nutrition, history, settings.mealTimes, settings.mealReminders, settings.eatBackTraining, settings.workoutTime, settings.scheduleOverrides, programs, activeProgramId]);
 
   return null;
 }

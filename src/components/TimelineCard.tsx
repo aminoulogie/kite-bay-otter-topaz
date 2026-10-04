@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Dumbbell, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Dumbbell, Utensils, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
 import { isActive } from "@/lib/todos";
 import { tapLight, tapSuccess } from "@/lib/haptics";
 import { useSoma } from "@/lib/store";
+import { usePlannedSession } from "@/lib/use-workout-slot";
 import { cn } from "@/lib/utils";
 import type { TodoItem } from "@/lib/types";
 
@@ -90,7 +91,12 @@ export function TimelineCard() {
   const monday = addDays(date, -((date.getDay() + 6) % 7));
   const week = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
 
-  const placed = useMemo(() => layout(eventsFor(day, todos, history[day])), [day, todos, history]);
+  const plannedSession = usePlannedSession(day);
+  const plannedSlot = plannedSession.slot;
+  const placed = useMemo(
+    () => layout(eventsFor(day, todos, history[day], plannedSlot ? { start: plannedSlot.start, end: plannedSlot.end, split: plannedSession.split } : null)),
+    [day, todos, history, plannedSlot, plannedSession.split],
+  );
 
   // The plan's blocks, faintly, behind. A block across midnight is drawn as
   // its two halves, one at each end of the day.
@@ -277,13 +283,29 @@ function EventCard({ event, onToggle, onOpen }: { event: PlacedEvent; onToggle: 
   const width = `calc((100% - ${GUTTER + 6}px) / ${event.columns})`;
   const left = `calc(${GUTTER + 2}px + (100% - ${GUTTER + 6}px) / ${event.columns} * ${event.column})`;
   const workout = event.kind === "workout";
+  const meal = event.kind === "meal";
+  if (meal) {
+    return (
+      <div
+        data-event
+        className="absolute z-10 flex items-center overflow-hidden rounded-lg border border-[#fa114f]/40 bg-[#fa114f]/15 px-1.5"
+        style={{ top, height, width, left }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Utensils className="mr-1.5 size-3 shrink-0 text-[#fa114f]" />
+        <span className="truncate text-[0.72rem] font-semibold leading-tight">{event.label}</span>
+      </div>
+    );
+  }
   return (
     <div
       data-event
       className={cn(
         "absolute z-10 flex overflow-hidden rounded-lg border px-1.5",
         height < 34 ? "items-center" : "items-start pt-1",
-        workout ? "border-[#ff6a00]/40 bg-[#ff6a00]/20" : "border-border-strong bg-surface-3",
+        workout
+          ? event.done ? "border-[#ff6a00]/40 bg-[#ff6a00]/20" : "border-dashed border-[#ff6a00]/60 bg-[#ff6a00]/10"
+          : "border-border-strong bg-surface-3",
       )}
       style={{ top, height, width, left }}
       onClick={(e) => {

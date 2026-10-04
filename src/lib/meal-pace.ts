@@ -133,7 +133,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
  * app is opened.
  */
 export function reminders(
-  times: MealTime[] | undefined,
+  times: MealTime[] | undefined | ((day: Date) => MealTime[] | undefined),
   now: Date,
   goal: { cals: number; protein: number },
   eaten: { cals: number; protein: number },
@@ -141,7 +141,8 @@ export function reminders(
 ): Reminder[] {
   const out: Reminder[] = [];
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const today = pace(times, nowMin, goal, eaten);
+  const timesOn = (day: Date) => (typeof times === "function" ? times(day) : times);
+  const today = pace(timesOn(now), nowMin, goal, eaten);
   for (const s of today.slots) {
     if (s.past || s.target < 50) continue;
     const behind = today.behind > 150 ? ` You're ${fmt(today.behind)} kcal behind, so this one's bigger.` : "";
@@ -152,10 +153,10 @@ export function reminders(
       body: `Aim for about ${fmt(s.target)} kcal and ${s.protein} g protein.${behind}`,
     });
   }
-  const plan = pace(times, -1, goal, { cals: 0, protein: 0 });
   for (let d = 1; d < days; d++) {
     const day = new Date(now);
     day.setDate(day.getDate() + d);
+    const plan = pace(timesOn(day), -1, goal, { cals: 0, protein: 0 });
     for (const s of plan.slots) {
       out.push({
         id: `${d}-${s.time}`,

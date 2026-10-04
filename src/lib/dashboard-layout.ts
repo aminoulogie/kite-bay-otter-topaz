@@ -389,6 +389,7 @@ export const WIDGETS_BY_TAB: Record<string, WidgetDef[]> = {
   ],
   workout: [
     { id: "header", label: "Session header", size: "2x4" },
+    { id: "time", label: "Workout time", size: "2x4" },
     { id: "date", label: "The date", size: "1x4", sizes: FURNITURE },
     { id: "quick", label: "Undo / Save", size: "1x4", sizes: FURNITURE },
     { id: "session", label: "Rest timer", size: "2x4" },

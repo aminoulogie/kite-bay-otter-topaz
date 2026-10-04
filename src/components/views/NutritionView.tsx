@@ -420,6 +420,7 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
         eaten={{ cals: totals.cals, protein: totals.p }}
         goal={{ cals: goalCals, protein: goals.protein }}
         isToday={activeDate === getLocalDateKey()}
+        date={activeDate}
       />
       <SuggestFromPantry key="suggest" meal={meal} target={planTarget} />
 

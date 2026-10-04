@@ -86,6 +86,8 @@ export interface SessionExercise {
   mealTimes?: { label: string; time: string; share: number }[];
   /** Notifications at each meal time with how much to eat. */
   mealReminders?: boolean;
+  /** When you train; read by Train, the Time tab and Fuel. See lib/workout-time.ts. */
+  workoutTime?: { time: string; mins: number; days?: Partial<Record<number, string>>; dates?: Record<string, string> };
   barWeight: number;
   supersetGroup: string;
   sets: WorkoutSet[];
@@ -476,6 +478,8 @@ export interface Settings {
   mealTimes?: { label: string; time: string; share: number }[];
   /** Notifications at each meal time with how much to eat. */
   mealReminders?: boolean;
+  /** When you train; read by Train, the Time tab and Fuel. See lib/workout-time.ts. */
+  workoutTime?: { time: string; mins: number; days?: Partial<Record<number, string>>; dates?: Record<string, string> };
   barWeight: number;
   restDefault: number;
   autoRest: boolean;

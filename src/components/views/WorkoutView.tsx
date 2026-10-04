@@ -29,6 +29,7 @@ import { isRestSplit } from "@/lib/programs";
 import { sessionBurn } from "@/lib/training-burn";
 import { latestWeight } from "@/lib/rings";
 import type { SessionExercise } from "@/lib/types";
+import { WorkoutTimeCard } from "@/components/WorkoutTimeCard";
 
 const SUPERSET_COLOR: Record<string, string> = {
   A: "var(--color-accent)",
@@ -468,6 +469,7 @@ export function WorkoutView() {
       </Card>
       </Sized>
 
+      <WorkoutTimeCard key="time" />
       <div key="date" className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <Button size="icon" variant="ghost" onClick={undo} aria-label="Undo">

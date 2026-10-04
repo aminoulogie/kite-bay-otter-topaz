@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Bell, BellOff, Check, Clock, Plus, X } from "lucide-react";
+import { Bell, BellOff, Check, Clock, Dumbbell, Plus, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Glance, isGlance } from "@/components/Glance";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { DEFAULT_MEAL_TIMES, cleanTimes, pace, type MealTime } from "@/lib/meal-pace";
 import { useSoma } from "@/lib/store";
+import { usePlannedSession } from "@/lib/use-workout-slot";
+import { mealsAround } from "@/lib/workout-time";
 import { cn } from "@/lib/utils";
 
 const fmt = (n: number) => Math.round(n).toLocaleString("en-US");
@@ -24,18 +26,20 @@ function useMinuteNow(): Date {
  * holding the whole day.
  */
 export function MealPace({
-  eaten, goal, isToday,
+  eaten, goal, isToday, date,
 }: {
   eaten: { cals: number; protein: number };
   goal: { cals: number; protein: number };
   isToday: boolean;
+  date: string;
 }) {
   const settings = useSoma((s) => s.settings);
   const patchSettings = useSoma((s) => s.patchSettings);
   const [editing, setEditing] = useState(false);
   const now = useMinuteNow();
   const nowMin = isToday ? now.getHours() * 60 + now.getMinutes() : -1;
-  const p = pace(settings.mealTimes, nowMin, goal, eaten);
+  const session = usePlannedSession(date);
+  const p = pace(mealsAround(settings.mealTimes, session.slot), nowMin, goal, eaten);
   const reminders = settings.mealReminders !== false;
 
   const status =
@@ -106,8 +110,12 @@ export function MealPace({
               </p>
               <p className="mt-0.5 font-display text-xl font-extrabold tabular">
                 {fmt(p.next.target)} <span className="text-sm text-muted">kcal</span>
-                <span className="ml-2 text-base">{p.next.protein}</span>
-                <span className="text-sm text-muted"> g protein</span>
+                {p.next.protein > 0 && (
+                  <>
+                    <span className="ml-2 text-base">{p.next.protein}</span>
+                    <span className="text-sm text-muted"> g protein</span>
+                  </>
+                )}
               </p>
             </div>
           )}
@@ -127,7 +135,10 @@ export function MealPace({
                   className={cn("flex items-center gap-3 rounded-xl px-2.5 py-1.5", isNext && "bg-surface-2")}
                 >
                   <span className="w-11 shrink-0 text-xs tabular text-faint">{s.time}</span>
-                  <span className={cn("flex-1 text-sm", s.past && isToday && "text-muted")}>{s.label}</span>
+                  <span className={cn("flex flex-1 items-center gap-1.5 text-sm", s.past && isToday && "text-muted")}>
+                    {s.label}
+                    {s.label.endsWith("-workout") && <Dumbbell className="size-3 text-faint" />}
+                  </span>
                   {s.past && isToday ? (
                     <Check className="size-3.5 text-faint" />
                   ) : null}
@@ -138,11 +149,12 @@ export function MealPace({
               );
             })}
           </ol>
-          {reminders && (
-            <p className="mt-2 text-[0.65rem] leading-snug text-faint">
-              You get a notification at each time with how much to eat, updated as you log.
-            </p>
-          )}
+          <p className="mt-2 text-[0.65rem] leading-snug text-faint">
+            {session.slot
+              ? `Training ${session.split} at ${session.slot.time}: pre-workout an hour before, post-workout 30 min after. Change the time in Train.`
+              : "Rest day — no pre- or post-workout meal."}
+            {reminders && " You get a notification at each time with how much to eat, updated as you log."}
+          </p>
         </>
       )}
     </Card>

@@ -21,7 +21,7 @@ export const DEFAULT_SLOT_MINUTES = 30;
 
 export interface TimelineEvent {
   id: string;
-  kind: "todo" | "workout";
+  kind: "todo" | "workout" | "meal";
   label: string;
   start: number;
   end: number;
@@ -69,8 +69,20 @@ export function eventsFor(
   date: string,
   todos: readonly TodoItem[],
   session?: HistorySession | null,
+  planned?: { start: number; end: number; split: string } | null,
 ): TimelineEvent[] {
   const out: TimelineEvent[] = [];
+  if (planned) {
+    // The planned session, and the meals that go with it (lib/workout-time).
+    // A session already saved for the day replaces the planned one.
+    if (!session?.timestamp) {
+      out.push({ id: "workout-plan", kind: "workout", label: `Workout · ${planned.split}`, start: planned.start, end: planned.end, done: false });
+    }
+    const pre = Math.max(0, planned.start - 60);
+    out.push({ id: "meal-pre", kind: "meal", label: "Pre-workout meal", start: pre, end: pre + 20 });
+    const post = Math.min(DAY_MINUTES - 20, planned.end + 30);
+    out.push({ id: "meal-post", kind: "meal", label: "Post-workout meal", start: post, end: post + 20 });
+  }
   for (const t of todos) {
     if (!t.slot || t.slot.date !== date) continue;
     const slot = cleanSlot(t.slot);
