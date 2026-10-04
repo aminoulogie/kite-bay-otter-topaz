@@ -335,3 +335,16 @@
 .ws-paper .sev.medium { background: #f0a63c; }
 .ws-paper .sev.low { background: #8a929c; }
 .ws-kpi span.ws-pill { display: inline-flex; }
+
+/* Charts */
+.ws-chart { position: relative; width: 100%; }
+.ws-chart svg { display: block; overflow: visible; }
+.ws-chart .grid { stroke: var(--ws-line); stroke-width: 1; }
+.ws-chart .axis { fill: var(--ws-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ws-chart .goal { stroke: var(--ws-muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.ws-chart .goal-label { fill: var(--ws-muted); }
+.ws-chart .cross { stroke: var(--ws-line-2); stroke-width: 1; }
+.ws-tip { position: absolute; pointer-events: none; width: 140px; padding: 7px 9px; background: var(--ws-panel-2); border: 1px solid var(--ws-line-2); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); display: grid; gap: 1px; font-size: 12px; z-index: 5; }
+.ws-tip b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.ws-tip span { color: var(--ws-muted); }
+.ws-chart-card { padding: 12px 14px 8px; }

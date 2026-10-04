@@ -9,6 +9,7 @@ import {
   Timer,
   Dumbbell,
   FolderKanban,
+  HeartPulse,
   Gauge,
   LayoutGrid,
   LayoutPanelLeft,
@@ -44,6 +45,7 @@ import { MoneyPage } from "./MoneyPage";
 import { TimePage } from "./TimePage";
 import { ReportsPage } from "./ReportsPage";
 import { FindingsPage } from "./FindingsPage";
+import { HealthPage } from "./HealthPage";
 import { TopTimer } from "./Timer";
 import { projectStats } from "./metrics";
 
@@ -55,6 +57,7 @@ export type PageId =
   | "tracking"
   | "reports"
   | "findings"
+  | "health"
   | "time"
   | "money"
   | "moneyClassic"
@@ -84,6 +87,7 @@ const PAGES: PageDef[] = [
   { id: "reports", label: "Reports", icon: FileText, group: "Workspace" },
   { id: "time", label: "Day planner", icon: CalendarDays, group: "Personal" },
   { id: "moneyClassic", label: "Money goals & insights", icon: PiggyBank, group: "Personal" },
+  { id: "health", label: "Health", icon: HeartPulse, group: "Personal" },
   { id: "home", label: "Today", icon: LayoutGrid, group: "Personal" },
   { id: "train", label: "Training", icon: Dumbbell, group: "Personal" },
   { id: "fuel", label: "Nutrition", icon: Utensils, group: "Personal" },
@@ -280,6 +284,7 @@ export function Workstation() {
           {page === "money" && <MoneyPage />}
           {page === "tracking" && <TimePage />}
           {page === "reports" && <ReportsPage />}
+          {page === "health" && <HealthPage onGo={go} />}
           {page === "findings" && <FindingsPage openId={openFinding} onOpen={setOpenFinding} />}
           {Classic && (
             <div className="ws-classic soma-main">
