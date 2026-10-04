@@ -69,11 +69,37 @@ export interface Pace {
  * whatever is left of the goal in proportion to their own shares — which is
  * the plan exactly when you are on track, and the catch-up when you are not.
  */
+/**
+ * Protein is spread EVENLY, not by calories.
+ *
+ * Muscle protein synthesis answers each feed separately and tops out around
+ * 0.4 g/kg per meal (Schoenfeld & Aragon 2018), so 4×30 g beats 2×60 g
+ * (Areta 2013). The last meal of the day gets a third more — a ~40 g dose
+ * before sleep keeps synthesis up overnight (Res 2012, Snijders 2015).
+ */
+export const PROTEIN_PER_MEAL_G_PER_KG = 0.4;
+const PRE_SLEEP_WEIGHT = 1.3;
+
+function proteinWeights(list: MealTime[]): number[] {
+  return list.map((_, i) => (i === list.length - 1 && list.length > 1 ? PRE_SLEEP_WEIGHT : 1));
+}
+
+/** The dose per meal that maxes out synthesis, for a bodyweight in kg. */
+export function optimalProteinPerMeal(kg: number): number {
+  return Math.round((kg > 0 ? kg : 75) * PROTEIN_PER_MEAL_G_PER_KG);
+}
+
 export function pace(
   times: MealTime[] | undefined,
   nowMin: number,
   goal: { cals: number; protein: number },
   eaten: { cals: number; protein: number },
+  /**
+   * The per-meal dose (optimalProteinPerMeal). Meals still to come never drop
+   * below it — each feed builds muscle on its own, so a day's total already
+   * reached is no reason to skip protein in the next meal.
+   */
+  minProtein = 0,
 ): Pace {
   const list = cleanTimes(times);
   const total = list.reduce((a, t) => a + t.share, 0);
@@ -82,8 +108,12 @@ export function pace(
   const leftCals = Math.max(0, goal.cals - eaten.cals);
   const leftProtein = Math.max(0, goal.protein - eaten.protein);
 
+  const pw = proteinWeights(list);
+  const pwTotal = pw.reduce((a, w) => a + w, 0);
+  const pwUp = list.reduce((a, t, i) => a + (minutesOf(t.time) > nowMin ? pw[i]! : 0), 0);
+
   let due = 0;
-  const slots: MealSlot[] = list.map((t) => {
+  const slots: MealSlot[] = list.map((t, i) => {
     const past = minutesOf(t.time) <= nowMin;
     const planned = Math.round((goal.cals * t.share) / total);
     if (past) due += planned;
@@ -93,7 +123,12 @@ export function pace(
       time: t.time,
       planned,
       target: past ? planned : Math.round(leftCals * part),
-      protein: past ? Math.round((goal.protein * t.share) / total) : Math.round(leftProtein * part),
+      protein: past
+        ? Math.round((goal.protein * pw[i]!) / pwTotal)
+        : Math.max(
+            Math.round(minProtein * pw[i]!),
+            pwUp > 0 ? Math.round((leftProtein * pw[i]!) / pwUp) : 0,
+          ),
       past,
     };
   });
@@ -138,11 +173,12 @@ export function reminders(
   goal: { cals: number; protein: number },
   eaten: { cals: number; protein: number },
   days = 7,
+  minProtein = 0,
 ): Reminder[] {
   const out: Reminder[] = [];
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const timesOn = (day: Date) => (typeof times === "function" ? times(day) : times);
-  const today = pace(timesOn(now), nowMin, goal, eaten);
+  const today = pace(timesOn(now), nowMin, goal, eaten, minProtein);
   for (const s of today.slots) {
     if (s.past || s.target < 50) continue;
     const behind = today.behind > 150 ? ` You're ${fmt(today.behind)} kcal behind, so this one's bigger.` : "";
@@ -156,7 +192,7 @@ export function reminders(
   for (let d = 1; d < days; d++) {
     const day = new Date(now);
     day.setDate(day.getDate() + d);
-    const plan = pace(timesOn(day), -1, goal, { cals: 0, protein: 0 });
+    const plan = pace(timesOn(day), -1, goal, { cals: 0, protein: 0 }, minProtein);
     for (const s of plan.slots) {
       out.push({
         id: `${d}-${s.time}`,

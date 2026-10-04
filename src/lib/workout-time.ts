@@ -63,7 +63,7 @@ export function workoutSlot(date: string, s: WorkoutTimeSettings | undefined, is
 /**
  * The day's eating times with the session in them.
  *
- * Any meal that would land from 90 minutes before the session to an hour
+ * Any meal that would land from two hours before the session to an hour
  * after it is taken out — nobody eats dinner mid-set — and its share goes to
  * a Pre-workout meal an hour before (40%) and a Post-workout meal half an
  * hour after (60%), never less than 10% and 15% of the day.
@@ -71,7 +71,9 @@ export function workoutSlot(date: string, s: WorkoutTimeSettings | undefined, is
 export function mealsAround(times: MealTime[] | undefined, slot: WorkoutSlot | null): MealTime[] {
   const list = cleanTimes(times);
   if (!slot) return list;
-  const from = slot.start - 90;
+  // Two hours out: a snack an hour before the pre-workout meal is the same
+  // feed twice, and protein spaced under ~3 h apart does less (Areta 2013).
+  const from = slot.start - 120;
   const to = slot.end + 60;
   const kept: MealTime[] = [];
   let moved = 0;

@@ -19,12 +19,12 @@ test("rest days have no session unless one is set for the date", () => {
 test("meals around an evening session", () => {
   const slot = workoutSlot("2026-10-05", { time: "18:00", mins: 75 }, false);
   const meals = mealsAround(DEFAULT_MEAL_TIMES, slot);
-  // Dinner 19:30 falls inside 16:30–20:15 and makes way.
+  // The 16:00 snack and 19:30 dinner fall inside 16:00–20:15 and make way.
   assert.deepEqual(meals.map((m) => `${m.time} ${m.label}`), [
-    "08:30 Breakfast", "12:30 Lunch", "16:00 Snack", "17:00 Pre-workout", "19:45 Post-workout", "21:30 Evening",
+    "08:30 Breakfast", "12:30 Lunch", "17:00 Pre-workout", "19:45 Post-workout", "21:30 Evening",
   ]);
-  assert.equal(meals.find((m) => m.label === "Pre-workout")?.share, 10);
-  assert.equal(meals.find((m) => m.label === "Post-workout")?.share, 15);
+  assert.equal(meals.find((m) => m.label === "Pre-workout")?.share, 16);
+  assert.equal(meals.find((m) => m.label === "Post-workout")?.share, 24);
 });
 
 test("no session leaves the meals alone", () => {

@@ -3,7 +3,8 @@ import { Bell, BellOff, Check, Clock, Dumbbell, Plus, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Glance, isGlance } from "@/components/Glance";
 import { useWidgetSize } from "@/components/WidgetGrid";
-import { DEFAULT_MEAL_TIMES, cleanTimes, pace, type MealTime } from "@/lib/meal-pace";
+import { DEFAULT_MEAL_TIMES, cleanTimes, optimalProteinPerMeal, pace, type MealTime } from "@/lib/meal-pace";
+import { latestWeight } from "@/lib/rings";
 import { useSoma } from "@/lib/store";
 import { usePlannedSession } from "@/lib/use-workout-slot";
 import { mealsAround } from "@/lib/workout-time";
@@ -38,8 +39,12 @@ export function MealPace({
   const [editing, setEditing] = useState(false);
   const now = useMinuteNow();
   const nowMin = isToday ? now.getHours() * 60 + now.getMinutes() : -1;
+  const nutrition = useSoma((s) => s.nutrition);
+  const [why, setWhy] = useState(false);
+  const kg = latestWeight(nutrition);
+  const dose = optimalProteinPerMeal(kg);
   const session = usePlannedSession(date);
-  const p = pace(mealsAround(settings.mealTimes, session.slot), nowMin, goal, eaten);
+  const p = pace(mealsAround(settings.mealTimes, session.slot), nowMin, goal, eaten, dose);
   const reminders = settings.mealReminders !== false;
 
   const status =
@@ -120,6 +125,19 @@ export function MealPace({
             </div>
           )}
 
+          {(() => {
+            const low = p.slots.filter((x) => !x.past || !isToday).some((x) => x.protein < dose - 2);
+            return (
+              <p className="mt-2 text-xs text-muted">
+                <span className={cn("font-bold", low ? "text-warn" : "text-emerald-400")}>
+                  {low ? "Some meals under" : "Every meal hits"} {dose} g protein
+                </span>{" "}
+                — the dose that maxes out muscle building per meal (0.4 g/kg{kg ? ` at ${kg} kg` : ", 75 kg assumed"}).
+                {low && " Fewer, bigger protein meals would do more."}
+              </p>
+            );
+          })()}
+
           {isToday && (
             <p className={cn("mt-2 text-xs font-bold", status.tone === "warn" ? "text-warn" : "text-muted")}>
               {status.text} · {fmt(eaten.cals)} eaten, {fmt(p.due)} due by now
@@ -144,11 +162,31 @@ export function MealPace({
                   ) : null}
                   <span className={cn("w-24 text-right text-sm tabular", isNext ? "font-bold" : "text-muted")}>
                     {fmt(s.target)} kcal
+                    <span className={cn("block text-[0.65rem] font-normal", !(s.past && isToday) && s.protein < dose - 2 ? "text-warn" : "text-faint")}>
+                      {s.protein} g protein
+                    </span>
                   </span>
                 </li>
               );
             })}
           </ol>
+          <button
+            type="button"
+            onClick={() => setWhy((w) => !w)}
+            className="mt-3 text-xs font-bold text-muted underline decoration-dotted underline-offset-2"
+          >
+            {why ? "Hide the research" : "Why this split?"}
+          </button>
+          {why && (
+            <ul className="mt-2 space-y-1.5 text-[0.7rem] leading-snug text-muted">
+              <li><b className="text-fg">Protein evenly, not with calories.</b> Muscle building answers each meal on its own and tops out near 0.4 g/kg per meal (Schoenfeld &amp; Aragon 2018). Four even feeds every 3–4 h beat two big ones or many small ones (Areta 2013).</li>
+              <li><b className="text-fg">A bigger dose before bed.</b> About 40 g in the last meal keeps synthesis going overnight (Res 2012, Snijders 2015) — slow protein like cottage cheese, Greek yoghurt or casein.</li>
+              <li><b className="text-fg">Catching up still counts.</b> A large single dose is used, just over more hours (Trommelen 2023), so a bigger meal after a missed one is not wasted.</li>
+              <li><b className="text-fg">Around training.</b> Carbs 1–4 h before fuel the session; 0.4 g/kg protein within a few hours either side covers recovery (ISSN nutrient timing, 2017). No meal sits within 2 h before the pre-workout one, so feeds stay ~3 h apart.</li>
+              <li><b className="text-fg">The calorie split itself matters least.</b> With the same daily total, how many meals and when has little effect on muscle or fat (Schoenfeld 2015 meta-analysis). Front-loading mostly helps appetite (Ruddick-Collins 2022). What decides a bulk is hitting the total — which is what the times and reminders are for.</li>
+            </ul>
+          )}
+
           <p className="mt-2 text-[0.65rem] leading-snug text-faint">
             {session.slot
               ? `Training ${session.split} at ${session.slot.time}: pre-workout an hour before, post-workout 30 min after. Change the time in Train.`

@@ -36,3 +36,16 @@ test("reminders skip today's past meals and nothing once the goal is met", () =>
   const full = reminders(DEFAULT_MEAL_TIMES, now, GOAL, { cals: 3300, protein: 180 }, 1);
   assert.equal(full.length, 0);
 });
+
+test("protein is spread evenly, with a bigger pre-sleep dose", () => {
+  const p = pace(DEFAULT_MEAL_TIMES, 7 * 60, GOAL, { cals: 0, protein: 0 });
+  // 170 g over weights 1,1,1,1,1.3 = 5.3.
+  assert.deepEqual(p.slots.map((s) => s.protein), [32, 32, 32, 32, 42]);
+  const late = pace(DEFAULT_MEAL_TIMES, 13 * 60, GOAL, { cals: 0, protein: 0 });
+  assert.deepEqual(late.slots.filter((s) => !s.past).map((s) => s.protein), [52, 52, 67]);
+});
+
+test("meals to come keep the per-meal dose even once the day's protein is in", () => {
+  const p = pace(DEFAULT_MEAL_TIMES, 13 * 60, GOAL, { cals: 1500, protein: 180 }, 32);
+  assert.deepEqual(p.slots.filter((s) => !s.past).map((s) => s.protein), [32, 32, 42]);
+});

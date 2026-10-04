@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { reminders } from "@/lib/meal-pace";
+import { optimalProteinPerMeal, reminders } from "@/lib/meal-pace";
+import { latestWeight } from "@/lib/rings";
 import { sessionOn } from "@/lib/use-workout-slot";
 import { mealsAround } from "@/lib/workout-time";
 import { clearMealReminders, scheduleMealReminders } from "@/lib/native/meal-reminders";
@@ -37,7 +38,7 @@ export function MealReminderSync() {
         { cals: 0, protein: 0 },
       );
       void scheduleMealReminders(
-        reminders((d) => mealsAround(settings.mealTimes, sessionOn(getLocalDateKey(d)).slot), new Date(), { cals: goals.cals + burn, protein: goals.protein }, eaten),
+        reminders((d) => mealsAround(settings.mealTimes, sessionOn(getLocalDateKey(d)).slot), new Date(), { cals: goals.cals + burn, protein: goals.protein }, eaten, 7, optimalProteinPerMeal(latestWeight(nutrition))),
       );
     };
     const t = window.setTimeout(sync, 1500);
