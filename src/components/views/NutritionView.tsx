@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Droplet, NotebookPen, Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
+import { Droplet, Lock, NotebookPen, Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { PortionSheet } from "@/components/PortionSheet";
@@ -812,10 +812,11 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
         })}>
       <div className="space-y-3">
       {/* The gesture is invisible without this. */}
-      {items.length > 0 && (
+      {(items.length > 0 || planned.length > 0) && (
         <p className="px-1 text-[0.62rem] leading-snug text-faint">
-          Tap a food to edit it. Swipe left to delete, right to gray it out (not eaten yet) — a gray one swipes right to count it. Press and hold, then drag it onto
-          another meal to move it there.
+          Food you log today waits gray — swipe it right once you have eaten it. That swipe times the meal
+          (on time, late or skipped) and locks the food: it cannot be edited, deleted or un-eaten after.
+          Gray food can still be edited, or swiped left to delete.
         </p>
       )}
 
@@ -906,7 +907,14 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
                   </SwipeRow>
                 ))}
 
-                {group.map(({ it, idx }) => (
+                {group.map(({ it, idx }) => it.eatenAt ? (
+                  // Confirmed and timed: final. No swipe, no edit, no delete.
+                  <FoodRow
+                    key={idx}
+                    item={it}
+                    onEdit={() => toast(`${it.name} is locked — eaten at ${clockOf(it.eatenAt!)}`)}
+                  />
+                ) : (
                   <SwipeRow
                     key={idx}
                     id={String(idx)}
@@ -1208,6 +1216,11 @@ function RepeatMeal({ meal }: { meal: string }) {
   );
 }
 
+function clockOf(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 function FoodRow({
   item, onEdit, held, dragHandlers, planned,
 }: {
@@ -1250,6 +1263,11 @@ function FoodRow({
           {item.serving}
           {item.unit}
           {item.waterMl ? <span className="text-info"> · {item.waterMl} ml water</span> : null}
+          {item.eatenAt ? (
+            <span className="text-emerald-400/80"> · eaten {clockOf(item.eatenAt)}</span>
+          ) : item.loggedAt ? (
+            <span> · logged {clockOf(item.loggedAt)} — swipe right once eaten</span>
+          ) : null}
         </div>
         <MacroStrip
           className="mt-1"
@@ -1260,7 +1278,7 @@ function FoodRow({
           dim={planned}
         />
       </div>
-      <Pencil className="size-4 shrink-0 text-faint" />
+      {item.eatenAt ? <Lock className="size-4 shrink-0 text-faint" /> : <Pencil className="size-4 shrink-0 text-faint" />}
     </button>
   );
 }

@@ -5,6 +5,7 @@ import { Glance, isGlance } from "@/components/Glance";
 import { useWidgetSize } from "@/components/WidgetGrid";
 import { DEFAULT_MEAL_TIMES, cleanTimes, optimalProteinPerMeal, pace, type MealTime } from "@/lib/meal-pace";
 import { latestWeight } from "@/lib/rings";
+import { verdictKey } from "@/lib/meal-verdict";
 import { useSoma } from "@/lib/store";
 import { usePlannedSession } from "@/lib/use-workout-slot";
 import { mealsAround } from "@/lib/workout-time";
@@ -43,6 +44,7 @@ export function MealPace({
   const [why, setWhy] = useState(false);
   const kg = latestWeight(nutrition);
   const dose = optimalProteinPerMeal(kg);
+  const verdicts = nutrition[date]?.mealVerdicts ?? {};
   const session = usePlannedSession(date);
   const p = pace(mealsAround(settings.mealTimes, session.slot), nowMin, goal, eaten, dose);
   const reminders = settings.mealReminders !== false;
@@ -147,18 +149,36 @@ export function MealPace({
           <ol className="mt-3 space-y-1">
             {p.slots.map((s) => {
               const isNext = isToday && p.next?.time === s.time;
+              const v = verdicts[verdictKey(s)];
               return (
                 <li
                   key={s.time + s.label}
-                  className={cn("flex items-center gap-3 rounded-xl px-2.5 py-1.5", isNext && "bg-surface-2")}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-2.5 py-1.5",
+                    isNext && "bg-surface-2",
+                    v?.status === "skipped" && "bg-red-500/10",
+                  )}
                 >
                   <span className="w-11 shrink-0 text-xs tabular text-faint">{s.time}</span>
-                  <span className={cn("flex flex-1 items-center gap-1.5 text-sm", s.past && isToday && "text-muted")}>
+                  <span className={cn("flex flex-1 items-center gap-1.5 text-sm", s.past && isToday && "text-muted", v?.status === "skipped" && "text-red-400")}>
                     {s.label}
                     {s.label.endsWith("-workout") && <Dumbbell className="size-3 text-faint" />}
                   </span>
-                  {s.past && isToday ? (
-                    <Check className="size-3.5 text-faint" />
+                  {v ? (
+                    <span
+                      className={cn(
+                        "flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-[0.65rem] font-bold",
+                        v.status === "ontime" && "bg-emerald-500/15 text-emerald-400",
+                        v.status === "late" && "bg-orange-500/15 text-orange-400",
+                        v.status === "skipped" && "bg-red-500/15 text-red-400",
+                      )}
+                      title={`${v.kcal} of ${v.target} kcal`}
+                    >
+                      {v.status === "ontime" && <Check className="size-3" />}
+                      {v.status === "ontime" ? "On time" : v.status === "late" ? "Late" : "Skipped"}
+                    </span>
+                  ) : s.past && isToday ? (
+                    <span className="shrink-0 text-[0.65rem] text-faint">open</span>
                   ) : null}
                   <span className={cn("w-24 text-right text-sm tabular", isNext ? "font-bold" : "text-muted")}>
                     {fmt(s.target)} kcal

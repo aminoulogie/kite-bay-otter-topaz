@@ -369,6 +369,8 @@ export interface SomaStore {
   removePlanned: (idx: number, date?: string) => void;
   restorePlanned: (idx: number, item: FoodItem, date?: string) => void;
   removeFood: (idx: number) => void;
+  /** Record meal verdicts. Only keys not already there are written: a verdict is final. */
+  lockMealVerdicts: (date: string, verdicts: Record<string, import("./meal-verdict.ts").MealVerdict>) => void;
   restoreFood: (idx: number, item: FoodItem, date?: string) => void;
   addWater: (ml: number) => void;
   setWater: (ml: number) => void;
@@ -1165,9 +1167,16 @@ export const useSoma = create<SomaStore>()(
         const k = get().activeDate;
         get().ensureDay(k);
         const day = get().nutrition[k]!;
-        get().patchDay(k, { items: [...day.items, item] });
-        // Eaten, so it leaves the cupboard. Planning does not — see planFood.
-        get().takeFromPantry(item, k);
+        if (k === getLocalDateKey(new Date())) {
+          // Logged today: it waits grey, stamped with when it was logged,
+          // until a swipe confirms it was eaten — that swipe is what times the
+          // meal (see confirmPlanned and lib/meal-verdict.ts).
+          get().patchDay(k, { planned: [...(day.planned ?? []), { ...item, loggedAt: Date.now() }] });
+        } else {
+          get().patchDay(k, { items: [...day.items, item] });
+          // Eaten, so it leaves the cupboard. Planning does not — see planFood.
+          get().takeFromPantry(item, k);
+        }
 
         // Count the logging. `usageCount` is read by the search tie-break and
         // by the pre-workout picker, and nothing had ever incremented it — so
@@ -1187,7 +1196,16 @@ export const useSoma = create<SomaStore>()(
         const k = get().activeDate;
         const day = get().nutrition[k];
         if (!day) return;
+        if (day.items[idx]?.eatenAt) return; // confirmed and timed: locked
         get().patchDay(k, { items: day.items.filter((_, i) => i !== idx) });
+      },
+      lockMealVerdicts: (date, verdicts) => {
+        const day = get().nutrition[date];
+        if (!day) return;
+        const have = day.mealVerdicts ?? {};
+        const fresh = Object.entries(verdicts).filter(([key]) => !have[key]);
+        if (!fresh.length) return;
+        get().patchDay(date, { mealVerdicts: { ...have, ...Object.fromEntries(fresh) } });
       },
 
       /**
@@ -1212,9 +1230,11 @@ export const useSoma = create<SomaStore>()(
         if (!day || !item) return;
         // Removed from the plan in the same patch that adds it to the intake.
         // Two patches would leave a frame where the food is in both, and the
-        // day score reads the store on every change.
+        // day score reads the store on every change. Confirmed today, it is
+        // stamped with when — the time the meal verdicts read.
+        const eaten = k === getLocalDateKey(new Date()) ? { ...item, eatenAt: Date.now() } : item;
         get().patchDay(k, {
-          items: [...day.items, item],
+          items: [...day.items, eaten],
           planned: day.planned!.filter((_, i) => i !== idx),
         });
         get().takeFromPantry(item, k);
@@ -1224,6 +1244,7 @@ export const useSoma = create<SomaStore>()(
         const day = get().nutrition[k];
         const item = day?.items?.[idx];
         if (!day || !item) return;
+        if (item.eatenAt) return; // confirmed and timed: locked
         // One patch, for the same reason as confirmPlanned.
         get().patchDay(k, {
           items: day.items.filter((_, i) => i !== idx),
@@ -1237,7 +1258,9 @@ export const useSoma = create<SomaStore>()(
         const k = date ?? get().activeDate;
         const day = get().nutrition[k];
         if (!day?.planned?.length) return;
-        const eaten = day.planned;
+        const now = Date.now();
+        const today = k === getLocalDateKey(new Date());
+        const eaten = day.planned.map((it) => (today ? { ...it, eatenAt: now } : it));
         get().patchDay(k, { items: [...day.items, ...eaten], planned: [] });
         for (const item of eaten) get().takeFromPantry(item, k);
       },
@@ -1723,7 +1746,7 @@ export const useSoma = create<SomaStore>()(
       updateFood: (idx, item) => {
         const k = get().activeDate;
         const items = [...(get().nutrition[k]?.items || [])];
-        if (!items[idx]) return;
+        if (!items[idx] || items[idx]!.eatenAt) return; // locked once confirmed
         items[idx] = item;
         get().patchDay(k, { items });
       },

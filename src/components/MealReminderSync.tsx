@@ -1,10 +1,11 @@
 import { useEffect } from "react";
-import { optimalProteinPerMeal, reminders } from "@/lib/meal-pace";
+import { optimalProteinPerMeal, pace, reminders } from "@/lib/meal-pace";
+import { judge } from "@/lib/meal-verdict";
 import { latestWeight } from "@/lib/rings";
 import { sessionOn } from "@/lib/use-workout-slot";
 import { mealsAround } from "@/lib/workout-time";
 import { clearMealReminders, scheduleMealReminders } from "@/lib/native/meal-reminders";
-import { DEFAULT_GOALS, getLocalDateKey } from "@/lib/soma";
+import { DEFAULT_GOALS, addDays, getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { eatBack, sessionBurn } from "@/lib/training-burn";
 
@@ -51,6 +52,49 @@ export function MealReminderSync() {
       document.removeEventListener("visibilitychange", onShow);
     };
   }, [nutrition, history, settings.mealTimes, settings.mealReminders, settings.eatBackTraining, settings.workoutTime, settings.scheduleOverrides, programs, activeProgramId]);
+
+  // Meal verdicts: judged every minute, and when food is confirmed. Written
+  // once each (lockMealVerdicts never overwrites), so they are final.
+  const lockMealVerdicts = useSoma((s) => s.lockMealVerdicts);
+  useEffect(() => {
+    const run = () => {
+      const st = useSoma.getState();
+      const now = new Date();
+      // Food logged before this existed has no eaten time; judging those
+      // meals would mark them skipped when they were not.
+      const since = st.settings.mealVerdictsSince;
+      if (!since) {
+        st.patchSettings({ mealVerdictsSince: now.getTime() });
+        return;
+      }
+      const today = getLocalDateKey(now);
+      const yesterday = getLocalDateKey(addDays(now, -1));
+      for (const date of [yesterday, today]) {
+        const day = st.nutrition[date];
+        if (!day) continue;
+        const goals = day.goals || DEFAULT_GOALS;
+        const burn = eatBack(sessionBurn(st.history[date], day.bodyWeight || undefined), st.settings.eatBackTraining !== false);
+        const slots = pace(
+          mealsAround(st.settings.mealTimes, sessionOn(date, st).slot),
+          -1,
+          { cals: goals.cals + burn, protein: goals.protein },
+          { cals: 0, protein: 0 },
+        ).slots;
+        const nowMin = date === today ? now.getHours() * 60 + now.getMinutes() : 1440;
+        const v = judge(date, slots, day.items || [], nowMin, now.getTime());
+        for (const [key, verdict] of Object.entries(v)) {
+          const [h, m] = verdict.time.split(":").map(Number);
+          const opened = new Date(`${date}T00:00:00`);
+          opened.setHours(h ?? 0, (m ?? 0) - 60, 0, 0);
+          if (opened.getTime() < since) delete v[key];
+        }
+        if (Object.keys(v).length) lockMealVerdicts(date, v);
+      }
+    };
+    run();
+    const id = window.setInterval(run, 60_000);
+    return () => window.clearInterval(id);
+  }, [nutrition, settings.mealTimes, settings.workoutTime, lockMealVerdicts]);
 
   return null;
 }

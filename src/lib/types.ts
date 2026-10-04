@@ -86,6 +86,8 @@ export interface SessionExercise {
   mealTimes?: { label: string; time: string; share: number }[];
   /** Notifications at each meal time with how much to eat. */
   mealReminders?: boolean;
+  /** When meal verdicts started (epoch ms). Meals whose window opened before it are never judged. */
+  mealVerdictsSince?: number;
   /** When you train; read by Train, the Time tab and Fuel. See lib/workout-time.ts. */
   workoutTime?: { time: string; mins: number; days?: Partial<Record<number, string>>; dates?: Record<string, string> };
   barWeight: number;
@@ -141,6 +143,14 @@ export interface Goals {
 }
 
 export interface FoodItem {
+  /** When it was logged (epoch ms). Logged today, it waits grey until confirmed. */
+  loggedAt?: number;
+  /**
+   * When it was confirmed as eaten (epoch ms). Set once, by the swipe, and
+   * from then on the item is locked: it cannot be un-confirmed, edited or
+   * deleted — the meal-time verdicts are built on it. See lib/meal-verdict.ts.
+   */
+  eatenAt?: number;
   name: string;
   serving: number;
   unit: string;
@@ -255,6 +265,8 @@ export interface NutritionDay {
    * Confirming moves the item across. Nothing is ever in both.
    */
   planned?: FoodItem[];
+  /** Each meal time's verdict, written once and never changed. See lib/meal-verdict.ts. */
+  mealVerdicts?: Record<string, import("./meal-verdict.ts").MealVerdict>;
   sleep?: SleepLog;
   measurements?: Record<string, number>;
   readiness?: ReadinessCheckin;
@@ -478,6 +490,8 @@ export interface Settings {
   mealTimes?: { label: string; time: string; share: number }[];
   /** Notifications at each meal time with how much to eat. */
   mealReminders?: boolean;
+  /** When meal verdicts started (epoch ms). Meals whose window opened before it are never judged. */
+  mealVerdictsSince?: number;
   /** When you train; read by Train, the Time tab and Fuel. See lib/workout-time.ts. */
   workoutTime?: { time: string; mins: number; days?: Partial<Record<number, string>>; dates?: Record<string, string> };
   barWeight: number;
