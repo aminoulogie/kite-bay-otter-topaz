@@ -4,8 +4,8 @@ import { SyncEngine, type SyncMeta } from "./engine";
 /** This device's sync settings and bookkeeping. Never synced, never in a backup. */
 const META_KEY = "soma-sync-v1";
 
-/** Filled in once the relay is deployed; until then it is typed in Settings. */
-export const DEFAULT_SYNC_URL = "";
+/** The relay (server/sync), deployed by .github/workflows/sync-server.yml. Can be changed in Settings. */
+export const DEFAULT_SYNC_URL = "https://soma-sync.aminemedlassal.workers.dev";
 
 export const syncEngine = new SyncEngine({
   read: () => {
