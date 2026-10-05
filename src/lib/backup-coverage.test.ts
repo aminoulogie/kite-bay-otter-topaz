@@ -52,6 +52,8 @@ const NOT_USER_DATA: Record<string, string> = {
   "soma.tickWay": "which haptic path THIS phone plays — another phone may need a different one",
   "soma-ws-page": "which workstation page was last open on THIS computer",
   "soma-ws-projects-view": "table or board, on THIS computer",
+  "soma-sync-devices": "which app version each synced device last ran — refreshed by the next sync, and meaningless on a restored phone",
+  "soma-sync-history": "what recent syncs replaced on THIS device, kept only to undo them — a restore is its own undo",
   "soma-sync-v1": "device sync's key and bookkeeping — the recovery code must never sit in a backup file, and the bookkeeping is per device",
 };
 

@@ -5,6 +5,22 @@ import { newSecret, secretToCode } from "@/lib/sync/crypto";
 import { DEFAULT_SYNC_URL, syncEngine } from "@/lib/sync/app";
 import type { SyncMeta } from "@/lib/sync/engine";
 import { cn } from "@/lib/utils";
+import { DEVICE_LABEL, useSyncDevices } from "@/lib/sync/use-devices";
+import { fieldOf } from "@/lib/sync/records";
+import type { SyncHistoryEntry } from "@/lib/sync/engine";
+
+/** "12 changes: projects, food, todos". */
+function summary(e: SyncHistoryEntry): string {
+  const words = (f: string) =>
+    f
+      .replace(/^side/, "")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .toLowerCase()
+      .replace(/^nutrition$/, "food")
+      .replace(/^history$/, "workouts");
+  const fields = [...new Set(e.changes.map((c) => words(fieldOf(c.key))))].filter((f) => f !== "sync devices");
+  return `${e.changes.length} change${e.changes.length === 1 ? "" : "s"}${fields.length ? `: ${fields.slice(0, 4).join(", ")}${fields.length > 4 ? "…" : ""}` : ""}`;
+}
 
 function useMeta(): SyncMeta | null {
   const [meta, setMeta] = useState(() => syncEngine.meta());
@@ -24,6 +40,7 @@ const field = "w-full rounded-xl border border-border bg-surface-2 px-3 py-2 tex
  */
 export function SyncSettings() {
   const meta = useMeta();
+  const { me, devices, outdated } = useSyncDevices();
   const [mode, setMode] = useState<"idle" | "create" | "join">("idle");
   const [url, setUrl] = useState(DEFAULT_SYNC_URL);
   const [code, setCode] = useState("");
@@ -68,6 +85,33 @@ export function SyncSettings() {
                   : "Starting…"}
             </span>
           </div>
+          {outdated.length > 0 && (
+            <div className="rounded-xl border border-warn/40 bg-warn/10 p-3">
+              <p className="font-bold text-warn">
+                {outdated.map((d) => `${DEVICE_LABEL[d.kind]} (${d.version})`).join(", ")} needs updating
+              </p>
+              <p className="mt-1 text-muted">
+                Update it soon. An older version cannot see the newer kinds of data, so it leaves them alone — but
+                anything you add there that the newer version changed may not come across the way you expect.
+              </p>
+            </div>
+          )}
+          {devices.length > 0 && (
+            <div className="rounded-xl border border-border bg-surface-2 p-3">
+              <p className="mb-1 font-bold">Devices</p>
+              {devices.map((d) => (
+                <div key={d.id} className="flex justify-between gap-2">
+                  <span>
+                    {DEVICE_LABEL[d.kind] ?? "Device"}
+                    {d.id === me?.id ? " (this one)" : ""}
+                  </span>
+                  <span className={cn("tabular-nums", outdated.some((o) => o.id === d.id) ? "font-bold text-warn" : "text-muted")}>
+                    {d.version} · {d.seen}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -105,6 +149,7 @@ export function SyncSettings() {
               </p>
             </div>
           )}
+          <SyncHistory devices={devices} />
           <p className="text-faint">Server: {meta.url}</p>
         </div>
       ) : mode === "idle" ? (
@@ -167,5 +212,61 @@ export function SyncSettings() {
         </div>
       )}
     </Card>
+  );
+}
+
+/** The last syncs that changed something here, each one undoable. */
+function SyncHistory({ devices }: { devices: { id: string; kind: keyof typeof DEVICE_LABEL }[] }) {
+  const [list, setList] = useState(() => syncEngine.history());
+  const [busy, setBusy] = useState<number | null>(null);
+  useEffect(() => {
+    const on = () => setList(syncEngine.history());
+    window.addEventListener("soma-sync-meta", on);
+    return () => window.removeEventListener("soma-sync-meta", on);
+  }, []);
+  const shown = list
+    .filter((e) => e.changes.some((c) => !c.key.startsWith("syncDevices")))
+    .slice(-6)
+    .reverse();
+  if (!shown.length) return null;
+  const from = (ids: string[]) =>
+    ids.map((id) => DEVICE_LABEL[devices.find((d) => d.id === id)?.kind ?? "browser"] ?? "another device").join(", ");
+  return (
+    <div className="rounded-xl border border-border bg-surface-2 p-3">
+      <p className="mb-1 font-bold">Recent syncs</p>
+      <p className="mb-2 text-faint">
+        What came in from your other devices. Undo puts this device back the way it was and sends that to the others
+        — anything you changed since is kept.
+      </p>
+      {shown.map((e) => (
+        <div key={e.at} className="flex items-center justify-between gap-2 border-t border-border py-1.5 first:border-0">
+          <span className="min-w-0">
+            <span className="font-bold tabular-nums">
+              {new Date(e.at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}
+            </span>{" "}
+            <span className="text-muted">
+              from {from(e.from)} · {summary(e)}
+            </span>
+          </span>
+          <button
+            type="button"
+            disabled={busy !== null}
+            onClick={async () => {
+              if (!window.confirm(`Undo this sync? ${summary(e)}.`)) return;
+              setBusy(e.at);
+              try {
+                const n = await syncEngine.undo(e.at);
+                toast.success(n ? `Undone — ${n} record${n === 1 ? "" : "s"} put back` : "Nothing to undo — it was all edited since");
+              } finally {
+                setBusy(null);
+              }
+            }}
+            className="shrink-0 rounded-full border border-border bg-surface px-3 py-1 font-bold"
+          >
+            {busy === e.at ? "Undoing…" : "Undo"}
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }

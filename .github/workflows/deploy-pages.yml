@@ -69,8 +69,43 @@ jobs:
         with:
           path: .vercel/output/static
 
+  # The app in a real browser before it goes live: every workstation page in
+  # both themes, the work log, a timer and an Excel report, and two devices
+  # syncing through a local relay, programmes and undo included. A red run
+  # here keeps the live site on the last good build. See e2e/app.e2e.mjs.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Browser
+        run: npx playwright install --with-deps chromium
+      - name: Build at the site root
+        run: npx vite build && python3 scripts/stage_static.py --base ""
+      - name: Serve the build and a sync relay
+        run: |
+          python3 -m http.server 4173 --directory .vercel/output/static > static.log 2>&1 &
+          node --experimental-strip-types e2e/sync-local.ts > relay.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:4173/ >/dev/null && curl -sf http://localhost:8787/health >/dev/null && break; sleep 1; done
+      - name: Browser tests
+        env:
+          SHOTS: e2e-shots
+        run: node --test --test-concurrency=1 e2e/app.e2e.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: e2e-shots
+          retention-days: 14
+
   deploy:
-    needs: build
+    needs: [build, e2e]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

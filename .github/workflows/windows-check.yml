@@ -1,0 +1,53 @@
+name: Windows check
+
+# The real Windows app on a real Windows machine: install the published
+# SOMA-Setup.exe, start it, and walk every page through WebView2's debugging
+# port, saving a screenshot of each and failing on any page error. Runs after
+# each deploy of the site (which is what the app shows) and on demand.
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy Pages PWA"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  check:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Playwright (driver only; the app's own WebView2 is the browser)
+        run: npm install --no-save --no-audit --no-fund playwright@1
+      - name: Install SOMA
+        shell: pwsh
+        run: |
+          $u = "https://github.com/${{ github.repository }}/releases/download/windows/SOMA-Setup.exe"
+          Invoke-WebRequest $u -OutFile SOMA-Setup.exe
+          Start-Process .\SOMA-Setup.exe -ArgumentList "/S" -Wait
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\SOMA", "$env:ProgramFiles\SOMA", "$env:LOCALAPPDATA\Programs" -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch "uninstall" } | Select-Object -First 1
+          if (-not $exe) { throw "SOMA.exe not found after install" }
+          "EXE=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Start SOMA with a debugging port
+        shell: pwsh
+        run: |
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
+          Start-Process $env:EXE
+          for ($i = 0; $i -lt 60; $i++) {
+            try { Invoke-WebRequest http://localhost:9222/json/version -UseBasicParsing | Out-Null; break } catch { Start-Sleep 1 }
+          }
+      - name: Walk every page
+        env:
+          SHOTS: windows-shots
+        run: node e2e/windows.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-screenshots
+          path: windows-shots
+          retention-days: 14

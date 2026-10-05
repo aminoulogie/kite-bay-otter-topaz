@@ -42,6 +42,7 @@ import { PROJECT_COLORS } from "@/lib/projects";
 import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { syncEngine } from "@/lib/sync/app";
+import { DEVICE_LABEL, useSyncDevices } from "@/lib/sync/use-devices";
 import type { SyncMeta } from "@/lib/sync/engine";
 import { Overview } from "./Overview";
 import { ProjectsPage } from "./ProjectsPage";
@@ -56,6 +57,7 @@ import { TopClock, TopTimer } from "./Timer";
 import { WorkLogPage } from "./WorkLogPage";
 import { openShift, onBreak } from "@/lib/worklog";
 import { projectStats } from "./metrics";
+import { usePackedGrids } from "./pack";
 
 type Icon = ComponentType<{ className?: string }>;
 export type PageId =
@@ -165,6 +167,8 @@ export function Workstation() {
   const live = openShift(shifts);
   const [palette, setPalette] = useState(false);
   const sync = useSyncMeta();
+  const classicRef = useRef<HTMLDivElement>(null);
+  const { outdated } = useSyncDevices();
   const today = getLocalDateKey();
   const stats = useMemo(() => projectStats(projects, today), [projects, today]);
 
@@ -212,6 +216,7 @@ export function Workstation() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  usePackedGrids(classicRef, page);
   const def = PAGES.find((p) => p.id === page);
   const Classic = CLASSIC[page];
   const theme = settings.theme === "light" ? "light" : "dark";
@@ -358,6 +363,16 @@ export function Workstation() {
               : "Not synced"}
             {sync && <RefreshCw size={12} />}
           </button>
+          {outdated.length > 0 && (
+            <button
+              type="button"
+              className="ws-btn ghost ws-amber"
+              onClick={() => go("settings")}
+              title={outdated.map((d) => `${DEVICE_LABEL[d.kind]} is on ${d.version}`).join(", ")}
+            >
+              <span className="ws-dot err" /> Update {DEVICE_LABEL[outdated[0]!.kind]}
+            </button>
+          )}
         </div>
 
         <div className="ws-body">
@@ -371,7 +386,7 @@ export function Workstation() {
           {page === "health" && <HealthPage onGo={go} />}
           {page === "findings" && <FindingsPage openId={openFinding} onOpen={setOpenFinding} />}
           {Classic && (
-            <div className="ws-classic soma-main">
+            <div className="ws-classic soma-main" ref={classicRef}>
               <Classic />
             </div>
           )}

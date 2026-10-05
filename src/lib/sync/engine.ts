@@ -29,6 +29,31 @@ export interface SyncMeta {
   lastError?: string;
 }
 
+/** One pull that changed something here, with what each record held before. */
+export interface SyncHistoryEntry {
+  at: number;
+  /** Devices the changes came from. */
+  from: string[];
+  changes: { key: string; before: string | null; after: string | null }[];
+}
+
+/** Pulls remembered for undo, newest last, and the space they may take. */
+export const HISTORY_ENTRIES = 15;
+// Browser storage is ~5 MB for the whole app, most of it the data itself.
+export const HISTORY_CHARS = 400_000;
+
+/** Older entries go first until the history fits. */
+export function trimHistory(h: SyncHistoryEntry[]): SyncHistoryEntry[] {
+  let out = h.slice(-HISTORY_ENTRIES);
+  const size = (e: SyncHistoryEntry) => e.changes.reduce((a, c) => a + (c.before?.length ?? 0) + (c.after?.length ?? 0) + c.key.length, 0);
+  let total = out.reduce((a, e) => a + size(e), 0);
+  while (out.length > 1 && total > HISTORY_CHARS) {
+    total -= size(out[0]!);
+    out = out.slice(1);
+  }
+  return out;
+}
+
 export interface SyncHost {
   /** The persisted part of the app's state. */
   read(): State;
@@ -37,6 +62,9 @@ export interface SyncHost {
   load(): SyncMeta | null;
   save(meta: SyncMeta | null): void;
   fetch: typeof fetch;
+  /** Where pulled changes are remembered, so one can be undone. Optional. */
+  loadHistory?(): SyncHistoryEntry[];
+  saveHistory?(h: SyncHistoryEntry[]): void;
 }
 
 /** cyrb53: a fast 53-bit hash, plenty to tell whether a record changed. */
@@ -147,6 +175,30 @@ export class SyncEngine {
     return this.busy;
   }
 
+  history(): SyncHistoryEntry[] {
+    return this.host.loadHistory?.() ?? [];
+  }
+
+  /**
+   * Put back what a pull replaced, then send that out so the other devices
+   * follow. A record edited again since the pull is left as it is: undoing a
+   * sync must never throw away work done after it. Returns how many records
+   * were put back.
+   */
+  async undo(at: number): Promise<number> {
+    const all = this.history();
+    const entry = all.find((e) => e.at === at);
+    if (!entry) return 0;
+    const local = toRecords(this.host.read());
+    const back: Change[] = entry.changes
+      .filter((c) => (local.get(c.key) ?? null) === c.after)
+      .map((c) => ({ key: c.key, value: c.before }));
+    if (back.length) this.host.write(applyChanges(this.host.read(), back));
+    this.host.saveHistory?.(all.filter((e) => e.at !== at));
+    await this.sync();
+    return back.length;
+  }
+
   private async pullAll(meta: SyncMeta): Promise<Envelope[]> {
     const out: Envelope[] = [];
     for (;;) {
@@ -180,6 +232,13 @@ export class SyncEngine {
     const dirty = this.dirty(meta, local, this.host.read());
     const fresh = newerThan(envs, seen).filter((e) => e.device !== meta.device && !dirty.has(e.key));
     if (!fresh.length) return;
+    const changes = fresh
+      .map((e) => ({ key: e.key, before: local.get(e.key) ?? null, after: e.value }))
+      .filter((c) => c.before !== c.after);
+    if (changes.length && this.host.saveHistory) {
+      const entry: SyncHistoryEntry = { at: Date.now(), from: [...new Set(fresh.map((e) => e.device))], changes };
+      this.host.saveHistory(trimHistory([...(this.host.loadHistory?.() ?? []), entry]));
+    }
     this.host.write(applyChanges(this.host.read(), fresh.map((e) => ({ key: e.key, value: e.value }))));
     for (const e of fresh) {
       if (e.value === null) delete meta.known[e.key];
