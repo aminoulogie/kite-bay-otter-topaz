@@ -23,6 +23,10 @@ export interface ReportData {
   projects: Project[];
   time: {
     date: string;
+    /** "09:00" */
+    from: string;
+    /** "10:30", or "running" */
+    to: string;
     project: string;
     hours: number;
     note: string;
@@ -99,6 +103,8 @@ export function buildReport(
       const billable = e.billable !== false;
       return {
         date: dayOf(e.start),
+        from: hhmm(e.start),
+        to: e.end ? hhmm(e.end) : "running",
         project: p.name,
         hours: h,
         note: e.note ?? "",
@@ -263,9 +269,11 @@ export function reportSheets(r: ReportData, period: string): Sheet[] {
     {
       name: "Time",
       rows: [
-        ["Date", "Project", "Hours", "Billable", "Value (DA)", "Note"],
+        ["Date", "From", "To", "Project", "Hours", "Billable", "Value (DA)", "Note"],
         ...r.time.map((t) => [
           t.date,
+          t.from,
+          t.to,
           t.project,
           t.hours,
           t.billable ? "yes" : "no",

@@ -368,6 +368,7 @@ function ReportDoc({ report: r, period }: { report: ReportData; period: string }
               <th>Date</th>
               <th>Project</th>
               <th>Work</th>
+              <th style={{ whiteSpace: "nowrap" }}>Time</th>
               <th className="num">Hours</th>
               <th className="num">Value</th>
             </tr>
@@ -377,16 +378,16 @@ function ReportDoc({ report: r, period }: { report: ReportData; period: string }
               <tr key={i}>
                 <td>{t.date}</td>
                 <td>{t.project}</td>
-                <td>
-                  {t.note || "—"}
-                  {!t.billable && <em> (not billed)</em>}
+                <td>{t.note || "—"}</td>
+                <td style={{ whiteSpace: "nowrap" }}>
+                  {t.from}–{t.to}
                 </td>
                 <td className="num">{t.hours.toFixed(2)}</td>
                 <td className="num">{t.value ? money(t.value) : "—"}</td>
               </tr>
             ))}
             <tr className="total">
-              <td colSpan={3}>Total</td>
+              <td colSpan={4}>Total</td>
               <td className="num">{s.hours.toFixed(2)}</td>
               <td className="num">{money(s.billableValue)}</td>
             </tr>
