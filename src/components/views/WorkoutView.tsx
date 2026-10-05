@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatRest, restProgress, secondsLeft } from "@/lib/rest-timer";
 import { agoLabel, lastTimeFor, summarise } from "@/lib/last-time";
+import { perHand, transferFor } from "@/lib/strength-transfer";
 import { useDayDraft } from "@/lib/use-day-draft";
 import { useRestTimer } from "@/lib/use-rest-timer";
 import { Check, Link2, Plus, Redo2, Search, Timer, Trash2, Undo2, X } from "lucide-react";
@@ -30,6 +31,7 @@ import { sessionBurn } from "@/lib/training-burn";
 import { latestWeight } from "@/lib/rings";
 import type { SessionExercise } from "@/lib/types";
 import { WorkoutTimeCard } from "@/components/WorkoutTimeCard";
+import { StrengthCard } from "@/components/StrengthCard";
 
 const SUPERSET_COLOR: Record<string, string> = {
   A: "var(--color-accent)",
@@ -470,6 +472,7 @@ export function WorkoutView() {
       </Sized>
 
       <WorkoutTimeCard key="time" />
+      <StrengthCard key="strength" />
       <div key="date" className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <Button size="icon" variant="ghost" onClick={undo} aria-label="Undo">
@@ -741,7 +744,18 @@ export function WorkoutView() {
           soreness: day.readiness?.soreness ?? null,
           stress: day.readiness?.stress ?? null,
         });
-        const target = SomaIntelligenceEngine.computeAutoregulatedTarget(last, {
+        // A related lift done more recently than this one (EZ preacher last
+        // week, machine preacher today) carries its strength over, converted
+        // for the kit and the reps. See lib/strength-transfer.ts.
+        const filing = live.forDate ?? live.date ?? todayKey;
+        const ownBest = lastTime?.sets.reduce((m, s) => ((Number(s.weight) || 0) > (Number(m.weight) || 0) ? s : m), lastTime.sets[0]!);
+        const transfer = transferFor(ex.name, history, {
+          before: filing,
+          isBW: ex.isBW,
+          ownLast: lastTime && ownBest ? { reps: Number(ownBest.reps) || 0, at: lastTime.date } : null,
+        });
+        const baseSet = transfer ? { ...transfer.set, weight: transfer.weight, reps: transfer.reps } : last;
+        const target = SomaIntelligenceEngine.computeAutoregulatedTarget(baseSet, {
           isBW: ex.isBW,
           readiness: readinessWithSleepDebt(
             SomaIntelligenceEngine.blendReadiness(muscleR, subj),
@@ -829,6 +843,13 @@ export function WorkoutView() {
                   Smart target · {ex.isBW && target.weight === 0 ? "Bodyweight" : `${target.weight} ${settings.unit}`} × {target.reps}
                 </div>
                 <div className="mt-0.5 text-muted">{target.note}</div>
+                {transfer && (
+                  <div className="mt-1 text-muted">
+                    From {transfer.from.name} · {transfer.from.weight} {settings.unit} × {transfer.from.reps} on {transfer.from.at}
+                    {perHand(ex.name) ? " · each hand" : ""} ·{" "}
+                    {transfer.learned ? "your own ratio for this variation" : "standard ratio until you've done it once"}
+                  </div>
+                )}
                 {target.autoNote && <div className="mt-1 text-info">{target.autoNote}</div>}
               </div>
               <Badge
