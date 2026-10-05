@@ -6,7 +6,7 @@ import { chromium } from "playwright";
 const SHOTS = process.env.SHOTS ?? "windows-shots";
 mkdirSync(SHOTS, { recursive: true });
 
-const browser = await chromium.connectOverCDP("http://localhost:9222");
+const browser = await chromium.connectOverCDP("http://127.0.0.1:9222");
 const page = browser.contexts()[0]?.pages()[0];
 if (!page) throw new Error("the app has no window");
 const errors = [];

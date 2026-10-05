@@ -7,7 +7,8 @@ name: Windows check
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Deploy Pages PWA"]
+    # After the site changes (what the app shows) or the app itself is rebuilt.
+    workflows: ["Deploy Pages PWA", "Windows app"]
     types: [completed]
     branches: [main]
 
@@ -36,11 +37,12 @@ jobs:
       - name: Start SOMA with a debugging port
         shell: pwsh
         run: |
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=9222"
+          $env:SOMA_DEBUG_PORT = "9222"
           Start-Process $env:EXE
-          for ($i = 0; $i -lt 60; $i++) {
-            try { Invoke-WebRequest http://localhost:9222/json/version -UseBasicParsing | Out-Null; break } catch { Start-Sleep 1 }
+          for ($i = 0; $i -lt 90; $i++) {
+            try { Invoke-WebRequest http://127.0.0.1:9222/json/version -UseBasicParsing -TimeoutSec 2 | Out-Null; Write-Output "debug port open"; exit 0 } catch { Start-Sleep 1 }
           }
+          throw "SOMA did not open its debugging port"
       - name: Walk every page
         env:
           SHOTS: windows-shots
