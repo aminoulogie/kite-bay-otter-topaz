@@ -60,9 +60,16 @@ export function ReportsPage() {
   const timeEntries = useSoma((s) => s.timeEntries);
   const ledger = useSoma((s) => s.ledger);
   const findings = useSoma((s) => s.findings);
+  const shifts = useSoma((s) => s.shifts);
   const settings = useSoma((s) => s.settings);
   const today = getLocalDateKey();
-  const clients = useMemo(() => clientsOf(projects), [projects]);
+  const clients = useMemo(
+    () =>
+      [...new Set([...clientsOf(projects), ...shifts.map((x) => x.client)])].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [projects, shifts],
+  );
   const [client, setClient] = useState("");
   const [projectId, setProjectId] = useState("");
   const [period, setPeriod] = useState<Period>("month");
@@ -74,9 +81,17 @@ export function ReportsPage() {
     () =>
       buildReport(
         { client, projectId: projectId || undefined, from: r.from, to: r.to },
-        { projects, timeEntries, ledger, findings, rates: ratesOf(settings) },
+        {
+          projects,
+          timeEntries,
+          ledger,
+          findings,
+          shifts,
+          clientRates: settings.clientRates,
+          rates: ratesOf(settings),
+        },
       ),
-    [client, projectId, r.from, r.to, projects, timeEntries, ledger, findings, settings],
+    [client, projectId, r.from, r.to, projects, timeEntries, ledger, findings, shifts, settings],
   );
   const scoped = projects.filter((p) => !client || p.client?.trim() === client);
   const fileBase = `report-${(report.title || "all").replace(/[^\w-]+/g, "-").toLowerCase()}-${r.label.replace(/[^\w-]+/g, "-").toLowerCase()}`;
@@ -229,11 +244,19 @@ function ReportDoc({ report: r, period }: { report: ReportData; period: string }
       </header>
 
       <div className="ws-paper-kpis">
-        <div>
-          <span>Hours</span>
-          <b>{s.hours.toFixed(2)}</b>
-          <small>{s.billableHours.toFixed(2)} billable</small>
-        </div>
+        {s.workedHours > 0 ? (
+          <div>
+            <span>Hours worked</span>
+            <b>{s.workedHours.toFixed(2)}</b>
+            <small>{r.shifts.length} shifts</small>
+          </div>
+        ) : (
+          <div>
+            <span>Hours</span>
+            <b>{s.hours.toFixed(2)}</b>
+            <small>{s.billableHours.toFixed(2)} billable</small>
+          </div>
+        )}
         <div>
           <span>Billable value</span>
           <b>{money(s.billableValue)}</b>
@@ -289,7 +312,55 @@ function ReportDoc({ report: r, period }: { report: ReportData; period: string }
         <p className="muted">No projects.</p>
       )}
 
-      <h3>Time</h3>
+      {r.shifts.length > 0 && (
+        <>
+          <h3>Work log</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Hours</th>
+                <th>What was done</th>
+                <th className="num">Worked</th>
+                <th className="num">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {r.shifts.map((x, i) => (
+                <tr key={i}>
+                  <td>{x.date}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {x.from}–{x.to}
+                    {x.breakHours > 0 && (
+                      <div className="muted">{x.breakHours.toFixed(2)} h break</div>
+                    )}
+                  </td>
+                  <td>
+                    {x.done.length ? (
+                      <ul>
+                        {x.done.map((d, j) => (
+                          <li key={j}>{d}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="num">{x.hours.toFixed(2)}</td>
+                  <td className="num">{x.value ? money(x.value) : "—"}</td>
+                </tr>
+              ))}
+              <tr className="total">
+                <td colSpan={3}>Total</td>
+                <td className="num">{s.workedHours.toFixed(2)}</td>
+                <td className="num">{s.workedValue ? money(s.workedValue) : "—"}</td>
+              </tr>
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {(r.time.length > 0 || r.shifts.length === 0) && <h3>Time</h3>}
       {r.time.length ? (
         <table>
           <thead>
@@ -322,7 +393,7 @@ function ReportDoc({ report: r, period }: { report: ReportData; period: string }
           </tbody>
         </table>
       ) : (
-        <p className="muted">No time logged in this period.</p>
+        r.shifts.length === 0 && <p className="muted">No time logged in this period.</p>
       )}
 
       <h3>Money</h3>

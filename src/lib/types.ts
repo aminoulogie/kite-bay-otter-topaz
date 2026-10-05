@@ -496,6 +496,8 @@ export interface Settings {
   mealVerdictsSince?: number;
   /** The desktop workstation layout on this device. Unset: on at a desk. */
   workstation?: boolean;
+  /** Hourly rate per client for the work log, by client name. */
+  clientRates?: Record<string, number>;
   /** When you train; read by Train, the Time tab and Fuel. See lib/workout-time.ts. */
   workoutTime?: { time: string; mins: number; days?: Partial<Record<number, string>>; dates?: Record<string, string> };
   barWeight: number;

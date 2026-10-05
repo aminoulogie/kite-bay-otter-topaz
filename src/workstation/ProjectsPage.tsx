@@ -621,11 +621,12 @@ function Detail({
         />
       </section>
 
+      <ProjectLog project={p} />
       <ProjectTime project={p} />
       <ProjectFindings projectId={p.id} />
 
       <section>
-        <div style={{ fontWeight: 600, marginBottom: 6 }}>Notes</div>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Brief</div>
         <textarea
           className="ws-textarea"
           value={note}
@@ -765,6 +766,83 @@ function ProjectFindings({ projectId }: { projectId: string }) {
           }
         }}
       />
+    </section>
+  );
+}
+
+/**
+ * The project file's running notes: what was done and how it went, newest
+ * first. Work log activities file themselves here; anything else is typed in.
+ */
+function ProjectLog({ project: p }: { project: Project }) {
+  const upsertProjectNote = useSoma((s) => s.upsertProjectNote);
+  const [draft, setDraft] = useState("");
+  const [all, setAll] = useState(false);
+  const log = [...(p.log ?? [])].sort((a, b) => b.at - a.at);
+  const shown = all ? log : log.slice(0, 5);
+  const add = () => {
+    if (!draft.trim()) return;
+    upsertProjectNote(p.id, {
+      id: `pn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      at: Date.now(),
+      text: draft.trim(),
+    });
+    setDraft("");
+  };
+  return (
+    <section>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+        <span style={{ fontWeight: 600 }}>Notes</span>
+        <span className="ws-faint" style={{ marginLeft: 8 }}>
+          {log.length
+            ? `${log.length} entr${log.length === 1 ? "y" : "ies"}`
+            : "work log notes land here"}
+        </span>
+      </div>
+      <textarea
+        className="ws-textarea"
+        style={{ minHeight: 54 }}
+        placeholder="Add a note — Ctrl+Enter to save"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            add();
+          }
+        }}
+      />
+      {draft.trim() && (
+        <button type="button" className="ws-btn" style={{ marginTop: 6 }} onClick={add}>
+          Save note
+        </button>
+      )}
+      <div className="ws-feed">
+        {shown.map((n) => (
+          <div key={n.id} className="ws-note">
+            <div className="meta">
+              {new Date(n.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+              {n.source ? ` · ${n.source}` : ""}
+              {!n.source && (
+                <button
+                  type="button"
+                  className="ws-icon"
+                  title="Delete note"
+                  onClick={() => upsertProjectNote(p.id, { ...n, text: "" })}
+                >
+                  <Trash2 />
+                </button>
+              )}
+            </div>
+            <div className={n.text.startsWith("Done: ") ? "done" : ""}>{n.text}</div>
+          </div>
+        ))}
+      </div>
+      {log.length > 5 && (
+        <button type="button" className="ws-btn ghost" onClick={() => setAll((v) => !v)}>
+          {all ? "Show fewer" : `Show all ${log.length}`}
+        </button>
+      )}
     </section>
   );
 }

@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Dumbbell, Trash2, Utensils, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Briefcase, ChevronLeft, ChevronRight, Dumbbell, Trash2, Utensils, X } from "lucide-react";
+import { hours } from "@/lib/time-tracking";
+import { shiftDay, workedMs } from "@/lib/worklog";
 import { toast } from "sonner";
 import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
@@ -18,7 +20,12 @@ import {
 } from "./tasks";
 
 const HOUR = 44;
-const FIRST = 6;
+const minutesOf = (ms: number) => {
+  const d = new Date(ms);
+  return d.getHours() * 60 + d.getMinutes();
+};
+/** The whole day: a 05:00 pre-workout must have somewhere to go. Scrolled to the morning on open. */
+const FIRST = 0;
 const LAST = 24;
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180];
 const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -58,6 +65,8 @@ export function TasksPage() {
   const [quickText, setQuickText] = useState("");
   const [over, setOver] = useState<string | null>(null);
   const grab = useRef(0);
+  const shifts = useSoma((s) => s.shifts);
+  const scroller = useRef<HTMLDivElement>(null);
 
   const list = useMemo(() => filterTasks(todos, filter, today), [todos, filter, today]);
   const n = useMemo(() => counts(todos, today), [todos, today]);
@@ -67,6 +76,18 @@ export function TasksPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [days, settings, programs],
   );
+
+  // Open on the first thing in the week (an hour early), or 07:00.
+  useEffect(() => {
+    const starts: number[] = [];
+    for (const p of planned) if (p?.slot) starts.push(p.slot.start - 60);
+    for (const t of todos)
+      if (t.slot && days.includes(t.slot.date) && !t.cleared) starts.push(t.slot.start);
+    for (const sh of shifts) if (days.includes(shiftDay(sh))) starts.push(minutesOf(sh.start));
+    const first = Math.min(7 * 60, ...starts);
+    scroller.current?.scrollTo({ top: Math.max(0, ((first - 30) / 60) * HOUR) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monday]);
 
   const add = () => {
     const t = draft.trim();
@@ -95,7 +116,8 @@ export function TasksPage() {
   };
 
   const weekLabel = `${parseLocalDateKey(days[0]!).toLocaleDateString(undefined, { day: "numeric", month: "short" })} – ${parseLocalDateKey(days[6]!).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`;
-  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const nowTs = Date.now();
+  const nowMin = minutesOf(nowTs);
 
   return (
     <div className="ws-tasks">
@@ -256,7 +278,7 @@ export function TasksPage() {
             </div>
           ))}
         </div>
-        <div className="ws-cal-scroll">
+        <div className="ws-cal-scroll" ref={scroller}>
           <div className="ws-cal-grid" style={{ height: (LAST - FIRST) * HOUR }}>
             <div className="ws-cal-hours">
               {Array.from({ length: LAST - FIRST }, (_, i) => (
@@ -322,6 +344,26 @@ export function TasksPage() {
                       </div>
                     </>
                   )}
+                  {shifts
+                    .filter((sh) => shiftDay(sh) === d)
+                    .map((sh) => {
+                      const from = minutesOf(sh.start);
+                      const to = Math.min(24 * 60, from + ((sh.end ?? nowTs) - sh.start) / 60000);
+                      return (
+                        <div
+                          key={sh.id}
+                          className="ws-ev shift"
+                          style={{
+                            top: top(from),
+                            height: Math.max(20, ((to - from) / 60) * HOUR - 2),
+                          }}
+                          title={`${sh.client} · ${hhmm(from)}–${sh.end ? hhmm(Math.round(to)) : "now"}`}
+                        >
+                          <Briefcase size={11} /> {sh.client}
+                          <small>{hours(workedMs(sh, nowTs))} worked</small>
+                        </div>
+                      );
+                    })}
                   {blocks.map((t) => (
                     <div
                       key={t.id}

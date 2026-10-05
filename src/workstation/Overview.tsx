@@ -5,6 +5,7 @@ import { DEFAULT_GOALS, addDays, getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { isActive, mondayOf } from "@/lib/todos";
 import { durationMs, hours as fmtHours } from "@/lib/time-tracking";
+import { shiftDay, workedMs } from "@/lib/worklog";
 import { attention, clientsOf, projectStats, recentActivity } from "./metrics";
 import { byClient as moneyByClient } from "./money";
 import { formatMoney, ratesOf } from "@/lib/money-model";
@@ -44,6 +45,7 @@ export function Overview({
   const history = useSoma((s) => s.history);
   const nutrition = useSoma((s) => s.nutrition);
   const ledger = useSoma((s) => s.ledger);
+  const shifts = useSoma((s) => s.shifts);
   const timeEntries = useSoma((s) => s.timeEntries);
   const findings = useSoma((s) => s.findings);
   const settings = useSoma((s) => s.settings);
@@ -105,6 +107,10 @@ export function Overview({
     [projects, today],
   );
 
+  const workedWeek = shifts
+    .filter((x) => shiftDay(x) >= mondayOf(today))
+    .reduce((a, x) => a + workedMs(x), 0);
+
   return (
     <div className="ws-page">
       <h1>Overview</h1>
@@ -139,7 +145,11 @@ export function Overview({
         />
         <Kpi label="Steps done" value={stats.stepsWeek} hint="last 7 days" />
         <Kpi label="To-dos today" value={openTodos} hint="still open" />
-        <Kpi label="Hours tracked" value={fmtHours(weekHours)} hint="this week" />
+        <Kpi
+          label="Hours worked"
+          value={fmtHours(workedWeek)}
+          hint={`this week · ${fmtHours(weekHours)} on project timers`}
+        />
         <Kpi
           label="Open findings"
           value={openFindings.length}

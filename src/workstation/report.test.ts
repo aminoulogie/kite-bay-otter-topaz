@@ -57,6 +57,8 @@ test("a client's report over October", () => {
     projects: 1,
     stepsDone: 1,
     stepsTotal: 2,
+    workedHours: 0,
+    workedValue: 0,
   });
   assert.deepEqual(r.openSteps, [{ project: "Audit", step: "Report" }]);
   const sheets = reportSheets(r, "October 2026");
@@ -71,4 +73,34 @@ test("all clients, all time", () => {
   const r = buildReport({ client: "" }, { projects, timeEntries, ledger });
   assert.equal(r.summary.hours, 7);
   assert.equal(r.summary.projects, 2);
+});
+
+test("work log shifts: per client, rate applied, activities named by project", () => {
+  const r = buildReport(
+    { client: "Acme", from: "2026-10-01", to: "2026-10-31" },
+    {
+      projects,
+      timeEntries: [],
+      ledger: [],
+      clientRates: { Acme: 4000 },
+      shifts: [
+        {
+          id: "w1",
+          client: "Acme",
+          start: t(5, 9),
+          end: t(5, 17),
+          breaks: [{ start: t(5, 12), end: t(5, 13) }],
+          activities: [{ id: "x", projectId: "a", text: "Interviews", done: true }],
+        },
+        { id: "w2", client: "Other", start: t(6, 9), end: t(6, 10), breaks: [], activities: [] },
+      ],
+      now: t(20, 0),
+    },
+  );
+  assert.equal(r.shifts.length, 1);
+  assert.equal(r.shifts[0]!.hours, 7);
+  assert.equal(r.shifts[0]!.value, 28000);
+  assert.deepEqual(r.shifts[0]!.done, ["Audit: Interviews (done)"]);
+  assert.equal(r.summary.workedHours, 7);
+  assert.ok(reportSheets(r, "Oct").some((s) => s.name === "Work log" && s.rows.length === 2));
 });

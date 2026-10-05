@@ -45,8 +45,10 @@
   --ws-faint: #8a929c;
 }
 .ws * { box-sizing: border-box; }
-.ws button { font: inherit; color: inherit; }
-.ws input, .ws select, .ws textarea { font: inherit; color: var(--ws-text); }
+/* Not inside a hosted classic page: these are unlayered, so they would beat
+   every Tailwind utility there (text-accent-ink, text-sm…). */
+:where(.ws button:not(.ws-classic button)) { font: inherit; color: inherit; }
+:where(.ws :is(input, select, textarea):not(.ws-classic *)) { font: inherit; color: var(--ws-text); }
 
 /* Sidebar */
 .ws-side { background: var(--ws-side); border-right: 1px solid var(--ws-line); display: flex; flex-direction: column; min-height: 0; }
@@ -348,3 +350,219 @@
 .ws-tip b { font-size: 14px; font-variant-numeric: tabular-nums; }
 .ws-tip span { color: var(--ws-muted); }
 .ws-chart-card { padding: 12px 14px 8px; }
+
+/* =========================================================================
+   Business-suite look. Grey canvas, white cards that lift off it with a soft
+   shadow, one blue for everything you can act on, pill-shaped selection in
+   the sidebar. Declared last so it re-skins the flat panels above without
+   touching their layout.
+   ========================================================================= */
+.ws {
+  --ws-bg: #18191a;
+  --ws-side: #242526;
+  --ws-panel: #242526;
+  --ws-panel-2: #3a3b3c;
+  --ws-hover: #3a3b3c;
+  --ws-line: #3e4042;
+  --ws-line-2: #4e4f50;
+  --ws-text: #e4e6eb;
+  --ws-muted: #b0b3b8;
+  --ws-faint: #8a8d91;
+  --ws-accent: #2d88ff;
+  --ws-blue: #2d88ff;
+  --ws-blue-ink: #ffffff;
+  --ws-sel: #263951;
+  --ws-sel-text: #4599ff;
+  --ws-green: #45bd62;
+  --ws-amber: #f7b928;
+  --ws-red: #f3425f;
+  --ws-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --ws-shadow-pop: 0 12px 28px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --ws-radius: 10px;
+  font-family:
+    "Segoe UI Variable Text",
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-size: 14px;
+  grid-template-columns: 260px 1fr;
+}
+.ws[data-theme="light"] {
+  --ws-bg: #f0f2f5;
+  --ws-side: #ffffff;
+  --ws-panel: #ffffff;
+  --ws-panel-2: #f0f2f5;
+  --ws-hover: #f2f2f2;
+  --ws-line: #e4e6eb;
+  --ws-line-2: #ced0d4;
+  --ws-text: #1c1e21;
+  --ws-muted: #65676b;
+  --ws-faint: #8a8d91;
+  --ws-accent: #0866ff;
+  --ws-blue: #0866ff;
+  --ws-sel: #e7f3ff;
+  --ws-sel-text: #0866ff;
+  --ws-green: #31a24c;
+  --ws-amber: #e09b00;
+  --ws-red: #e41e3f;
+  --ws-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  --ws-shadow-pop: 0 12px 28px rgba(0, 0, 0, 0.16), 0 2px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* Sidebar: white rail, blue pill for where you are */
+.ws-side { border-right: 0; box-shadow: 1px 0 0 var(--ws-line); z-index: 2; }
+.ws-brand { padding: 16px 16px 12px; gap: 12px; }
+.ws-logo { width: 36px; height: 36px; border-radius: 50%; background: var(--ws-blue); color: #fff; font-size: 16px; }
+.ws-brand b { font-size: 16px; font-weight: 700; }
+.ws-brand small { font-size: 12px; margin-top: 0; }
+.ws-nav { padding: 4px 8px 12px; }
+.ws-nav h6 { margin: 16px 10px 6px; font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--ws-muted); }
+.ws-nav > div:first-child h6 { margin-top: 4px; }
+.ws-nav button { height: 40px; padding: 0 10px; gap: 12px; border-radius: 8px; font-weight: 500; color: var(--ws-text); cursor: pointer; }
+.ws-nav button svg { width: 20px; height: 20px; color: var(--ws-muted); }
+.ws-nav button[aria-current="page"] { background: var(--ws-sel); color: var(--ws-sel-text); box-shadow: none; font-weight: 600; }
+.ws-nav button[aria-current="page"] svg { color: var(--ws-sel-text); }
+.ws-nav .ws-count { min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--ws-panel-2); color: var(--ws-muted); display: inline-grid; place-items: center; font-weight: 600; }
+.ws-nav .ws-count.ws-red { background: var(--ws-red); color: #fff; }
+.ws-side-foot { border-top: 1px solid var(--ws-line); padding: 8px; }
+.ws-side-foot button { height: 38px; padding: 0 10px; border-radius: 8px; color: var(--ws-text); font-weight: 500; cursor: pointer; }
+.ws-side-foot button[aria-current="page"] { background: var(--ws-sel); color: var(--ws-sel-text); }
+.ws-side-foot svg { width: 18px; height: 18px; color: var(--ws-muted); }
+
+/* Top bar */
+.ws-top { height: 56px; padding: 0 20px; gap: 10px; background: var(--ws-panel); border-bottom: 0; box-shadow: 0 1px 0 var(--ws-line); z-index: 1; position: relative; }
+.ws-crumb { font-size: 13px; }
+.ws-crumb b { font-size: 15px; font-weight: 700; }
+.ws-search { height: 38px; width: 320px; border: 0; border-radius: 19px; background: var(--ws-panel-2); padding: 0 14px; color: var(--ws-muted); }
+.ws-search kbd { background: var(--ws-panel); }
+.ws-body { background: var(--ws-bg); }
+
+/* Buttons */
+.ws-btn { height: 36px; padding: 0 14px; border: 0; border-radius: 6px; background: var(--ws-panel-2); font-weight: 600; cursor: pointer; }
+.ws-btn:hover { background: color-mix(in srgb, var(--ws-text) 10%, var(--ws-panel-2)); }
+.ws-btn:disabled { opacity: 0.5; cursor: default; }
+.ws-btn.primary { background: var(--ws-blue); color: #fff; }
+.ws-btn.primary:hover { background: color-mix(in srgb, #000 10%, var(--ws-blue)); filter: none; }
+.ws-btn.ghost { background: none; color: var(--ws-blue); }
+.ws-btn.ghost:hover { background: var(--ws-hover); color: var(--ws-blue); }
+.ws-btn.ghost.danger, .ws-btn.danger { color: var(--ws-red); }
+.ws-btn svg { width: 16px; height: 16px; }
+.ws-icon { width: 32px; height: 32px; border-radius: 50%; cursor: pointer; }
+.ws-icon svg { width: 16px; height: 16px; }
+.ws-input { height: 36px; border-radius: 6px; padding: 0 10px; }
+.ws-input:focus, .ws-textarea:focus { border-color: var(--ws-blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ws-blue) 25%, transparent); }
+.ws-textarea { border-radius: 6px; }
+.ws-seg { border: 0; background: var(--ws-panel-2); border-radius: 8px; padding: 2px; gap: 2px; }
+.ws-seg button { height: 30px; border: 0; border-radius: 6px; background: none; font-weight: 600; cursor: pointer; }
+.ws-seg button[aria-pressed="true"] { background: var(--ws-panel); color: var(--ws-blue); box-shadow: var(--ws-shadow); }
+.ws-chip { border: 0; border-radius: 12px; height: 24px; padding: 0 9px; cursor: pointer; font-weight: 500; }
+
+/* Cards lift off the canvas */
+.ws-page { padding: 24px 28px 48px; }
+.ws-page h1 { font-size: 24px; font-weight: 700; }
+.ws-pagehead { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.ws-pagehead h1 { margin: 0 6px 0 0; }
+.ws-kpis { gap: 14px; }
+.ws-kpi, .ws-card, .ws-col, .ws-paper-wrap { border: 0; box-shadow: var(--ws-shadow); border-radius: var(--ws-radius); }
+.ws-kpi { padding: 16px 18px; }
+.ws-kpi span { font-weight: 600; }
+.ws-kpi b { font-weight: 700; }
+.ws-card > header { padding: 14px 16px; font-size: 15px; font-weight: 700; border-bottom: 1px solid var(--ws-line); }
+.ws-col { background: var(--ws-panel); }
+.ws-tile { border-radius: 8px; box-shadow: var(--ws-shadow); border-color: var(--ws-line); }
+.ws-detail { border-left: 0; box-shadow: -1px 0 0 var(--ws-line); }
+.ws-detail > header { padding: 12px 16px; }
+.ws-detail section { padding: 16px; }
+.ws-table th { font-weight: 600; background: var(--ws-panel); }
+.ws-table tbody tr[aria-selected="true"] td { background: var(--ws-sel); }
+.ws-menu, .ws-pop, .ws-palette { border: 0; box-shadow: var(--ws-shadow-pop); border-radius: 10px; }
+.ws-menu li { cursor: pointer; padding: 9px 10px; gap: 10px; font-weight: 500; }
+.ws-palette-bg { background: rgba(0, 0, 0, 0.5); }
+.ws-pill.active { color: var(--ws-blue); }
+.ws-cal-day.today b { background: var(--ws-blue); }
+.ws-now, .ws-now::before { background: var(--ws-red); }
+.ws-timer { border-radius: 18px; height: 36px; }
+.ws-sync { border-radius: 18px; }
+
+/* Classic pages inside the workstation: the phone's own tokens, re-pointed
+   at the suite's, and the phone's 4-column grid kept. The desktop 12-column
+   grid set two cards of different heights side by side, which is what left
+   the empty slots under the shorter one. */
+.ws-classic {
+  --color-bg: var(--ws-bg);
+  --color-surface: var(--ws-panel);
+  --color-surface-2: var(--ws-panel-2);
+  --color-surface-3: var(--ws-hover);
+  --color-fg: var(--ws-text);
+  --color-muted: var(--ws-muted);
+  --color-faint: var(--ws-faint);
+  --color-border: var(--ws-line);
+  --color-border-strong: var(--ws-line-2);
+  --color-accent: var(--ws-blue);
+  --color-accent-ink: #ffffff;
+  --color-accent-text: var(--ws-blue);
+  --color-accent-soft: var(--ws-sel);
+  --color-accent-line: color-mix(in srgb, var(--ws-blue) 40%, transparent);
+  --shadow-card: var(--ws-shadow);
+  max-width: 880px;
+  padding: 24px 24px 48px;
+  font-size: 15px;
+  color: var(--ws-text);
+}
+.ws-classic .soma-grid { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; column-gap: 12px !important; row-gap: 12px !important; }
+.ws-classic .soma-grid > [class*="lg:col-span-2"] { grid-column: span 1 / span 1 !important; }
+.ws-classic .soma-grid > [class*="lg:col-span-3"] { grid-column: span 2 / span 2 !important; }
+.ws-classic .soma-grid > [class*="lg:col-span-6"] { grid-column: 1 / -1 !important; }
+
+/* Work log */
+.ws-worklog { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.ws-split.open .ws-worklog { grid-template-columns: minmax(0, 1fr); }
+.ws-clockcard { padding: 18px 20px; }
+.ws-clockcard.on { box-shadow: var(--ws-shadow), inset 4px 0 0 var(--ws-green); }
+.ws-clockcard.on.paused { box-shadow: var(--ws-shadow), inset 4px 0 0 var(--ws-amber); }
+.ws-clock-idle, .ws-clock-live { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ws-clock-idle > div:first-child { flex: 1; min-width: 200px; }
+.ws-bigclock { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1.15; }
+.ws-quick { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+.ws-quick .ws-chip { height: 30px; padding: 0 12px; background: var(--ws-panel-2); color: var(--ws-text); }
+.ws-quick .ws-chip:hover { background: var(--ws-sel); color: var(--ws-sel-text); }
+.ws-dayhead { display: flex; justify-content: space-between; padding: 10px 16px 6px; font-size: 12px; font-weight: 700; color: var(--ws-muted); text-transform: uppercase; letter-spacing: 0.04em; background: var(--ws-panel-2); }
+.ws-shift { display: grid; grid-template-columns: 130px minmax(0, 1fr) 90px; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--ws-line); cursor: pointer; }
+.ws-shift:hover { background: var(--ws-hover); }
+.ws-shift.sel { background: var(--ws-sel); }
+.ws-shift .when { display: flex; flex-direction: column; }
+.ws-shift .hrs { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
+.ws-ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-activity { display: grid; gap: 6px; padding: 10px; margin-bottom: 10px; border-radius: 8px; background: var(--ws-panel-2); }
+.ws-activity.done { box-shadow: inset 3px 0 0 var(--ws-green); }
+.ws-activity .row { display: flex; align-items: center; gap: 8px; }
+.ws-activity .ws-input, .ws-activity .ws-textarea, .ws-activity .ws-cell { background: var(--ws-panel); }
+.ws-activity .ws-cell { height: 32px; }
+.ws-done { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--ws-muted); cursor: pointer; white-space: nowrap; }
+.ws-done input { width: 15px; height: 15px; accent-color: var(--ws-green); }
+.ws-clockpill { display: inline-flex; align-items: center; height: 36px; border-radius: 18px; background: color-mix(in srgb, var(--ws-green) 14%, var(--ws-panel)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ws-green) 45%, transparent); overflow: hidden; }
+.ws-clockpill.paused { background: color-mix(in srgb, var(--ws-amber) 14%, var(--ws-panel)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ws-amber) 45%, transparent); }
+.ws-clockpill button { height: 100%; border: 0; background: none; padding: 0 9px; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.ws-clockpill button:hover { background: color-mix(in srgb, var(--ws-text) 8%, transparent); }
+.ws-clockpill .main { padding-left: 12px; }
+.ws-clockpill .main .name { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ws-muted); }
+.ws-clockpill .main b { font-variant-numeric: tabular-nums; }
+.ws-clockpill .ws-rec { background: var(--ws-green); }
+.ws-clockpill.paused .ws-rec { background: var(--ws-amber); animation: none; }
+
+/* Project notes feed */
+.ws-feed { display: grid; gap: 8px; margin: 10px 0 6px; }
+.ws-note { padding: 9px 11px; border-radius: 8px; background: var(--ws-panel-2); white-space: pre-wrap; }
+.ws-note .meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ws-faint); margin-bottom: 2px; }
+.ws-note .meta .ws-icon { margin-left: auto; width: 24px; height: 24px; }
+.ws-note .done { color: var(--ws-green); }
+.ws-ev.shift { left: 0; right: 0; border-radius: 0; background: color-mix(in srgb, var(--ws-green) 10%, transparent); border-left: 3px solid var(--ws-green); color: var(--ws-green); align-content: flex-start; z-index: 0; }
+.ws-nav .ws-count.ws-live { background: var(--ws-green); color: #fff; }
+.ws-activity > .ws-input, .ws-activity > .ws-textarea { width: 100%; min-width: 0; }
+.ws-seg button { white-space: nowrap; }
+.ws-tasks-list .ws-seg { flex-wrap: wrap; }
+.ws-split.open .ws-pagehead { gap: 8px; }
+.ws-activity { grid-template-columns: minmax(0, 1fr); }

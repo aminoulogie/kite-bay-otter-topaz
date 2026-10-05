@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { asShifts, newShiftId, type Shift } from "./worklog";
 import { asFindings, isClosed, newFindingId, type Finding } from "./findings";
 import { asTimeEntries, newTimeId, type TimeEntry } from "./time-tracking";
 import { persist, type PersistStorage } from "zustand/middleware";
@@ -106,7 +107,7 @@ import {
 } from "./routine";
 import { defaultPlan, normalise, type TimeBlock } from "./day-plan";
 import {
-  addStep, cleanProject, moveStep, newProjectId, removeStep, setStep, stepsOf, type Project,
+  addStep, cleanProject, moveStep, newProjectId, removeStep, setStep, stepsOf, type Project, type ProjectNote,
 } from "./projects";
 import { cleanTrade, newTradeId, type Trade, type TradeDraft } from "./trading";
 import { exercisesToAdd, planImport, type ImportPlan, type RoutineCode } from "./routine-code";
@@ -309,6 +310,26 @@ export interface SomaStore {
   trades: Trade[];
   addProject: (name: string, color: string) => string;
   patchProject: (id: string, patch: Partial<Omit<Project, "id">>) => void;
+  /** Shifts worked for clients. See lib/worklog.ts. */
+  shifts: Shift[];
+  /** Starts a shift for a client, closing any that is open. */
+  clockIn: (client: string) => string;
+  /** Starts a break, or ends the one running. */
+  toggleBreak: () => void;
+  /** Ends the open shift (and any running break). Returns its id. */
+  clockOut: () => string | null;
+  addShift: (s: Omit<Shift, "id">) => string;
+  patchShift: (id: string, patch: Partial<Omit<Shift, "id">>) => void;
+  removeShift: (id: string) => void;
+  restoreShift: (idx: number, s: Shift) => void;
+  /**
+   * Carry an activity into its project: its next step becomes (or updates) a
+   * step there, and its notes become (or update) an entry in the project's
+   * notes feed. Safe to call repeatedly — it never duplicates.
+   */
+  fileActivity: (shiftId: string, activityId: string) => void;
+  /** Add or edit (by id) a note in a project's feed; empty text removes it. */
+  upsertProjectNote: (projectId: string, note: ProjectNote) => void;
   /** Audit findings, each on a project. See lib/findings.ts. */
   findings: Finding[];
   addFinding: (f: Omit<Finding, "id" | "createdAt">) => string;
@@ -694,6 +715,7 @@ export const useSoma = create<SomaStore>()(
       projects: [],
       timeEntries: [],
       findings: [],
+      shifts: [],
       goals: [],
       trades: [],
       dayRoutines: [],
@@ -1488,6 +1510,105 @@ export const useSoma = create<SomaStore>()(
             ...s.timeEntries.map((e) => (e.end === undefined ? { ...e, end: now } : e)),
             { id: newTimeId(), projectId, start: now, note: note?.trim() || undefined },
           ],
+        }));
+      },
+      clockIn: (client) => {
+        const now = Date.now();
+        const id = newShiftId();
+        set((s) => ({
+          shifts: [
+            ...s.shifts.map((x) =>
+              x.end === undefined ? { ...x, end: now, breaks: x.breaks.map((b) => (b.end === undefined ? { ...b, end: now } : b)) } : x,
+            ),
+            { id, client: client.trim() || "Client", start: now, breaks: [], activities: [] },
+          ],
+        }));
+        return id;
+      },
+      toggleBreak: () => {
+        const now = Date.now();
+        set((s) => ({
+          shifts: s.shifts.map((x) => {
+            if (x.end !== undefined) return x;
+            const running = x.breaks.some((b) => b.end === undefined);
+            return {
+              ...x,
+              breaks: running ? x.breaks.map((b) => (b.end === undefined ? { ...b, end: now } : b)) : [...x.breaks, { start: now }],
+            };
+          }),
+        }));
+      },
+      clockOut: () => {
+        const now = Date.now();
+        const open = get().shifts.find((x) => x.end === undefined);
+        if (!open) return null;
+        set((s) => ({
+          shifts: s.shifts.map((x) =>
+            x.id === open.id ? { ...x, end: now, breaks: x.breaks.map((b) => (b.end === undefined ? { ...b, end: now } : b)) } : x,
+          ),
+        }));
+        return open.id;
+      },
+      addShift: (sh) => {
+        const id = newShiftId();
+        set((s) => ({ shifts: [...s.shifts, { ...sh, id }] }));
+        return id;
+      },
+      patchShift: (id, patch) => set((s) => ({ shifts: s.shifts.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+      removeShift: (id) => set((s) => ({ shifts: s.shifts.filter((x) => x.id !== id) })),
+      restoreShift: (idx, sh) =>
+        set((s) => {
+          const next = [...s.shifts];
+          next.splice(Math.max(0, Math.min(idx, next.length)), 0, sh);
+          return { shifts: next };
+        }),
+      upsertProjectNote: (projectId, note) =>
+        set((s) => ({
+          projects: s.projects.map((p) => {
+            if (p.id !== projectId) return p;
+            const log = p.log ?? [];
+            const rest = log.filter((n) => n.id !== note.id);
+            if (!note.text.trim()) return { ...p, log: rest };
+            const had = log.find((n) => n.id === note.id);
+            return { ...p, log: had ? log.map((n) => (n.id === note.id ? { ...note, at: had.at } : n)) : [...log, note] };
+          }),
+        })),
+      fileActivity: (shiftId, activityId) => {
+        const st = get();
+        const shift = st.shifts.find((x) => x.id === shiftId);
+        const act = shift?.activities.find((a) => a.id === activityId);
+        if (!shift || !act) return;
+        // Notes go into the project feed under the activity's id; moved to
+        // another project, they leave the old one.
+        for (const p of st.projects) {
+          if (p.id !== act.projectId && p.log?.some((n) => n.id === act.id)) get().upsertProjectNote(p.id, { id: act.id, at: 0, text: "" });
+        }
+        const project = act.projectId ? st.projects.find((p) => p.id === act.projectId) : undefined;
+        if (!project) return;
+        const day = new Date(shift.start).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+        const parts = [act.text.trim(), act.notes?.trim()].filter(Boolean);
+        get().upsertProjectNote(project.id, {
+          id: act.id,
+          at: shift.start,
+          text: parts.length ? `${act.done ? "Done: " : ""}${parts.join(" — ")}` : "",
+          source: `Work log · ${shift.client} · ${day}`,
+        });
+        // The next step becomes a step on the project, once; later edits rename it.
+        const label = act.done ? undefined : act.nextStep?.trim();
+        if (!label) return;
+        const fresh = get().projects.find((p) => p.id === project.id)!;
+        const existing = act.stepId ? stepsOf(fresh).find((x) => x.id === act.stepId) : undefined;
+        if (existing) {
+          if (existing.label !== label) get().renameProjectStep(project.id, existing.id, label);
+          return;
+        }
+        const next = addStep(fresh, label);
+        const created = stepsOf(next)[stepsOf(next).length - 1]!;
+        set((s) => ({
+          projects: s.projects.map((p) => (p.id === project.id ? next : p)),
+          shifts: s.shifts.map((x) =>
+            x.id === shiftId ? { ...x, activities: x.activities.map((a) => (a.id === activityId ? { ...a, stepId: created.id } : a)) } : x,
+          ),
         }));
       },
       addFinding: (f) => {
@@ -2762,6 +2883,7 @@ export const useSoma = create<SomaStore>()(
             projects: get().projects,
             timeEntries: get().timeEntries,
             findings: get().findings,
+            shifts: get().shifts,
             goals: get().goals,
             trades: get().trades,
             dayRoutines: get().dayRoutines,
@@ -2819,6 +2941,7 @@ export const useSoma = create<SomaStore>()(
               projects: asProjects(data.projects),
               timeEntries: asTimeEntries(data.timeEntries),
               findings: asFindings(data.findings),
+              shifts: asShifts(data.shifts),
               goals: asGoals(data.goals),
               trades: asTrades(data.trades),
               dayRoutines: asRoutines(data.dayRoutines),
@@ -2924,6 +3047,7 @@ export const useSoma = create<SomaStore>()(
             projects: mergeById(asProjects(data.projects), cur.projects),
             timeEntries: mergeById(asTimeEntries(data.timeEntries), cur.timeEntries),
             findings: mergeById(asFindings(data.findings), cur.findings),
+            shifts: mergeById(asShifts(data.shifts), cur.shifts),
             goals: mergeById(asGoals(data.goals), cur.goals),
             trades: mergeById(asTrades(data.trades), cur.trades),
             dayRoutines: mergeById(asRoutines(data.dayRoutines), cur.dayRoutines),
@@ -3049,6 +3173,7 @@ export const useSoma = create<SomaStore>()(
         projects: s.projects,
         timeEntries: s.timeEntries,
         findings: s.findings,
+        shifts: s.shifts,
         goals: s.goals,
         trades: s.trades,
         dayRoutines: s.dayRoutines,

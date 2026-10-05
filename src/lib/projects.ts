@@ -44,6 +44,21 @@ export interface Project {
   priority?: ProjectPriority;
   /** Hourly rate in the base currency, for billable time. */
   rate?: number;
+  /**
+   * The project's notes feed, newest last. Entries from the work log carry the
+   * id of the activity they came from, so editing that activity updates its
+   * note here instead of adding another.
+   */
+  log?: ProjectNote[];
+}
+
+export interface ProjectNote {
+  id: string;
+  /** Epoch ms. */
+  at: number;
+  text: string;
+  /** Where it came from, e.g. "Work log · Acme · 5 Oct". */
+  source?: string;
 }
 
 export type ProjectPriority = "high" | "medium" | "low";
@@ -246,6 +261,11 @@ export function cleanProject(raw: unknown): Project | null {
     client: typeof r.client === "string" && r.client.trim() ? r.client.trim() : undefined,
     priority: r.priority === "high" || r.priority === "medium" || r.priority === "low" ? r.priority : undefined,
     rate: Number(r.rate) > 0 ? Number(r.rate) : undefined,
+    log: Array.isArray(r.log)
+      ? r.log
+          .filter((n): n is ProjectNote => !!n && typeof n.id === "string" && typeof n.text === "string")
+          .map((n) => ({ id: n.id, at: Number(n.at) || 0, text: n.text, source: typeof n.source === "string" ? n.source : undefined }))
+      : undefined,
   };
 }
 

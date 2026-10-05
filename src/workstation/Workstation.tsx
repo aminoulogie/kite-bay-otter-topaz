@@ -2,6 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType }
 import {
   Activity,
   BrainCircuit,
+  Briefcase,
+  LogIn,
+  LogOut,
+  Coffee,
+  ChevronDown,
   CalendarDays,
   Clock,
   FileText,
@@ -46,12 +51,16 @@ import { TimePage } from "./TimePage";
 import { ReportsPage } from "./ReportsPage";
 import { FindingsPage } from "./FindingsPage";
 import { HealthPage } from "./HealthPage";
-import { TopTimer } from "./Timer";
+import { useClients } from "./use-clients";
+import { TopClock, TopTimer } from "./Timer";
+import { WorkLogPage } from "./WorkLogPage";
+import { openShift, onBreak } from "@/lib/worklog";
 import { projectStats } from "./metrics";
 
 type Icon = ComponentType<{ className?: string }>;
 export type PageId =
   | "overview"
+  | "worklog"
   | "projects"
   | "tasks"
   | "tracking"
@@ -79,6 +88,7 @@ interface PageDef {
 
 const PAGES: PageDef[] = [
   { id: "overview", label: "Overview", icon: Gauge, group: "Workspace" },
+  { id: "worklog", label: "Work log", icon: Briefcase, group: "Workspace" },
   { id: "projects", label: "Projects", icon: FolderKanban, group: "Workspace" },
   { id: "findings", label: "Findings", icon: ShieldAlert, group: "Workspace" },
   { id: "tasks", label: "Tasks & calendar", icon: Clock, group: "Workspace" },
@@ -147,6 +157,12 @@ export function Workstation() {
   const [page, setPageState] = useState<PageId>(loadPage);
   const [openProject, setOpenProject] = useState<string | null>(null);
   const [openFinding, setOpenFinding] = useState<string | null>(null);
+  const [openShiftId, setOpenShiftId] = useState<string | null>(null);
+  const [createMenu, setCreateMenu] = useState(false);
+  const addShift = useSoma((s) => s.addShift);
+  const addFinding = useSoma((s) => s.addFinding);
+  const shifts = useSoma((s) => s.shifts);
+  const live = openShift(shifts);
   const [palette, setPalette] = useState(false);
   const sync = useSyncMeta();
   const today = getLocalDateKey();
@@ -165,6 +181,14 @@ export function Workstation() {
     (id: string) => {
       setOpenProject(id);
       go("projects");
+    },
+    [go],
+  );
+
+  const openShiftById = useCallback(
+    (id: string) => {
+      setOpenShiftId(id);
+      go("worklog");
     },
     [go],
   );
@@ -218,6 +242,9 @@ export function Workstation() {
                   {p.id === "projects" && stats.active > 0 && (
                     <span className="ws-count">{stats.active}</span>
                   )}
+                  {p.id === "worklog" && live && (
+                    <span className="ws-count ws-live">{onBreak(live) ? "Break" : "On"}</span>
+                  )}
                   {p.id === "overview" && stats.overdue > 0 && (
                     <span className="ws-count ws-red">{stats.overdue}</span>
                   )}
@@ -255,10 +282,66 @@ export function Workstation() {
               <kbd>Ctrl</kbd> <kbd>K</kbd>
             </span>
           </button>
+          <TopClock onOpenShift={openShiftById} />
           <TopTimer />
-          <button type="button" className="ws-btn primary" onClick={() => newProject()}>
-            <Plus /> New project
-          </button>
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              className="ws-btn primary"
+              onClick={() => setCreateMenu((v) => !v)}
+            >
+              <Plus /> Create <ChevronDown />
+            </button>
+            {createMenu && (
+              <>
+                <div className="ws-pop-bg" onMouseDown={() => setCreateMenu(false)} />
+                <div className="ws-menu" style={{ width: 240 }}>
+                  <ul style={{ marginTop: 0 }}>
+                    <li
+                      onMouseDown={() => {
+                        setCreateMenu(false);
+                        newProject();
+                      }}
+                    >
+                      <FolderKanban size={14} /> Project
+                    </li>
+                    <li
+                      onMouseDown={() => {
+                        setCreateMenu(false);
+                        const today = new Date();
+                        today.setHours(9, 0, 0, 0);
+                        const id = addShift({
+                          client: shifts[shifts.length - 1]?.client ?? "Client",
+                          start: today.getTime(),
+                          end: today.getTime() + 8 * 3600_000,
+                          breaks: [],
+                          activities: [],
+                        });
+                        openShiftById(id);
+                      }}
+                    >
+                      <Briefcase size={14} /> Shift I forgot to clock
+                    </li>
+                    <li
+                      onMouseDown={() => {
+                        setCreateMenu(false);
+                        const id = addFinding({
+                          projectId: projects[0]?.id ?? "",
+                          title: "New finding",
+                          severity: "medium",
+                          status: "open",
+                        });
+                        setOpenFinding(id);
+                        go("findings");
+                      }}
+                    >
+                      <ShieldAlert size={14} /> Finding
+                    </li>
+                  </ul>
+                </div>
+              </>
+            )}
+          </div>
           <button
             type="button"
             className="ws-sync ws-btn ghost"
@@ -279,6 +362,7 @@ export function Workstation() {
 
         <div className="ws-body">
           {page === "overview" && <Overview onOpenProject={openProjectById} onGo={go} />}
+          {page === "worklog" && <WorkLogPage openId={openShiftId} onOpen={setOpenShiftId} />}
           {page === "projects" && <ProjectsPage openId={openProject} onOpen={setOpenProject} />}
           {page === "tasks" && <TasksPage />}
           {page === "money" && <MoneyPage />}
@@ -309,6 +393,10 @@ export function Workstation() {
             newProject(name);
             setPalette(false);
           }}
+          onShift={(id) => {
+            openShiftById(id);
+            setPalette(false);
+          }}
         />
       )}
     </div>
@@ -328,13 +416,20 @@ function Palette({
   onGo,
   onProject,
   onNew,
+  onShift,
 }: {
   onClose: () => void;
   onGo: (p: PageId) => void;
   onProject: (id: string) => void;
   onNew: (name: string) => void;
+  onShift: (id: string) => void;
 }) {
   const projects = useSoma((s) => s.projects);
+  const shifts = useSoma((s) => s.shifts);
+  const clockIn = useSoma((s) => s.clockIn);
+  const clockOut = useSoma((s) => s.clockOut);
+  const toggleBreak = useSoma((s) => s.toggleBreak);
+  const clients = useClients();
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const list = useRef<HTMLUListElement>(null);
@@ -343,6 +438,59 @@ function Palette({
     const needle = q.trim().toLowerCase();
     const match = (s: string) => !needle || s.toLowerCase().includes(needle);
     const out: Cmd[] = [];
+    const live = openShift(shifts);
+    if (live) {
+      if (match("clock out"))
+        out.push({
+          id: "out",
+          label: `Clock out of ${live.client}`,
+          hint: "Work log",
+          icon: LogOut,
+          run: () => {
+            const id = clockOut();
+            if (id) onShift(id);
+          },
+        });
+      if (match("break"))
+        out.push({
+          id: "brk",
+          label: onBreak(live) ? "End the break" : "Take a break",
+          hint: "Work log",
+          icon: Coffee,
+          run: () => {
+            toggleBreak();
+            onClose();
+          },
+        });
+    } else {
+      for (const c of clients)
+        if (match(`clock in ${c}`) || match(c))
+          out.push({
+            id: `in-${c}`,
+            label: `Clock in for ${c}`,
+            hint: "Work log",
+            icon: LogIn,
+            run: () => {
+              clockIn(c);
+              onClose();
+            },
+          });
+      if (
+        needle.startsWith("clock in ") &&
+        q.trim().slice(9).trim() &&
+        !clients.some((c) => c.toLowerCase() === needle.slice(9).trim())
+      )
+        out.push({
+          id: "in-new",
+          label: `Clock in for ${q.trim().slice(9).trim()}`,
+          hint: "New client",
+          icon: LogIn,
+          run: () => {
+            clockIn(q.trim().slice(9).trim());
+            onClose();
+          },
+        });
+    }
     for (const p of PAGES)
       if (match(p.label))
         out.push({
@@ -379,7 +527,20 @@ function Palette({
       run: () => onNew(q.trim() || "Untitled project"),
     });
     return out.slice(0, 40);
-  }, [q, projects, onGo, onProject, onNew]);
+  }, [
+    q,
+    projects,
+    onGo,
+    onProject,
+    onNew,
+    shifts,
+    clients,
+    clockIn,
+    clockOut,
+    toggleBreak,
+    onShift,
+    onClose,
+  ]);
 
   useEffect(() => setSel(0), [q]);
   useEffect(() => {
