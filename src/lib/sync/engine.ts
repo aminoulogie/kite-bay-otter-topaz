@@ -14,7 +14,9 @@
  * goes out next with a newer time, and the other devices take it.
  */
 
-import { codeToSecret, deriveAccess, deriveKeys, newerThan, open, recordId, seal, type Envelope, type SyncKeys } from "./crypto.ts";
+import { gunzipSync, gzipSync, strFromU8, strToU8 } from "fflate";
+import { codeToSecret, deriveAccess, deriveKeys, newerThan, open, openBytes, recordId, seal, sealBytes, type Envelope, type SyncKeys } from "./crypto.ts";
+import type { BackupInfo } from "./server-core.ts";
 import { applyChanges, fieldOf, toRecords, type Change, type State } from "./records.ts";
 
 export interface SyncMeta {
@@ -27,7 +29,15 @@ export interface SyncMeta {
   known: Record<string, { h: string; t: number; d: string }>;
   lastSync?: number;
   lastError?: string;
+  /** Local date of the last daily backup this device uploaded. */
+  lastBackup?: string;
 }
+
+/** Characters per uploaded backup part (the server takes up to 1,000,000). */
+export const BACKUP_PART = 900_000;
+
+const localDay = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** One pull that changed something here, with what each record held before. */
 export interface SyncHistoryEntry {
@@ -165,6 +175,21 @@ export class SyncEngine {
         await this.push(meta);
         meta.lastSync = Date.now();
         meta.lastError = undefined;
+        // Once a day, after a clean sync. The first device of the day takes
+        // it and the others leave it be: a later copy would carry whatever
+        // went wrong during the day over the good one. A backup failing must
+        // never stop syncing, so it is simply tried again next time.
+        const today = localDay();
+        if (meta.lastBackup !== today) {
+          try {
+            const res = await this.call(meta, "/v1/backups");
+            const have = ((await res.json()) as { items: BackupInfo[] }).items.some((b) => b.day === today);
+            if (have) meta.lastBackup = today;
+            else await this.uploadBackup(meta);
+          } catch {
+            /* next sync tries again */
+          }
+        }
       } catch (err) {
         meta.lastError = err instanceof Error ? err.message : String(err);
       }
@@ -197,6 +222,77 @@ export class SyncEngine {
     this.host.saveHistory?.(all.filter((e) => e.at !== at));
     await this.sync();
     return back.length;
+  }
+
+  /** Encrypt everything this device has and keep it on the server as today's backup. */
+  private async uploadBackup(meta: SyncMeta): Promise<{ day: string; size: number }> {
+    const day = localDay();
+    const snapshot = JSON.stringify({ v: 1, at: Date.now(), device: meta.device, records: Object.fromEntries(toRecords(this.host.read())) });
+    const blob = await sealBytes(this.keys!, gzipSync(strToU8(snapshot), { level: 6 }));
+    const parts = Math.ceil(blob.length / BACKUP_PART);
+    for (let i = 0; i < parts; i++) {
+      await this.call(meta, "/v1/backup", {
+        method: "POST",
+        body: JSON.stringify({ day, part: i, parts, blob: blob.slice(i * BACKUP_PART, (i + 1) * BACKUP_PART) }),
+      });
+    }
+    meta.lastBackup = day;
+    this.host.save(meta);
+    return { day, size: blob.length };
+  }
+
+  /** Back up now, whatever the day. */
+  async backupNow(): Promise<{ day: string; size: number }> {
+    const meta = this.host.load();
+    if (!meta) throw new Error("Sync is off on this device.");
+    await this.ready(meta);
+    return this.uploadBackup(meta);
+  }
+
+  /** The backups the server holds, oldest first. */
+  async backups(): Promise<BackupInfo[]> {
+    const meta = this.host.load();
+    if (!meta) return [];
+    await this.ready(meta);
+    const res = await this.call(meta, "/v1/backups");
+    return ((await res.json()) as { items: BackupInfo[] }).items;
+  }
+
+  /**
+   * Make this device what it was on `day`, then send that to the others.
+   *
+   * It goes into the sync history first, so a restore can be undone like any
+   * sync. Kinds of data the backup does not know about (it predates them) are
+   * left alone rather than wiped. Returns the number of records changed.
+   */
+  async restoreBackup(day: string): Promise<number> {
+    const meta = this.host.load();
+    if (!meta) throw new Error("Sync is off on this device.");
+    await this.ready(meta);
+    const list = await this.backups();
+    const info = list.find((b) => b.day === day);
+    if (!info) throw new Error("That backup is no longer on the server.");
+    let blob = "";
+    for (let i = 0; i < info.parts; i++) {
+      const res = await this.call(meta, `/v1/backup?day=${day}&part=${i}`);
+      blob += ((await res.json()) as { blob: string }).blob;
+    }
+    const bytes = await openBytes(this.keys!, blob);
+    if (!bytes) throw new Error("That backup could not be unlocked with this device's code.");
+    const snap = JSON.parse(strFromU8(gunzipSync(bytes))) as { records: Record<string, string> };
+    const wanted = new Map(Object.entries(snap.records).filter(([k]) => fieldOf(k) !== "syncDevices"));
+    const fields = new Set([...wanted.keys()].map(fieldOf));
+    const local = toRecords(this.host.read());
+    const changes: { key: string; before: string | null; after: string | null }[] = [];
+    for (const [k, v] of wanted) if (local.get(k) !== v) changes.push({ key: k, before: local.get(k) ?? null, after: v });
+    for (const [k, v] of local) if (!wanted.has(k) && fields.has(fieldOf(k))) changes.push({ key: k, before: v, after: null });
+    if (!changes.length) return 0;
+    if (this.host.saveHistory) {
+      this.host.saveHistory(trimHistory([...(this.host.loadHistory?.() ?? []), { at: Date.now(), from: [`backup:${day}`], changes }]));
+    }
+    this.host.write(applyChanges(this.host.read(), changes.map((c) => ({ key: c.key, value: c.after }))));
+    await this.sync();
+    return changes.length;
   }
 
   private async pullAll(meta: SyncMeta): Promise<Envelope[]> {

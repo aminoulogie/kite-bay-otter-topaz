@@ -13,3 +13,13 @@ CREATE TABLE IF NOT EXISTS records (
   PRIMARY KEY (vault, id)
 );
 CREATE INDEX IF NOT EXISTS records_by_seq ON records (vault, seq);
+-- Daily encrypted backups, kept 30 days, split in parts to fit a row.
+CREATE TABLE IF NOT EXISTS backups (
+  vault TEXT NOT NULL,
+  day TEXT NOT NULL,
+  part INTEGER NOT NULL,
+  parts INTEGER NOT NULL,
+  blob TEXT NOT NULL,
+  created INTEGER NOT NULL,
+  PRIMARY KEY (vault, day, part)
+);

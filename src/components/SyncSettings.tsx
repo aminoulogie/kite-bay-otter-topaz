@@ -150,6 +150,7 @@ export function SyncSettings() {
             </div>
           )}
           <SyncHistory devices={devices} />
+          <ServerBackups />
           <p className="text-faint">Server: {meta.url}</p>
         </div>
       ) : mode === "idle" ? (
@@ -267,6 +268,89 @@ function SyncHistory({ devices }: { devices: { id: string; kind: keyof typeof DE
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** The encrypted daily backups on the server (kept 30 days), restorable. */
+function ServerBackups() {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<{ day: string; size: number }[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = () =>
+    syncEngine
+      .backups()
+      .then((l) => setList([...l].reverse()))
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Could not list backups"));
+  useEffect(() => {
+    if (open && list === null) void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const kb = (n: number) => (n > 1_000_000 ? `${(n / 1_000_000).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1000))} KB`);
+  return (
+    <div className="rounded-xl border border-border bg-surface-2 p-3">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between font-bold">
+        <span>Server backups</span>
+        <span className="text-muted">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          <p className="text-faint">
+            One a day, locked with your recovery code like everything else, kept 30 days. Restoring makes every device
+            what it was that day — and can itself be undone under Recent syncs.
+          </p>
+          {list === null && <p className="text-muted">Loading…</p>}
+          {list?.length === 0 && <p className="text-muted">None yet — the first is made on the next sync.</p>}
+          {list?.map((b) => (
+            <div key={b.day} className="flex items-center justify-between gap-2 border-t border-border pt-1.5">
+              <span>
+                <span className="font-bold tabular-nums">
+                  {new Date(`${b.day}T12:00:00`).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
+                </span>{" "}
+                <span className="text-muted">· {kb(b.size)}</span>
+              </span>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={async () => {
+                  if (!window.confirm(`Restore everything to ${b.day}? Changes since then are replaced on every device (you can undo this).`)) return;
+                  setBusy(b.day);
+                  try {
+                    const n = await syncEngine.restoreBackup(b.day);
+                    toast.success(n ? `Restored ${b.day} — ${n} records changed` : "Already identical to that day");
+                  } catch (e) {
+                    toast.error(e instanceof Error ? e.message : "Restore failed");
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+                className="shrink-0 rounded-full border border-border bg-surface px-3 py-1 font-bold"
+              >
+                {busy === b.day ? "Restoring…" : "Restore"}
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            disabled={busy !== null}
+            onClick={async () => {
+              setBusy("now");
+              try {
+                const r = await syncEngine.backupNow();
+                toast.success(`Backed up (${kb(r.size)})`);
+                await load();
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Backup failed");
+              } finally {
+                setBusy(null);
+              }
+            }}
+            className="mt-1 rounded-full border border-border bg-surface px-3 py-1.5 font-bold"
+          >
+            {busy === "now" ? "Backing up…" : "Back up now"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

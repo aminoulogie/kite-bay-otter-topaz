@@ -18,13 +18,34 @@ export interface StoredRecord {
   blob: string;
 }
 
+export interface BackupInfo {
+  day: string;
+  parts: number;
+  size: number;
+  created: number;
+}
+
 export interface SyncStorage {
   vault(vault: string): Promise<{ tokenHash: string } | null>;
   createVault(vault: string, tokenHash: string): Promise<void>;
   /** Store the items with consecutive sequence numbers; returns the last one. */
   put(vault: string, items: { id: string; blob: string }[]): Promise<number>;
   after(vault: string, seq: number, limit: number): Promise<StoredRecord[]>;
+  /** Part 0 replaces whatever that day held. */
+  putBackupPart(vault: string, day: string, part: number, parts: number, blob: string, created: number): Promise<void>;
+  /** Days with every part present. */
+  listBackups(vault: string): Promise<BackupInfo[]>;
+  getBackupPart(vault: string, day: string, part: number): Promise<string | null>;
+  /** Drops days before `day`. */
+  pruneBackups(vault: string, day: string): Promise<void>;
 }
+
+/** Daily backups are kept this long. */
+export const BACKUP_DAYS = 30;
+export const MAX_PARTS = 16;
+export const MAX_PART = 1_000_000;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 export const MAX_ITEMS = 500;
 export const MAX_BLOB = 512 * 1024;
@@ -92,6 +113,41 @@ export async function handle(req: Request, store: SyncStorage): Promise<Response
     return json({ seq: await store.put(vault, clean) });
   }
 
+  // Encrypted daily backups: one per calendar day, in parts so a big one fits
+  // the database's row limit, kept BACKUP_DAYS days. Opaque like everything
+  // else here; only the day is in the clear.
+  if (url.pathname === "/v1/backup" && req.method === "POST") {
+    let body: { day?: unknown; part?: unknown; parts?: unknown; blob?: unknown };
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      return json({ error: "bad json" }, 400);
+    }
+    const { day, part, parts, blob } = body;
+    if (
+      typeof day !== "string" || !DAY.test(day) ||
+      !Number.isInteger(parts) || (parts as number) < 1 || (parts as number) > MAX_PARTS ||
+      !Number.isInteger(part) || (part as number) < 0 || (part as number) >= (parts as number) ||
+      typeof blob !== "string" || !blob.length || blob.length > MAX_PART
+    ) {
+      return json({ error: "bad backup" }, 400);
+    }
+    const now = Date.now();
+    await store.putBackupPart(vault, day, part as number, parts as number, blob, now);
+    await store.pruneBackups(vault, dayKey(now - BACKUP_DAYS * 86_400_000));
+    return json({ ok: true });
+  }
+  if (url.pathname === "/v1/backups" && req.method === "GET") {
+    return json({ items: await store.listBackups(vault) });
+  }
+  if (url.pathname === "/v1/backup" && req.method === "GET") {
+    const day = url.searchParams.get("day") ?? "";
+    const part = Number(url.searchParams.get("part"));
+    if (!DAY.test(day) || !Number.isInteger(part) || part < 0 || part >= MAX_PARTS) return json({ error: "bad request" }, 400);
+    const blob = await store.getBackupPart(vault, day, part);
+    return blob === null ? json({ error: "not found" }, 404) : json({ blob });
+  }
+
   if (url.pathname === "/v1/pull" && req.method === "GET") {
     const after = Math.max(0, Math.floor(Number(url.searchParams.get("after")) || 0));
     const items = await store.after(vault, after, PAGE);
@@ -104,6 +160,12 @@ export async function handle(req: Request, store: SyncStorage): Promise<Response
 /** In-memory storage, for tests and local runs. */
 export function memoryStorage(): SyncStorage {
   const vaults = new Map<string, { tokenHash: string; seq: number; records: Map<string, StoredRecord> }>();
+  const backups = new Map<string, Map<string, { parts: number; created: number; blobs: Map<number, string> }>>();
+  const of = (v: string) => {
+    let m = backups.get(v);
+    if (!m) backups.set(v, (m = new Map()));
+    return m;
+  };
   return {
     async vault(v) {
       const x = vaults.get(v);
@@ -124,6 +186,23 @@ export function memoryStorage(): SyncStorage {
       const x = vaults.get(v);
       if (!x) return [];
       return [...x.records.values()].filter((r) => r.seq > seq).sort((a, b) => a.seq - b.seq).slice(0, limit);
+    },
+    async putBackupPart(v, day, part, parts, blob, created) {
+      const m = of(v);
+      if (part === 0 || !m.has(day)) m.set(day, { parts, created, blobs: new Map() });
+      m.get(day)!.blobs.set(part, blob);
+    },
+    async listBackups(v) {
+      return [...of(v)]
+        .filter(([, b]) => b.blobs.size === b.parts)
+        .map(([day, b]) => ({ day, parts: b.parts, created: b.created, size: [...b.blobs.values()].reduce((a, x) => a + x.length, 0) }))
+        .sort((a, b) => a.day.localeCompare(b.day));
+    },
+    async getBackupPart(v, day, part) {
+      return of(v).get(day)?.blobs.get(part) ?? null;
+    },
+    async pruneBackups(v, day) {
+      for (const d of [...of(v).keys()]) if (d < day) of(v).delete(d);
     },
   };
 }

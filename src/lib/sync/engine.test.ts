@@ -113,3 +113,45 @@ test("a pull can be undone, and the undo reaches the other device; later edits s
   await pc.engine.undo(hist[hist.length - 1]!.at);
   assert.equal((pc.get().todos as { text: string }[])[0]!.text, "PC edit since");
 });
+
+test("a daily backup is kept on the server and a restore brings that day back to every device", async () => {
+  const server = memoryStorage();
+  const code = secretToCode(newSecret());
+  const phone = device(server, { projects: [{ id: "p", name: "Audit" }], settings: { accent: "#f00" } });
+  const pc = device(server, {});
+  await phone.engine.enable(URL_, code, "create");
+  await pc.engine.enable(URL_, code, "join");
+  await phone.engine.sync(); // first sync of the day uploads the backup
+  const list = await pc.engine.backups();
+  assert.equal(list.length, 1);
+
+  // Something goes wrong: the project is wiped and the accent changed.
+  phone.set({ projects: [], settings: { accent: "#0f0" } });
+  await phone.engine.sync();
+  await pc.engine.sync();
+  assert.deepEqual(pc.get().projects, []);
+
+  const n = await pc.engine.restoreBackup(list[0]!.day);
+  assert.ok(n >= 2);
+  assert.deepEqual(pc.get().projects, [{ id: "p", name: "Audit" }]);
+  await phone.engine.sync();
+  assert.deepEqual(phone.get().projects, [{ id: "p", name: "Audit" }]);
+  assert.equal((phone.get().settings as { accent: string }).accent, "#f00");
+});
+
+test("the server keeps backups for 30 days and refuses junk", async () => {
+  const { handle: h, memoryStorage: mem } = await import("./server-core.ts");
+  const store = mem();
+  const headers = { "X-Vault": "vault1234", Authorization: `Bearer ${"t".repeat(40)}`, "Content-Type": "application/json" };
+  const post = (body: unknown) => h(new Request("https://s/v1/backup", { method: "POST", headers, body: JSON.stringify(body) }), store);
+  assert.equal((await post({ day: "2020-01-01", part: 0, parts: 1, blob: "x" })).status, 200);
+  // The next upload prunes anything older than 30 days.
+  assert.equal((await post({ day: "2999-01-01", part: 0, parts: 2, blob: "a" })).status, 200);
+  assert.equal((await post({ day: "bad", part: 0, parts: 1, blob: "x" })).status, 400);
+  assert.equal((await post({ day: "2999-01-02", part: 3, parts: 2, blob: "x" })).status, 400);
+  const list = (await (await h(new Request("https://s/v1/backups", { headers }), store)).json()) as { items: { day: string }[] };
+  assert.deepEqual(list.items.map((b) => b.day), [], "the old day was pruned, and a half-uploaded day is not listed");
+  assert.equal((await post({ day: "2999-01-01", part: 1, parts: 2, blob: "b" })).status, 200);
+  const again = (await (await h(new Request("https://s/v1/backups", { headers }), store)).json()) as { items: { day: string }[] };
+  assert.deepEqual(again.items.map((b) => b.day), ["2999-01-01"]);
+});

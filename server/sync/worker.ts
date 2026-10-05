@@ -45,6 +45,40 @@ function d1Storage(db: D1Database): SyncStorage {
       const row = await db.prepare("SELECT seq FROM vaults WHERE vault = ?").bind(vault).first<{ seq: number }>();
       return row?.seq ?? 0;
     },
+    async putBackupPart(vault, day, part, parts, blob, created) {
+      const stmts: D1Statement[] = [];
+      // A new upload of the day replaces the old one, parts and all.
+      if (part === 0) stmts.push(db.prepare("DELETE FROM backups WHERE vault = ? AND day = ?").bind(vault, day));
+      stmts.push(
+        db
+          .prepare(
+            `INSERT INTO backups (vault, day, part, parts, blob, created) VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT (vault, day, part) DO UPDATE SET parts = excluded.parts, blob = excluded.blob, created = excluded.created`,
+          )
+          .bind(vault, day, part, parts, blob, created),
+      );
+      await db.batch(stmts);
+    },
+    async listBackups(vault) {
+      const { results } = await db
+        .prepare(
+          `SELECT day, MAX(parts) AS parts, SUM(LENGTH(blob)) AS size, MAX(created) AS created, COUNT(*) AS n
+           FROM backups WHERE vault = ? GROUP BY day ORDER BY day`,
+        )
+        .bind(vault)
+        .all<{ day: string; parts: number; size: number; created: number; n: number }>();
+      return results.filter((r) => r.n === r.parts).map(({ day, parts, size, created }) => ({ day, parts, size, created }));
+    },
+    async getBackupPart(vault, day, part) {
+      const row = await db
+        .prepare("SELECT blob FROM backups WHERE vault = ? AND day = ? AND part = ?")
+        .bind(vault, day, part)
+        .first<{ blob: string }>();
+      return row?.blob ?? null;
+    },
+    async pruneBackups(vault, day) {
+      await db.prepare("DELETE FROM backups WHERE vault = ? AND day < ?").bind(vault, day).run();
+    },
     async after(vault, seq, limit) {
       const { results } = await db
         .prepare("SELECT id, seq, blob FROM records WHERE vault = ? AND seq > ? ORDER BY seq LIMIT ?")

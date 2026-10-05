@@ -99,7 +99,7 @@ export async function deriveKeys(secret: Uint8Array): Promise<SyncKeys> {
 
 function b64(bytes: Uint8Array): string {
   let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 function unb64(s: string): Uint8Array {
@@ -129,6 +129,26 @@ export async function seal(keys: SyncKeys, env: Envelope): Promise<string> {
   out.set(iv);
   out.set(ct, iv.length);
   return b64(out);
+}
+
+/** Any bytes, locked the same way as a record: iv + AES-GCM ciphertext, as base64url. */
+export async function sealBytes(keys: SyncKeys, bytes: Uint8Array): Promise<string> {
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await subtle().encrypt({ name: "AES-GCM", iv }, keys.aes, bytes as BufferSource));
+  const out = new Uint8Array(iv.length + ct.length);
+  out.set(iv);
+  out.set(ct, iv.length);
+  return b64(out);
+}
+
+/** The bytes back, or null if tampered with or locked with another key. */
+export async function openBytes(keys: SyncKeys, blob: string): Promise<Uint8Array | null> {
+  try {
+    const raw = unb64(blob);
+    return new Uint8Array(await subtle().decrypt({ name: "AES-GCM", iv: raw.slice(0, 12) }, keys.aes, raw.slice(12)));
+  } catch {
+    return null;
+  }
 }
 
 /** The envelope back, or null if the blob was tampered with or locked with another key. */

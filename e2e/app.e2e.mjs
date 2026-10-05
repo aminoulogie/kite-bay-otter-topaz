@@ -93,6 +93,10 @@ test("clock in, log what was done; the next step and notes land on the project",
   await page.locator(".ws-clockpill button[title='Clock out']").click();
   await page.getByRole("button", { name: /Add what I worked on/ }).click();
   const act = page.locator(".ws-activity").last();
+  await page.waitForFunction(
+    (k) => (JSON.parse(localStorage.getItem(k) ?? "{}").state?.projects ?? []).some((p) => p.name === "E2E audit"),
+    KEY,
+  );
   const pid = (await state(page)).projects.find((p) => p.name === "E2E audit").id;
   await act.locator("select").selectOption(pid);
   await act.locator("input[placeholder='What I did']").fill("Tested invoices");
@@ -116,6 +120,10 @@ test("a timer logs time, and a client report exports as an Excel file", async ()
   await nav(page, "Projects");
   await page.locator("input[placeholder^='New project']").fill("Timer project");
   await page.locator("input[placeholder^='New project']").press("Enter");
+  await page.waitForFunction(
+    (k) => (JSON.parse(localStorage.getItem(k) ?? "{}").state?.projects ?? []).some((p) => p.name === "Timer project"),
+    KEY,
+  );
   await page.locator(".ws-top button", { hasText: "Timer" }).click();
   await page.locator(".ws-menu li", { hasText: "Timer project" }).dispatchEvent("mousedown");
   await page.waitForTimeout(1500);
@@ -192,6 +200,10 @@ test("two devices sync both ways — programmes included — and an undo reaches
   const aAfter = await a.page.evaluate(() => JSON.parse(localStorage.getItem("soma-programs") ?? "[]"));
   assert.ok(!aAfter.some((p) => p.name === "E2E split"), "the undo reached A");
   assert.ok((await state(a.page)).projects.some((p) => p.name === "Synced from B"), "an older sync is untouched");
+
+  // The day's encrypted backup was made by the first sync, and is listed.
+  await b.page.getByRole("button", { name: /Server backups/ }).click();
+  await b.page.getByRole("button", { name: "Restore", exact: true }).first().waitFor({ timeout: 10_000 });
 
   await shot(b.page, "sync-settings");
   assert.deepEqual(a.errors, []);
