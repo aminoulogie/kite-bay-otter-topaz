@@ -31,4 +31,13 @@ const got = JSON.stringify(a.get().todos);
 if (got !== JSON.stringify([{ id: "a", text: "smoke", done: true }])) throw new Error(`sync mismatch: ${got}`);
 const err = a.engine.meta()?.lastError || b.engine.meta()?.lastError;
 if (err) throw new Error(err);
-console.log("sync smoke test passed");
+// The day's encrypted backup went up with the first sync, and comes back.
+const backups = await b.engine.backups();
+if (backups.length !== 1) throw new Error(`expected one backup, got ${backups.length}`);
+a.set({ todos: [] });
+await a.engine.sync();
+await b.engine.sync();
+await b.engine.restoreBackup(backups[0]!.day);
+await a.engine.sync();
+if (!JSON.stringify(a.get().todos).includes("smoke")) throw new Error(`restore did not reach A: ${JSON.stringify(a.get().todos)}`);
+console.log("sync smoke test passed (sync, backup, restore)");

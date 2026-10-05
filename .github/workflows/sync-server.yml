@@ -54,4 +54,5 @@ jobs:
           URL=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' server/sync/deploy.log | head -1)
           sleep 5
           curl -fsS "$URL/health"
+          npm install --no-save --no-audit --no-fund fflate@0.8
           SYNC_URL="$URL" node scripts/sync-smoke.ts
