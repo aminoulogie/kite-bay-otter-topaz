@@ -61,6 +61,61 @@ export function workoutSlot(date: string, s: WorkoutTimeSettings | undefined, is
 }
 
 /**
+ * The slot, moved to when training ACTUALLY started.
+ *
+ * The scheduled time is a plan, and the plan is wrong the moment you walk in
+ * an hour late — but it is the plan that the pre-workout meal, the post-
+ * workout meal and the day's whole macro split are built around. One logged
+ * set is the app finding out where you really are, so from that moment the
+ * day is rebuilt around the real time instead of the intended one.
+ *
+ * `startedAt` is minutes after midnight. Null leaves the plan alone, which is
+ * what every day before you touch a barbell wants.
+ *
+ * The length stays the planned length while the session is open: how long you
+ * will be in there is not known until you leave, and a post-workout meal that
+ * creeps later with every set is worse than one placed on a sane estimate.
+ * Once the session is saved its real length is known and `mins` carries it.
+ */
+export function startedSlot(
+  slot: WorkoutSlot | null,
+  startedAt: number | null,
+  mins?: number,
+): WorkoutSlot | null {
+  if (!slot) return null;
+  if (startedAt == null || !Number.isFinite(startedAt)) return slot;
+  const start = Math.max(0, Math.min(1439, Math.round(startedAt)));
+  const length = Number.isFinite(Number(mins)) && Number(mins) > 0
+    ? Math.round(Number(mins))
+    : slot.end - slot.start;
+  return { date: slot.date, start, end: Math.min(1439, start + length), time: hhmmOf(start) };
+}
+
+/** Minutes after midnight for an epoch time, in the device's own zone. */
+export function minutesAt(at: number): number {
+  const d = new Date(at);
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+/**
+ * The real start of a session already saved to history.
+ *
+ * The duration clock runs from the first set to the moment Save is pressed,
+ * and the timestamp IS that moment — so the subtraction gives back the first
+ * set to the minute rather than approximating it. "47:30" is minutes:seconds,
+ * not hours:minutes, which is the trap in reading this field.
+ */
+export function savedStart(session: { timestamp?: number; durationFormatted?: string } | undefined): number | null {
+  const at = Number(session?.timestamp);
+  if (!Number.isFinite(at) || at <= 0) return null;
+  const m = /^(\d+):(\d{2})$/.exec(String(session?.durationFormatted ?? ""));
+  if (!m) return null;
+  const mins = Number(m[1]);
+  if (!Number.isFinite(mins)) return null;
+  return minutesAt(at - mins * 60000);
+}
+
+/**
  * The day's eating times with the session in them.
  *
  * Any meal that would land from two hours before the session to an hour

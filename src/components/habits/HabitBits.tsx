@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   Activity, Bed, BookOpen, Brain, Check, Droplet, Dumbbell, Footprints, Laptop, Moon, PenLine, Pill,
   Salad, Smartphone, Sparkles, Sun, Wallet, type LucideIcon,
@@ -6,6 +7,7 @@ import { canChange, canTickOn } from "@/lib/habit-lock";
 import { tapLight, tapMedium } from "@/lib/haptics";
 import { progress, stepCount, targetOf } from "@/lib/habit-steps";
 import { status } from "@/lib/habit-ramp";
+import { getPhoto } from "@/lib/habit-photos";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { RampRow } from "@/components/views/HabitsView";
@@ -34,8 +36,61 @@ function iconFor(name: string): LucideIcon | null {
   return ICONS.find(([re]) => re.test(name))?.[1] ?? null;
 }
 
+/**
+ * Today's photo for a habit, as an object URL, or null.
+ *
+ * Minted in an effect and revoked in its cleanup, never during render:
+ * revoking a URL the browser has not finished fetching leaves a blank tile,
+ * which is a bug the photo calendar already had to fix once.
+ */
+export function useHabitPhoto(habitId: string, date: string): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    let made: string | null = null;
+    void (async () => {
+      const p = await getPhoto(habitId, date);
+      if (!alive || !p) return;
+      made = URL.createObjectURL(p.thumb);
+      setUrl(made);
+    })();
+    return () => {
+      alive = false;
+      setUrl(null);
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [habitId, date]);
+  return url;
+}
+
+/**
+ * The habit's face: the day's photograph when there is one, otherwise the
+ * glyph its name suggests.
+ *
+ * The photo WINS. A dumbbell is a guess made from the word "Train"; a picture
+ * of you under the bar is the day itself, and it is the thing worth looking at
+ * on a list scrolled past every morning. The tile keeps its shape, size and
+ * colour ring either way, so swapping one for the other never reflows the row.
+ */
 export function HabitIcon({ habit, size = "md" }: { habit: Habit; size?: "md" | "lg" }) {
   const Icon = iconFor(habit.name);
+  const activeDate = useSoma((s) => s.activeDate);
+  const photo = useHabitPhoto(habit.id, activeDate);
+
+  if (photo) {
+    return (
+      <span
+        className={cn(
+          "grid shrink-0 place-items-center overflow-hidden",
+          size === "lg" ? "size-[4.5rem] rounded-[1.4rem]" : "size-12 rounded-[0.95rem]",
+        )}
+        style={{ boxShadow: `inset 0 0 0 1.5px color-mix(in srgb, ${habit.color} 70%, transparent)` }}
+      >
+        <img src={photo} alt="" className="size-full object-cover" />
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn(

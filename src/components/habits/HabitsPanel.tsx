@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X } from "lucide-react";
+import { CalendarDays, Camera, Plus, X } from "lucide-react";
 import { MoneySheet } from "@/components/money/money-ui";
 import { AutoSuggest, NewHabitBody, needFor } from "@/components/views/HabitsView";
 import { DotGrid, HabitCheck, HabitIcon, HabitWork } from "@/components/habits/HabitBits";
+import { HabitPhotoCalendar } from "@/components/HabitPhotoCalendar";
+import { captureImage, savePhoto } from "@/lib/habit-photos";
+import { hasSteps } from "@/lib/habit-steps";
+import { toast } from "sonner";
 import { HabitDetail } from "@/components/habits/HabitDetail";
 import { KEEP_AT, habitConsistency, habitDayScore, habitStreak } from "@/lib/habit-score";
 import { habitCategory, type HabitCategory } from "@/lib/habit-colors";
@@ -93,6 +97,32 @@ function PanelBody({ onClose, onOpen }: { onClose: () => void; onOpen: (id: stri
   const today = getLocalDateKey(new Date());
   const [filter, setFilter] = useState<HabitCategory | "All">("All");
   const [adding, setAdding] = useState(false);
+  const [calendarFor, setCalendarFor] = useState<Habit | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const toggleHabit = useSoma((s) => s.toggleHabit);
+
+  /**
+   * Shoot, save, and tick the habit off the same tap.
+   *
+   * Photographing the thing IS the evidence it happened, so asking for a
+   * second tap to say so would be busywork. A habit with a checklist is the
+   * exception: a photo is one moment, and ticking every step off the back of
+   * it would call a routine finished on the strength of its first item.
+   */
+  const captureNow = async (h: Habit) => {
+    const file = await captureImage();
+    if (!file) return;
+    setBusy(h.id);
+    try {
+      await savePhoto(h.id, activeDate, file);
+      if (!hasSteps(h) && !h.history[activeDate]) toggleHabit(h.id, activeDate);
+      toast.success("Captured " + h.name);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save that photo.");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const day = useMemo(() => habitDayScore(habits, activeDate), [habits, activeDate]);
   const streak = useMemo(() => habitStreak(habits, today), [habits, today]);
@@ -169,7 +199,16 @@ function PanelBody({ onClose, onOpen }: { onClose: () => void; onOpen: (id: stri
       <div className="soma-scroll min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-[calc(var(--safe-bottom,env(safe-area-inset-bottom))+24px)]">
         {filter === "All" && <AutoSuggest />}
         {shown.map((h) => (
-          <HabitCard key={h.id} habit={h} cols={cols} today={today} onOpen={() => onOpen(h.id)} />
+          <HabitCard
+            key={h.id}
+            habit={h}
+            cols={cols}
+            today={today}
+            busy={busy === h.id}
+            onOpen={() => onOpen(h.id)}
+            onCapture={() => void captureNow(h)}
+            onCalendar={() => setCalendarFor(h)}
+          />
         ))}
 
         {habits.length === 0 && (
@@ -190,17 +229,29 @@ function PanelBody({ onClose, onOpen }: { onClose: () => void; onOpen: (id: stri
           </MoneySheet>,
           document.body,
         )}
+
+      {calendarFor &&
+        createPortal(
+          <HabitPhotoCalendar
+            habit={habits.find((x) => x.id === calendarFor.id) ?? calendarFor}
+            onClose={() => setCalendarFor(null)}
+          />,
+          document.body,
+        )}
     </>
   );
 }
 
 function HabitCard({
-  habit: h, cols, today, onOpen,
+  habit: h, cols, today, onOpen, onCapture, onCalendar, busy,
 }: {
   habit: Habit;
   cols: (string | null)[][];
   today: string;
   onOpen: () => void;
+  onCapture: () => void;
+  onCalendar: () => void;
+  busy: boolean;
 }) {
   const streak = currentStreak(h, today);
   return (
@@ -223,9 +274,37 @@ function HabitCard({
         <HabitCheck habit={h} />
       </div>
       <HabitWork habit={h} />
-      <button type="button" onClick={onOpen} className="mt-3.5 block w-full" aria-label={`Open ${h.name}`}>
-        <DotGrid habit={h} cols={cols} today={today} />
-      </button>
+      {/* The camera and the calendar belong on the CARD, not behind the
+          habit's own screen: photographing the thing you just did is a
+          one-tap errand done while you are still standing there, and open,
+          shoot, come back is three.
+          
+          They sit on this row rather than up beside the name because up there
+          they cost the name its width — "Hit protein" became "Hit …" on a
+          414px phone, which trades a label you read every day for two buttons
+          you press occasionally. */}
+      <div className="mt-3.5 flex items-end gap-2">
+        <button type="button" onClick={onOpen} className="block min-w-0 flex-1" aria-label={`Open ${h.name}`}>
+          <DotGrid habit={h} cols={cols} today={today} />
+        </button>
+        <button
+          type="button"
+          onClick={onCalendar}
+          className="flex size-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-muted transition-transform active:scale-90"
+          aria-label={`Photo calendar for ${h.name}`}
+        >
+          <CalendarDays className="size-4" />
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={onCapture}
+          className="flex size-9 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-muted transition-transform active:scale-90 disabled:opacity-40"
+          aria-label={`Capture photo for ${h.name}`}
+        >
+          <Camera className="size-4" />
+        </button>
+      </div>
     </div>
   );
 }
