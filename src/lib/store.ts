@@ -483,6 +483,12 @@ export interface SomaStore {
   startBackfill: (date: string, split?: string) => void;
   setLiveDate: (date: string) => void;
   resumeFinished: () => void;
+  /**
+   * Open a saved day in the logger, ready to edit. A session saved on another
+   * device arrives in history only — the logger and its summary screen are
+   * per device — so this is how the PC edits the phone's workout.
+   */
+  openSavedSession: (date: string) => void;
   moveSession: (from: string, to: string) => string | null;
   deleteSession: (date: string) => void;
   restoreSession: (date: string, session: HistorySession) => boolean;
@@ -2544,6 +2550,20 @@ export const useSoma = create<SomaStore>()(
         set({ live: defaultLive(proj.split) });
       },
       resumeFinished: () => set({ live: { ...get().live, finished: null } }),
+      openSavedSession: (date) => {
+        const session = get().history[date];
+        if (!session) return;
+        const today = getLocalDateKey(new Date());
+        set({
+          live: {
+            ...defaultLive(session.split),
+            exercises: structuredClone(session.exercises),
+            forDate: date === today ? undefined : date,
+            finished: null,
+          },
+          activeDate: date,
+        });
+      },
 
       /**
        * File a saved session under a different date.

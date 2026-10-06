@@ -88,8 +88,11 @@ export function WorkoutView() {
   const restDays = useSoma((s) => s.restDays);
   /** "Train anyway" on a saved rest day: show the session for this visit. */
   const [restDismissed, setRestDismissed] = useState(false);
+  // "New session" on a session saved elsewhere: hide its summary for now.
+  const [syncedDismissed, setSyncedDismissed] = useState(false);
   const resetLive = useSoma((s) => s.resetLive);
   const resumeFinished = useSoma((s) => s.resumeFinished);
+  const openSavedSession = useSoma((s) => s.openSavedSession);
   const allExercises = useSoma((s) => s.allExercises);
   const logReadiness = useSoma((s) => s.logReadiness);
   const setActiveDate = useSoma((s) => s.setActiveDate);
@@ -354,8 +357,26 @@ export function WorkoutView() {
     );
   }
 
-  if (live.finished) {
-    const f = live.finished;
+  // Saved today on another device: the phone kept its summary screen, this
+  // device only has the session in history. Show it the same way rather than
+  // an empty logger that looks like nothing was trained.
+  const savedElsewhere =
+    !live.finished &&
+    !live.forDate &&
+    !syncedDismissed &&
+    !live.exercises.some((ex) => ex.sets.some((x) => x.done))
+      ? history[todayKey]
+      : undefined;
+  if (live.finished || savedElsewhere) {
+    const f = (live.finished ?? savedElsewhere)!;
+    const resume = () => {
+      if (live.finished) resumeFinished();
+      else openSavedSession(todayKey);
+    };
+    const fresh = () => {
+      if (live.finished) resetLive();
+      else setSyncedDismissed(true);
+    };
     return (
       <div className="space-y-3 pb-4">
         <div className="py-4 text-center">
@@ -388,10 +409,10 @@ export function WorkoutView() {
           </Card>
         ))}
         <div className="flex gap-2">
-          <Button className="flex-1" onClick={resumeFinished}>
+          <Button className="flex-1" onClick={resume}>
             Edit session
           </Button>
-          <Button variant="danger" onClick={resetLive}>
+          <Button variant="danger" onClick={fresh}>
             New session
           </Button>
         </div>
