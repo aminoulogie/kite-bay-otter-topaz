@@ -509,6 +509,7 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
             Reset
           </Button>
         </div>
+        <CustomWater onAdd={(ml) => addWater(ml)} />
       </Card>
       </Sized>
 
@@ -1642,6 +1643,50 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-border bg-surface-2 px-3 py-2 text-center">
       <div className="font-display text-base font-extrabold tabular">{value}</div>
       <div className="text-[0.55rem] font-bold uppercase tracking-wider text-faint">{label}</div>
+    </div>
+  );
+}
+
+/** Any amount of water, in ml or litres — a 330 ml can, a 1.5 L bottle. */
+function CustomWater({ onAdd }: { onAdd: (ml: number) => void }) {
+  const [amount, setAmount] = useState<number | null>(null);
+  const [unit, setUnit] = useState<"ml" | "L">("ml");
+  const ml = amount == null ? 0 : Math.round(unit === "L" ? amount * 1000 : amount);
+  const ok = ml > 0 && ml <= 10_000;
+  const go = (sign: 1 | -1) => {
+    if (!ok) return;
+    onAdd(sign * ml);
+    toast.success(`${sign > 0 ? "+" : "−"}${ml} ml water`);
+    setAmount(null);
+  };
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <DecimalInput
+        className="h-11 min-w-0 flex-1 text-center tabular"
+        value={amount ?? ""}
+        placeholder="Custom amount"
+        aria-label="Custom water amount"
+        onValueChange={(n) => setAmount(n)}
+        onKeyDown={(e) => e.key === "Enter" && go(1)}
+      />
+      <div className="flex h-11 overflow-hidden rounded-xl border border-border text-xs font-bold">
+        {(["ml", "L"] as const).map((u) => (
+          <button
+            key={u}
+            type="button"
+            onClick={() => setUnit(u)}
+            className={cn("px-3", unit === u ? "bg-surface-3 text-fg" : "bg-surface-2 text-muted")}
+          >
+            {u}
+          </button>
+        ))}
+      </div>
+      <Button onClick={() => go(1)} disabled={!ok}>
+        Add
+      </Button>
+      <Button onClick={() => go(-1)} disabled={!ok} aria-label="Remove that amount">
+        −
+      </Button>
     </div>
   );
 }
