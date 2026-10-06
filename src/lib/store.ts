@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { asShifts, newShiftId, type Shift } from "./worklog";
 import { newNapId } from "./naps";
+
+const newWaterId = () => `w-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 import { asFindings, isClosed, newFindingId, type Finding } from "./findings";
 import { asTimeEntries, newTimeId, type TimeEntry } from "./time-tracking";
 import { persist, type PersistStorage } from "zustand/middleware";
@@ -414,6 +416,8 @@ export interface SomaStore {
   restoreFood: (idx: number, item: FoodItem, date?: string) => void;
   addWater: (ml: number) => void;
   setWater: (ml: number) => void;
+  /** Undo one logged water change: its amount comes back off (or back on). */
+  removeWaterEntry: (id: string) => void;
   updateFood: (idx: number, item: FoodItem) => void;
   moveFoodToMeal: (idx: number, meal: string) => void;
   addCustomFood: (food: FoodItem) => boolean;
@@ -1937,12 +1941,30 @@ export const useSoma = create<SomaStore>()(
         const k = get().activeDate;
         get().ensureDay(k);
         const day = get().nutrition[k]!;
-        get().patchDay(k, { water: Math.max(0, (day.water || 0) + ml) });
+        const before = day.water || 0;
+        const water = Math.max(0, before + Math.round(ml));
+        if (water === before) return;
+        get().patchDay(k, { water, waterLog: [...(day.waterLog ?? []), { id: newWaterId(), at: Date.now(), ml: water - before }] });
       },
       setWater: (ml) => {
         const k = get().activeDate;
         get().ensureDay(k);
-        get().patchDay(k, { water: Math.max(0, Math.round(ml)) });
+        const day = get().nutrition[k]!;
+        const before = day.water || 0;
+        const water = Math.max(0, Math.round(ml));
+        if (water === before) return;
+        const entry = { id: newWaterId(), at: Date.now(), ml: water - before, ...(water === 0 ? { reset: true } : {}) };
+        get().patchDay(k, { water, waterLog: [...(day.waterLog ?? []), entry] });
+      },
+      removeWaterEntry: (id) => {
+        const k = get().activeDate;
+        const day = get().nutrition[k];
+        const entry = day?.waterLog?.find((e) => e.id === id);
+        if (!day || !entry) return;
+        get().patchDay(k, {
+          water: Math.max(0, (day.water || 0) - entry.ml),
+          waterLog: day.waterLog!.filter((e) => e.id !== id),
+        });
       },
       updateFood: (idx, item) => {
         const k = get().activeDate;

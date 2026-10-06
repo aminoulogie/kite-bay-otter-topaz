@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Droplet, Lock, NotebookPen, Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
+import { Droplet, History, Lock, NotebookPen, Pencil, Plus, ScanLine, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { PortionSheet } from "@/components/PortionSheet";
@@ -83,6 +83,7 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
   const restoreHunger = useSoma((s) => s.restoreHunger);
   const addWater = useSoma((s) => s.addWater);
   const setWater = useSoma((s) => s.setWater);
+  const [waterHistory, setWaterHistory] = useState(false);
   const updateFood = useSoma((s) => s.updateFood);
   const addCustomFood = useSoma((s) => s.addCustomFood);
   const rememberScannedFood = useSoma((s) => s.rememberScannedFood);
@@ -471,8 +472,22 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
             <Droplet aria-hidden className="size-4" style={{ color: WATER.from }} />
             Water
           </span>
-          <span className="tabular text-sm font-bold" style={{ color: WATER.from }}>
-            {water} / {goals.water} ml
+          <span className="flex items-center gap-2">
+            <span className="tabular text-sm font-bold" style={{ color: WATER.from }}>
+              {water} / {goals.water} ml
+            </span>
+            <button
+              type="button"
+              onClick={() => setWaterHistory((v) => !v)}
+              aria-label="Water history"
+              aria-pressed={waterHistory}
+              className={cn(
+                "grid size-8 place-items-center rounded-full border border-border",
+                waterHistory ? "bg-surface-3 text-fg" : "bg-surface-2 text-muted",
+              )}
+            >
+              <History className="size-4" />
+            </button>
           </span>
         </CardTitle>
         <Progress value={waterPct} color={ringFill(WATER)} track={`${WATER.from}2e`} />
@@ -510,6 +525,7 @@ export function NutritionView({ initialSub = "dash" }: { initialSub?: "dash" | "
           </Button>
         </div>
         <CustomWater onAdd={(ml) => addWater(ml)} />
+        {waterHistory && <WaterHistory date={activeDate} fromFood={fromFood} />}
       </Card>
       </Sized>
 
@@ -1687,6 +1703,78 @@ function CustomWater({ onAdd }: { onAdd: (ml: number) => void }) {
       <Button onClick={() => go(-1)} disabled={!ok} aria-label="Remove that amount">
         −
       </Button>
+    </div>
+  );
+}
+
+/**
+ * What was logged and when: the day's water changes, newest first, each one
+ * removable; then the last seven days' totals.
+ */
+function WaterHistory({ date, fromFood }: { date: string; fromFood: number }) {
+  const nutrition = useSoma((s) => s.nutrition);
+  const removeWaterEntry = useSoma((s) => s.removeWaterEntry);
+  const day = nutrition[date];
+  const log = [...(day?.waterLog ?? [])].reverse();
+  const logged = (day?.waterLog ?? []).reduce((a, e) => a + e.ml, 0);
+  const earlier = Math.max(0, (day?.water ?? 0) - logged);
+  const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(`${date}T12:00:00`);
+    d.setDate(d.getDate() - i);
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    return { k, d, ml: totalWaterMl(nutrition[k]) };
+  });
+  const goal = day?.goals?.water || 3500;
+  return (
+    <div className="mt-3 rounded-xl bg-surface-2 p-3 text-sm">
+      <div className="mb-1 text-[0.65rem] font-bold uppercase tracking-wider text-faint">Logged {date}</div>
+      {!log.length && !earlier && !fromFood && <p className="py-1 text-muted">Nothing logged yet.</p>}
+      {log.map((e) => (
+        <div key={e.id} className="flex items-center justify-between border-b border-border py-1.5 last:border-0">
+          <span>
+            <span className="tabular text-muted">{time(e.at)}</span>{" "}
+            <b className={cn("tabular", e.ml < 0 && "text-danger")}>
+              {e.ml > 0 ? "+" : "−"}
+              {Math.abs(e.ml)} ml
+            </b>
+            {e.reset && <span className="text-muted"> · reset</span>}
+          </span>
+          <button
+            type="button"
+            onClick={() => removeWaterEntry(e.id)}
+            aria-label="Undo this entry"
+            className="grid size-7 place-items-center rounded-full text-faint"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      ))}
+      {earlier > 0 && (
+        <div className="flex justify-between py-1.5 text-muted">
+          <span>Earlier, before history was kept</span>
+          <b className="tabular">{earlier} ml</b>
+        </div>
+      )}
+      {fromFood > 0 && (
+        <div className="flex justify-between py-1.5 text-muted">
+          <span>From drinks in the food log</span>
+          <b className="tabular">{fromFood} ml</b>
+        </div>
+      )}
+      <div className="mb-1 mt-3 text-[0.65rem] font-bold uppercase tracking-wider text-faint">Last 7 days</div>
+      {week.map(({ k, d, ml }) => (
+        <div key={k} className="flex items-center gap-2 py-0.5">
+          <span className="w-10 text-xs text-muted">{d.toLocaleDateString([], { weekday: "short" })}</span>
+          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3">
+            <span
+              className="block h-full rounded-full"
+              style={{ width: `${Math.min(100, (ml / goal) * 100)}%`, background: WATER.from }}
+            />
+          </span>
+          <span className="w-16 text-right text-xs font-bold tabular">{(ml / 1000).toFixed(1)} L</span>
+        </div>
+      ))}
     </div>
   );
 }

@@ -224,6 +224,16 @@ export interface FoodItem {
   group?: string;
 }
 
+export interface WaterEntry {
+  id: string;
+  /** When it was logged (ms). */
+  at: number;
+  /** Signed: +330 for a can, −250 for a correction. */
+  ml: number;
+  /** The Reset button: everything taken off at once. */
+  reset?: boolean;
+}
+
 export interface SleepLog {
   hours: number;
   /** When the night started and ended (ms), if it was clocked rather than typed. */
@@ -249,6 +259,12 @@ export interface ReadinessCheckin {
 export interface NutritionDay {
   goals: Goals;
   water: number;
+  /**
+   * Every change to \`water\`, in order: what was added (+) or taken off (−)
+   * and when. Days before this was kept have none, and a total that the log
+   * does not account for is shown as "earlier".
+   */
+  waterLog?: WaterEntry[];
   bodyWeight?: number;
   creatine?: number;
   items: FoodItem[];
