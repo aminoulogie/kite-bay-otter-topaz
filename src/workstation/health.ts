@@ -2,6 +2,7 @@
 
 import { addDays, getLocalDateKey, parseLocalDateKey } from "../lib/soma/dates.ts";
 import type { HistorySession, NutritionDay } from "../lib/types.ts";
+import { totalSleepHours } from "../lib/naps.ts";
 
 export interface DayPoint {
   date: string;
@@ -32,7 +33,7 @@ export function weights(nutrition: Record<string, NutritionDay | undefined>, day
 }
 
 export function sleep(nutrition: Record<string, NutritionDay | undefined>, days: string[]): DayPoint[] {
-  return days.map((date) => ({ date, value: nutrition[date]?.sleep?.hours ?? null }));
+  return days.map((date) => ({ date, value: totalSleepHours(nutrition[date]) }));
 }
 
 /** Average of the non-null values, or null. */

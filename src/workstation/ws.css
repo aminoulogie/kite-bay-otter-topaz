@@ -419,3 +419,6 @@
 .ws-tasks-list .ws-seg { flex-wrap: wrap; }
 .ws-split.open .ws-pagehead { gap: 8px; }
 .ws-activity { grid-template-columns: minmax(0, 1fr); }
+.ws-classic .soma-grid > .ws-solo { grid-column: 1 / -1 !important; }
+.ws-classic .soma-grid > .ws-solo .soma-widget-box > div:only-child { columns: 2; column-gap: 16px; }
+.ws-classic .soma-grid > .ws-solo .soma-widget-box > div:only-child > * { break-inside: avoid; margin: 0 0 16px !important; }

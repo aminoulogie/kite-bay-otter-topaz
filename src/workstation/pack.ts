@@ -24,10 +24,24 @@ export function usePackedGrids(root: RefObject<HTMLElement | null>, key: unknown
       raf = 0;
       for (const grid of el.querySelectorAll<HTMLElement>(".soma-grid")) {
         grid.classList.add("ws-packed");
+        // One real card on the page (a tab's whole panel in a single widget,
+        // like Body › Sleep): half the width would leave the other half
+        // empty, so it takes the row and flows its own cards in two columns.
+        const items = Array.from(grid.children) as HTMLElement[];
+        const cards = items.filter((x) => x.getBoundingClientRect().height > 64);
+        for (const x of items) x.classList.toggle("ws-solo", cards.length === 1 && x === cards[0]);
         for (const item of Array.from(grid.children) as HTMLElement[]) {
           if (!seen.has(item)) {
             seen.add(item);
             ro.observe(item);
+          }
+          // A slim bar (tab switcher, date strip) is furniture, not a card:
+          // half a row of it leaves an empty column beside the cards under
+          // it, so it takes the full width.
+          if (/lg:col-span-6/.test(item.className)) {
+            const slim = item.getBoundingClientRect().height <= 64;
+            const want = slim ? "1 / -1" : "";
+            if (item.style.gridColumn !== want) item.style.gridColumn = want;
           }
           const h = item.getBoundingClientRect().height;
           // The whole grid-row, not just its end: a tile's own row-span class

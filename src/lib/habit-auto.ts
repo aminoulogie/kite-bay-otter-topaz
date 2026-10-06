@@ -14,6 +14,7 @@ import type { HabitAuto, HistorySession, MindEntry, NutritionDay } from "./types
 import type { ScreenTimeDay } from "./screen-time.ts";
 import { foodTotals } from "./day-inputs.ts";
 import { totalWaterMl } from "./hydration.ts";
+import { totalSleepHours } from "./naps.ts";
 
 export interface AutoContext {
   date: string;
@@ -71,7 +72,7 @@ export function autoDone(rule: HabitAuto, c: AutoContext): boolean {
     case "creatine":
       return (day?.creatine ?? 0) > 0;
     case "sleep":
-      return (day?.sleep?.hours ?? 0) >= rule.hours;
+      return (totalSleepHours(day) ?? 0) >= rule.hours;
     case "bedtime": {
       if (!c.bedtimeMs) return false;
       const [h, m] = rule.before.split(":").map(Number);

@@ -27,6 +27,7 @@ import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Glance, isGlance } from "@/components/Glance";
 import { useWidgetSize } from "@/components/WidgetGrid";
+import { napLabel, napMinutes, totalSleepHours } from "@/lib/naps";
 
 const SITES = [
   { key: "neck", label: "Neck" },
@@ -56,9 +57,9 @@ export function BodyView() {
   const nights = useMemo(
     () =>
       Object.entries(nutrition)
-        .filter(([, n]) => n?.sleep?.hours != null)
+        .filter(([, n]) => totalSleepHours(n) != null)
         .sort(([a], [b]) => (a < b ? -1 : 1))
-        .map(([date, n]) => ({ date, hours: n!.sleep!.hours!, quality: n!.sleep!.quality })),
+        .map(([date, n]) => ({ date, hours: totalSleepHours(n)!, quality: n!.sleep?.quality })),
     [nutrition],
   );
   const debt = currentDebt(nights);
@@ -207,9 +208,9 @@ function SleepPanel() {
   const [hours, setHours] = useDayDraft(activeDate, () => day.sleep?.hours ?? 7.5);
   const [quality, setQuality] = useDayDraft(activeDate, () => day.sleep?.quality ?? 4);
   const series = Object.keys(nutrition)
-    .filter((k) => nutrition[k]?.sleep?.hours)
+    .filter((k) => totalSleepHours(nutrition[k]))
     .sort()
-    .map((k) => ({ date: k, hours: nutrition[k]!.sleep!.hours, quality: nutrition[k]!.sleep!.quality }));
+    .map((k) => ({ date: k, hours: totalSleepHours(nutrition[k])!, quality: nutrition[k]!.sleep?.quality }));
   const last7 = series.slice(-7);
   const avg = last7.length ? last7.reduce((a, p) => a + p.hours, 0) / last7.length : null;
   // Was (8 - avg) * 7: a flat extrapolation that never decayed and never let a
@@ -277,6 +278,7 @@ function SleepPanel() {
           Save for {activeDate}
         </Button>
       </Card>
+      <NapsCard />
       <Card>
         <CardTitle>7-night snapshot</CardTitle>
         <div className="grid grid-cols-2 gap-2">
@@ -800,5 +802,104 @@ function Spark({ points, className, color }: { points: number[]; className?: str
     >
       <path d={d} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+/**
+ * Naps on the day being viewed. One tap for the usual lengths, or any number
+ * of minutes; they add to the night everywhere sleep is counted.
+ */
+function NapsCard() {
+  const activeDate = useSoma((s) => s.activeDate);
+  const day = useSoma((s) => s.nutrition[s.activeDate]);
+  const addNap = useSoma((s) => s.addNap);
+  const removeNap = useSoma((s) => s.removeNap);
+  const [custom, setCustom] = useState<number | null>(null);
+  const [startedAt, setStartedAt] = useState("");
+  const naps = day?.naps ?? [];
+  const napMin = napMinutes(day);
+  const total = totalSleepHours(day);
+  const at = () => {
+    if (!/^\d{2}:\d{2}$/.test(startedAt)) return undefined;
+    const [h, m] = startedAt.split(":").map(Number) as [number, number];
+    const d = new Date(`${activeDate}T00:00:00`);
+    d.setHours(h, m, 0, 0);
+    return d.getTime();
+  };
+  const add = (minutes: number) => {
+    if (!(minutes > 0) || minutes > 600) return;
+    addNap(minutes, at());
+    toast.success(`Nap of ${napLabel(minutes)} added`);
+  };
+  return (
+    <Card>
+      <CardTitle>Naps</CardTitle>
+      <p className="mb-3 text-xs text-muted">
+        Added to the night everywhere sleep counts — recovery, sleep debt, the day score.
+      </p>
+      <div className="grid grid-cols-5 gap-1.5">
+        {[20, 30, 45, 60, 90].map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => add(m)}
+            className="h-11 rounded-xl border border-border bg-surface-2 text-sm font-bold"
+          >
+            {napLabel(m)}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <DecimalInput
+          className="h-11 flex-1 text-center"
+          value={custom ?? ""}
+          placeholder="Minutes"
+          aria-label="Nap minutes"
+          onValueChange={(n) => setCustom(n)}
+        />
+        <input
+          type="time"
+          value={startedAt}
+          onChange={(e) => setStartedAt(e.target.value)}
+          aria-label="When it started (optional)"
+          className="h-11 rounded-xl border border-border bg-surface-2 px-2 text-sm"
+        />
+        <Button
+          onClick={() => {
+            if (custom) add(custom);
+            setCustom(null);
+          }}
+          disabled={!custom}
+        >
+          Add
+        </Button>
+      </div>
+      {naps.length > 0 && (
+        <div className="mt-3 divide-y divide-border rounded-xl bg-surface-2 px-3">
+          {naps.map((n) => (
+            <div key={n.id} className="flex items-center justify-between py-2 text-sm">
+              <span>
+                <b>{napLabel(n.minutes)}</b>
+                {n.at ? (
+                  <span className="text-muted">
+                    {" "}
+                    · {new Date(n.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                ) : null}
+              </span>
+              <button type="button" onClick={() => removeNap(n.id)} className="text-xs font-bold text-danger">
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {total != null && (
+        <p className="mt-3 text-xs text-muted">
+          Total sleep {activeDate}: <b className="text-fg">{total.toFixed(1)} h</b>
+          {napMin > 0 && day?.sleep?.hours != null ? ` (${day.sleep.hours} h night + ${napLabel(napMin)} naps)` : ""}
+        </p>
+      )}
+    </Card>
   );
 }

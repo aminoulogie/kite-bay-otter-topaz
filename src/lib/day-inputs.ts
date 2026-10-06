@@ -4,6 +4,7 @@ import type { DayInputs } from "./day-score.ts";
 import type { Habit, HistorySession, NutritionDay } from "./types.ts";
 import { habitDayScore } from "./habit-score.ts";
 import { hungerOn, hungerPenalty, type HungerEntry, type Phase } from "./hunger.ts";
+import { totalSleepHours } from "./naps.ts";
 
 /**
  * Everything scoreDay needs for one date, assembled in exactly one place.
@@ -87,7 +88,7 @@ export function buildDayInputs({
     protein:
       logged && day?.goals?.protein ? { grams: totals.p, target: day.goals.protein } : null,
     calories: logged && day?.goals?.cals ? { kcal: totals.cals, target: day.goals.cals } : null,
-    sleepHours: day?.sleep?.hours ?? null,
+    sleepHours: totalSleepHours(day),
     creatineG: day?.creatine ?? null,
     preworkout: isRestDay ? null : preworkoutShare(day, bodyweightKg),
     habits: hs && hs.score != null

@@ -11,6 +11,7 @@ import { habitDayScore, KEEP_AT } from "./habit-score.ts";
 import { totalWaterMl } from "./hydration.ts";
 import type { HungerEntry, Phase } from "./hunger.ts";
 import type { Habit, HistorySession, NutritionDay } from "./types.ts";
+import { totalSleepHours } from "./naps.ts";
 
 export type SeriesId = "score" | "calories" | "protein" | "sleep" | "habits" | "weight" | "water" | "volume";
 
@@ -98,7 +99,7 @@ export function buildSeries(id: SeriesId, input: ChartInput): Point[] {
         return { date, value: logged ? Math.round(foodTotals(day).p) : null, target: t, min: t ? Math.round(t * 0.8) : null };
       }
       case "sleep":
-        return { date, value: day?.sleep?.hours ?? null, target: 8, min: 7 };
+        return { date, value: totalSleepHours(day), target: 8, min: 7 };
       case "habits":
         return { date, value: habitDayScore(input.habits, date).score, target: 100, min: KEEP_AT };
       case "weight":

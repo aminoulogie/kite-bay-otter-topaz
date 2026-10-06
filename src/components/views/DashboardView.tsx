@@ -24,6 +24,7 @@ import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { useActiveProgram, useSoma } from "@/lib/store";
 import { isRestSplit } from "@/lib/programs";
 import { cn } from "@/lib/utils";
+import { totalSleepHours } from "@/lib/naps";
 
 /**
  * The middle tab, and where the app opens.
@@ -179,7 +180,8 @@ export function DashboardView() {
     const sleep = new Map<string, number>();
     const calories = new Map<string, number>();
     for (const [d, nd] of Object.entries(nutrition)) {
-      if (nd?.sleep?.hours != null) sleep.set(d, nd.sleep.hours);
+      const total = totalSleepHours(nd);
+      if (total != null) sleep.set(d, total);
       const kcal = (nd?.items ?? []).reduce((a, i) => a + i.cals, 0);
       if (kcal > 0) calories.set(d, kcal);
     }

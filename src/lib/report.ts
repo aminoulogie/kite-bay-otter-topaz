@@ -18,6 +18,7 @@
 
 import { lastNDays } from "./coach-brief.ts";
 import type { HistorySession, NutritionDay } from "./types.ts";
+import { totalSleepHours } from "./naps.ts";
 
 export interface ReportLine {
   label: string;
@@ -116,7 +117,7 @@ export function buildReport(input: ReportInput): Report {
     : null;
 
   const nights = window
-    .map((d) => input.nutrition[d]?.sleep?.hours)
+    .map((d) => totalSleepHours(input.nutrition[d]))
     .filter((h): h is number => typeof h === "number" && h > 0);
   const meanSleep = nights.length
     ? round(nights.reduce((a, b) => a + b, 0) / nights.length)

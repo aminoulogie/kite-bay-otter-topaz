@@ -270,6 +270,8 @@ export interface NutritionDay {
   /** Each meal time's verdict, written once and never changed. See lib/meal-verdict.ts. */
   mealVerdicts?: Record<string, import("./meal-verdict.ts").MealVerdict>;
   sleep?: SleepLog;
+  /** Naps, beside the night so re-logging the night never wipes them. See lib/naps.ts. */
+  naps?: import("./naps.ts").Nap[];
   measurements?: Record<string, number>;
   readiness?: ReadinessCheckin;
 }

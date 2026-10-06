@@ -32,6 +32,7 @@ import { latestWeight } from "@/lib/rings";
 import type { SessionExercise } from "@/lib/types";
 import { WorkoutTimeCard } from "@/components/WorkoutTimeCard";
 import { StrengthCard } from "@/components/StrengthCard";
+import { totalSleepHours } from "@/lib/naps";
 
 const SUPERSET_COLOR: Record<string, string> = {
   A: "var(--color-accent)",
@@ -153,8 +154,8 @@ export function WorkoutView() {
    */
   const sleepDebt = useMemo(() => {
     const nights = Object.entries(nutrition)
-      .filter(([, n]) => n?.sleep?.hours != null)
-      .map(([date, n]) => ({ date, hours: n!.sleep!.hours!, quality: n!.sleep!.quality }));
+      .filter(([, n]) => totalSleepHours(n) != null)
+      .map(([date, n]) => ({ date, hours: totalSleepHours(n)!, quality: n!.sleep?.quality }));
     return currentDebt(nights);
   }, [nutrition]);
 
@@ -760,7 +761,7 @@ export function WorkoutView() {
           ? Math.min(...keys.map((k) => readinessMap[k]?.recovery ?? 100))
           : null;
         const subj = SomaIntelligenceEngine.computeSubjectiveReadiness({
-          sleepHours: day.sleep?.hours ?? null,
+          sleepHours: totalSleepHours(day),
           sleepQuality: day.sleep?.quality ?? null,
           soreness: day.readiness?.soreness ?? null,
           stress: day.readiness?.stress ?? null,

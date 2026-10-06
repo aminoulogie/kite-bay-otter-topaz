@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { asShifts, newShiftId, type Shift } from "./worklog";
+import { newNapId } from "./naps";
 import { asFindings, isClosed, newFindingId, type Finding } from "./findings";
 import { asTimeEntries, newTimeId, type TimeEntry } from "./time-tracking";
 import { persist, type PersistStorage } from "zustand/middleware";
@@ -420,6 +421,9 @@ export interface SomaStore {
   addCreatine: (g: number) => void;
   resetCreatine: () => void;
   logSleep: (hours: number, quality?: number | null) => void;
+  /** A nap on the active day, `minutes` long, starting at `at` (ms, default now). */
+  addNap: (minutes: number, at?: number) => void;
+  removeNap: (id: string) => void;
   logWeight: (kg: number) => void;
   logMeasurements: (m: Record<string, number>) => void;
   logReadiness: (soreness: number, stress: number) => void;
@@ -2012,6 +2016,20 @@ export const useSoma = create<SomaStore>()(
         get().patchDay(k, {
           sleep: quality == null ? { hours } : { hours, quality },
         });
+      },
+      addNap: (minutes, at) => {
+        const k = get().activeDate;
+        get().ensureDay(k);
+        const day = get().nutrition[k];
+        const nap = { id: newNapId(), minutes: Math.round(minutes), at: at ?? Date.now() };
+        get().patchDay(k, { naps: [...(day?.naps ?? []), nap].sort((a, b) => a.at - b.at) });
+      },
+      removeNap: (id) => {
+        const k = get().activeDate;
+        const day = get().nutrition[k];
+        if (!day?.naps) return;
+        const rest = day.naps.filter((n) => n.id !== id);
+        get().patchDay(k, { naps: rest.length ? rest : undefined });
       },
       logWeight: (kg) => {
         const k = get().activeDate;

@@ -8,6 +8,7 @@ import { coachBrief, type BriefHorizon } from "@/lib/coach-brief";
 import { currentDebt } from "@/lib/sleep-debt";
 import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { useActiveProgram, useSoma } from "@/lib/store";
+import { totalSleepHours } from "@/lib/naps";
 
 /**
  * The three things worth doing, and nothing else.
@@ -40,8 +41,8 @@ export function CoachBrief({ horizon }: { horizon: BriefHorizon }) {
     );
 
     const nights = Object.entries(nutrition)
-      .filter(([, n]) => n?.sleep?.hours != null)
-      .map(([date, n]) => ({ date, hours: n!.sleep!.hours!, quality: n!.sleep!.quality }));
+      .filter(([, n]) => totalSleepHours(n) != null)
+      .map(([date, n]) => ({ date, hours: totalSleepHours(n)!, quality: n!.sleep?.quality }));
 
     // Only the lifts actually trained recently are worth checking for a stall;
     // trawling the whole database would report a stall on everything untouched.
