@@ -3,6 +3,7 @@ import { useTick } from "./tick";
 import { Coffee, LogIn, LogOut, Play, Square } from "lucide-react";
 import { useSoma } from "@/lib/store";
 import { clock, durationMs, running } from "@/lib/time-tracking";
+import { openWork } from "@/lib/step-work";
 import { onBreak, openShift, workedMs } from "@/lib/worklog";
 import { useClients } from "./use-clients";
 
@@ -12,8 +13,10 @@ export function TopTimer() {
   const projects = useSoma((s) => s.projects);
   const startTimer = useSoma((s) => s.startTimer);
   const stopTimer = useSoma((s) => s.stopTimer);
+  const stopStepWork = useSoma((s) => s.stopStepWork);
   const live = running(entries);
-  const now = useTick(!!live);
+  const working = openWork(projects);
+  const now = useTick(!!live || !!working);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const list = useMemo(
@@ -38,6 +41,20 @@ export function TopTimer() {
           {live.stepId && p?.steps?.find((x) => x.id === live.stepId) ? ` · ${p.steps.find((x) => x.id === live.stepId)!.label}` : ""}
         </span>
         <b>{clock(durationMs(live, now))}</b>
+        <Square size={12} />
+      </button>
+    );
+  }
+  if (working) {
+    const p = projects.find((x) => x.id === working.projectId);
+    const step = p?.steps?.find((x) => x.id === working.stepId);
+    return (
+      <button type="button" className="ws-timer on" onClick={stopStepWork} title="Pause this step">
+        <span className="ws-rec" />
+        <span className="name">
+          {p?.name ?? "Project"} · {step?.label ?? "Step"}
+        </span>
+        <b>{clock(Math.max(0, now - working.start))}</b>
         <Square size={12} />
       </button>
     );

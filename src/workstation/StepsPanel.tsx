@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Play, Plus, Square, Trash2 } from "lucide-react";
+import { Check, ListPlus, Play, Plus, Square, Trash2 } from "lucide-react";
+import { openWork, pendingSteps, stepWorkMs } from "@/lib/step-work";
 import { toast } from "sonner";
 import { stepsOf } from "@/lib/projects";
 import { useSoma } from "@/lib/store";
@@ -32,15 +33,18 @@ export function StepsPanel({
   const renameProjectStep = useSoma((s) => s.renameProjectStep);
   const setProjectStep = useSoma((s) => s.setProjectStep);
   const setStepEstimate = useSoma((s) => s.setStepEstimate);
-  const startTimer = useSoma((s) => s.startTimer);
-  const stopTimer = useSoma((s) => s.stopTimer);
+  const startStepWork = useSoma((s) => s.startStepWork);
+  const stopStepWork = useSoma((s) => s.stopStepWork);
+  const postStepWork = useSoma((s) => s.postStepWork);
+  const [posting, setPosting] = useState<Set<string> | null>(null);
   const patchProject = useSoma((s) => s.patchProject);
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
 
   const active = projects.filter((p) => p.status !== "done");
   const live = running(entries);
-  const now = useTick(!!live);
+  const working = openWork(projects);
+  const now = useTick(!!live || !!working);
   // The project last worked on, so the panel opens where you left off.
   const recent = useMemo(
     () => [...entries].sort((a, b) => b.start - a.start).find((e) => active.some((p) => p.id === e.projectId))?.projectId,
@@ -51,9 +55,21 @@ export function StepsPanel({
   const pid = picked ?? recent ?? active[0]?.id ?? "";
   const project = projects.find((p) => p.id === pid);
   const steps = stepsOf(project);
-  const actual = useMemo(() => stepActuals(entries, pid, now), [entries, pid, now]);
+  // Logged by hand against a step, plus the time worked on it with ▶.
+  const manual = useMemo(() => stepActuals(entries, pid, now), [entries, pid, now]);
+  const actual = useMemo(() => {
+    const m = new Map(manual);
+    for (const st of stepsOf(project)) {
+      const w = stepWorkMs(st, now);
+      if (w) m.set(st.id, (m.get(st.id) ?? 0) + w);
+    }
+    return m;
+  }, [manual, project, now]);
+  const entryIds = useMemo(() => new Set(entries.map((e) => e.id)), [entries]);
+  const pending = useMemo(() => pendingSteps(project, entryIds), [project, entryIds]);
+  const workingStep = working && working.projectId === pid ? stepsOf(project).find((x) => x.id === working.stepId) : undefined;
   const unassigned = useMemo(
-    () => entries.filter((e) => e.projectId === pid && !e.stepId).reduce((a, e) => a + durationMs(e, now), 0),
+    () => entries.filter((e) => e.projectId === pid && !e.stepId && !e.fromSteps).reduce((a, e) => a + durationMs(e, now), 0),
     [entries, pid, now],
   );
 
@@ -123,6 +139,17 @@ export function StepsPanel({
         </select>
         {project && steps.length > 0 && (
           <span style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400 }}>
+            {!selecting && pending.length > 0 && (
+              <button
+                type="button"
+                className="ws-btn"
+                style={{ height: 26 }}
+                onClick={() => setPosting(posting ? null : new Set(pending.map((x) => x.step.id)))}
+                title="Turn the time worked on steps into entries"
+              >
+                <ListPlus /> Add to entries ({pending.length})
+              </button>
+            )}
             {selecting ? (
               <>
                 <button
@@ -173,13 +200,100 @@ export function StepsPanel({
           </small>
         )}
       </header>
+      {workingStep && (
+        <div className="ws-working">
+          <span className="ws-rec" />
+          <span className="t">
+            Working on <b>{workingStep.label}</b>
+          </span>
+          <b className="ws-num">{clock(now - working!.start)}</b>
+          <button type="button" className="ws-btn" style={{ height: 26 }} onClick={stopStepWork}>
+            <Square /> Pause
+          </button>
+          <button
+            type="button"
+            className="ws-btn primary"
+            style={{ height: 26 }}
+            onClick={() => setProjectStep(pid, workingStep.id, true)}
+          >
+            <Check /> Done
+          </button>
+        </div>
+      )}
+      {project && posting && (
+        <div className="ws-posting">
+          <div className="hd">
+            <b>Add worked time to entries</b>
+            <span className="ws-faint">Pick the steps, then merge them into one entry or add one entry each.</span>
+          </div>
+          {pending.map((x) => (
+            <label key={x.step.id} className="row">
+              <input
+                type="checkbox"
+                checked={posting.has(x.step.id)}
+                onChange={() =>
+                  setPosting((cur) => {
+                    const next = new Set(cur ?? []);
+                    if (next.has(x.step.id)) next.delete(x.step.id);
+                    else next.add(x.step.id);
+                    return next;
+                  })
+                }
+              />
+              <span className="t">{x.step.label}</span>
+              <span className="ws-faint">
+                {new Date(x.start).toLocaleDateString(undefined, { day: "numeric", month: "short" })}{" "}
+                {new Date(x.start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </span>
+              <b className="ws-num">{hours(x.ms)}</b>
+            </label>
+          ))}
+          <div className="ft">
+            <span className="ws-faint">
+              {posting.size} step{posting.size === 1 ? "" : "s"} ·{" "}
+              <b>{hours(pending.filter((x) => posting.has(x.step.id)).reduce((a, x) => a + x.ms, 0))}</b>
+            </span>
+            <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+              <button type="button" className="ws-btn ghost" style={{ height: 28 }} onClick={() => setPosting(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="ws-btn"
+                style={{ height: 28 }}
+                disabled={!posting.size}
+                onClick={() => {
+                  const n = postStepWork(pid, [...posting], "separate");
+                  toast.success(`Added ${n} entr${n === 1 ? "y" : "ies"}`);
+                  setPosting(null);
+                }}
+              >
+                Add each separately
+              </button>
+              <button
+                type="button"
+                className="ws-btn primary"
+                style={{ height: 28 }}
+                disabled={!posting.size}
+                onClick={() => {
+                  postStepWork(pid, [...posting], "merge");
+                  toast.success("Added as one entry");
+                  setPosting(null);
+                }}
+              >
+                Merge into one entry
+              </button>
+            </span>
+          </div>
+        </div>
+      )}
       {project && (
         <div style={{ padding: "4px 14px 10px" }}>
           {steps.map((s) => {
             const ms = actual.get(s.id) ?? 0;
             const pct = s.estimateMin ? ms / (s.estimateMin * 60_000) : 0;
             const tone = pct > 1.25 ? "var(--ws-red)" : pct > 1 ? "var(--ws-amber)" : "var(--ws-green)";
-            const isLive = live?.projectId === pid && live.stepId === s.id;
+            const isLive = working?.projectId === pid && working.stepId === s.id;
             return (
               <div
                 key={s.id}
@@ -232,7 +346,7 @@ export function StepsPanel({
                   {s.estimateMin ? <i style={{ width: `${Math.min(100, pct * 100)}%`, background: tone }} /> : null}
                 </span>
                 {isLive ? (
-                  <button type="button" className="ws-timer on" onClick={stopTimer} title="Stop">
+                  <button type="button" className="ws-timer on" onClick={stopStepWork} title="Pause">
                     <span className="ws-rec" />
                     <Square size={12} />
                   </button>
@@ -240,8 +354,8 @@ export function StepsPanel({
                   <button
                     type="button"
                     className="ws-icon"
-                    onClick={() => startTimer(pid, s.label, s.id)}
-                    title="Start the timer on this step"
+                    onClick={() => startStepWork(pid, s.id)}
+                    title="Work on this step — ticking it done locks the time"
                     disabled={s.done}
                   >
                     <Play />

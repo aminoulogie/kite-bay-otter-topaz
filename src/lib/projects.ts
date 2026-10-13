@@ -1,3 +1,4 @@
+import { asStepWork } from "./step-work.ts";
 /**
  * Things with a finish line.
  *
@@ -26,6 +27,8 @@ export interface ProjectStep {
   at?: number;
   /** How long it should take, in minutes. Compared with the time logged against it. */
   estimateMin?: number;
+  /** Time worked on it with ▶, locked when it is finished. See lib/step-work.ts. */
+  work?: import("./step-work.ts").StepWork[];
 }
 
 export interface Project {
@@ -260,6 +263,7 @@ export function cleanProject(raw: unknown): Project | null {
             done: s.done === true,
             at: Number(s.at) || undefined,
             estimateMin: Number(s.estimateMin) > 0 ? Number(s.estimateMin) : undefined,
+            work: asStepWork((s as { work?: unknown }).work),
           }))
       : [],
     status,

@@ -39,7 +39,7 @@ test("billable value uses each project's rate and skips non-billable", () => {
 
 test("cleaning drops junk and bad ends", () => {
   assert.deepEqual(asTimeEntries([{ id: "x", projectId: "p", start: 10, end: 5 }, { nope: 1 }, null]), [
-    { id: "x", projectId: "p", start: 10, end: undefined, note: undefined, billable: undefined, stepId: undefined },
+    { id: "x", projectId: "p", start: 10, end: undefined, note: undefined, billable: undefined, stepId: undefined, fromSteps: undefined },
   ]);
 });
 

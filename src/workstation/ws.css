@@ -451,3 +451,13 @@
 .ws-steprow.picked { background: color-mix(in srgb, var(--ws-red) 8%, transparent); }
 .ws-steprow input.pick { accent-color: var(--ws-red); }
 .ws-steprow.selecting input:not(.pick) { pointer-events: none; }
+
+/* Step being worked on, and the post-to-entries picker */
+.ws-working { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--ws-line); background: color-mix(in srgb, var(--ws-red) 7%, transparent); }
+.ws-working .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-posting { margin: 8px 14px; padding: 10px 12px; border: 1px solid var(--ws-line-2); border-radius: var(--ws-radius); background: var(--ws-panel-2); }
+.ws-posting .hd { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.ws-posting .row { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto 70px; gap: 8px; align-items: center; padding: 4px 0; cursor: pointer; }
+.ws-posting .row .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-posting .row .ws-num { text-align: right; }
+.ws-posting .ft { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ws-line); }

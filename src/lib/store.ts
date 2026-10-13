@@ -1,10 +1,11 @@
 import { create } from "zustand";
 import { asShifts, newShiftId, type Shift } from "./worklog";
 import { newNapId } from "./naps";
+import { draftPost, openWork } from "./step-work";
 
 const newWaterId = () => `w-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 import { asFindings, isClosed, newFindingId, type Finding } from "./findings";
-import { asTimeEntries, newTimeId, type TimeEntry } from "./time-tracking";
+import { asTimeEntries, newTimeId, running, type TimeEntry } from "./time-tracking";
 import { persist, type PersistStorage } from "zustand/middleware";
 import msExercises from "./ms-exercises.json";
 import {
@@ -361,6 +362,12 @@ export interface SomaStore {
   renameProjectStep: (id: string, stepId: string, label: string) => void;
   /** Minutes the step should take; undefined clears it. */
   setStepEstimate: (id: string, stepId: string, minutes: number | undefined) => void;
+  /** ▶ on a step: start working on it (stopping any other step or timer). */
+  startStepWork: (id: string, stepId: string) => void;
+  /** ■: stop whatever step is being worked on. */
+  stopStepWork: () => void;
+  /** Turn steps' unposted worked time into entries: one merged, or one each. Returns how many entries. */
+  postStepWork: (id: string, stepIds: string[], mode: "merge" | "separate") => number;
   moveProjectStep: (id: string, stepId: string, delta: number) => void;
   removeProjectStep: (id: string, stepId: string) => void;
   /** Defaults to the day list — see lib/todos.ts for what that means. */
@@ -1755,10 +1762,93 @@ export const useSoma = create<SomaStore>()(
         set((s) => ({
           projects: s.projects.map((p) => (p.id === id ? addStep(p, label) : p)),
         })),
-      setProjectStep: (id, stepId, done) =>
+      setProjectStep: (id, stepId, done) => {
+        // Finishing a step locks its running time.
+        if (done) {
+          const open = openWork(get().projects);
+          if (open && open.projectId === id && open.stepId === stepId) get().stopStepWork();
+        }
         set((s) => ({
           projects: s.projects.map((p) => (p.id === id ? setStep(p, stepId, done) : p)),
-        })),
+        }));
+      },
+      startStepWork: (id, stepId) => {
+        const now = Date.now();
+        get().stopStepWork();
+        if (running(get().timeEntries)) get().stopTimer();
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id !== id
+              ? p
+              : {
+                  ...p,
+                  touchedAt: now,
+                  steps: stepsOf(p).map((st) => (st.id === stepId ? { ...st, work: [...(st.work ?? []), { start: now }] } : st)),
+                },
+          ),
+        }));
+      },
+      stopStepWork: () => {
+        const open = openWork(get().projects);
+        if (!open) return;
+        const now = Date.now();
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id !== open.projectId
+              ? p
+              : {
+                  ...p,
+                  steps: stepsOf(p).map((st) =>
+                    st.id !== open.stepId
+                      ? st
+                      : { ...st, work: (st.work ?? []).map((w) => (w.end === undefined ? { ...w, end: now } : w)) },
+                  ),
+                },
+          ),
+        }));
+      },
+      postStepWork: (id, stepIds, mode) => {
+        const project = get().projects.find((p) => p.id === id);
+        if (!project) return 0;
+        const entryIds = new Set(get().timeEntries.map((e) => e.id));
+        const drafts = draftPost(project, stepIds, mode, entryIds);
+        if (!drafts.length) return 0;
+        const made = drafts.map((d) => ({
+          entry: {
+            id: newTimeId(),
+            projectId: id,
+            start: d.start,
+            end: d.end,
+            note: d.note,
+            fromSteps: true as const,
+            ...(d.stepId ? { stepId: d.stepId } : {}),
+          },
+          steps: d.steps,
+        }));
+        const owner = new Map<string, string>();
+        for (const m of made) for (const sid of m.steps) owner.set(sid, m.entry.id);
+        set((s) => ({
+          timeEntries: [...s.timeEntries, ...made.map((m) => m.entry)],
+          projects: s.projects.map((p) =>
+            p.id !== id
+              ? p
+              : {
+                  ...p,
+                  steps: stepsOf(p).map((st) => {
+                    const eid = owner.get(st.id);
+                    if (!eid) return st;
+                    return {
+                      ...st,
+                      work: (st.work ?? []).map((w) =>
+                        w.end !== undefined && !(w.entryId && entryIds.has(w.entryId)) ? { ...w, entryId: eid } : w,
+                      ),
+                    };
+                  }),
+                },
+          ),
+        }));
+        return made.length;
+      },
       renameProjectStep: (id, stepId, label) =>
         set((s) => ({
           projects: s.projects.map((p) =>

@@ -21,6 +21,8 @@ export interface TimeEntry {
   billable?: boolean;
   /** The project step this time went on, if any. */
   stepId?: string;
+  /** Posted from steps' worked time; that time is already counted on the steps. */
+  fromSteps?: boolean;
 }
 
 /** A timer left on overnight was forgotten, not worked. Running entries stop counting at this. */
@@ -105,6 +107,7 @@ export function asTimeEntries(raw: unknown): TimeEntry[] {
       note: typeof r.note === "string" && r.note ? r.note : undefined,
       billable: r.billable === false ? false : undefined,
       stepId: typeof r.stepId === "string" && r.stepId ? r.stepId : undefined,
+      fromSteps: r.fromSteps === true ? true : undefined,
     });
   }
   return out;
@@ -114,7 +117,7 @@ export function asTimeEntries(raw: unknown): TimeEntry[] {
 export function stepActuals(entries: TimeEntry[], projectId: string, now = Date.now()): Map<string, number> {
   const out = new Map<string, number>();
   for (const e of entries) {
-    if (e.projectId !== projectId || !e.stepId) continue;
+    if (e.projectId !== projectId || !e.stepId || e.fromSteps) continue;
     out.set(e.stepId, (out.get(e.stepId) ?? 0) + durationMs(e, now));
   }
   return out;
