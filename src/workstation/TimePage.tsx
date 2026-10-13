@@ -17,6 +17,8 @@ import {
 } from "@/lib/time-tracking";
 import { mondayOf } from "@/lib/todos";
 import { useTick } from "./tick";
+import { StepsPanel } from "./StepsPanel";
+import { stepsOf } from "@/lib/projects";
 
 const DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const hm = (ms: number) => {
@@ -72,6 +74,7 @@ export function TimePage() {
     from: "09:00",
     to: "10:00",
     projectId: projects.find((p) => p.status === "active")?.id ?? "",
+    stepId: "",
     note: "",
   });
   const addManual = () => {
@@ -79,8 +82,14 @@ export function TimePage() {
     const start = at(draft.date, draft.from);
     const end = at(draft.date, draft.to);
     if (!(end > start)) return toast.error("End must be after start");
-    addTimeEntry({ projectId: draft.projectId, start, end, note: draft.note.trim() || undefined });
-    setDraft((d) => ({ ...d, note: "" }));
+    addTimeEntry({
+      projectId: draft.projectId,
+      start,
+      end,
+      note: draft.note.trim() || undefined,
+      ...(draft.stepId ? { stepId: draft.stepId } : {}),
+    });
+    setDraft((d) => ({ ...d, note: "", stepId: "" }));
   };
 
   const remove = (e: TimeEntry) => {
@@ -273,10 +282,18 @@ export function TimePage() {
         )}
       </section>
 
+      <StepsPanel
+        onLog={(projectId, stepId, label) => {
+          setDraft((d) => ({ ...d, projectId, stepId, note: d.note || label }));
+          document.getElementById("ws-entry-draft")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }}
+      />
+
       <section className="ws-card">
         <header>Entries</header>
         <div style={{ padding: "6px 14px 10px" }}>
           <div
+            id="ws-entry-draft"
             className="ws-entry"
             style={{ borderBottom: "1px solid var(--ws-line-2)", paddingBottom: 8 }}
           >
@@ -310,7 +327,7 @@ export function TimePage() {
               <select
                 className="ws-cell"
                 value={draft.projectId}
-                onChange={(e) => setDraft({ ...draft, projectId: e.target.value })}
+                onChange={(e) => setDraft({ ...draft, projectId: e.target.value, stepId: "" })}
               >
                 <option value="">Project…</option>
                 {projects
@@ -321,6 +338,11 @@ export function TimePage() {
                     </option>
                   ))}
               </select>
+              <StepSelect
+                projectId={draft.projectId}
+                value={draft.stepId}
+                onChange={(stepId) => setDraft({ ...draft, stepId })}
+              />
               <input
                 className="ws-cell"
                 style={{ flex: 1 }}
@@ -390,7 +412,7 @@ export function TimePage() {
                   <select
                     className="ws-cell plain"
                     value={e.projectId}
-                    onChange={(ev) => patchTimeEntry(e.id, { projectId: ev.target.value })}
+                    onChange={(ev) => patchTimeEntry(e.id, { projectId: ev.target.value, stepId: undefined })}
                   >
                     {!proj(e.projectId) && <option value={e.projectId}>Deleted project</option>}
                     {projects.map((p) => (
@@ -399,6 +421,12 @@ export function TimePage() {
                       </option>
                     ))}
                   </select>
+                  <StepSelect
+                    plain
+                    projectId={e.projectId}
+                    value={e.stepId ?? ""}
+                    onChange={(stepId) => patchTimeEntry(e.id, { stepId: stepId || undefined })}
+                  />
                   <input
                     className="ws-cell plain"
                     style={{ flex: 1, minWidth: 0 }}
@@ -438,5 +466,39 @@ export function TimePage() {
         </div>
       </section>
     </div>
+  );
+}
+
+/** Which step of the project an entry went on; hidden when the project has none. */
+function StepSelect({
+  projectId,
+  value,
+  onChange,
+  plain,
+}: {
+  projectId: string;
+  value: string;
+  onChange: (stepId: string) => void;
+  plain?: boolean;
+}) {
+  const project = useSoma((s) => s.projects.find((p) => p.id === projectId));
+  const steps = stepsOf(project);
+  if (!steps.length) return null;
+  return (
+    <select
+      className={`ws-cell${plain ? " plain" : ""}`}
+      style={{ maxWidth: 180 }}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      title="Step"
+    >
+      <option value="">No step</option>
+      {steps.map((st) => (
+        <option key={st.id} value={st.id}>
+          {st.done ? "✓ " : ""}
+          {st.label}
+        </option>
+      ))}
+    </select>
   );
 }

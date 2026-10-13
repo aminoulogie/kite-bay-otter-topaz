@@ -342,7 +342,7 @@ export interface SomaStore {
   /** Hours on projects. See lib/time-tracking.ts. */
   timeEntries: TimeEntry[];
   /** Starts a timer on a project, stopping any that is running. */
-  startTimer: (projectId: string, note?: string) => void;
+  startTimer: (projectId: string, note?: string, stepId?: string) => void;
   stopTimer: () => void;
   addTimeEntry: (e: Omit<TimeEntry, "id">) => void;
   patchTimeEntry: (id: string, patch: Partial<Omit<TimeEntry, "id">>) => void;
@@ -359,6 +359,8 @@ export interface SomaStore {
   addProjectStep: (id: string, label: string) => void;
   setProjectStep: (id: string, stepId: string, done: boolean) => void;
   renameProjectStep: (id: string, stepId: string, label: string) => void;
+  /** Minutes the step should take; undefined clears it. */
+  setStepEstimate: (id: string, stepId: string, minutes: number | undefined) => void;
   moveProjectStep: (id: string, stepId: string, delta: number) => void;
   removeProjectStep: (id: string, stepId: string) => void;
   /** Defaults to the day list — see lib/todos.ts for what that means. */
@@ -1517,12 +1519,25 @@ export const useSoma = create<SomaStore>()(
           projects: s.projects.map((p) => (p.id === id ? { ...p, ...patch } : p)),
         })),
       removeProject: (id) => set((s) => ({ projects: s.projects.filter((p) => p.id !== id) })),
-      startTimer: (projectId, note) => {
+      setStepEstimate: (id, stepId, minutes) =>
+        set((s) => ({
+          projects: s.projects.map((p) =>
+            p.id !== id
+              ? p
+              : {
+                  ...p,
+                  steps: stepsOf(p).map((st) =>
+                    st.id === stepId ? { ...st, estimateMin: minutes && minutes > 0 ? Math.round(minutes) : undefined } : st,
+                  ),
+                },
+          ),
+        })),
+      startTimer: (projectId, note, stepId) => {
         const now = Date.now();
         set((s) => ({
           timeEntries: [
             ...s.timeEntries.map((e) => (e.end === undefined ? { ...e, end: now } : e)),
-            { id: newTimeId(), projectId, start: now, note: note?.trim() || undefined },
+            { id: newTimeId(), projectId, start: now, note: note?.trim() || undefined, ...(stepId ? { stepId } : {}) },
           ],
         }));
       },

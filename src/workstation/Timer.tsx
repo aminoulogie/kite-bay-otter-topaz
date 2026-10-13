@@ -33,7 +33,10 @@ export function TopTimer() {
     return (
       <button type="button" className="ws-timer on" onClick={stopTimer} title="Stop the timer">
         <span className="ws-rec" />
-        <span className="name">{p?.name ?? "Project"}</span>
+        <span className="name">
+          {p?.name ?? "Project"}
+          {live.stepId && p?.steps?.find((x) => x.id === live.stepId) ? ` · ${p.steps.find((x) => x.id === live.stepId)!.label}` : ""}
+        </span>
         <b>{clock(durationMs(live, now))}</b>
         <Square size={12} />
       </button>

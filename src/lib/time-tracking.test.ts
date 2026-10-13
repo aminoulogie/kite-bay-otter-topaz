@@ -39,6 +39,26 @@ test("billable value uses each project's rate and skips non-billable", () => {
 
 test("cleaning drops junk and bad ends", () => {
   assert.deepEqual(asTimeEntries([{ id: "x", projectId: "p", start: 10, end: 5 }, { nope: 1 }, null]), [
-    { id: "x", projectId: "p", start: 10, end: undefined, note: undefined, billable: undefined },
+    { id: "x", projectId: "p", start: 10, end: undefined, note: undefined, billable: undefined, stepId: undefined },
   ]);
+});
+
+test("time per step, and estimates typed the way people type them", async () => {
+  const { stepActuals, parseEstimate, minutesLabel } = await import("./time-tracking.ts");
+  const entries = [
+    { id: "a", projectId: "p", stepId: "s1", start: 0, end: 3_600_000 },
+    { id: "b", projectId: "p", stepId: "s1", start: 0, end: 1_800_000 },
+    { id: "c", projectId: "p", start: 0, end: 600_000 },
+    { id: "d", projectId: "q", stepId: "s1", start: 0, end: 600_000 },
+  ];
+  assert.deepEqual([...stepActuals(entries, "p")], [["s1", 5_400_000]]);
+  assert.equal(parseEstimate("1.5h"), 90);
+  assert.equal(parseEstimate("1h30"), 90);
+  assert.equal(parseEstimate("2h 15m"), 135);
+  assert.equal(parseEstimate("1:45"), 105);
+  assert.equal(parseEstimate("45"), 45);
+  assert.equal(parseEstimate("45m"), 45);
+  assert.equal(parseEstimate("soon"), null);
+  assert.equal(minutesLabel(90), "1h 30m");
+  assert.equal(minutesLabel(120), "2h");
 });

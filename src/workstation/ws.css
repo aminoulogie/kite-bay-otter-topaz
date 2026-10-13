@@ -422,3 +422,15 @@
 .ws-classic .soma-grid > .ws-solo { grid-column: 1 / -1 !important; }
 .ws-classic .soma-grid > .ws-solo .soma-widget-box > div:only-child { columns: 2; column-gap: 16px; }
 .ws-classic .soma-grid > .ws-solo .soma-widget-box > div:only-child > * { break-inside: avoid; margin: 0 0 16px !important; }
+
+/* Steps panel on Time tracking */
+.ws-steprow { display: grid; grid-template-columns: 20px minmax(0, 1fr) 96px 70px 120px 30px 30px; align-items: center; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--ws-line); }
+.ws-steprow:last-child { border-bottom: 0; }
+.ws-steprow.add { padding-top: 8px; }
+.ws-steprow input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--ws-green); }
+.ws-steprow.done .lbl { color: var(--ws-faint); text-decoration: line-through; }
+.ws-steprow .est { width: 100%; text-align: right; }
+.ws-steprow .act { text-align: right; }
+.ws-steprow .bar { height: 6px; border-radius: 3px; background: var(--ws-panel-2); overflow: hidden; }
+.ws-steprow .bar i { display: block; height: 100%; }
+.ws-steprow .ws-timer { height: 26px; padding: 0 6px; gap: 4px; }

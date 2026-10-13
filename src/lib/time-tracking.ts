@@ -19,6 +19,8 @@ export interface TimeEntry {
   note?: string;
   /** Counted towards what is billed. Defaults to true. */
   billable?: boolean;
+  /** The project step this time went on, if any. */
+  stepId?: string;
 }
 
 /** A timer left on overnight was forgotten, not worked. Running entries stop counting at this. */
@@ -102,7 +104,38 @@ export function asTimeEntries(raw: unknown): TimeEntry[] {
       end: end !== undefined && Number.isFinite(end) && end >= start ? end : undefined,
       note: typeof r.note === "string" && r.note ? r.note : undefined,
       billable: r.billable === false ? false : undefined,
+      stepId: typeof r.stepId === "string" && r.stepId ? r.stepId : undefined,
     });
   }
   return out;
+}
+
+/** Time logged per step of one project (running entries count up to `now`). */
+export function stepActuals(entries: TimeEntry[], projectId: string, now = Date.now()): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const e of entries) {
+    if (e.projectId !== projectId || !e.stepId) continue;
+    out.set(e.stepId, (out.get(e.stepId) ?? 0) + durationMs(e, now));
+  }
+  return out;
+}
+
+/** "1.5h", "90m", "1h30", "45" (minutes) → minutes; null when unreadable. */
+export function parseEstimate(raw: string): number | null {
+  const s = raw.trim().toLowerCase().replace(",", ".");
+  if (!s) return null;
+  let m = /^(\d+(?:\.\d+)?)\s*h(?:\s*(\d+)\s*m?)?$/.exec(s);
+  if (m) return Math.round(Number(m[1]) * 60 + Number(m[2] ?? 0));
+  m = /^(\d+)\s*:\s*(\d{1,2})$/.exec(s);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  m = /^(\d+(?:\.\d+)?)\s*(m|min)?$/.exec(s);
+  if (m) return Math.round(Number(m[1]));
+  return null;
+}
+
+/** 90 → "1h 30m", 45 → "45m". */
+export function minutesLabel(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h ? (m ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
 }

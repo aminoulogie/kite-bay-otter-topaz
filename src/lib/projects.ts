@@ -24,6 +24,8 @@ export interface ProjectStep {
   done: boolean;
   /** When it was ticked, for the "moving" check. */
   at?: number;
+  /** How long it should take, in minutes. Compared with the time logged against it. */
+  estimateMin?: number;
 }
 
 export interface Project {
@@ -252,7 +254,13 @@ export function cleanProject(raw: unknown): Project | null {
     steps: Array.isArray(r.steps)
       ? r.steps
           .filter((s): s is ProjectStep => !!s && typeof s.id === "string" && typeof s.label === "string")
-          .map((s) => ({ id: s.id, label: s.label, done: s.done === true, at: Number(s.at) || undefined }))
+          .map((s) => ({
+            id: s.id,
+            label: s.label,
+            done: s.done === true,
+            at: Number(s.at) || undefined,
+            estimateMin: Number(s.estimateMin) > 0 ? Number(s.estimateMin) : undefined,
+          }))
       : [],
     status,
     due: typeof r.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.due) ? r.due : undefined,
