@@ -434,3 +434,20 @@
 .ws-steprow .bar { height: 6px; border-radius: 3px; background: var(--ws-panel-2); overflow: hidden; }
 .ws-steprow .bar i { display: block; height: 100%; }
 .ws-steprow .ws-timer { height: 26px; padding: 0 6px; gap: 4px; }
+
+/* Steps: quieter rows — fields look like text until hovered or focused */
+.ws-steprow { grid-template-columns: 20px minmax(0, 1fr) 96px 70px 120px 30px 64px; }
+.ws-steprow .ws-cell.plain { border-color: transparent; background: none; }
+.ws-steprow:hover .ws-cell.plain:not(:focus) { border-color: transparent; background: var(--ws-hover); }
+.ws-steprow .ws-cell.plain:focus { border-color: var(--ws-line-2); background: var(--ws-panel); }
+.ws-steprow .est::placeholder { color: transparent; }
+.ws-steprow:hover .est::placeholder, .ws-steprow.add .est::placeholder { color: var(--ws-faint); }
+.ws-steprow .tools { display: flex; justify-content: flex-end; gap: 2px; visibility: hidden; }
+.ws-steprow:hover .tools { visibility: visible; }
+.ws-steprow .tools .del:hover { color: var(--ws-red); }
+.ws-steprow.add { border-bottom: 0; }
+.ws-steprow.selecting { cursor: pointer; }
+.ws-steprow.selecting .tools, .ws-steprow.selecting .ws-icon, .ws-steprow.selecting .ws-timer { visibility: hidden; }
+.ws-steprow.picked { background: color-mix(in srgb, var(--ws-red) 8%, transparent); }
+.ws-steprow input.pick { accent-color: var(--ws-red); }
+.ws-steprow.selecting input:not(.pick) { pointer-events: none; }

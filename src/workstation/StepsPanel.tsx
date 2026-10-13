@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Play, Plus, Square } from "lucide-react";
+import { Play, Plus, Square, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { stepsOf } from "@/lib/projects";
 import { useSoma } from "@/lib/store";
 import {
@@ -33,6 +34,9 @@ export function StepsPanel({
   const setStepEstimate = useSoma((s) => s.setStepEstimate);
   const startTimer = useSoma((s) => s.startTimer);
   const stopTimer = useSoma((s) => s.stopTimer);
+  const patchProject = useSoma((s) => s.patchProject);
+  const [selecting, setSelecting] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
 
   const active = projects.filter((p) => p.status !== "done");
   const live = running(entries);
@@ -62,6 +66,25 @@ export function StepsPanel({
     .filter((s) => !s.done && s.estimateMin)
     .reduce((a, s) => a + Math.max(0, s.estimateMin! * 60_000 - (actual.get(s.id) ?? 0)), 0);
 
+  /** Delete steps, with an Undo that puts the whole list back as it was. */
+  const removeSteps = (ids: string[]) => {
+    if (!project || !ids.length) return;
+    const before = stepsOf(project);
+    patchProject(project.id, { steps: before.filter((s) => !ids.includes(s.id)) });
+    setSel(new Set());
+    setSelecting(false);
+    toast.success(`Deleted ${ids.length} step${ids.length === 1 ? "" : "s"}`, {
+      action: { label: "Undo", onClick: () => patchProject(project.id, { steps: before }) },
+    });
+  };
+  const toggle = (id: string) =>
+    setSel((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   const add = () => {
     const name = label.trim();
     if (!name || !project) return;
@@ -83,7 +106,11 @@ export function StepsPanel({
         <select
           className="ws-cell"
           value={pid}
-          onChange={(e) => setPicked(e.target.value)}
+          onChange={(e) => {
+            setPicked(e.target.value);
+            setSel(new Set());
+            setSelecting(false);
+          }}
           style={{ fontWeight: 400 }}
         >
           {!active.length && <option value="">No active projects</option>}
@@ -94,6 +121,46 @@ export function StepsPanel({
             </option>
           ))}
         </select>
+        {project && steps.length > 0 && (
+          <span style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400 }}>
+            {selecting ? (
+              <>
+                <button
+                  type="button"
+                  className="ws-btn ghost"
+                  style={{ height: 26 }}
+                  onClick={() => setSel(sel.size === steps.length ? new Set() : new Set(steps.map((x) => x.id)))}
+                >
+                  {sel.size === steps.length ? "Select none" : "Select all"}
+                </button>
+                <button
+                  type="button"
+                  className="ws-btn danger"
+                  style={{ height: 26 }}
+                  disabled={!sel.size}
+                  onClick={() => removeSteps([...sel])}
+                >
+                  <Trash2 /> Delete{sel.size ? ` ${sel.size}` : ""}
+                </button>
+                <button
+                  type="button"
+                  className="ws-btn ghost"
+                  style={{ height: 26 }}
+                  onClick={() => {
+                    setSelecting(false);
+                    setSel(new Set());
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button type="button" className="ws-btn ghost" style={{ height: 26 }} onClick={() => setSelecting(true)}>
+                Select
+              </button>
+            )}
+          </span>
+        )}
         {project && (
           <small>
             Estimated <b>{minutesLabel(estimated)}</b> · logged <b>{hours(logged)}</b>
@@ -114,13 +181,28 @@ export function StepsPanel({
             const tone = pct > 1.25 ? "var(--ws-red)" : pct > 1 ? "var(--ws-amber)" : "var(--ws-green)";
             const isLive = live?.projectId === pid && live.stepId === s.id;
             return (
-              <div key={s.id} className={`ws-steprow ${s.done ? "done" : ""}`}>
-                <input
-                  type="checkbox"
-                  checked={s.done}
-                  onChange={(e) => setProjectStep(pid, s.id, e.target.checked)}
-                  title="Done"
-                />
+              <div
+                key={s.id}
+                className={`ws-steprow ${s.done ? "done" : ""} ${selecting ? "selecting" : ""} ${sel.has(s.id) ? "picked" : ""}`}
+                onClick={selecting ? () => toggle(s.id) : undefined}
+              >
+                {selecting ? (
+                  <input
+                    type="checkbox"
+                    className="pick"
+                    checked={sel.has(s.id)}
+                    onChange={() => toggle(s.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    title="Select"
+                  />
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={s.done}
+                    onChange={(e) => setProjectStep(pid, s.id, e.target.checked)}
+                    title="Done"
+                  />
+                )}
                 <input
                   className="ws-cell plain lbl"
                   defaultValue={s.label}
@@ -165,14 +247,19 @@ export function StepsPanel({
                     <Play />
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="ws-icon"
-                  onClick={() => onLog(pid, s.id, s.label)}
-                  title="Log time on this step below"
-                >
-                  <Plus />
-                </button>
+                <span className="tools">
+                  <button
+                    type="button"
+                    className="ws-icon"
+                    onClick={() => onLog(pid, s.id, s.label)}
+                    title="Log time on this step below"
+                  >
+                    <Plus />
+                  </button>
+                  <button type="button" className="ws-icon del" onClick={() => removeSteps([s.id])} title="Delete step">
+                    <Trash2 />
+                  </button>
+                </span>
               </div>
             );
           })}
@@ -183,16 +270,16 @@ export function StepsPanel({
             </p>
           )}
           <div className="ws-steprow add">
-            <span />
+            <Plus size={14} className="ws-faint" />
             <input
-              className="ws-cell lbl"
-              placeholder="New step"
+              className="ws-cell plain lbl"
+              placeholder="New step — press Enter"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
             />
             <input
-              className="ws-cell est"
+              className="ws-cell plain est"
               placeholder="Estimate"
               value={est}
               onChange={(e) => setEst(e.target.value)}
@@ -200,10 +287,14 @@ export function StepsPanel({
             />
             <span />
             <span />
-            <button type="button" className="ws-btn" style={{ height: 26 }} onClick={add} disabled={!label.trim()}>
-              <Plus /> Add
-            </button>
             <span />
+            {label.trim() ? (
+              <button type="button" className="ws-btn primary" style={{ height: 26, padding: "0 8px" }} onClick={add}>
+                Add
+              </button>
+            ) : (
+              <span />
+            )}
           </div>
         </div>
       )}
