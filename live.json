@@ -1,0 +1,12 @@
+{
+  "version": "0.0.210",
+  "url": "https://cdn.jsdelivr.net/gh/aminoulogie/kite-bay-otter-topaz@6aadaed01e8c9164a2097edad1c3a9c057bff78c/SOMA-web-0.0.210.zip",
+  "mirrors": [
+    "https://raw.githubusercontent.com/aminoulogie/kite-bay-otter-topaz/6aadaed01e8c9164a2097edad1c3a9c057bff78c/SOMA-web-0.0.210.zip",
+    "https://github.com/aminoulogie/kite-bay-otter-topaz/releases/download/ios-v0.0.210/SOMA-web-0.0.210.zip"
+  ],
+  "checksum": "4021664be861a407f0174b0b6d69f6f8e3e1894328a2c473451fc04b4c840ed8",
+  "nativeSince": "0.0.192",
+  "nativeHash": "036ee07fa2d5285626bd4744effec254e1f770aa8e5b4a5b2e277e1cb73a6e77",
+  "date": "2026-10-24T10:27:17Z"
+}
