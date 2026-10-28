@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatMoney } from "@/lib/money-model";
+import { owed, standbyByClient } from "@/lib/standby";
 import { addDays, getLocalDateKey, parseLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { clock, decimalHours, hours } from "@/lib/time-tracking";
@@ -78,7 +79,10 @@ export function WorkLogPage({
   const worked = week.reduce((a, s) => a + workedMs(s, now), 0);
   const breaks = week.reduce((a, s) => a + breakMs(s, now), 0);
   const rateOf = (c: string) => rates?.[c] ?? 0;
-  const value = [...perClient].reduce((a, [c, r]) => a + (r.ms / 3600_000) * rateOf(c), 0);
+  // Standby: the gaps between a client's shifts in a day, paid at half (lib/standby.ts).
+  const standby = useMemo(() => standbyByClient(shifts, monday, sunday, now), [shifts, monday, sunday, now]);
+  const standbyTotal = [...standby.values()].reduce((a, r) => a + r.standbyMs, 0);
+  const value = [...standby].reduce((a, [c, r]) => a + owed(r, rateOf(c)), 0);
   const days = useMemo(() => {
     const m = new Map<string, Shift[]>();
     for (const s of week) m.set(shiftDay(s), [...(m.get(shiftDay(s)) ?? []), s]);
@@ -212,9 +216,14 @@ export function WorkLogPage({
               <small>not counted as worked</small>
             </div>
             <div className="ws-kpi">
+              <span>Standby</span>
+              <b>{hours(standbyTotal)}</b>
+              <small>gaps between shifts, paid at half</small>
+            </div>
+            <div className="ws-kpi">
               <span>Owed</span>
               <b style={{ color: "var(--ws-green)" }}>{formatMoney(Math.round(value))}</b>
-              <small>at each client's rate</small>
+              <small>at each client's rate, standby at half</small>
             </div>
             <div className="ws-kpi">
               <span>Activities</span>
@@ -282,7 +291,9 @@ export function WorkLogPage({
                         <br />
                         <span className="ws-faint">
                           {r
-                            ? `${hours(r.ms)} · ${r.shifts} shift${r.shifts === 1 ? "" : "s"}`
+                            ? `${hours(r.ms)} · ${r.shifts} shift${r.shifts === 1 ? "" : "s"}${
+                                standby.get(c)?.standbyMs ? ` · ${hours(standby.get(c)!.standbyMs)} standby` : ""
+                              }`
                             : "No shifts this week"}
                         </span>
                       </span>
@@ -303,7 +314,7 @@ export function WorkLogPage({
                         />
                         {r && rateOf(c) > 0 && (
                           <div style={{ color: "var(--ws-green)", fontSize: 12, marginTop: 2 }}>
-                            {formatMoney(Math.round((r.ms / 3600_000) * rateOf(c)))}
+                            {formatMoney(Math.round(owed(standby.get(c) ?? { workedMs: r.ms, standbyMs: 0 }, rateOf(c))))}
                           </div>
                         )}
                       </span>

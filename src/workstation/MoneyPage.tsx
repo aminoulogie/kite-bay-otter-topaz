@@ -16,6 +16,8 @@ import { getLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import type { LedgerEntry, MoneyCurrency } from "@/lib/types";
 import { byClient, filterLedger, type KindFilter } from "./money";
+import { owed, standbyByClient } from "@/lib/standby";
+import { budgetsFrom, comparePlan, TEMPLATES } from "@/lib/spend-templates";
 
 const KINDS: { id: KindFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -45,6 +47,9 @@ export function MoneyPage() {
   const updateLedger = useSoma((s) => s.updateLedger);
   const removeLedger = useSoma((s) => s.removeLedger);
   const restoreLedger = useSoma((s) => s.restoreLedger);
+  const shifts = useSoma((s) => s.shifts);
+  const patchSettings = useSoma((s) => s.patchSettings);
+  const [planId, setPlanId] = useState(TEMPLATES[0]!.id);
 
   const today = getLocalDateKey();
   const [month, setMonth] = useState(today.slice(0, 7));
@@ -78,6 +83,18 @@ export function MoneyPage() {
   );
   const total = useMemo(() => totalBalance(accounts, ledger, rates), [accounts, ledger, rates]);
   const net = flows.income - flows.spend;
+  // What clients owe for the month's work log, standby at half: money on its way.
+  const clientOwed = useMemo(() => {
+    const work = standbyByClient(shifts, `${month}-01`, `${month}-31`);
+    return [...work].reduce((a, [c, r]) => a + owed(r, settings.clientRates?.[c] ?? 0), 0);
+  }, [shifts, month, settings.clientRates]);
+  // The month against a spending plan (lib/spend-templates.ts).
+  const plan = TEMPLATES.find((t) => t.id === planId) ?? TEMPLATES[0]!;
+  const spentByCat = Object.fromEntries(budgets.map((b) => [b.category.name, b.spent]));
+  const savedThisMonth = ledger
+    .filter((e) => e.kind === "save" && e.date.startsWith(month))
+    .reduce((a, e) => a + Math.abs(Number(e.amount) || 0), 0);
+  const planRows = comparePlan(spentByCat, savedThisMonth, flows.income, plan);
 
   // The add row.
   const [d, setD] = useState({
@@ -186,6 +203,62 @@ export function MoneyPage() {
           </small>
         </div>
       </div>
+
+      <div className="ws-kpis" style={{ marginTop: -4 }}>
+        <div className="ws-kpi">
+          <span>Owed by clients</span>
+          <b style={{ color: "var(--ws-green)" }}>{formatMoney(Math.round(clientOwed))}</b>
+          <small>this month's work log, standby at half</small>
+        </div>
+      </div>
+
+      <section className="ws-card" style={{ marginBottom: 12 }}>
+        <header>
+          Spending plan{" "}
+          <select className="ws-cell" value={planId} onChange={(e) => setPlanId(e.target.value)}>
+            {TEMPLATES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          <small>{plan.by}</small>
+        </header>
+        <p className="ws-faint" style={{ margin: "4px 0 10px" }}>
+          {plan.note}
+        </p>
+        <ul className="ws-list">
+          {planRows.map((r) => (
+            <li key={r.share}>
+              <span className="t" style={{ textTransform: "capitalize" }}>
+                {r.share}
+              </span>
+              <span className="ws-faint">
+                {Math.round(r.actualPct * 100)}% of income · plan {Math.round(r.targetPct * 100)}%
+              </span>
+              <b className="ws-num">
+                {formatMoney(Math.round(r.actual))} / {formatMoney(Math.round(r.target))}
+              </b>
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          className="ws-btn"
+          disabled={!(flows.income > 0)}
+          onClick={() => {
+            const last = Object.fromEntries(
+              budgetRows(ledger, shiftMonth(month, -1), cats, settings.categoryBudgets, rates).map((b) => [b.category.name, b.spent]),
+            );
+            const next = budgetsFrom(plan, flows.income, cats.filter((c) => c.kind === "spend").map((c) => c.name), last);
+            if (!window.confirm(`Set every spending budget from ${plan.name}, on ${formatMoney(flows.income)} of income?`)) return;
+            patchSettings({ categoryBudgets: next });
+            toast.success(`Budgets set from ${plan.name}`);
+          }}
+        >
+          Use as budgets
+        </button>
+      </section>
 
       <div
         className="ws-grid"
