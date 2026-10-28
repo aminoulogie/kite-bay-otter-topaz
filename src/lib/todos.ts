@@ -67,7 +67,9 @@ export function activeOf<T extends TodoItem>(
   scope: TodoScope,
   todayKey: string,
 ): T[] {
-  return items.filter((t) => scopeOf(t) === scope && isActive(t, todayKey));
+  const rank = (t: T) => (t.priority === "high" ? 0 : t.priority === "low" ? 2 : 1);
+  // High priority first, low last, otherwise in the list's own order (sort is stable).
+  return items.filter((t) => scopeOf(t) === scope && isActive(t, todayKey)).sort((a, b) => rank(a) - rank(b));
 }
 
 /**

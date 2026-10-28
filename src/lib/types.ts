@@ -306,6 +306,8 @@ export interface Habit {
   desc: string;
   color: string;
   goalDaysPerWeek: number;
+  /** When it is done, for grouping (set on the Margin tablet): morning, evening, or any time. */
+  time?: "morning" | "evening";
   /**
    * Whether the day counts as done. Stays authoritative for every reader —
    * streaks, heatmaps, calendar marks, the coach — including for habits with
@@ -704,6 +706,8 @@ export interface TodoItem {
    * was added, which is exactly what `"day"` means now.
    */
   scope?: "day" | "week";
+  /** High or low (set on the Margin tablet); absent is normal. Lists sort high first. */
+  priority?: "high" | "low";
   /**
    * Swept out of the active list by hand, before its day or week was up.
    *
