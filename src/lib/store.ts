@@ -41,6 +41,7 @@ import { correctCustomFoods } from "./food-corrections";
 import { liveIsUntouched, withRescue } from "./live-guard";
 import { cleanSlot } from "./timeline";
 import { asGoals, type Goal } from "./life-goals";
+import { asNotes, type Note } from "./notes";
 import { sessionBurn } from "./training-burn";
 import {
   defaultProgram, loadActiveId, loadPrograms, resolveActiveProgram, saveActiveId,
@@ -306,6 +307,11 @@ export interface SomaStore {
   projects: Project[];
   /** Goals for the week, month and year. See lib/life-goals.ts. */
   goals: Goal[];
+  /** The Obsidian vault's notes, mirrored by the device that has the folder. See lib/notes.ts. */
+  notes: Note[];
+  /** Adds or replaces notes, by path. */
+  putNotes: (notes: Note[]) => void;
+  removeNotes: (ids: string[]) => void;
   addGoal: (goal: Omit<Goal, "id" | "createdAt" | "done">) => string;
   patchGoal: (id: string, patch: Partial<Omit<Goal, "id">>) => void;
   removeGoal: (id: string) => void;
@@ -740,6 +746,7 @@ export const useSoma = create<SomaStore>()(
       findings: [],
       shifts: [],
       goals: [],
+      notes: [],
       trades: [],
       dayRoutines: [],
       dayRoutineRun: null,
@@ -1683,6 +1690,17 @@ export const useSoma = create<SomaStore>()(
           next.splice(Math.max(0, Math.min(idx, next.length)), 0, e);
           return { timeEntries: next };
         }),
+      putNotes: (notes) => {
+        if (!notes.length) return;
+        const byId = new Map(get().notes.map((n) => [n.id, n]));
+        for (const n of notes) byId.set(n.id, n);
+        set({ notes: [...byId.values()] });
+      },
+      removeNotes: (ids) => {
+        if (!ids.length) return;
+        const gone = new Set(ids);
+        set({ notes: get().notes.filter((n) => !gone.has(n.id)) });
+      },
       addGoal: (goal) => {
         const id = newId();
         set((s) => ({ goals: [...s.goals, { ...goal, id, done: false, createdAt: Date.now() }] }));
@@ -3050,6 +3068,7 @@ export const useSoma = create<SomaStore>()(
             findings: get().findings,
             shifts: get().shifts,
             goals: get().goals,
+            notes: get().notes,
             trades: get().trades,
             dayRoutines: get().dayRoutines,
             dayPlans: get().dayPlans,
@@ -3108,6 +3127,7 @@ export const useSoma = create<SomaStore>()(
               findings: asFindings(data.findings),
               shifts: asShifts(data.shifts),
               goals: asGoals(data.goals),
+              notes: asNotes(data.notes),
               trades: asTrades(data.trades),
               dayRoutines: asRoutines(data.dayRoutines),
               dayPlans: data.dayPlans || {},
@@ -3214,6 +3234,7 @@ export const useSoma = create<SomaStore>()(
             findings: mergeById(asFindings(data.findings), cur.findings),
             shifts: mergeById(asShifts(data.shifts), cur.shifts),
             goals: mergeById(asGoals(data.goals), cur.goals),
+            notes: mergeById(asNotes(data.notes), cur.notes),
             trades: mergeById(asTrades(data.trades), cur.trades),
             dayRoutines: mergeById(asRoutines(data.dayRoutines), cur.dayRoutines),
             // Incoming days fill gaps; a plan on the device is the newer edit.
@@ -3340,6 +3361,7 @@ export const useSoma = create<SomaStore>()(
         findings: s.findings,
         shifts: s.shifts,
         goals: s.goals,
+        notes: s.notes,
         trades: s.trades,
         dayRoutines: s.dayRoutines,
         dayPlans: s.dayPlans,

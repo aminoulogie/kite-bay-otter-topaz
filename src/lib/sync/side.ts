@@ -74,8 +74,9 @@ export function sideChanged(incoming: Partial<SideStores>, current: SideStores):
  *   1  the first sync
  *   2  work log shifts, client rates, programmes, recipes, meal programmes,
  *      membership and supplements, device list, undo
+ *   3  notes (the Obsidian vault, lib/notes.ts)
  */
-export const SYNC_SCHEMA = 2;
+export const SYNC_SCHEMA = 3;
 
 export interface DeviceInfo {
   id: string;

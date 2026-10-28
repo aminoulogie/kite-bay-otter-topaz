@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNotesVaultLoop } from "@/lib/use-notes-vault";
 import { Workstation } from "@/workstation/Workstation";
 import { useWorkstation } from "@/workstation/mode";
 import { SyncRunner } from "@/components/SyncRunner";
@@ -203,6 +204,7 @@ export function AppShell() {
   useEffect(() => startSleepClock(), []);
   useEffect(() => startHabitAuto(), []);
   useEffect(() => startFocusGym(), []);
+  useNotesVaultLoop();
 
   // Everything in this app lives on this one device, so the backup file is the
   // only copy that survives losing it. Burying the one control that writes it

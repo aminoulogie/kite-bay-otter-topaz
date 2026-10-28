@@ -51,6 +51,7 @@ const NOT_USER_DATA: Record<string, string> = {
   "soma-scan-assist": "scan camera/zoom/flash choices for THIS phone's lenses — a restored 3x on a phone without a telephoto would be wrong",
   "soma.tickWay": "which haptic path THIS phone plays — another phone may need a different one",
   "soma-ws-page": "which workstation page was last open on THIS computer",
+  "soma-notes-last-mirror": "when THIS computer last mirrored its Obsidian folder — another device has its own folder, or none",
   "soma-ws-projects-view": "table or board, on THIS computer",
   "soma-sync-devices": "which app version each synced device last ran — refreshed by the next sync, and meaningless on a restored phone",
   "soma-sync-history": "what recent syncs replaced on THIS device, kept only to undo them — a restore is its own undo",

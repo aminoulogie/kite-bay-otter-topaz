@@ -385,3 +385,19 @@ export async function setVaultHandle(handle: FileSystemDirectoryHandle): Promise
 export async function clearVaultHandle(): Promise<void> {
   await vaultTx("readwrite", (s) => s.delete(VAULT_KEY));
 }
+
+/** The Obsidian vault folder for notes (lib/notes-vault.ts): a second handle in the same store. */
+const NOTES_VAULT_KEY = "notes-vault";
+
+export async function getNotesVaultHandle(): Promise<FileSystemDirectoryHandle | null> {
+  const row = await vaultTx<FileSystemDirectoryHandle | undefined>("readonly", (s) => s.get(NOTES_VAULT_KEY));
+  return row ?? null;
+}
+
+export async function setNotesVaultHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+  await vaultTx("readwrite", (s) => s.put(handle, NOTES_VAULT_KEY));
+}
+
+export async function clearNotesVaultHandle(): Promise<void> {
+  await vaultTx("readwrite", (s) => s.delete(NOTES_VAULT_KEY));
+}

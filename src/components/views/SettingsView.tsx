@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { SyncSettings } from "@/components/SyncSettings";
+import { NotesVaultSettings } from "@/components/NotesVaultSettings";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -838,6 +839,10 @@ export function SettingsView() {
 
       <Sized key="sync" glance={{ label: "Device sync", short: "Sync", empty: "Sync your phone and PC, encrypted", emptyShort: "Open" }}>
         <SyncSettings />
+      </Sized>
+
+      <Sized key="notes" glance={{ label: "Notes vault", short: "Notes", empty: "Mirror your Obsidian vault", emptyShort: "Open" }}>
+        <NotesVaultSettings />
       </Sized>
 
       <Sized key="vault" glance={{ label: "Vault sync", short: "Vault", empty: "Sync SOMA with a folder", emptyShort: "Open" }}>
