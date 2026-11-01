@@ -1,4 +1,5 @@
 import type { SessionExercise, WorkoutSet } from "./types";
+import { isCheated, type Aid, type Cheat } from "./set-setup.ts";
 
 /**
  * What actually happened in a set, and what that means.
@@ -36,6 +37,10 @@ export interface SetQuality {
   form?: 1 | 2 | 3; // 3 clean, 2 some breakdown, 1 broke down.
   /** Which muscles gave out first. Only meaningful when limiter is "synergist". */
   limitedBy?: string[];
+  /** From the set's Setup (lib/set-setup.ts). Straps: grip cannot be the limiter. */
+  aids?: Aid[];
+  /** Arch or momentum. A cheated set is never a true failure of the target. */
+  cheats?: Cheat[];
 }
 
 export interface ExerciseQuality {
@@ -51,9 +56,14 @@ export type QualitySet = WorkoutSet & SetQuality;
  * Requires all three to agree: the right muscle was the limiter, there was
  * nothing left, and the body corroborated it. A grinding set where the triceps
  * died first is honestly NOT a chest failure — which is the whole point.
+ *
+ * And it was done strict. An arched bench or a swung curl taken to "nothing
+ * left" failed a lift that was easier than the one programmed, so it counts as
+ * "form broke" does: hard, not a true failure.
  */
 export function isGenuineFailure(s: SetQuality): boolean {
   if (s.limiter !== "target") return false;
+  if (isCheated(s)) return false;
   if (s.closeness !== "nothing" && s.closeness !== "forced") return false;
   return (s.burn ?? 0) >= 2;
 }

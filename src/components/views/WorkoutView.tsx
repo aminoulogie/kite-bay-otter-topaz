@@ -19,6 +19,10 @@ import { SomaIntelligenceEngine, getLocalDateKey } from "@/lib/soma";
 import { Sized, WidgetGrid } from "@/components/WidgetGrid";
 import { useSoma } from "@/lib/store";
 import { SetQualitySheet } from "@/components/SetQualitySheet";
+import { SetSetupSheet } from "@/components/SetSetupSheet";
+import {
+  hasSetup, liveVariant, setVariant, setupCode, setupOptions, setupSummary, variantLabel,
+} from "@/lib/set-setup";
 import { isGenuineFailure } from "@/lib/set-quality";
 import { failureFromQuality, readinessWithSleepDebt, rpeFromQuality, rpeLabel } from "@/lib/autoregulate";
 import { applyGoal } from "@/lib/goal-mode";
@@ -77,7 +81,7 @@ export function WorkoutView() {
   const cycleSetType = useSoma((s) => s.cycleSetType);
   const insertFeederRamp = useSoma((s) => s.insertFeederRamp);
   const quickRateFeeder = useSoma((s) => s.quickRateFeeder);
-  const cycleGrip = useSoma((s) => s.cycleGrip);
+  const setSetup = useSoma((s) => s.setSetup);
   const cycleSuperset = useSoma((s) => s.cycleSuperset);
   const swapExercise = useSoma((s) => s.swapExercise);
   const undo = useSoma((s) => s.undo);
@@ -108,6 +112,7 @@ export function WorkoutView() {
   const [customOpen, setCustomOpen] = useState(false);
   // which set's quality sheet is open, if any
   const [rating, setRating] = useState<{ exIdx: number; sIdx: number } | null>(null);
+  const [setupFor, setSetupFor] = useState<{ exIdx: number; sIdx: number } | null>(null);
   const [customName, setCustomName] = useState("");
   const [customMuscle, setCustomMuscle] = useState("chest");
   // Seeded from the day being viewed and re-seeded when it changes. These used
@@ -219,17 +224,20 @@ export function WorkoutView() {
       const rest = SomaIntelligenceEngine.restForSet(ex, set, live.exercises, settings);
       if (settings.autoRest && rest.seconds > 0) startRest(rest.seconds);
       if (rest.nextExercise) toast(`Superset — go to ${rest.nextExercise}`);
+      // A strapped or arched set is a PR only against sets done the same way.
+      const variant = setVariant(set);
       const pr = SomaIntelligenceEngine.detectPersonalRecords(
         history,
         ex.name,
         Number(set.weight) || 0,
         Number(set.reps) || 0,
+        variant,
       );
       if (pr) {
         if (settings.sound) playChime("pr");
         if (settings.confetti && rootRef.current) burstConfetti(rootRef.current);
         tapSuccess();
-        toast.success(`PR on ${ex.name}`);
+        toast.success(`PR on ${ex.name}${variant ? ` (${variantLabel(variant).toLowerCase()})` : ""}`);
       }
     }
   };
@@ -747,7 +755,14 @@ export function WorkoutView() {
       )}
 
       {live.exercises.map((ex, exIdx) => {
-        const last = useSoma.getState().lastPerformance(ex.name);
+        // Straps and cheats keep their own records (lib/set-setup.ts): the
+        // record this exercise is aiming at is the setup of its latest set
+        // that has one, else strict. A record with no history yet falls back
+        // to every set, and the Last line says so.
+        const setupOpts = setupOptions(ex);
+        const variant = liveVariant(ex.sets);
+        const lastOfVariant = useSoma.getState().lastPerformance(ex.name, variant);
+        const last = lastOfVariant ?? useSoma.getState().lastPerformance(ex.name);
         // The whole of the previous session for this lift, set by set. Excludes
         // the day being logged so an edited or backfilled session cannot end up
         // comparing against itself.
@@ -755,7 +770,8 @@ export function WorkoutView() {
         // backfilling, otherwise the day it was opened. Getting this wrong makes
         // an edited session its own history and offers you back what you just
         // typed as though it were last week.
-        const lastTime = lastTimeFor(history, ex.name, live.forDate ?? live.date ?? todayKey);
+        const lastTimeOfVariant = lastTimeFor(history, ex.name, live.forDate ?? live.date ?? todayKey, variant);
+        const lastTime = lastTimeOfVariant ?? lastTimeFor(history, ex.name, live.forDate ?? live.date ?? todayKey);
         const keys = ex.targetKeys || [];
         const muscleR = keys.length
           ? Math.min(...keys.map((k) => readinessMap[k]?.recovery ?? 100))
@@ -894,6 +910,11 @@ export function WorkoutView() {
               <div className="rounded-xl border border-border bg-surface-2 px-2.5 py-1.5">
                 <span className="text-[0.6rem] font-bold uppercase tracking-wider text-faint">
                   Last {agoLabel(lastTime.date, todayKey)}
+                  {variant !== "" && (
+                    <span className={lastTimeOfVariant ? "text-accent-text" : "text-warn"}>
+                      {" "}· {lastTimeOfVariant ? variantLabel(variant).toLowerCase() : `no ${variantLabel(variant).toLowerCase()} record yet`}
+                    </span>
+                  )}
                 </span>
                 <span className="ml-2 text-[0.72rem] font-bold tabular text-muted">
                   {summarise(lastTime)}
@@ -922,12 +943,12 @@ export function WorkoutView() {
               </div>
             )}
 
-            <div className="grid grid-cols-[30px_1fr_1fr_1.25fr_34px_30px_32px_24px] items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
+            <div className="grid grid-cols-[30px_1fr_1fr_1.25fr_40px_30px_32px_24px] items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-faint">
               <span className="text-center">Set</span>
               <span className="text-center">{settings.unit}</span>
               <span className="text-center">Reps</span>
               <span className="text-center">RPE</span>
-              <span className="text-center">Grip</span>
+              <span className="text-center">Setup</span>
               {/* The score the four RPE answers add up to. It was collected and
                   never shown, so the sheet felt like a form with no output. */}
               <span className="text-center">Pts</span>
@@ -946,7 +967,7 @@ export function WorkoutView() {
                 <div
                   key={sIdx}
                   className={cn(
-                    "grid grid-cols-[30px_1fr_1fr_1.25fr_34px_30px_32px_24px] items-center gap-1 rounded-xl p-1",
+                    "grid grid-cols-[30px_1fr_1fr_1.25fr_40px_30px_32px_24px] items-center gap-1 rounded-xl p-1",
                     // A completed set acknowledges itself for half a second,
                     // so the tap has a visible consequence beyond a checkbox.
                     s.done && "soma-flash",
@@ -1013,23 +1034,49 @@ export function WorkoutView() {
                           : "rate"}
                     </button>
                   )}
-                  {/* Grip: width and orientation, cycled with one tap. A cable
-                      angle is a grip in three dimensions, so it rides the same
-                      field. */}
-                  <button
-                    type="button"
-                    aria-label={`Set ${sIdx + 1} grip`}
-                    onClick={() => cycleGrip(exIdx, sIdx)}
-                    title={s.grip ? `${s.grip.width} · ${s.grip.orientation}` : "Tap to set grip"}
-                    className={cn(
-                      "h-9 rounded-lg border px-0.5 text-[0.55rem] font-bold leading-none",
-                      s.grip ? "border-accent/40 bg-accent/10 text-accent-text" : "border-border bg-surface-2 text-faint",
-                    )}
-                  >
-                    {s.grip
-                      ? `${s.grip.width[0]!.toUpperCase()}·${s.grip.orientation.slice(0, 3)}`
-                      : "—"}
-                  </button>
+                  {/* Setup: grip, straps/belt, arch/swing — whatever the lift
+                      offers (lib/set-setup.ts). Grip on the first line, gear
+                      and cheats on the second. An amber dot: belt recommended
+                      on this lift and not ticked. */}
+                  {(() => {
+                    if (!hasSetup(setupOpts)) {
+                      return <span className="text-center text-[0.6rem] text-faint">—</span>;
+                    }
+                    const code = setupCode(s);
+                    const summary = setupSummary(s);
+                    const beltDot = setupOpts.beltRecommended && !s.aids?.includes("belt");
+                    return (
+                      <button
+                        type="button"
+                        aria-label={`Set ${sIdx + 1} setup`}
+                        onClick={() => setSetupFor({ exIdx, sIdx })}
+                        title={summary || "Tap to record grip, gear and cheats"}
+                        className={cn(
+                          "relative flex h-9 flex-col items-center justify-center rounded-lg border px-0.5 text-[0.5rem] font-bold leading-tight",
+                          s.cheats?.length
+                            ? "border-warn/50 bg-warn/10 text-warn"
+                            : summary
+                              ? "border-accent/40 bg-accent/10 text-accent-text"
+                              : "border-border bg-surface-2 text-faint",
+                        )}
+                      >
+                        {summary ? (
+                          <>
+                            {code.grip && <span className="max-w-full truncate">{code.grip}</span>}
+                            {code.flags && <span className="max-w-full truncate">{code.flags}</span>}
+                          </>
+                        ) : (
+                          <span className="text-[0.55rem]">set</span>
+                        )}
+                        {beltDot && (
+                          <span
+                            aria-hidden
+                            className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-warn"
+                          />
+                        )}
+                      </button>
+                    );
+                  })()}
                   {/* What the answers worked out to, 0-100. Weighted towards
                       how close the set got to failure — see lib/stimulus.ts. */}
                   {(() => {
@@ -1175,6 +1222,23 @@ export function WorkoutView() {
           </Card>
         </div>
       )}
+      {setupFor &&
+        (() => {
+          const ex = live.exercises[setupFor.exIdx];
+          const set = ex?.sets[setupFor.sIdx];
+          if (!ex || !set) return null;
+          return (
+            <SetSetupSheet
+              exerciseName={ex.name}
+              setNumber={setupFor.sIdx + 1}
+              options={setupOptions(ex)}
+              value={set}
+              previous={ex.sets[setupFor.sIdx - 1] ?? null}
+              onChange={(setup) => setSetup(setupFor.exIdx, setupFor.sIdx, setup)}
+              onClose={() => setSetupFor(null)}
+            />
+          );
+        })()}
       {rating &&
         (() => {
           const ex = live.exercises[rating.exIdx];

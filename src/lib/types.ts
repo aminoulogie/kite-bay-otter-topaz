@@ -1,6 +1,7 @@
 import type { BookMark } from "./marks.ts";
 import type { ReaderPrefs } from "./reader-prefs.ts";
 import type { HabitRamp } from "./habit-ramp";
+import type { Aid, Cheat, Grip } from "./set-setup.ts";
 export type { HabitRamp };
 
 import type { TrainingGoal } from "./goal-mode.ts";
@@ -48,11 +49,16 @@ export interface WorkoutSet {
   closeness?: "reps_left" | "one_left" | "nothing" | "forced";
   /** Numeric RPE, set directly by the feeder quick-log. Absent elsewhere. */
   rpe?: number | null;
-  /** Omni-grip: how the set was held. Absent means "not recorded". */
-  grip?: {
-    width: "wide" | "medium" | "narrow";
-    orientation: "pronated" | "supinated" | "neutral";
-  };
+  /**
+   * How the set was done (lib/set-setup.ts). Each part is optional: absent
+   * means "not recorded", and reads as strict, bare hands for records.
+   * Grip: width and hand position, picked separately.
+   */
+  grip?: Grip;
+  /** Lifting aids: straps (own records, no penalty), belt (safety, neither). */
+  aids?: Aid[];
+  /** Arch or momentum: own records, a Technique penalty, never a true failure. */
+  cheats?: Cheat[];
   limitedBy?: string[];
   burn?: 1 | 2 | 3;
   form?: 1 | 2 | 3;

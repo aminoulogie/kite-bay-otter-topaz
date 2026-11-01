@@ -104,7 +104,8 @@ import type { HungerEntry } from "./hunger";
 import {
   deduct, giveBack, listCost, restock, withLowStock, type GroceryLine, type PantryItem,
 } from "./pantry";
-import { deloadSetCount, feederRamp } from "./autoregulate";
+import { deloadSetCount, failureFromQuality, feederRamp } from "./autoregulate";
+import { cleanSetup, setVariant, type SetSetup } from "./set-setup";
 import { cleanDue } from "./due";
 import {
   clampStep, cleanRoutine, newRoutineId, newStepId as newRoutineStepId, startRun,
@@ -479,7 +480,8 @@ export interface SomaStore {
   restoreHabit: (idx: number, habit: Habit) => void;
   allExercises: () => ExerciseDef[];
   routines: () => Record<string, { name: string }[]>;
-  lastPerformance: (name: string) => WorkoutSet | null;
+  /** The heaviest set of the last session. `variant` keeps one record (lib/set-setup.ts). */
+  lastPerformance: (name: string, variant?: string) => WorkoutSet | null;
   loadSplit: (name: string) => void;
   addExercise: (name: string) => void;
   addCustomExercise: (ex: ExerciseDef) => void;
@@ -493,7 +495,8 @@ export interface SomaStore {
   cycleSetType: (exIdx: number, setIdx: number) => void;
   insertFeederRamp: (exIdx: number, setIdx: number) => void;
   quickRateFeeder: (exIdx: number, setIdx: number, rpe: number) => void;
-  cycleGrip: (exIdx: number, setIdx: number) => void;
+  /** Change a live set's grip, aids or cheats (lib/set-setup.ts); keeps `failure` in step. */
+  setSetup: (exIdx: number, setIdx: number, setup: SetSetup) => void;
   cycleSuperset: (exIdx: number) => void;
   swapExercise: (exIdx: number, name: string) => void;
   snapshot: () => void;
@@ -2314,14 +2317,16 @@ export const useSoma = create<SomaStore>()(
           _removed: get().settings.customRoutinesRemoved,
         }) as Record<string, { name: string }[]>,
 
-      lastPerformance: (name) => {
+      lastPerformance: (name, variant) => {
         let latest = 0;
         let top: WorkoutSet | null = null;
         for (const session of Object.values(get().history)) {
           if (!session?.exercises || (session.timestamp || 0) < latest) continue;
           const match = session.exercises.find((e) => e.name.toLowerCase() === name.toLowerCase());
           if (!match) continue;
-          const completed = match.sets.filter((s) => s.type !== "warmup" && s.done);
+          const completed = match.sets.filter(
+            (s) => s.type !== "warmup" && s.done && (variant == null || setVariant(s) === variant),
+          );
           if (!completed.length) continue;
           latest = session.timestamp;
           top = completed.reduce((max, s) =>
@@ -2514,23 +2519,21 @@ export const useSoma = create<SomaStore>()(
         });
         set({ live: { ...get().live, exercises, firstSetAt: get().live.firstSetAt ?? Date.now() } });
       },
-      cycleGrip: (exIdx, setIdx) => {
+      setSetup: (exIdx, setIdx, setup) => {
         get().snapshot();
-        const grips: NonNullable<WorkoutSet["grip"]>[] = [
-          { width: "wide", orientation: "pronated" },
-          { width: "medium", orientation: "neutral" },
-          { width: "narrow", orientation: "supinated" },
-        ];
         const exercises = get().live.exercises.map((ex, i) => {
           if (i !== exIdx) return ex;
           return {
             ...ex,
             sets: ex.sets.map((s, j) => {
               if (j !== setIdx) return s;
-              const cur = s.grip;
-              if (!cur) return { ...s, grip: grips[0] };
-              const idx = grips.findIndex((g) => g.width === cur.width && g.orientation === cur.orientation);
-              return { ...s, grip: grips[(idx + 1) % grips.length] ?? grips[0] };
+              const next: WorkoutSet = { ...s, ...cleanSetup(setup) };
+              // A cheat caps the 1-5 failure number the ladder reads, so it
+              // has to be worked out again whenever the setup changes, the
+              // same way the rate sheet does when an answer changes.
+              const f = failureFromQuality(next);
+              if (f != null) next.failure = f;
+              return next;
             }),
           };
         });

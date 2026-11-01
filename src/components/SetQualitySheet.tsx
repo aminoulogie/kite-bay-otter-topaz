@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { MUSCLE_REGIONS } from "@/lib/recovery";
 import type { Closeness, Limiter, SetQuality } from "@/lib/set-quality";
 import { isGenuineFailure } from "@/lib/set-quality";
+import { isCheated, setupSummary } from "@/lib/set-setup";
 import { rateSet, ratingLabel, ratingTone, setBreakdown } from "@/lib/stimulus";
 import { tapLight } from "@/lib/haptics";
 import { useSheet } from "@/lib/use-sheet";
@@ -58,18 +59,22 @@ export function SetQualitySheet({
   // The likely culprits are the muscles this lift already works that are not
   // the ones it is programmed for. Offering those first turns the common case
   // into one tap instead of a scroll through twenty-three muscles.
+  // On a strapped set the grip is out of the lift, so the forearms cannot be
+  // what stopped it and are not offered (lib/set-setup.ts).
+  const strapped = value.aids?.includes("straps") ?? false;
   const suspects = useMemo(() => {
     const p = new Set(primaryKeys);
     const seen = new Set<string>();
     return allKeys
       .filter((k) => !p.has(k))
+      .filter((k) => !(strapped && k.startsWith("forearm")))
       .filter((k) => {
         const l = label(k);
         if (seen.has(l)) return false; // triceps / triceps_back read as one muscle
         seen.add(l);
         return true;
       });
-  }, [primaryKeys, allKeys]);
+  }, [primaryKeys, allKeys, strapped]);
 
   const genuine = isGenuineFailure(value);
   const rating = rateSet(value as Parameters<typeof rateSet>[0]);
@@ -238,6 +243,8 @@ export function SetQualitySheet({
               ? "Answer any of the four above and a score appears. Unanswered questions are left out rather than counted as zero."
               : genuine
                 ? `True failure of ${primaryKeys.map(label)[0] ?? "the target"} — this one counts fully.`
+                : isCheated(value) && (value.closeness === "nothing" || value.closeness === "forced")
+                  ? `${setupSummary({ cheats: value.cheats })}: the lift was made easier, so this is not a true failure of ${primaryKeys.map(label)[0] ?? "the target"}. Technique is marked down and it counts toward its own record.`
                 : value.limiter === "synergist"
                   ? `The target did not fail, so the stimulus goes to ${
                       (value.limitedBy ?? []).map(label).join(" and ") || "whatever gave out"
@@ -250,7 +257,7 @@ export function SetQualitySheet({
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+export function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="mb-3">
       <div className="mb-1.5 text-[0.65rem] font-bold uppercase tracking-wide text-faint">
@@ -262,7 +269,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-function Choice({ on, onClick, label, hint }: { on: boolean; onClick: () => void; label: string; hint?: string }) {
+export function Choice({ on, onClick, label, hint }: { on: boolean; onClick: () => void; label: string; hint?: string }) {
   return (
     <button
       type="button"
@@ -281,7 +288,7 @@ function Choice({ on, onClick, label, hint }: { on: boolean; onClick: () => void
   );
 }
 
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+export function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"

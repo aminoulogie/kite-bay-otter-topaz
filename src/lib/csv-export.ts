@@ -51,6 +51,8 @@ export function setsCsv(history: Record<string, HistorySession>): CsvFile {
           i + 1, set.type, set.weight, set.reps, set.done ? "yes" : "no",
           set.limiter ?? "", set.closeness ?? "", (set.limitedBy ?? []).join(" "),
           set.burn ?? "", set.form ?? "", ex.pump ?? "",
+          set.grip?.width ?? "", set.grip?.orientation ?? "",
+          (set.aids ?? []).join(" "), (set.cheats ?? []).join(" "),
         ]);
       });
     }
@@ -60,7 +62,8 @@ export function setsCsv(history: Record<string, HistorySession>): CsvFile {
     rows: rows.length,
     content: toCsv(
       ["date", "split", "exercise", "muscle", "sub_target", "set", "type", "weight_kg",
-       "reps", "completed", "limiter", "closeness", "limited_by", "burn", "form", "pump"],
+       "reps", "completed", "limiter", "closeness", "limited_by", "burn", "form", "pump",
+       "grip_width", "grip_hand", "aids", "cheats"],
       rows,
     ),
   };

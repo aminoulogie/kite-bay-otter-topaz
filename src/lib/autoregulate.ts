@@ -18,6 +18,7 @@
  */
 
 import type { Closeness, Limiter } from "./set-quality.ts";
+import { isCheated, type Cheat } from "./set-setup.ts";
 
 // ------------------------------------------------------- what a set was worth --
 
@@ -51,11 +52,16 @@ export const CLOSENESS_TO_FAILURE: Record<Closeness, number> = {
  */
 export const LIMITER_FAILURE_CAP = 3;
 
-export function failureFromQuality(q: { closeness?: Closeness; limiter?: Limiter }): number | null {
+/**
+ * A cheated set (arched press, swung curl) is capped the same way: the lift
+ * that failed was easier than the one programmed, so it cannot be evidence for
+ * holding the load. The ladder keeps asking for strict reps first.
+ */
+export function failureFromQuality(q: { closeness?: Closeness; limiter?: Limiter; cheats?: Cheat[] }): number | null {
   if (!q.closeness) return null;
   const raw = CLOSENESS_TO_FAILURE[q.closeness];
   if (raw == null) return null;
-  if (q.limiter === "synergist" || q.limiter === "form") {
+  if (q.limiter === "synergist" || q.limiter === "form" || isCheated(q)) {
     return Math.min(raw, LIMITER_FAILURE_CAP);
   }
   return raw;

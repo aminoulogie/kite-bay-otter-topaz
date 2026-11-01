@@ -1,5 +1,6 @@
 import { isGenuineFailure, type SetQuality } from "./set-quality.ts";
 import type { SessionExercise, WorkoutSet } from "./types.ts";
+import { cheatFactor } from "./set-setup.ts";
 
 /**
  * Scoring a set, then an exercise, then a session — one number at each level,
@@ -115,7 +116,13 @@ export function rateSet(set: WorkoutSet & SetQuality): SetRating {
 
   if (set.closeness) parts.proximity = PROXIMITY[set.closeness];
   if (set.limiter) parts.targeting = TARGETING[set.limiter];
-  if (set.form) parts.form = FORM[set.form];
+  // A cheat (arch, swing) is a technique observation: it scales the Technique
+  // answer, or stands in for it when Technique was not rated but the set was.
+  // A set with only its setup recorded stays unscored until it is rated. See
+  // lib/set-setup.ts CHEAT_FORM. Straps and a belt are not cheats.
+  const cheat = cheatFactor(set.cheats);
+  if (set.form) parts.form = FORM[set.form] * cheat;
+  else if (cheat < 1 && (set.closeness || set.limiter || set.burn)) parts.form = cheat;
   if (set.burn) parts.burn = BURN[set.burn];
 
   let weighted = 0;

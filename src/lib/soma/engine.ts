@@ -4,6 +4,7 @@
 // ==========================================================================
 
 import { capForVolume } from "../autoregulate.ts";
+import { loggedVariants, setVariant, type Aid, type Cheat } from "../set-setup.ts";
 import { getLocalDateKey, parseLocalDateKey } from "./dates.ts";
 import { ROTATION_SEQUENCE } from "./data.ts";
 
@@ -37,6 +38,9 @@ interface LoggedSet {
   failure?: Numeric;
   done?: boolean;
   type?: string;
+  /** Setup (lib/set-setup.ts): straps and cheats decide which record a set is in. */
+  aids?: Aid[];
+  cheats?: Cheat[];
 }
 
 /** One exercise inside a logged session. */
@@ -895,6 +899,8 @@ class SomaIntelligenceEngine {
   static strengthSeries(
     history: Record<string, LoggedSession> | null | undefined,
     exerciseName: string,
+    /** One record only (lib/set-setup.ts setVariant); left out, every set. */
+    variant?: string,
   ): StrengthPoint[] {
     if (!history || !exerciseName) return [];
     const points: StrengthPoint[] = [];
@@ -912,6 +918,7 @@ class SomaIntelligenceEngine {
       for (const s of match.sets) {
         // Warm-ups and drop sets are not attempts at a maximum.
         if (!s.done || s.type === "warmup" || s.type === "dropset") continue;
+        if (variant != null && setVariant(s) !== variant) continue;
         const raw = parseFloat(String(s.weight)) || 0;
         const w = (match.usesBar && raw > 0) ? (match.barWeight || 20) + raw : raw;
         const reps = parseInt(String(s.reps)) || 0;
@@ -948,6 +955,24 @@ class SomaIntelligenceEngine {
       if (p.isPR) running = p.est1RM;
     }
     return points;
+  }
+
+  // The records (strict, straps, arched…) a lift has completed working sets
+  // in, strict first — the chips over the strength chart. See set-setup.ts.
+  static strengthVariants(
+    history: Record<string, LoggedSession> | null | undefined,
+    exerciseName: string,
+  ): string[] {
+    const sets: LoggedSet[] = [];
+    for (const session of Object.values(history || {})) {
+      for (const ex of session?.exercises || []) {
+        if (!ex.name || ex.name.toLowerCase() !== exerciseName.toLowerCase()) continue;
+        for (const s of ex.sets || []) {
+          if (s.done && s.type !== "warmup" && s.type !== "dropset") sets.push(s);
+        }
+      }
+    }
+    return loggedVariants(sets);
   }
 
   // Every exercise with at least one completed working set, most recent
@@ -1101,6 +1126,12 @@ class SomaIntelligenceEngine {
     currentExerciseName: string,
     newWeight: Numeric,
     newReps: Numeric,
+    /**
+     * The record the new set belongs to (lib/set-setup.ts setVariant). A
+     * strapped or arched set is a PR only against sets done the same way.
+     * Left out, every set counts.
+     */
+    variant?: string,
   ) {
     const w = parseFloat(String(newWeight)) || 0;
     const r = parseInt(String(newReps)) || 0;
@@ -1115,7 +1146,7 @@ class SomaIntelligenceEngine {
       for (const ex of session.exercises || []) {
         if (ex.name && ex.name.toLowerCase() === currentExerciseName.toLowerCase()) {
           for (const s of ex.sets || []) {
-            if (s.done && s.type !== "warmup") {
+            if (s.done && s.type !== "warmup" && (variant == null || setVariant(s) === variant)) {
               const rawW = parseFloat(String(s.weight)) || 0;
               const prevW = (ex.usesBar && rawW > 0) ? (ex.barWeight || 20) + rawW : rawW;
               const prevR = parseInt(String(s.reps)) || 0;

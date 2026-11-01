@@ -17,6 +17,7 @@ import { computeBiologicalReadiness, heatColor, heatLabel, MUSCLE_REGIONS } from
 import { SomaIntelligenceEngine, parseLocalDateKey } from "@/lib/soma";
 import { useSoma } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { variantLabel } from "@/lib/set-setup";
 
 type InsightTab =
   | "overview"
@@ -226,7 +227,16 @@ export function StrengthPanel() {
   const history = useSoma((s) => s.history);
   const names: string[] = SomaIntelligenceEngine.loggedExerciseNames(history);
   const [pick, setPick] = useState(names[0] || "");
-  const series = pick ? SomaIntelligenceEngine.strengthSeries(history, pick) : [];
+  // Straps and cheats keep their own records (lib/set-setup.ts). With only one
+  // record logged there is nothing to pick and every set is charted; with more,
+  // one record at a time, strict first, so a strapped PR never reads as a
+  // bare-hands one.
+  const variants: string[] = pick ? SomaIntelligenceEngine.strengthVariants(history, pick) : [];
+  const [variantPick, setVariantPick] = useState<string | null>(null);
+  const variant = variants.length > 1
+    ? (variantPick != null && variants.includes(variantPick) ? variantPick : variants[0]!)
+    : undefined;
+  const series = pick ? SomaIntelligenceEngine.strengthSeries(history, pick, variant) : [];
   const prs = series.filter((p: { isPR: boolean }) => p.isPR).slice(-6).reverse();
 
   return (
@@ -257,6 +267,23 @@ export function StrengthPanel() {
                 <option key={n}>{n}</option>
               ))}
             </select>
+            {variant != null && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {variants.map((v) => (
+                  <button
+                    key={v || "strict"}
+                    type="button"
+                    onClick={() => setVariantPick(v)}
+                    className={cn(
+                      "rounded-lg border px-2.5 py-1 text-[0.7rem] font-bold",
+                      v === variant ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface-2 text-muted",
+                    )}
+                  >
+                    {variantLabel(v)}
+                  </button>
+                ))}
+              </div>
+            )}
             {series.length >= 2 && (
               <svg viewBox="0 0 320 90" className="mt-3 h-24 w-full">
                 <polyline

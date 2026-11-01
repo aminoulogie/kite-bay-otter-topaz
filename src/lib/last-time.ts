@@ -12,6 +12,7 @@
  */
 
 import type { HistorySession, WorkoutSet } from "./types.ts";
+import { setVariant } from "./set-setup.ts";
 
 export interface LastTime {
   date: string;
@@ -30,10 +31,16 @@ export interface LastTime {
  * Warm-ups are dropped. A 20kg warm-up is not a suggestion for a working set,
  * and offering it as one is worse than offering nothing.
  */
+/**
+ * `variant` (lib/set-setup.ts setVariant) keeps records apart: asked for
+ * "straps", only strapped sets count, and a session with none is skipped. Left
+ * out, every set counts, as before.
+ */
 export function lastTimeFor(
   history: Record<string, HistorySession>,
   name: string,
   excludeDate?: string,
+  variant?: string,
 ): LastTime | null {
   const wanted = name.trim().toLowerCase();
   if (!wanted) return null;
@@ -43,7 +50,9 @@ export function lastTimeFor(
     if (date === excludeDate || !session?.exercises) continue;
     const match = session.exercises.find((e) => e.name.trim().toLowerCase() === wanted);
     if (!match) continue;
-    const sets = match.sets.filter((s) => s.type !== "warmup" && s.done);
+    const sets = match.sets.filter(
+      (s) => s.type !== "warmup" && s.done && (variant == null || setVariant(s) === variant),
+    );
     if (!sets.length) continue;
     // Compared by date key rather than by timestamp: a backfilled session is
     // stamped when it was typed, not when it was trained, so timestamps put
